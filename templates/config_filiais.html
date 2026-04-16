@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<style>
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .acoes-topo {
+    margin-bottom: 18px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .btn-topo {
+    display: inline-block;
+    padding: 10px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    border: 1px solid #c7c7c7;
+    background: #f7f7f7;
+    color: #1f3c88;
+    cursor: pointer;
+  }
+
+  .btn-topo:hover {
+    background: #ededed;
+  }
+
+  .tabela-wrap {
+    overflow-x: auto;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 980px;
+  }
+
+  th, td {
+    border: 1px solid #dddddd;
+    padding: 8px;
+    vertical-align: middle;
+  }
+
+  th {
+    background: #dbe8f4;
+    text-align: left;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+
+  tbody tr:nth-child(even) {
+    background: #fafafa;
+  }
+
+  input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid #bfc7d1;
+    border-radius: 6px;
+    font-size: 14px;
+    background: #fffefc;
+  }
+
+  .col-codigo {
+    width: 110px;
+  }
+
+  .col-nome {
+    width: 260px;
+  }
+
+  .col-import {
+    width: 300px;
+  }
+
+  .col-lanc {
+    width: 90px;
+    text-align: center;
+  }
+
+  .col-ativo {
+    width: 90px;
+    text-align: center;
+  }
+
+  .col-acoes {
+    width: 190px;
+    white-space: nowrap;
+  }
+
+  .btn-salvar,
+  .btn-excluir {
+    border: none;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn-salvar {
+    background: #2d7d46;
+    color: #fff;
+    margin-right: 6px;
+  }
+
+  .btn-excluir {
+    background: #b53838;
+    color: #fff;
+  }
+
+  .btn-excluir:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .flash-msg {
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-weight: 600;
+  }
+
+  .flash-success {
+    background: #e6f4ea;
+    color: #1e6b34;
+    border: 1px solid #b7dfc2;
+  }
+
+  .flash-error {
+    background: #fdeaea;
+    color: #9f2f2f;
+    border: 1px solid #efc2c2;
+  }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">Cadastro de Filiais</div>
+  <div class="pagina-subtitulo">
+    Empresa: <strong>{{ nome_empresa }}</strong>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="acoes-topo">
+    <form method="post" action="{{ url_for('configuracoes.config_filiais_novo') }}">
+      <button type="submit" class="btn-topo">+ Nova Filial</button>
+    </form>
+
+    <a class="btn-topo" href="{{ url_for('configuracoes.menu_configuracoes') }}">
+      ← Voltar para Configurações
+    </a>
+  </div>
+
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="col-codigo">Cód. Filial</th>
+          <th class="col-nome">Nome da Filial</th>
+          <th class="col-import">Nome Filial Importação</th>
+          <th class="col-lanc">Lanç.</th>
+          <th class="col-ativo">Ativo</th>
+          <th class="col-acoes">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for filial in filiais %}
+        <tr>
+          <td>
+            <form method="post" action="{{ url_for('configuracoes.config_filiais_salvar') }}">
+              <input type="hidden" name="cod_filial_original" value="{{ filial.cod_filial }}">
+              <input type="hidden" name="cod_filial" value="{{ filial.cod_filial or '' }}">
+              <input type="text" value="{{ filial.cod_filial or '' }}" readonly style="background:#f1f1f1; color:#666;">
+          </td>
+          <td>
+              <input type="text" name="nome_filial" value="{{ filial.nome_filial or '' }}">
+          </td>
+          <td>
+              <input type="text" name="nome_filial_importacao" value="{{ filial.nome_filial_importacao or '' }}">
+          </td>
+          <td class="col-lanc">
+              {{ filial.qt_lancamentos or 0 }}
+          </td>
+          <td class="col-ativo">
+              <input type="checkbox" name="ativo" {% if filial.ativo %}checked{% endif %}>
+          </td>
+          <td class="col-acoes">
+              <button type="submit" class="btn-salvar">Salvar</button>
+            </form>
+
+            <form method="post" action="{{ url_for('configuracoes.config_filiais_excluir') }}" style="display:inline;">
+              <input type="hidden" name="cod_filial" value="{{ filial.cod_filial }}">
+              <button
+                type="submit"
+                class="btn-excluir"
+                {% if (filial.qt_lancamentos or 0) > 0 %}disabled{% endif %}
+                onclick="return confirm('Excluir esta filial?');">
+                Excluir
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

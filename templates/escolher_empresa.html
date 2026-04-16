@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+  .box {
+    max-width: 520px;
+    margin: 40px auto;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 12px;
+    padding: 24px;
+  }
+
+  .titulo {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 18px;
+  }
+
+  .linha-form {
+    margin-bottom: 14px;
+  }
+
+  .linha-form label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .linha-form select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #c9c9c9;
+    border-radius: 8px;
+    box-sizing: border-box;
+  }
+
+  .btn {
+    background: #1565c0;
+    color: #fff;
+    border: 1px solid #1565c0;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+</style>
+
+<div class="box">
+  <div class="titulo">Escolher empresa</div>
+
+  <form method="post">
+    <div class="linha-form">
+      <label for="cod_empresa">Empresa</label>
+      <select id="cod_empresa" name="cod_empresa" required>
+        {% for e in empresas %}
+          <option value="{{ e.cod_empresa }}">{{ e.cod_empresa }} - {{ e.nome_fantasia }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <button type="submit" class="btn">Continuar</button>
+  </form>
+</div>
+
+{% endblock %}

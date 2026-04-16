@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Menu Principal</title>
+
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    color: #111;
+  }
+
+  h1 {
+    font-size: 36px;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 30px;
+  }
+
+  .menu-botoes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 220px);
+    gap: 14px;
+    margin-bottom: 50px;
+  }
+
+  .menu-botoes a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 220px;
+    height: 60px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 16px;
+    color: white;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+    transition: all 0.2s ease;
+    text-align: center;
+    padding: 0 10px;
+    box-sizing: border-box;
+  }
+
+  .menu-botoes a:hover {
+    transform: translateY(-2px);
+    filter: brightness(0.95);
+  }
+
+  .btn-resultado { background: #2a8f4a; }
+  .btn-lanc { background: #3b6fb6; }
+  .btn-import { background: #5a8dee; }
+  .btn-cad { background: #6c757d; }
+  .btn-matricial { background: #8e6bbf; }
+  .btn-trocar { background: #c77d2b; }
+  .btn-mb { background: #2f9e9e; }
+  .btn-exclusoes { background: #b02a37; }
+  .btn-sistemas { background: #444; }
+
+  .painel {
+    margin-top: 20px;
+  }
+
+  .tabela-container {
+    margin-top: 55px;
+    overflow: auto;
+    max-height: 65vh;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    background: #fff;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: max-content;
+    min-width: 100%;
+    font-size: 15px;
+  }
+
+  th, td {
+    border: 1px solid #dcdcdc;
+    padding: 8px 10px;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  thead th {
+    position: sticky;
+    top: 0;
+    background: #3b6fb6;
+    color: white;
+    font-weight: 700;
+    z-index: 2;
+  }
+
+  th:first-child, td:first-child,
+  th:nth-child(2), td:nth-child(2) {
+    text-align: left;
+  }
+
+  tbody tr:nth-child(even) {
+    background: #fafafa;
+  }
+
+  tfoot td {
+    background: #f3f3f3;
+    font-weight: 700;
+    border-top: 2px solid #999;
+  }
+
+  td:last-child, th:last-child {
+    font-weight: 700;
+  }
+</style>
+</head>
+
+<body>
+
+<h1>Menu do Financeiro</h1>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<div class="menu-botoes">
+
+  <!-- FINANCEIRO -->
+  <a class="btn-resultado" href="{{ url_for('financeiro.resultado_mb', ano=ano_atual) }}">
+    📊 Resultado MB
+  </a>
+
+  <a class="btn-lanc" href="{{ url_for('financeiro.listar_lancamentos') }}">
+    Lançamentos
+  </a>
+
+  <a class="btn-import" href="{{ url_for('importacoes.listar_importacoes') }}">
+    Importações
+  </a>
+
+  <a class="btn-cad" href="{{ url_for('financeiro.menu_cadastros') }}">
+    Cadastros
+  </a>
+
+  <a class="btn-matricial" href="{{ url_for('financeiro.matricial') }}">
+    Dados Matriciais
+  </a>
+
+  <a class="btn-matricial" href="{{ url_for('financeiro.dados_detalhados') }}">
+    Dados Detalhados
+  </a>
+
+  <a class="btn-mb" href="{{ url_for('financeiro.margem_bruta') }}">
+    Margem Bruta
+  </a>
+
+  <a class="btn-exclusoes" href="{{ url_for('financeiro.exclusoes') }}">
+    Exclusões
+  </a>
+
+  <!-- GERAL -->
+  <a class="btn-sistemas" href="{{ url_for('sistema.selecionar_sistema') }}">
+    ⬅ Menu Principal
+  </a>
+
+  <a class="btn-trocar" href="{{ url_for('auth.trocar_empresa') }}">
+    Trocar Empresa
+  </a>
+
+</div>
+
+<div class="painel">
+{% if linhas_dashboard and linhas_dashboard|length > 0 %}
+
+<div class="tabela-container">
+  <table>
+    <thead>
+      <tr>
+        <th>Ano</th>
+        <th>Mês</th>
+        <th>Lanç.</th>
+        <th>OP</th>
+        <th>ENOP</th>
+        <th>PROD</th>
+        <th>DESP</th>
+        <th>SNOP</th>
+        <th>DIVI</th>
+        <th>TRANSF</th>
+        <th>Total</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for l in linhas_dashboard %}
+      <tr>
+        <td>{{ l.ano }}</td>
+        <td>{{ l.mes }}</td>
+        <td>{{ formatar_int(l.lanc) }}</td>
+        <td>{{ formatar_numero_br(l.op) }}</td>
+        <td>{{ formatar_numero_br(l.enop) }}</td>
+        <td>{{ formatar_numero_br(l.prod) }}</td>
+        <td style="{{ l.estilo_desp }}">{{ formatar_numero_br(l.desp) }}</td>
+        <td style="{{ l.estilo_snop }}">{{ formatar_numero_br(l.snop) }}</td>
+        <td>{{ formatar_numero_br(l.divi) }}</td>
+        <td>{{ formatar_numero_br(l.transfe) }}</td>
+        <td>{{ formatar_numero_br(l.total) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+
+    <tfoot>
+      <tr>
+        <td colspan="2">Totais</td>
+        <td>{{ formatar_int(totais_dashboard.lanc) }}</td>
+        <td>{{ formatar_numero_br(totais_dashboard.op) }}</td>
+        <td>{{ formatar_numero_br(totais_dashboard.enop) }}</td>
+        <td>{{ formatar_numero_br(totais_dashboard.prod) }}</td>
+        <td>{{ formatar_numero_br(totais_dashboard.desp) }}</td>
+        <td>{{ formatar_numero_br(totais_dashboard.snop) }}</td>
+        <td>{{ formatar_numero_br(totais_dashboard.divi) }}</td>
+        <td>{{ formatar_numero_br(totais_dashboard.transfe) }}</td>
+        <td>{{ formatar_numero_br(totais_dashboard.total) }}</td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+
+{% endif %}
+</div>
+
+</body>
+</html>

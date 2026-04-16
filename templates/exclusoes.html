@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+  .msg-ok {
+    background: #eef9d2;
+    color: #2f4f00;
+    border: 1px solid #d7ef98;
+    padding: 10px 12px;
+    border-radius: 8px;
+    margin-bottom: 14px;
+  }
+
+  .msg-erro {
+    background: #ffe6e6;
+    color: #8b0000;
+    border: 1px solid #f2b6b6;
+    padding: 10px 12px;
+    border-radius: 8px;
+    margin-bottom: 14px;
+  }
+
+  .topo-acoes {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+
+  .btn-danger {
+    background: #d62828;
+    color: #fff;
+  }
+
+  .btn-danger:hover {
+    background: #b91f1f;
+  }
+
+  .num {
+    text-align: right;
+  }
+</style>
+
+<h2>Exclusão de lançamentos</h2>
+
+<p style="margin-top: -8px; color: #555;">
+  Empresa ativa: <strong>{{ empresa_ativa }} - {{ nome_empresa_ativa }}</strong>
+  · <a href="{{ url_for('trocar_empresa') }}">trocar empresa</a>
+</p>
+
+{% if mensagem %}
+  <div class="msg-ok">{{ mensagem }}</div>
+{% endif %}
+
+{% if erro %}
+  <div class="msg-erro">{{ erro }}</div>
+{% endif %}
+
+<form method="get" style="margin-bottom: 16px;">
+  <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;">
+
+    <div>
+      <label for="ano">Ano</label><br>
+      <select id="ano" name="ano">
+        {% for a in anos %}
+          <option value="{{ a }}" {% if ano_sel|int == a %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+<div>
+  <label for="mes">Mês</label><br>
+  <select id="mes" name="mes">
+    {% for m in meses %}
+      <option value="{{ m }}" {% if mes_sel|int == m %}selected{% endif %}>{{ m }}</option>
+    {% endfor %}
+  </select>
+</div>
+    <div>
+      <label for="filial">Filial</label><br>
+      <select id="filial" name="filial">
+        <option value="">(Todas)</option>
+        {% for f in filiais %}
+          <option value="{{ f }}" {% if f == filial_sel %}selected{% endif %}>{{ f }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label for="grupo">Grupo</label><br>
+      <select id="grupo" name="grupo">
+        <option value="">(Todos)</option>
+        {% for g in grupos %}
+          <option value="{{ g }}" {% if g == grupo_sel %}selected{% endif %}>{{ g }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label for="conta">Conta</label><br>
+      <select id="conta" name="conta">
+        <option value="">(Todas)</option>
+        {% for c in contas %}
+          <option value="{{ c }}" {% if c == conta_sel %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label for="data_ini">Data inicial</label><br>
+      <input type="date" id="data_ini" name="data_ini" value="{{ data_ini }}">
+    </div>
+
+    <div>
+      <label for="data_fim">Data final</label><br>
+      <input type="date" id="data_fim" name="data_fim" value="{{ data_fim }}">
+    </div>
+
+    <div>
+      <label for="busca">Buscar texto</label><br>
+      <input type="text" id="busca" name="busca" value="{{ busca }}" placeholder="Histórico / descrição">
+    </div>
+
+    <div>
+      <button type="submit" class="btn btn-primary">Filtrar</button>
+      <a href="{{ url_for('exclusoes') }}" class="btn btn-secondary">Limpar</a>
+    </div>
+  </div>
+</form>
+
+<div class="topo-acoes">
+  <span><strong>{{ rows|length }}</strong> registro(s) encontrado(s).</span>
+  <a class="btn btn-secondary" href="{{ url_for('financeiro.menu_empresa') }}">Voltar ao menu</a>
+</div>
+
+<form method="post" onsubmit="return confirm('Confirma a exclusão dos lançamentos marcados?');">
+  <input type="hidden" name="ano" value="{{ ano_sel }}">
+  <input type="hidden" name="mes" value="{{ mes_sel }}">
+  <input type="hidden" name="filial" value="{{ filial_sel }}">
+  <input type="hidden" name="grupo" value="{{ grupo_sel }}">
+  <input type="hidden" name="conta" value="{{ conta_sel }}">
+  <input type="hidden" name="data_ini" value="{{ data_ini }}">
+  <input type="hidden" name="data_fim" value="{{ data_fim }}">
+  <input type="hidden" name="busca" value="{{ busca }}">
+  
+  <div style="margin-bottom: 10px;">
+    <label>
+      <input type="checkbox" id="marcar_todos">
+      Marcar / desmarcar todos
+    </label>
+    <button type="submit" class="btn btn-danger" style="margin-left: 12px;">Excluir selecionados</button>
+  </div>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th></th>
+          <th>id_lancamento</th>
+          <th>data</th>
+          <th>filial</th>
+          <th>historico</th>
+          <th class="num">valor</th>
+          <th>grupo</th>
+          <th>conta</th>
+          <th>descricao_conta</th>
+          <th>complemento</th>
+          <th>cod_empresa</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>
+              <input type="checkbox" name="ids_marcados" value="{{ row[0] }}" class="check-item">
+            </td>
+            <td>{{ row[0] }}</td>
+            <td>{{ row[1] }}</td>
+            <td>{{ row[2] }}</td>
+            <td>{{ row[3] }}</td>
+            <td class="num">
+              {{ "{:,.2f}".format(row[4]).replace(",", "X").replace(".", ",").replace("X", ".") }}
+            </td>
+            <td>{{ row[5] }}</td>
+            <td>{{ row[6] }}</td>
+            <td>{{ row[7] }}</td>
+            <td>{{ row[8] }}</td>
+            <td>{{ row[9] }}</td>
+          </tr>
+        {% endfor %}
+
+        {% if rows|length == 0 %}
+          <tr>
+            <td colspan="11">Nenhum registro encontrado com os filtros aplicados.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</form>
+
+<script>
+  const marcarTodos = document.getElementById("marcar_todos");
+  const checks = document.querySelectorAll(".check-item");
+
+  if (marcarTodos) {
+    marcarTodos.addEventListener("change", function() {
+      checks.forEach(chk => {
+        chk.checked = marcarTodos.checked;
+      });
+    });
+  }
+</script>
+
+{% endblock %}

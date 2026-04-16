@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+  html, body {
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  main, .content, .content-wrapper, .container, .page-mb {
+    overflow: visible !important;
+    overflow-y: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  .page-mb {
+    display: block;
+    width: max-content;
+    min-width: 100%;
+    padding-bottom: 80px;
+  }
+
+  .table-wrapper {
+    display: block;
+    width: max-content;
+    min-width: 100%;
+    overflow-x: auto;
+    overflow-y: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    background: #fff;
+    margin-bottom: 60px;
+  }
+
+  .mb-tabela {
+    border-collapse: collapse;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .mb-tabela th,
+  .mb-tabela td {
+    border: 1px solid #d9d9d9;
+    padding: 4px 8px;
+    white-space: nowrap;
+  }
+
+  .mb-tabela thead th {
+    background: #2f6db5;
+    color: #fff;
+    font-weight: bold;
+    text-align: center;
+  }
+
+  .mb-tabela td.num,
+  .mb-tabela th.num {
+    text-align: right;
+  }
+
+  .mb-tabela input {
+    width: 110px;
+    border: none;
+    outline: none;
+    background: transparent;
+    text-align: right;
+    padding: 2px 4px;
+    border-radius: 0;
+  }
+
+  .mb-tabela input:focus {
+    background: #fff8cc;
+  }
+
+  .linha-divisao td {
+    border-top: 4px solid #000 !important;
+  }
+
+  .col-ano { width: 80px; }
+  .col-mes { width: 80px; }
+  .col-total { width: 110px; }
+  .col-filial { width: 110px; }
+
+  .titulo-sec {
+    margin-bottom: 12px;
+  }
+
+  .mensagem-sucesso {
+    padding: 12px 16px;
+    background: #eaf7ea;
+    border: 1px solid #a7d7a7;
+    color: #1d5c1d;
+    border-radius: 8px;
+    margin-bottom: 14px;
+  }
+
+  .mensagem-erro {
+    padding: 12px 16px;
+    background: #fdecec;
+    border: 1px solid #efb2b2;
+    color: #7a1f1f;
+    border-radius: 8px;
+    margin-bottom: 14px;
+  }
+
+  .barra-acoes {
+    margin-bottom: 14px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .form-importar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin: 0;
+  }
+</style>
+
+<div class="page-mb">
+  <h2>Margem Bruta</h2>
+
+  <div class="titulo-sec">
+    Empresa ativa: <strong>{{ empresa_ativa }} - {{ nome_empresa_ativa }}</strong>
+  </div>
+
+  <div style="margin-bottom: 14px;">
+    <a class="btn btn-secondary" href="{{ url_for('financeiro.menu_empresa') }}">⟨ Voltar</a>
+  </div>
+
+  {% if mensagem %}
+    <div class="mensagem-sucesso">{{ mensagem }}</div>
+  {% endif %}
+
+  {% if erro %}
+    <div class="mensagem-erro">{{ erro }}</div>
+  {% endif %}
+
+  <div class="barra-acoes">
+    <form method="post" action="{{ url_for('importar_margem_bruta') }}" enctype="multipart/form-data" class="form-importar">
+      <input type="file" name="arquivo" accept=".xlsx,.xlsm,.xls" required>
+      <button type="submit" class="btn btn-blue">Importar Excel</button>
+    </form>
+  </div>
+
+  <form method="post" action="{{ url_for('margem_bruta') }}">
+    <div style="margin-bottom: 14px;">
+      <button type="submit" class="btn btn-primary">Salvar Margem Bruta</button>
+    </div>
+
+    <div class="table-wrapper">
+      <table class="mb-tabela">
+        <colgroup>
+          <col class="col-ano">
+          <col class="col-mes">
+          <col class="col-total">
+          {% for filial in filiais %}
+            <col class="col-filial">
+          {% endfor %}
+        </colgroup>
+
+        <thead>
+          <tr>
+            <th>ANO</th>
+            <th>MÊS</th>
+            <th class="num">TOTAL</th>
+            {% for filial in filiais %}
+              <th class="num">{{ filial[0] }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+
+        <tbody>
+          {% set ns = namespace(ano_anterior=None) %}
+
+          {% for linha in linhas %}
+            <tr class="{% if ns.ano_anterior is not none and ns.ano_anterior != linha.ano %}linha-divisao{% endif %}">
+              <td class="num">{{ linha.ano }}</td>
+              <td class="num">{{ linha.mes }}</td>
+              <td class="num">
+                {{ "{:,.2f}".format(linha.total).replace(",", "X").replace(".", ",").replace("X", ".") }}
+              </td>
+
+              {% for filial in filiais %}
+                <td class="num">
+                  <input
+                    type="text"
+                    name="valor_{{ linha.ano }}_{{ linha.mes }}_{{ filial[0] }}"
+                    value="{{ "{:,.2f}".format(linha.valores.get(filial[0], 0)).replace(",", "X").replace(".", ",").replace("X", ".") if linha.valores.get(filial[0], 0) != 0 else '' }}"
+                  >
+                </td>
+              {% endfor %}
+            </tr>
+            {% set ns.ano_anterior = linha.ano %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="margin-top: 14px;">
+      <button type="submit" class="btn btn-primary">Salvar Margem Bruta</button>
+    </div>
+  </form>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const inputs = document.querySelectorAll(".mb-tabela input");
+
+  inputs.forEach((input) => {
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+
+        const td = input.closest("td");
+        const tr = input.closest("tr");
+        const col = td.cellIndex;
+        const row = tr.rowIndex;
+        const tabela = document.querySelector(".mb-tabela");
+
+        if (tabela.rows[row + 1]) {
+          const prox = tabela.rows[row + 1].cells[col]?.querySelector("input");
+          if (prox) prox.focus();
+        }
+      }
+    });
+  });
+});
+</script>
+
+{% endblock %}

@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<style>
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .acoes-topo {
+    margin-bottom: 22px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .btn-topo {
+    display: inline-block;
+    padding: 10px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    border: 1px solid #c7c7c7;
+    background: #f7f7f7;
+    color: #1f3c88;
+  }
+
+  .btn-topo:hover {
+    background: #ededed;
+  }
+
+  .painel-filtros {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 24px;
+  }
+
+  .grid-filtros {
+    display: grid;
+    grid-template-columns: 150px 170px 280px auto;
+    gap: 12px;
+    align-items: end;
+    justify-content: start;
+  }
+
+  .campo label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .campo input,
+  .campo select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid #c9c9c9;
+    border-radius: 8px;
+    font-size: 15px;
+    background: #fff;
+  }
+
+  .bloco-titulo {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: #b02a37;
+  }
+
+  .tabela-wrap {
+    overflow: visible;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    background: #fff;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: max-content;
+    min-width: 100%;
+    font-size: 13px;
+  }
+
+  th, td {
+    border: 1px solid #dddddd;
+    padding: 6px 8px;
+    white-space: nowrap;
+  }
+
+  th {
+    background: #dbe8f4;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  td.num {
+    text-align: right;
+  }
+
+  th.col-custo, td.col-custo,
+  th.col-preco, td.col-preco,
+  th.col-mun, td.col-mun {
+    width: 110px;
+    min-width: 110px;
+    max-width: 110px;
+  }
+
+  .sem-dados {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 20px;
+    color: #666;
+  }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">Consulta por Produto</div>
+  <div class="pagina-subtitulo">
+    Empresa: <strong>{{ nome_empresa }}</strong>
+  </div>
+
+  <div class="acoes-topo">
+    <a class="btn-topo" href="{{ url_for('vendas.vendas_diarias') }}">Vendas Diárias</a>
+    <a class="btn-topo" href="{{ url_for('vendas.vendas_consultas') }}">Consultas</a>
+    <a class="btn-topo" href="{{ url_for('sistema.menu_vendas') }}">← Menu de Vendas</a>
+  </div>
+
+  <form method="get" class="painel-filtros">
+    <div class="grid-filtros">
+      <div class="campo">
+        <label for="cod_filial">Filial</label>
+        <select id="cod_filial" name="cod_filial">
+          <option value="">(Todas)</option>
+          {% for f in filiais %}
+            <option value="{{ f.cod_filial }}" {% if cod_filial_sel == f.cod_filial|string %}selected{% endif %}>
+              {{ f.cod_filial }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="campo">
+        <label for="data_ini">Data inicial</label>
+        <input type="date" id="data_ini" name="data_ini" value="{{ data_ini }}">
+      </div>
+
+      <div class="campo">
+        <label for="produto">Produto</label>
+        <select id="produto" name="produto">
+          <option value="">(Todos)</option>
+          {% for p in produtos %}
+            <option value="{{ p }}" {% if produto_sel == p %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="campo">
+        <button type="submit" class="btn-topo">Selecionar</button>
+      </div>
+    </div>
+  </form>
+
+  <div class="bloco-titulo">Movimento por produto</div>
+
+  {% if linhas %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>COD</th>
+            <th>FILIAL</th>
+            <th>DATA</th>
+            <th>DIA</th>
+            <th>COD</th>
+            <th>PRODUTO</th>
+            <th class="col-custo">PR. CUSTO</th>
+            <th class="col-preco">PR. VENDA</th>
+            <th class="col-mun">MUN</th>
+            <th>QUANT</th>
+            <th>VALOR</th>
+            <th>MARGEM</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for linha in linhas %}
+          <tr>
+            <td class="num">{{ linha.cod_filial }}</td>
+            <td>{{ linha.nome_filial }}</td>
+            <td>{{ linha.data_fmt }}</td>
+            <td>{{ linha.dia_semana }}</td>
+            <td class="num">{{ linha.codigo_produto }}</td>
+            <td>{{ linha.descricao }}</td>
+            <td class="num col-custo" style="background: {{ linha.custo_cor }};">{{ formatar_numero_br(linha.custo) }}</td>
+            <td class="num col-preco" style="background: {{ linha.preco_venda_cor }};">{{ formatar_numero_br(linha.preco_venda) }}</td>
+            <td class="num col-mun" style="background: {{ linha.mun_cor }};">{{ formatar_numero_br(linha.mun) }}</td>
+            <td class="num" style="background: {{ linha.quantidade_cor }};">{{ formatar_numero_br(linha.quantidade) }}</td>
+            <td class="num" style="background: {{ linha.valor_cor }};">{{ formatar_numero_br(linha.valor) }}</td>
+            <td class="num" style="background: {{ linha.margem_bruta_cor }};">{{ formatar_numero_br(linha.margem_bruta) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="sem-dados">
+      Nenhum dado encontrado para os filtros informados.
+    </div>
+  {% endif %}
+</div>
+
+{% endblock %}

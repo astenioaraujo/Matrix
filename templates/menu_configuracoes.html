@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="card">
+    <h2>Configurações</h2>
+
+    <p>Empresa: <strong>{{ nome_empresa }}</strong></p>
+
+    <ul>
+        <li>
+            <a href="{{ url_for('configuracoes.config_filiais') }}">
+                Cadastro de Filiais
+            </a>
+        </li>
+        <li>
+            <a href="{{ url_for('configuracoes.config_usuarios') }}">
+                Cadastro de Usuários
+            </a>
+        </li>
+    </ul>
+
+    <br>
+    <a href="{{ url_for('sistema.selecionar_sistema') }}">
+        ← Voltar
+    </a>
+</div>
+
+{% endblock %}

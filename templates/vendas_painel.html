@@ -1,0 +1,549 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<style>
+  body {
+    overflow-x: auto;
+  }
+
+  .card {
+    overflow-x: visible;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .acoes-topo {
+    margin-bottom: 28px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .btn-topo {
+    display: inline-block;
+    padding: 10px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    border: 1px solid #c7c7c7;
+    background: #f7f7f7;
+    color: #1f3c88;
+  }
+
+  .btn-topo:hover {
+    background: #ededed;
+  }
+
+  .bloco-painel {
+    margin-top: 34px;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .bloco-titulo {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    color: #b02a37;
+  }
+
+  .bloco-resumo {
+    margin-top: 8px;
+    margin-bottom: 34px;
+  }
+
+  .bloco-variacoes {
+    margin-top: 8px;
+    margin-bottom: 40px;
+    max-width: 820px;
+  }
+
+  .bloco-secao {
+    margin-top: 40px;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .tabela-wrap {
+    overflow: visible;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    background: #fff;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: max-content;
+    min-width: max-content;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #dddddd;
+    padding: 7px 10px;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  .col-mes {
+    width: 110px;
+    min-width: 110px;
+    max-width: 110px;
+  }
+
+  .col-total {
+    width: 150px;
+    min-width: 150px;
+    max-width: 150px;
+    font-weight: 700;
+    background: #faf7dd;
+    border-right: 3px solid #2c2c2c;
+    box-shadow: 2px 0 0 #2c2c2c;
+  }
+
+  .col-filial {
+    width: 140px;
+    min-width: 140px;
+    max-width: 140px;
+  }
+
+  th {
+    background: #dbe8f4;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    font-weight: 700;
+  }
+
+  th:first-child,
+  td:first-child {
+    text-align: left;
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: #fff;
+    min-width: 110px;
+  }
+
+  thead th:first-child {
+    background: #dbe8f4;
+    z-index: 3;
+  }
+
+  tbody tr:nth-child(even) {
+    background: #fafafa;
+  }
+
+  .linha-novo-ano td {
+    border-top: 2px solid #7f7f7f;
+  }
+
+  tfoot td {
+    font-weight: 700;
+    background: #f3f3f3;
+  }
+
+  .linha-total td {
+    background: #eef3f8;
+    font-weight: 700;
+  }
+
+  tfoot tr.linha-total td {
+    border-top: 4px solid #2c2c2c;
+    padding-top: 10px;
+  }
+
+  .linha-med td {
+    background: #f8f3ea;
+    font-weight: 700;
+  }
+
+  .linha-proj td {
+    background: #eef8ea;
+    font-weight: 700;
+  }
+
+  .numero-filial {
+    font-size: 11px;
+    color: #1f6fb2;
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  .nome-filial {
+    font-size: 12px;
+    color: #333;
+    display: block;
+    max-width: 150px;
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  .resumo-projecao {
+    width: 390px;
+    border: 2px solid #2c2c2c;
+    background: #fff;
+  }
+
+  .resumo-topo {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .resumo-topo div {
+    background: #f1ef43;
+    font-weight: 800;
+    font-size: 18px;
+    text-align: center;
+    padding: 8px 10px;
+    border-bottom: 2px solid #2c2c2c;
+    color: #d61f1f;
+  }
+
+  .resumo-linha {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .resumo-linha .rotulo {
+    background: #ffffff;
+    font-weight: 800;
+    font-size: 18px;
+    padding: 6px 12px;
+    border-right: 1px solid #cfcfcf;
+    border-bottom: 1px solid #cfcfcf;
+    text-align: center;
+  }
+
+  .resumo-linha .valor {
+    background: #bfbfbf;
+    font-weight: 800;
+    font-size: 18px;
+    padding: 6px 12px;
+    border-bottom: 1px solid #cfcfcf;
+    text-align: right;
+  }
+
+  .variacoes-titulo {
+    font-size: 22px;
+    font-weight: 800;
+    color: #e1251b;
+    margin-bottom: 12px;
+  }
+
+  .variacoes-wrap {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    overflow: auto;
+    max-width: 820px;
+  }
+
+  .variacoes-table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 760px;
+    font-size: 14px;
+  }
+
+  .variacoes-table th,
+  .variacoes-table td {
+    border: 1px solid #dddddd;
+    padding: 7px 10px;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  .variacoes-table th {
+    background: #ffffff;
+    color: #000;
+    font-size: 18px;
+    font-weight: 800;
+    text-align: center;
+    position: static;
+  }
+
+  .variacoes-table td.col-data {
+    text-align: center;
+    font-weight: 700;
+    background: #fff;
+  }
+
+  @media (max-width: 700px) {
+    .pagina-titulo {
+      font-size: 24px;
+    }
+
+    .pagina-subtitulo {
+      font-size: 16px;
+    }
+
+    table {
+      font-size: 13px;
+    }
+
+    th, td {
+      padding: 6px 8px;
+    }
+
+    .col-total {
+      width: 130px;
+      min-width: 130px;
+      max-width: 130px;
+    }
+
+    .col-filial {
+      width: 130px;
+      min-width: 130px;
+      max-width: 130px;
+    }
+
+    .resumo-projecao {
+      width: 100%;
+      max-width: 390px;
+    }
+
+    .resumo-topo div,
+    .resumo-linha .rotulo,
+    .resumo-linha .valor {
+      font-size: 16px;
+    }
+
+    .variacoes-table {
+      min-width: 680px;
+    }
+
+    .variacoes-table th {
+      font-size: 16px;
+    }
+
+    .bloco-resumo,
+    .bloco-variacoes,
+    .bloco-secao {
+      margin-bottom: 28px;
+    }
+  }
+</style>
+
+{% macro render_bloco(titulo, grade) %}
+<div class="bloco-painel">
+  <div class="bloco-titulo">{{ titulo }}</div>
+
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="col-mes">MÊS</th>
+          <th class="col-total">TOTAL</th>
+          {% for filial in filiais %}
+            <th class="col-filial">
+              <span class="numero-filial">{{ filial.cod_filial }}</span>
+              <span class="nome-filial">{{ filial.nome_filial }}</span>
+            </th>
+          {% endfor %}
+        </tr>
+      </thead>
+
+      <tbody>
+        {% for linha in grade.linhas %}
+        {% set idx_linha = loop.index0 %}
+        {% set mudou_ano = loop.index0 > 0 and grade.linhas[loop.index0 - 1].ano != linha.ano %}
+        <tr class="{% if mudou_ano %}linha-novo-ano{% endif %}">
+          <td class="col-mes">{{ linha.periodo }}</td>
+          <td class="col-total" style="background: {{ grade.cores_totais[idx_linha] }};">
+            {% if linha.total and linha.total != 0 %}
+              {{ formatar_numero_br(linha.total) }}
+            {% endif %}
+          </td>
+          {% for valor in linha.valores %}
+            <td class="col-filial" style="background: {{ grade.cores_linhas[idx_linha][loop.index0] }};">
+              {% if valor and valor != 0 %}
+                {{ formatar_numero_br(valor) }}
+              {% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+
+      <tfoot>
+        <tr class="linha-total">
+          <td class="col-mes">{{ grade.linha_total.rotulo }}</td>
+          <td class="col-total">
+            {% if grade.linha_total.total and grade.linha_total.total != 0 %}
+              {{ formatar_numero_br(grade.linha_total.total) }}
+            {% endif %}
+          </td>
+          {% for valor in grade.linha_total.valores %}
+            <td class="col-filial">
+              {% if valor and valor != 0 %}
+                {{ formatar_numero_br(valor) }}
+              {% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+
+        <tr class="linha-med">
+          <td class="col-mes">{{ grade.linha_med_12m.rotulo }}</td>
+          <td class="col-total">
+            {% if grade.linha_med_12m.total and grade.linha_med_12m.total != 0 %}
+              {{ formatar_numero_br(grade.linha_med_12m.total) }}
+            {% endif %}
+          </td>
+          {% for valor in grade.linha_med_12m.valores %}
+            <td class="col-filial">
+              {% if valor and valor != 0 %}
+                {{ formatar_numero_br(valor) }}
+              {% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+
+        <tr class="linha-proj">
+          <td class="col-mes">{{ grade.linha_proj_12m.rotulo }}</td>
+          <td class="col-total">
+            {% if grade.linha_proj_12m.total and grade.linha_proj_12m.total != 0 %}
+              {{ formatar_numero_br(grade.linha_proj_12m.total) }}
+            {% endif %}
+          </td>
+          {% for valor in grade.linha_proj_12m.valores %}
+            <td class="col-filial">
+              {% if valor and valor != 0 %}
+                {{ formatar_numero_br(valor) }}
+              {% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+{% endmacro %}
+
+<div class="card">
+  <div class="pagina-titulo">Painel de Vendas Sintético</div>
+  <div class="pagina-subtitulo">
+    Empresa: <strong>{{ nome_empresa }}</strong>
+  </div>
+
+  <div class="acoes-topo">
+    <a class="btn-topo" href="{{ url_for('vendas.vendas_importar_painel') }}">
+      Importar Painel
+    </a>
+
+    <a class="btn-topo" href="{{ url_for('sistema.menu_vendas') }}">
+      ← Menu de Vendas
+    </a>
+  </div>
+
+  {% if resumo_projecao %}
+  <div class="bloco-resumo">
+    <div class="resumo-projecao">
+      <div class="resumo-topo">
+        <div>PROJEÇÃO</div>
+        <div>{{ resumo_projecao.periodo }}</div>
+      </div>
+
+      <div class="resumo-linha">
+        <div class="rotulo">QUANTIDADE</div>
+        <div class="valor">{{ formatar_numero_br(resumo_projecao.quantidade) }}</div>
+      </div>
+
+      <div class="resumo-linha">
+        <div class="rotulo">VALOR</div>
+        <div class="valor">{{ formatar_numero_br(resumo_projecao.valor) }}</div>
+      </div>
+
+      <div class="resumo-linha">
+        <div class="rotulo">MB</div>
+        <div class="valor">{{ formatar_numero_br(resumo_projecao.mb) }}</div>
+      </div>
+
+      <div class="resumo-linha">
+        <div class="rotulo">MUN</div>
+        <div class="valor">{{ formatar_numero_br(resumo_projecao.mun) }}</div>
+      </div>
+
+      <div class="resumo-linha">
+        <div class="rotulo">QTD/DIA</div>
+        <div class="valor">{{ formatar_numero_br(resumo_projecao.qtd_dia) }}</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if variacoes_projecoes %}
+  <div class="bloco-variacoes">
+    <div class="variacoes-titulo">VARIAÇÃO DAS PROJEÇÕES</div>
+
+    <div class="variacoes-wrap">
+      <table class="variacoes-table">
+        <thead>
+          <tr>
+            <th>DATA</th>
+            <th>DIA BASE</th>
+            <th>DIAS MÊS</th>
+            <th>QUANTIDADE</th>
+            <th>VALORES</th>
+            <th>MB</th>
+            <th>MUN</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for linha in variacoes_projecoes %}
+          <tr>
+            <td class="col-data">{{ linha.data }}</td>
+            <td>{{ linha.dia_base }}</td>
+            <td>{{ linha.dias_mes }}</td>
+            <td style="background: {{ linha.quantidade_cor }};">
+              {{ formatar_numero_br(linha.quantidade) }}
+            </td>
+            <td style="background: {{ linha.valor_cor }};">
+              {{ formatar_numero_br(linha.valor) }}
+            </td>
+            <td style="background: {{ linha.mb_cor }};">
+              {{ formatar_numero_br(linha.mb) }}
+            </td>
+            <td style="background: {{ linha.mun_cor }};">
+              {{ formatar_numero_br(linha.mun) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+  
+  <div class="bloco-secao">
+    {{ render_bloco("QUANTIDADES", grade_unidades) }}
+  </div>
+
+  <div class="bloco-secao">
+    {{ render_bloco("VALORES", grade_valores) }}
+  </div>
+
+  <div class="bloco-secao">
+    {{ render_bloco("MB", grade_mb) }}
+  </div>
+
+  <div class="bloco-secao">
+    {{ render_bloco("MUN", grade_mun) }}
+  </div>
+</div>
+
+{% endblock %}

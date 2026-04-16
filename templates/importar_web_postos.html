@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Importar Web Postos</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f4f4f4;
+            color: #111;
+        }
+
+        .topo {
+            background: #000;
+            color: #fff;
+            padding: 16px 28px 18px 28px;
+            border-bottom: 4px solid #d7ff00;
+        }
+
+        .logo {
+            font-size: 30px;
+            font-weight: 800;
+            letter-spacing: 1px;
+        }
+
+        .sublogo {
+            font-size: 14px;
+            letter-spacing: 2px;
+            margin-top: 2px;
+        }
+
+        .conteudo {
+            max-width: 1180px;
+            margin: 28px auto;
+            padding: 0 24px;
+        }
+
+        h1 {
+            font-size: 40px;
+            margin: 0 0 18px 0;
+        }
+
+        .empresa {
+            font-size: 22px;
+            margin-bottom: 28px;
+            color: #555;
+        }
+
+        .empresa strong {
+            color: #555;
+        }
+
+        .mensagem {
+            padding: 14px;
+            margin-bottom: 18px;
+            border: 1px solid #9fd39f;
+            background: #eef9ee;
+            color: #245b24;
+        }
+
+        .erro {
+            padding: 14px;
+            margin-bottom: 18px;
+            border: 1px solid #d99b9b;
+            background: #fff1f1;
+            color: #7a1f1f;
+        }
+
+        .grupo {
+            margin-bottom: 22px;
+        }
+
+        .grupo label {
+            display: block;
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        .linha-diretorio {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        input[type="text"],
+        input[type="date"] {
+            font-size: 20px;
+            padding: 12px 16px;
+            border: 2px solid #d0d0d0;
+            border-radius: 16px;
+            background: #fff;
+        }
+
+        input[name="diretorio"] {
+            width: 920px;
+            max-width: 100%;
+        }
+
+        input[name="data_lancamento"] {
+            width: 230px;
+        }
+
+        .link-diretorio,
+        .link-voltar {
+            font-size: 18px;
+            color: #111;
+            text-decoration: underline;
+        }
+
+        .acoes {
+            margin-top: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            font-size: 18px;
+            padding: 10px 16px;
+            border: 1px solid #888;
+            background: #efefef;
+            cursor: pointer;
+        }
+
+        .rodape {
+            text-align: center;
+            margin-top: 90px;
+            color: #666;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="topo">
+        <div class="logo">MATRIX</div>
+        <div class="sublogo">DATA INTELLIGENCE</div>
+    </div>
+
+    <div class="conteudo">
+        <h1>Importar Web Postos</h1>
+
+        <div class="empresa">
+            Empresa ativa: <strong>{{ empresa_ativa }} - {{ nome_empresa_ativa }}</strong>
+        </div>
+
+        {% if mensagem %}
+            <div class="mensagem">{{ mensagem }}</div>
+        {% endif %}
+
+        {% if erro %}
+            <div class="erro">{{ erro }}</div>
+        {% endif %}
+
+        <form method="POST">
+            <div class="grupo">
+                <label for="diretorio">Diretório dos arquivos Excel</label>
+                <div class="linha-diretorio">
+                    <input
+                        type="text"
+                        id="diretorio"
+                        name="diretorio"
+                        value="{{ diretorio_importacao or '' }}"
+                        required
+                    >
+                    <a class="link-diretorio" href="{{ url_for('importacoes.selecionar_diretorio') }}">Selecionar diretório</a>
+                </div>
+            </div>
+
+            <div class="grupo">
+                <label for="data_lancamento">Data dos lançamentos</label>
+                <input
+                    type="date"
+                    id="data_lancamento"
+                    name="data_lancamento"
+                    required
+                >
+            </div>
+
+            <div class="acoes">
+                <button type="submit">Executar Importação</button>
+                <a class="link-voltar" href="{{ url_for('importacoes.listar_importacoes') }}">Voltar</a>
+            </div>
+        </form>
+
+        <div class="rodape">
+            MATRIX · Consultas e análise de dados
+        </div>
+    </div>
+</body>
+</html>

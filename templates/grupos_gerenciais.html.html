@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Grupos Gerenciais</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 30px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        .topo {
+            margin-bottom: 20px;
+        }
+
+        .menu-links a {
+            margin-right: 15px;
+            font-weight: bold;
+            text-decoration: none;
+            color: #1a73e8;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 700px;
+            margin-top: 20px;
+        }
+
+        th, td {
+            border: 1px solid #ccc;
+            padding: 10px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f0f0f0;
+        }
+
+        .btn-voltar {
+            margin-top: 20px;
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            cursor: pointer;
+            background-color: #ddd;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="topo">
+    <h1>Grupos Gerenciais</h1>
+
+    <div class="menu-links">
+        <a href="/menu">Menu Principal</a>
+    </div>
+</div>
+
+<table>
+    <tr>
+        <th>Grupo</th>
+        <th>Abreviatura</th>
+        <th>Descrição</th>
+    </tr>
+
+    {% for g in grupos %}
+    <tr>
+        <td>{{ g[0] }}</td>
+        <td>{{ g[1] }}</td>
+        <td>{{ g[2] }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+<a href="/menu">
+    <button class="btn-voltar">Voltar</button>
+</a>
+
+</body>
+</html>

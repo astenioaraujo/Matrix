@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <title>MATRIX</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    :root {
+      --bg: #f4f4f4;
+      --card: #ffffff;
+      --text: #111111;
+      --muted: #666666;
+      --border: #e3e3e3;
+      --black: #111111;
+      --yellow: #d7ff00;
+      --yellow-hover: #c3e800;
+      --blue: #2f66e0;
+      --blue-hover: #2455c0;
+      --shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    }
+  
+    * {
+      box-sizing: border-box;
+    }
+  
+    html, body {
+      min-height: 100%;
+      margin: 0;
+      overflow-x: auto;
+      overflow-y: auto;
+    }
+  
+    body {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      min-width: max-content;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+  
+    header {
+      background: var(--black);
+      color: white;
+      padding: 18px 28px;
+      border-bottom: 4px solid var(--yellow);
+      flex: 0 0 auto;
+    }
+  
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+  
+    .brand-mark {
+      width: 14px;
+      height: 38px;
+      background: var(--yellow);
+      border-radius: 3px;
+      flex: 0 0 auto;
+    }
+  
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1;
+    }
+  
+    .brand-title {
+      font-size: 28px;
+      font-weight: 900;
+      letter-spacing: 1px;
+    }
+  
+    .brand-subtitle {
+      margin-top: 4px;
+      font-size: 12px;
+      color: #cfcfcf;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+    }
+  
+    .container {
+      flex: 1 0 auto;
+      width: max-content;
+      min-width: 100%;
+      max-width: none;
+      margin: 24px 0 0 0;
+      padding: 0 40px 48px 20px;
+      overflow: visible;
+    }
+  
+    h2 {
+      margin-top: 0;
+      margin-bottom: 18px;
+      font-size: 28px;
+    }
+  
+    h3 {
+      margin-bottom: 10px;
+    }
+  
+    a {
+      color: inherit;
+    }
+  
+    .btn {
+      display: inline-block;
+      padding: 10px 18px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      transition: 0.2s ease;
+    }
+  
+    .btn-primary {
+      background: var(--yellow);
+      color: #000;
+    }
+  
+    .btn-primary:hover {
+      background: var(--yellow-hover);
+    }
+  
+    .btn-secondary {
+      background: #dcdcdc;
+      color: #111;
+    }
+  
+    .btn-secondary:hover {
+      background: #cfcfcf;
+    }
+  
+    .btn-blue {
+      background: var(--blue);
+      color: #fff;
+    }
+  
+    .btn-blue:hover {
+      background: var(--blue-hover);
+    }
+  
+    .table-wrapper {
+      overflow: visible;
+      border: 1px solid var(--border);
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: var(--shadow);
+      width: max-content;
+      min-width: max-content;
+    }
+  
+    table {
+      border-collapse: collapse;
+      width: max-content;
+      min-width: max-content;
+      font-size: 12px;
+      background: #fff;
+    }
+  
+    th, td {
+      border: 1px solid #ececec;
+      padding: 6px 8px;
+      text-align: left;
+      white-space: nowrap;
+    }
+  
+    th {
+      background: #f1f1f1;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      font-weight: 700;
+    }
+  
+    .pagination {
+      margin-top: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+  
+    footer {
+      flex: 0 0 auto;
+      margin-top: auto;
+      padding: 18px 0 28px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+      width: 100%;
+      background: transparent;
+    }
+  
+    input, select {
+      padding: 8px 10px;
+      border: 1px solid #cfcfcf;
+      border-radius: 8px;
+      background: white;
+      font: inherit;
+    }
+  
+    label {
+      font-size: 13px;
+      font-weight: 700;
+      color: #333;
+    }
+  
+    tbody tr:nth-child(even) {
+      background: #fafafa;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-text">
+        <div class="brand-title">MATRIX</div>
+        <div class="brand-subtitle">Data Intelligence</div>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    {% block content %}{% endblock %}
+  </div>
+
+  <footer>
+    MATRIX · Consultas e análise de dados
+  </footer>
+</body>
+</html>

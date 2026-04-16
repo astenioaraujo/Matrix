@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+  .box {
+    max-width: 700px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 22px;
+  }
+
+  .titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .linha-form {
+    margin-bottom: 16px;
+  }
+
+  .linha-form label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .linha-form input,
+  .linha-form select {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .acoes {
+    margin-top: 18px;
+    display: flex;
+    gap: 10px;
+  }
+
+  .btn-salvar {
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid #1565c0;
+    background: #1565c0;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn-voltar {
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid #c7c7c7;
+    background: #f7f7f7;
+    color: #1f3c88;
+    text-decoration: none;
+    font-weight: 700;
+  }
+
+  .flash-msg {
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-weight: 600;
+  }
+
+  .flash-error {
+    background: #fdeaea;
+    color: #9f2f2f;
+    border: 1px solid #efc2c2;
+  }
+</style>
+
+<div class="box">
+  <div class="titulo">Novo usuário</div>
+  <div class="subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="flash-msg flash-error">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <form method="post">
+    <div class="linha-form">
+      <label for="nome">Nome</label>
+      <input type="text" id="nome" name="nome" required>
+    </div>
+
+    <div class="linha-form">
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" required>
+    </div>
+
+    <div class="linha-form">
+      <label for="senha">Senha inicial</label>
+      <input type="password" id="senha" name="senha" required>
+    </div>
+
+    <div class="linha-form">
+      <label for="perfil_empresa">Perfil</label>
+      <select id="perfil_empresa" name="perfil_empresa">
+        <option value="admin">Admin</option>
+        <option value="operador">Operador</option>
+        <option value="consulta">Consulta</option>
+      </select>
+    </div>
+
+    <div class="linha-form">
+      <label>
+        <input type="checkbox" name="ativo" checked>
+        Usuário ativo
+      </label>
+    </div>
+
+    <div class="acoes">
+      <button type="submit" class="btn-salvar">Salvar</button>
+      <a href="{{ url_for('usuarios.listar_usuarios') }}" class="btn-voltar">Voltar</a>
+    </div>
+  </form>
+</div>
+
+{% endblock %}

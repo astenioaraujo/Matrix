@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Importações</title>
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        margin: 18px;
+        color: #111;
+    }
+
+    h1 {
+        margin-bottom: 10px;
+    }
+
+    tbody tr.linha-pendente td {
+        background-color: #fff3cd !important;
+    }
+
+    .painel-pendencias {
+        margin: 14px 0 18px 0;
+        padding: 10px 14px;
+        border: 1px solid #f1d27a;
+        background: #fff8db;
+        border-radius: 8px;
+        display: inline-block;
+        font-weight: 700;
+    }
+
+    .empresa {
+        font-size: 20px;
+        margin-bottom: 18px;
+    }
+
+    .topo-acoes {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 18px;
+        flex-wrap: wrap;
+    }
+
+    .btn-link,
+    .topo-acoes button {
+        display: inline-block;
+        padding: 10px 14px;
+        border: 1px solid #c7c7c7;
+        border-radius: 10px;
+        background: #f8f8f8;
+        color: #1657c8;
+        text-decoration: none;
+        font-weight: 700;
+        cursor: pointer;
+        font-size: 14px;
+    }
+
+    .btn-link:hover,
+    .topo-acoes button:hover {
+        background: #eeeeee;
+    }
+
+    .topo-acoes button.btn-perigo {
+        color: #b00020;
+        border-color: #d8a8b0;
+        background: #fff5f6;
+    }
+
+    .topo-acoes button.btn-perigo:hover {
+        background: #ffecee;
+    }
+
+    .topo-acoes button.btn-secundario {
+        color: #1657c8;
+    }
+
+    .topo-acoes button.btn-transferir {
+        color: #0f5f2e;
+        border-color: #9fc9ab;
+        background: #eef9f1;
+    }
+
+    .topo-acoes button.btn-transferir:hover {
+        background: #e2f3e7;
+    }
+
+    .mensagem {
+        padding: 12px;
+        margin-bottom: 14px;
+        border: 1px solid #9fd39f;
+        background: #eef9ee;
+        color: #245b24;
+        border-radius: 8px;
+    }
+
+    .erro {
+        padding: 12px;
+        margin-bottom: 14px;
+        border: 1px solid #d99b9b;
+        background: #fff1f1;
+        color: #7a1f1f;
+        border-radius: 8px;
+    }
+
+    .total {
+        margin-bottom: 12px;
+        font-weight: 700;
+    }
+
+    .scroll {
+        overflow-x: auto;
+    }
+
+    table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+    }
+
+    th, td {
+        border: 1px solid #d5d5d5;
+        padding: 7px 8px;
+        text-align: left;
+        white-space: nowrap;
+    }
+
+    thead th {
+        background: #f2f2f2;
+    }
+
+    tbody tr:nth-child(even) {
+        background: #fafafa;
+    }
+
+    .td-valor {
+        text-align: right;
+    }
+</style>
+</head>
+<body>
+    <h1>Importações</h1>
+
+    <div class="empresa">
+        <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+    </div>
+
+    <div class="topo-acoes">
+        <a class="btn-link" href="{{ url_for('importacoes.importar_web_postos') }}">Importar</a>
+
+        <form method="POST" action="{{ url_for('importacoes.reclassificar_importacoes') }}" style="display:inline;">
+            <button
+                type="submit"
+                class="btn-secundario"
+                onclick="return confirm('Deseja reclassificar os lançamentos importados desta empresa?')">
+                Reclassificar Lançamentos
+            </button>
+        </form>
+
+        <form method="POST" action="{{ url_for('importacoes.transferir_importacoes') }}" style="display:inline;">
+            <button
+                type="submit"
+                class="btn-transferir"
+                {% if total_pendentes > 0 %}
+                    disabled
+                    title="Existem linhas pendentes com grupo ou conta em branco"
+                    style="opacity:0.5; cursor:not-allowed;"
+                {% else %}
+                    onclick="return confirm('Deseja transferir definitivamente os lançamentos importados para a tabela de lançamentos?')"
+                {% endif %}>
+                Transferir
+            </button>
+        </form>
+
+        <a class="btn-link" href="{{ url_for('importacoes.listar_importacoes', somente_pendentes='1') }}">
+            Somente Pendentes
+        </a>
+
+        <a class="btn-link" href="{{ url_for('importacoes.listar_importacoes') }}">
+            Mostrar Todas
+        </a>
+
+        <a class="btn-link" href="{{ url_for('financeiro.menu_empresa') }}">Voltar ao Menu</a>
+
+        <form method="POST" action="{{ url_for('importacoes.limpar_importacoes') }}" style="display:inline;">
+            <button
+                type="submit"
+                class="btn-perigo"
+                onclick="return confirm('Deseja realmente excluir todos os lançamentos importados desta empresa?')">
+                Limpar
+            </button>
+        </form>
+    </div>
+
+    {% if mensagem %}
+        <div class="mensagem">{{ mensagem }}</div>
+    {% endif %}
+
+    {% if erro %}
+        <div class="erro">{{ erro }}</div>
+    {% endif %}
+
+    <div class="total">
+        Total de registros: {{ total_registros }}
+        <br>
+        <strong style="color:#9a7b00;">Pendentes: {{ total_pendentes }}</strong>
+        {% if somente_pendentes %}
+            <span style="margin-left:12px; color:#9a7b00;">(filtro ativo: somente pendentes)</span>
+        {% endif %}
+    </div>
+
+    <div class="scroll">
+        <table>
+            <thead>
+                <tr>
+                    {% for c in colnames %}
+                        <th>{{ c }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr {% if row['grupo'] is none or row['conta'] is none %}class="linha-pendente"{% endif %}>
+                        {% for col in colnames %}
+                            {% set cell = row[col] %}
+
+                            {% if col == 'valor' and cell is not none %}
+                                <td class="td-valor">
+                                    {{ "{:,.2f}".format((cell or 0)|float).replace(",", "X").replace(".", ",").replace("X", ".") }}
+                                </td>
+                            {% else %}
+                                <td>{{ cell if cell is not none else "" }}</td>
+                            {% endif %}
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+
+                {% if not rows %}
+                    <tr>
+                        <td colspan="{{ colnames|length }}">Nenhum registro encontrado.</td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

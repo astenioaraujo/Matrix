@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<style>
+  .pagina-wrap {
+    max-width: 900px;
+  }
+
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 8px;
+    color: #111;
+  }
+
+  .pagina-subtitulo {
+    font-size: 20px;
+    margin-bottom: 28px;
+    color: #333;
+  }
+
+  .pagina-subtitulo strong {
+    color: #111;
+  }
+
+  .card-sistemas {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 14px;
+    padding: 26px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+  }
+
+  .secao-titulo {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 18px;
+    color: #444;
+  }
+
+  .grid-botoes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+  }
+
+  .btn-sistema,
+  .btn-secundario {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 62px;
+    padding: 14px 18px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-size: 20px;
+    font-weight: 800;
+    border: 1px solid #cfcfcf;
+    transition: 0.15s ease;
+    box-sizing: border-box;
+  }
+
+  .btn-sistema {
+    background: #f7f7f7;
+    color: #1f3c88;
+  }
+
+  .btn-sistema:hover {
+    background: #ededed;
+    transform: translateY(-1px);
+  }
+
+  .acoes-inferiores {
+    margin-top: 24px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .btn-secundario {
+    min-height: 52px;
+    font-size: 17px;
+    font-weight: 700;
+    background: #fff;
+    color: #444;
+  }
+
+  .btn-secundario:hover {
+    background: #f3f3f3;
+  }
+
+  .btn-trocar {
+    color: #8a2d2d;
+    border-color: #d7b1b1;
+    background: #fff7f7;
+  }
+
+  .btn-trocar:hover {
+    background: #fdeeee;
+  }
+
+  @media (max-width: 700px) {
+    .pagina-titulo {
+      font-size: 28px;
+    }
+
+    .pagina-subtitulo {
+      font-size: 18px;
+    }
+
+    .btn-sistema {
+      font-size: 18px;
+    }
+  }
+</style>
+
+<div class="pagina-wrap">
+  <div class="pagina-titulo">Escolha o sistema</div>
+
+  <div class="pagina-subtitulo">
+    Empresa: <strong>{{ nome_empresa }}</strong>
+  </div>
+
+  <div class="card-sistemas">
+    <div class="secao-titulo">Acesso aos módulos</div>
+
+    <div class="grid-botoes">
+      <a class="btn-sistema" href="{{ url_for('financeiro.menu_empresa') }}">
+        Financeiro
+      </a>
+
+      <a class="btn-sistema" href="{{ url_for('sistema.menu_vendas') }}">
+        Vendas
+      </a>
+
+      <a class="btn-sistema" href="{{ url_for('financeiro.cadastrar_filiais') }}">
+        Configurações
+      </a>
+
+      {% if session.get("tipo_global") == "superusuario" or session.get("perfil_empresa") == "admin" %}
+        <a class="btn-sistema" href="{{ url_for('usuarios.listar_usuarios') }}">
+          Usuários
+        </a>
+      {% endif %}
+    </div>
+
+    <div class="acoes-inferiores">
+      <a class="btn-secundario btn-trocar" href="{{ url_for('auth.trocar_empresa') }}">
+        Trocar Empresa
+      </a>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

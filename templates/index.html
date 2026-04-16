@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+  .home-wrap {
+    max-width: 760px;
+    margin: 40px auto 10px;
+    text-align: center;
+  }
+
+  .home-title {
+    font-size: 54px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+  }
+
+  .home-subtitle {
+    font-size: 18px;
+    color: #555;
+    margin-bottom: 36px;
+  }
+
+  .home-card {
+    background: #fff;
+    border: 1px solid #e3e3e3;
+    border-radius: 16px;
+    padding: 28px 24px;
+    max-width: 520px;
+    margin: 0 auto;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+    text-align: left;
+  }
+
+  .matrix-badge {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #000;
+    background: #d7ff00;
+    padding: 6px 10px;
+    border-radius: 999px;
+    margin-bottom: 14px;
+  }
+
+  .empresa-info {
+    margin-top: 18px;
+    font-size: 14px;
+    color: #444;
+  }
+</style>
+
+<div class="home-wrap">
+  <div class="home-title">MATRIX</div>
+  <div class="home-subtitle">
+    Plataforma de consultas e análise por empresa
+  </div>
+
+  <div class="home-card">
+    <div class="matrix-badge">Escolha da empresa</div>
+
+    <form method="post">
+      <div style="margin-bottom: 16px;">
+        <label for="cod_empresa">Empresa</label><br>
+        <select id="cod_empresa" name="cod_empresa" style="width: 100%;">
+          <option value="">(Selecione)</option>
+          {% for emp in empresas %}
+            <option value="{{ emp[0] }}" {% if emp[0] == empresa_ativa %}selected{% endif %}>
+              {{ emp[0] }} - {{ emp[1] }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <button type="submit" class="btn btn-primary">Entrar na empresa</button>
+    </form>
+
+    {% if empresa_ativa %}
+      <div class="empresa-info">
+        Última empresa selecionada:
+        <strong>{{ empresa_ativa }} - {{ nome_empresa_ativa }}</strong>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

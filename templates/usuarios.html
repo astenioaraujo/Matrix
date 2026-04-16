@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .acoes {
+    margin-bottom: 18px;
+  }
+
+  .btn-novo {
+    display: inline-block;
+    padding: 10px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    background: #1565c0;
+    color: #fff;
+  }
+
+  .btn-toggle {
+    color: #1565c0;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .flash-msg {
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-weight: 600;
+  }
+
+  .flash-success {
+    background: #e6f4ea;
+    color: #1e6b34;
+    border: 1px solid #b7dfc2;
+  }
+
+  .flash-error {
+    background: #fdeaea;
+    color: #9f2f2f;
+    border: 1px solid #efc2c2;
+  }
+</style>
+
+<div class="pagina-titulo">Usuários</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<div class="acoes">
+  <a href="{{ url_for('usuarios.novo_usuario') }}" class="btn-novo">Novo usuário</a>
+</div>
+
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr>
+        <th>Nome</th>
+        <th>Email</th>
+        <th>Perfil</th>
+        <th>Ativo</th>
+        <th>Ação</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in usuarios %}
+      <tr>
+        <td>{{ u.nome }}</td>
+        <td>{{ u.email }}</td>
+        <td>{{ u.perfil_empresa }}</td>
+        <td>{{ "Sim" if u.ativo else "Não" }}</td>
+        <td>
+          <a class="btn-toggle" href="{{ url_for('usuarios.toggle_usuario', id_usuario=u.id_usuario) }}">
+            Ativar / Inativar
+          </a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Cadastro de Filiais</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 30px;
+        }
+
+        h1 {
+            margin-bottom: 5px;
+        }
+
+        .topo {
+            margin-bottom: 20px;
+        }
+
+        .menu-links a {
+            margin-right: 15px;
+            font-weight: bold;
+            text-decoration: none;
+            color: #1a73e8;
+        }
+
+        .box {
+            border: 1px solid #ccc;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            width: 900px;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+
+        label {
+            display: block;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            margin-top: 5px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
+        }
+
+        .linha-checkbox {
+            margin-top: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: bold;
+        }
+
+        .linha-checkbox input[type="checkbox"] {
+            transform: scale(1.1);
+        }
+
+        .botoes {
+            margin-top: 18px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .btn-primary {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+        }
+
+        .btn-danger {
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+        }
+
+        .btn-danger:disabled {
+            background-color: #f1b0a8;
+            color: #fff;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        .btn-secondary {
+            background-color: #ddd;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 900px;
+            max-width: 100%;
+        }
+
+        th, td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+            vertical-align: middle;
+        }
+
+        th {
+            background-color: #f0f0f0;
+        }
+
+        .msg {
+            color: green;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .erro {
+            color: red;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .btn-editar {
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+        }
+
+        .acoes-linha {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .hint {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="topo">
+    <h1>Cadastro de Filiais</h1>
+    <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+
+    <div class="menu-links">
+        <a href="{{ url_for('financeiro.menu_empresa') }}">Menu Principal</a>
+        <a href="{{ url_for('financeiro.menu_cadastros') }}">Cadastros</a>
+    </div>
+</div>
+
+{% if mensagem %}
+<div class="msg">{{ mensagem }}</div>
+{% endif %}
+
+{% if erro %}
+<div class="erro">{{ erro }}</div>
+{% endif %}
+
+<div class="box">
+    <form method="post">
+
+        <label>Código</label>
+        <input type="text" name="cod_filial"
+               value="{{ filial_edicao[0] if filial_edicao else '' }}"
+               readonly>
+
+        <label>Nome</label>
+        <input type="text" name="nome_filial"
+               value="{{ filial_edicao[1] if filial_edicao else '' }}">
+
+        <label>Nome para Importação</label>
+        <input type="text" name="nome_filial_importacao"
+               value="{{ filial_edicao[2] if filial_edicao else '' }}">
+        <div class="hint">Informe exatamente como a filial aparece no relatório Excel.</div>
+
+        <label class="linha-checkbox">
+            <input type="checkbox" name="ativo"
+                   {% if filial_edicao and filial_edicao[3] %}checked{% endif %}>
+            Ativo
+        </label>
+
+        <div class="botoes">
+            {% if filial_edicao %}
+                <button type="submit" name="acao" value="alterar" class="btn-primary">
+                    Salvar
+                </button>
+            {% else %}
+                <button type="submit" name="acao" value="novo" class="btn-primary">
+                    Novo
+                </button>
+            {% endif %}
+
+            {% set qtde_edicao = 0 %}
+            {% if filial_edicao %}
+                {% for f in filiais %}
+                    {% if f[0] == filial_edicao[0] %}
+                        {% set qtde_edicao = f[4] %}
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+
+            <button type="submit"
+                    name="acao"
+                    value="excluir"
+                    class="btn-danger"
+                    {% if not filial_edicao or qtde_edicao > 0 %}disabled{% endif %}>
+                Excluir
+            </button>
+
+            <a href="{{ url_for('financeiro.cadastrar_filiais') }}">
+                <button type="button" class="btn-secondary">Limpar</button>
+            </a>
+
+            <a href="{{ url_for('financeiro.menu_empresa') }}">
+                <button type="button" class="btn-secondary">Voltar</button>
+            </a>
+        </div>
+
+    </form>
+</div>
+
+<table>
+    <tr>
+        <th>Código</th>
+        <th>Nome</th>
+        <th>Nome para Importação</th>
+        <th>Ativo</th>
+        <th>Qtde Lançamentos</th>
+        <th>Ação</th>
+    </tr>
+
+    {% for f in filiais %}
+    <tr>
+        <td>{{ f[0] }}</td>
+        <td>{{ f[1] }}</td>
+        <td>{{ f[2] or '' }}</td>
+        <td>{{ 'Sim' if f[3] else 'Não' }}</td>
+        <td>{{ f[4] }}</td>
+        <td>
+            <div class="acoes-linha">
+                <form method="post" style="display:inline;">
+                    <input type="hidden" name="cod_filial" value="{{ f[0] }}">
+                    <button type="submit" name="acao" value="carregar" class="btn-editar">
+                        Editar
+                    </button>
+                </form>
+
+                <form method="post" style="display:inline;">
+                    <input type="hidden" name="cod_filial" value="{{ f[0] }}">
+                    <button type="submit"
+                            name="acao"
+                            value="excluir"
+                            class="btn-danger"
+                            {% if f[4] > 0 %}disabled{% endif %}>
+                        Excluir
+                    </button>
+                </form>
+            </div>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+</body>
+</html>

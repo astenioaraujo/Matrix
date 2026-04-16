@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Contas Gerenciais</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        h2 {
+            margin-bottom: 10px;
+        }
+
+        .empresa {
+            font-size: 18px;
+            margin-bottom: 20px;
+        }
+
+        .topo {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .botoes-topo a {
+            display: inline-block;
+            padding: 10px 16px;
+            border: 1px solid #c7c7c7;
+            border-radius: 10px;
+            text-decoration: none;
+            color: #1657c8;
+            font-weight: 700;
+            background: #f8f8f8;
+            margin-right: 8px;
+        }
+
+        .botoes-topo a:hover {
+            background: #eeeeee;
+        }
+
+        .btn-salvar {
+            padding: 12px 18px;
+            border: 1px solid #c7c7c7;
+            border-radius: 10px;
+            background: #f8f8f8;
+            font-weight: bold;
+            color: #1657c8;
+            cursor: pointer;
+        }
+
+        .btn-salvar:hover {
+            background: #eeeeee;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: #f0f0f0;
+            text-align: left;
+        }
+
+        th, td {
+            padding: 8px;
+            border: 1px solid #ccc;
+        }
+
+        th:nth-child(1), td:nth-child(1) { width: 60px; text-align: center; }
+        th:nth-child(2), td:nth-child(2) { width: 120px; }
+        th:nth-child(3), td:nth-child(3) { width: 70px; text-align: center; }
+        th:nth-child(4), td:nth-child(4) { width: auto; }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 6px;
+            box-sizing: border-box;
+            border-radius: 6px;
+            border: 1px solid #bbb;
+        }
+
+        .mensagem {
+            color: green;
+            margin-bottom: 10px;
+        }
+
+        .erro {
+            color: red;
+            margin-bottom: 10px;
+        }
+
+        .linha-separadora td {
+            padding: 0 !important;
+            height: 8px;
+            background: #000;
+            border: 0 !important;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>Contas Gerenciais</h2>
+
+    <div class="empresa">
+        <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+    </div>
+
+    <div class="topo">
+        <div class="botoes-topo">
+            <a href="{{ url_for('financeiro.menu_cadastros') }}">Cadastros</a>
+            <a href="{{ url_for('financeiro.menu_empresa') }}">Menu</a>
+        </div>
+
+        <form method="post">
+            <button type="submit" class="btn-salvar">Salvar Alterações</button>
+        </form>
+    </div>
+
+    <h3>Total de contas: {{ contas|length }}</h3>
+
+    {% if mensagem %}
+        <div class="mensagem">{{ mensagem }}</div>
+    {% endif %}
+
+    {% if erro %}
+        <div class="erro">{{ erro }}</div>
+    {% endif %}
+
+    <form method="post">
+        <table>
+            <thead>
+                <tr>
+                    <th>Grupo</th>
+                    <th>Nome do Grupo</th>
+                    <th>Conta</th>
+                    <th>Descrição</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for c in contas %}
+                    {% if not loop.first and contas[loop.index0][0] != contas[loop.index0-1][0] %}
+                    <tr class="linha-separadora">
+                        <td colspan="4"></td>
+                    </tr>
+                    {% endif %}
+
+                    <tr>
+                        <td>{{ c[0] }}</td>
+                        <td>{{ c[1] or '' }}</td>
+                        <td>{{ c[2] }}</td>
+                        <td>
+                            <input type="text" name="descricao[]" value="{{ c[3] or '' }}">
+                            <input type="hidden" name="cod_grupo[]" value="{{ c[0] }}">
+                            <input type="hidden" name="cod_conta[]" value="{{ c[2] }}">
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div style="margin-top:15px;">
+            <button type="submit" class="btn-salvar">Salvar Alterações</button>
+        </div>
+    </form>
+
+</body>
+</html>

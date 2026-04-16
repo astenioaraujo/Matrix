@@ -1,0 +1,322 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<style>
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .card-import {
+    max-width: 900px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 22px;
+  }
+
+  .linha-form {
+    margin-bottom: 16px;
+  }
+
+  .linha-form label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .linha-form input[type="file"] {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid #c9c9c9;
+    border-radius: 8px;
+    font-size: 15px;
+    background: #fff;
+  }
+
+  .acoes {
+    margin-top: 18px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .btn-acao {
+    display: inline-block;
+    padding: 10px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    border: 1px solid #c7c7c7;
+    background: #f7f7f7;
+    color: #1f3c88;
+    cursor: pointer;
+  }
+
+  .btn-acao:hover {
+    background: #ededed;
+  }
+
+  .btn-importar {
+    background: #1565c0;
+    color: #fff;
+    border-color: #1565c0;
+  }
+
+  .btn-importar:hover {
+    filter: brightness(0.95);
+  }
+
+  .flash-msg {
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-weight: 600;
+  }
+
+  .flash-success {
+    background: #e6f4ea;
+    color: #1e6b34;
+    border: 1px solid #b7dfc2;
+  }
+
+  .flash-error {
+    background: #fdeaea;
+    color: #9f2f2f;
+    border: 1px solid #efc2c2;
+  }
+
+  .flash-warning {
+    background: #fff7e6;
+    color: #8a5a00;
+    border: 1px solid #f0d58a;
+  }
+
+  .observacao {
+    margin-top: 16px;
+    font-size: 14px;
+    color: #555;
+    line-height: 1.6;
+  }
+
+  .observacao strong {
+    color: #222;
+  }
+
+  .info-bloco {
+    margin-top: 18px;
+    background: #f8fafc;
+    border: 1px solid #d9e3ef;
+    border-radius: 10px;
+    padding: 16px;
+  }
+
+  .info-bloco-titulo {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: #1f3c88;
+  }
+
+  .info-bloco p {
+    margin: 0;
+    font-size: 14px;
+    color: #444;
+    line-height: 1.6;
+  }
+
+  .box-progresso {
+    margin-top: 22px;
+    padding: 18px;
+    background: #f8fafc;
+    border: 1px solid #d9e3ef;
+    border-radius: 10px;
+  }
+
+  .box-progresso-titulo {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    color: #1f3c88;
+  }
+
+  .trilha-progresso {
+    width: 100%;
+    max-width: 560px;
+    height: 22px;
+    border: 1px solid #cfd8e3;
+    border-radius: 999px;
+    overflow: hidden;
+    background: #eef3f8;
+  }
+
+  .barra-progresso {
+    width: 0%;
+    height: 100%;
+    background: linear-gradient(90deg, #1565c0, #4a90e2);
+    transition: width 0.4s ease;
+  }
+
+  .texto-progresso {
+    margin-top: 10px;
+    font-size: 14px;
+    color: #444;
+    line-height: 1.5;
+  }
+
+  .texto-secundario {
+    margin-top: 6px;
+    font-size: 13px;
+    color: #666;
+  }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">Importar Vendas Diárias</div>
+  <div class="pagina-subtitulo">
+    Empresa: <strong>{{ nome_empresa }}</strong>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="flash-msg
+          {% if category == 'success' %}flash-success
+          {% elif category == 'warning' %}flash-warning
+          {% else %}flash-error{% endif %}">
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="card-import">
+    <form method="post" enctype="multipart/form-data" id="form-importacao">
+      <div class="linha-form">
+        <label for="arquivo">Arquivo Excel</label>
+        <input type="file" id="arquivo" name="arquivo" accept=".xlsx,.xlsm,.xltx,.xltm" required>
+      </div>
+
+      <div class="acoes">
+        <button type="submit" class="btn-acao btn-importar" id="btn-importar">Importar</button>
+
+        <a class="btn-acao" href="{{ url_for('vendas.vendas_diarias') }}">
+          ← Voltar para Vendas Diárias
+        </a>
+
+        <a class="btn-acao" href="{{ url_for('sistema.menu_vendas') }}">
+          Menu de Vendas
+        </a>
+      </div>
+    </form>
+
+    <div class="observacao">
+      <strong>Atenção:</strong> o sistema identifica automaticamente a data inicial e a data final do arquivo, percorrendo o layout da planilha. Depois disso, ele apaga os registros da empresa dentro desse período e grava novamente os dados encontrados no Excel.
+    </div>
+
+    <div class="info-bloco">
+      <div class="info-bloco-titulo">Como funciona a importação</div>
+      <p>
+        Use esta tela para importar a planilha detalhada de vendas diárias. O período de substituição não precisa mais ser informado manualmente, porque ele será lido diretamente do arquivo Excel. Assim, você pode reimportar o mesmo intervalo quantas vezes quiser, sempre regravando os dados mais atuais.
+      </p>
+    </div>
+
+    <div class="box-progresso" id="box-progresso" {% if not job_id %}style="display:none;"{% endif %}>
+      <div class="box-progresso-titulo">Progresso da importação</div>
+
+      <div class="trilha-progresso">
+        <div class="barra-progresso" id="barra-progresso"></div>
+      </div>
+
+      <div class="texto-progresso" id="texto-progresso">Preparando importação...</div>
+      <div class="texto-secundario" id="texto-secundario"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const jobId = {{ job_id|tojson if job_id else 'null' }};
+  const formImportacao = document.getElementById("form-importacao");
+  const btnImportar = document.getElementById("btn-importar");
+  const boxProgresso = document.getElementById("box-progresso");
+  const barraProgresso = document.getElementById("barra-progresso");
+  const textoProgresso = document.getElementById("texto-progresso");
+  const textoSecundario = document.getElementById("texto-secundario");
+
+  formImportacao.addEventListener("submit", function () {
+    btnImportar.disabled = true;
+    btnImportar.innerText = "Importando...";
+    boxProgresso.style.display = "block";
+    barraProgresso.style.width = "5%";
+    textoProgresso.innerText = "Enviando arquivo...";
+    textoSecundario.innerText = "Aguarde, a página será atualizada ao final da importação.";
+  });
+
+  function atualizarBarra(job) {
+    const percentual = job.percentual || 0;
+    barraProgresso.style.width = `${percentual}%`;
+    textoProgresso.innerText = job.mensagem || "Processando importação...";
+
+    const total = job.total_linhas || 0;
+    const processadas = job.linhas_processadas || 0;
+
+    if (total > 0) {
+      textoSecundario.innerText = `${processadas} de ${total} registros processados`;
+    } else if (processadas > 0) {
+      textoSecundario.innerText = `${processadas} linhas analisadas`;
+    } else {
+      textoSecundario.innerText = job.etapa || "";
+    }
+  }
+
+  async function consultarProgresso() {
+    if (!jobId) return;
+
+    boxProgresso.style.display = "block";
+
+    try {
+      const resposta = await fetch(`/vendas/diarias/importar/progresso/${jobId}`, {
+        cache: "no-store"
+      });
+
+      const data = await resposta.json();
+
+      if (!data.ok) {
+        textoProgresso.innerText = "Não foi possível consultar o progresso.";
+        textoSecundario.innerText = "";
+        return;
+      }
+
+      const job = data.job;
+      atualizarBarra(job);
+
+      if (job.status === "concluido") {
+        barraProgresso.style.width = "100%";
+        textoProgresso.innerText = "Importação concluída com sucesso.";
+      }
+
+      if (job.status === "erro") {
+        textoProgresso.innerText = `Erro: ${job.mensagem || "Falha na importação."}`;
+      }
+
+    } catch (erro) {
+      textoProgresso.innerText = "Erro ao consultar progresso.";
+      textoSecundario.innerText = "";
+    }
+  }
+
+  if (jobId) {
+    consultarProgresso();
+    setInterval(consultarProgresso, 1000);
+  }
+</script>
+
+{% endblock %}

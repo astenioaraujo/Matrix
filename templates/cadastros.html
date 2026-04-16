@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Cadastros</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        h2 {
+            margin-bottom: 10px;
+        }
+
+        .empresa {
+            font-size: 18px;
+            margin-bottom: 24px;
+        }
+
+        .menu {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+        }
+
+        .menu a {
+            display: inline-block;
+            padding: 14px 22px;
+            border: 1px solid #c7c7c7;
+            border-radius: 12px;
+            text-decoration: none;
+            color: #1657c8;
+            font-weight: 700;
+            font-size: 20px;
+            background: #f8f8f8;
+        }
+
+        .menu a:hover {
+            background: #eeeeee;
+        }
+    </style>
+</head>
+<body>
+    <h2>Cadastros</h2>
+
+    <div class="empresa">
+        <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+    </div>
+
+    <div class="menu">
+        <a href="{{ url_for('financeiro.cadastrar_filiais') }}">Filiais</a>
+
+        <a href="{{ url_for('financeiro.grupos_gerenciais') }}">Grupos Gerenciais</a>
+
+        <a href="{{ url_for('financeiro.contas_gerenciais') }}">Contas Gerenciais</a>
+
+        <a href="{{ url_for('financeiro.classificacoes_automaticas') }}">Classificações Automáticas</a>
+
+        <a href="{{ url_for('financeiro.menu_empresa') }}">Voltar ao Menu</a>
+    </div>
+</body>
+</html>

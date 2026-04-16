@@ -1,0 +1,349 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<style>
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .acoes-topo {
+    margin-bottom: 22px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .btn-topo {
+    display: inline-block;
+    padding: 10px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    border: 1px solid #c7c7c7;
+    background: #f7f7f7;
+    color: #1f3c88;
+  }
+
+  .btn-topo:hover {
+    background: #ededed;
+  }
+
+  .painel-filtros {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 24px;
+  }
+
+  .grid-filtros {
+    display: grid;
+    grid-template-columns: 170px 170px auto;
+    gap: 12px;
+    align-items: end;
+    justify-content: start;
+  }
+
+  .campo {
+    width: 100%;
+  }
+
+  .campo-botao {
+    width: auto;
+  }
+
+  .campo label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .campo input,
+  .campo select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid #c9c9c9;
+    border-radius: 8px;
+    font-size: 15px;
+    background: #fff;
+  }
+
+  .campo-data {
+    max-width: 170px;
+  }
+
+  .campo-data input {
+    max-width: 170px;
+  }
+
+  .bloco {
+    margin-top: 30px;
+  }
+
+  .bloco-titulo {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: #b02a37;
+  }
+
+  .resumo-faixa {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .resumo-card {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 12px 16px;
+    min-width: 140px;
+  }
+
+  .resumo-card .rotulo {
+    font-size: 12px;
+    font-weight: 700;
+    color: #666;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+  }
+
+  .resumo-card .valor {
+    font-size: 20px;
+    font-weight: 700;
+    color: #111;
+  }
+
+  .tabela-wrap {
+    overflow-x: auto;
+    overflow-y: visible;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    background: #fff;
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: auto;
+    min-width: 0;
+    font-size: 13px;
+    table-layout: fixed;
+  }
+
+  th, td {
+    border: 1px solid #dddddd;
+    padding: 7px 8px;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  th {
+    background: #dbe8f4;
+    font-weight: 700;
+  }
+
+  th.col-data, td.col-data {
+    width: 64px;
+    min-width: 64px;
+    max-width: 64px;
+    text-align: left;
+  }
+
+  th.col-dia, td.col-dia {
+    width: 120px;
+    min-width: 120px;
+    max-width: 120px;
+    text-align: left;
+  }
+
+  th.col-qtd, td.col-qtd {
+    width: 88px;
+    min-width: 88px;
+    max-width: 88px;
+  }
+
+  th.col-valor, td.col-valor,
+  th.col-mb, td.col-mb {
+    width: 102px;
+    min-width: 102px;
+    max-width: 102px;
+  }
+
+  th.col-mun, td.col-mun {
+    width: 54px;
+    min-width: 54px;
+    max-width: 54px;
+  }
+
+  tbody tr:nth-child(even) {
+    background: #fafafa;
+  }
+
+  .linha-domingo td {
+    border-top: 3px solid #555;
+  }
+
+  .linha-domingo {
+    background: #f7f7f7;
+  }
+
+  tfoot td {
+    background: #f3f3f3;
+    font-weight: 700;
+    border-top: 2px solid #999;
+  }
+
+  .sem-dados {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 20px;
+    color: #666;
+  }
+
+  @media (max-width: 800px) {
+    .grid-filtros {
+      grid-template-columns: 1fr;
+    }
+
+    .campo-data,
+    .campo-data input {
+      max-width: 100%;
+    }
+
+    .resumo-card {
+      min-width: 140px;
+      flex: 1 1 140px;
+    }
+  }
+</style>
+
+{% set ns = namespace(total_qtd=0, total_valor=0, total_mb=0) %}
+{% for linha in linhas_totais %}
+  {% set ns.total_qtd = ns.total_qtd + (linha.quantidade or 0) %}
+  {% set ns.total_valor = ns.total_valor + (linha.valor or 0) %}
+  {% set ns.total_mb = ns.total_mb + (linha.mb or 0) %}
+{% endfor %}
+{% set mun_total = (ns.total_mb / ns.total_qtd) if ns.total_qtd else 0 %}
+
+<div class="card">
+  <div class="pagina-titulo">Vendas Diárias</div>
+  <div class="pagina-subtitulo">
+    Empresa: <strong>{{ nome_empresa }}</strong>
+  </div>
+
+  <div class="acoes-topo">
+    <a class="btn-topo" href="{{ url_for('vendas.vendas_importar_diarias') }}">
+      Importar Vendas Diárias
+    </a>
+
+    <a class="btn-topo" href="{{ url_for('vendas.vendas_consultas') }}">
+      Consultas
+    </a>
+
+    <a class="btn-topo" href="{{ url_for('sistema.menu_vendas') }}">
+      ← Menu de Vendas
+    </a>
+  </div>
+
+  <form method="get" class="painel-filtros">
+    <div class="grid-filtros">
+      <div class="campo campo-data">
+        <label for="data_ini">Data inicial</label>
+        <input type="date" id="data_ini" name="data_ini" value="{{ data_ini }}">
+      </div>
+
+      <div class="campo campo-data">
+        <label for="data_fim">Data final</label>
+        <input type="date" id="data_fim" name="data_fim" value="{{ data_fim }}">
+      </div>
+
+      <div class="campo campo-botao">
+        <button type="submit" class="btn-topo">Atualizar</button>
+      </div>
+    </div>
+  </form>
+
+  <div class="bloco">
+    <div class="bloco-titulo">Resumo diário de todos os postos</div>
+
+    {% if linhas_totais %}
+      <div class="resumo-faixa">
+        <div class="resumo-card">
+          <div class="rotulo">Quantidade</div>
+          <div class="valor">{{ formatar_numero_br(ns.total_qtd) }}</div>
+        </div>
+
+        <div class="resumo-card">
+          <div class="rotulo">Valor</div>
+          <div class="valor">{{ formatar_numero_br(ns.total_valor) }}</div>
+        </div>
+
+        <div class="resumo-card">
+          <div class="rotulo">MB</div>
+          <div class="valor">{{ formatar_numero_br(ns.total_mb) }}</div>
+        </div>
+
+        <div class="resumo-card">
+          <div class="rotulo">MUN</div>
+          <div class="valor">{{ formatar_numero_br(mun_total) }}</div>
+        </div>
+      </div>
+
+      <div class="tabela-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="col-data">Data</th>
+              <th class="col-dia">Dia da Semana</th>
+              <th class="col-qtd">Quantidade</th>
+              <th class="col-valor">Valor</th>
+              <th class="col-mb">MB</th>
+              <th class="col-mun">MUN</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for linha in linhas_totais %}
+            <tr class="{% if linha.dia_semana == 'Domingo' %}linha-domingo{% endif %}">
+              <td class="col-data">{{ linha.data_fmt }}</td>
+              <td class="col-dia">{{ linha.dia_semana }}</td>
+              <td class="col-qtd" style="background: {{ linha.quantidade_cor }};">{{ formatar_numero_br(linha.quantidade) }}</td>
+              <td class="col-valor" style="background: {{ linha.valor_cor }};">{{ formatar_numero_br(linha.valor) }}</td>
+              <td class="col-mb" style="background: {{ linha.mb_cor }};">{{ formatar_numero_br(linha.mb) }}</td>
+              <td class="col-mun" style="background: {{ linha.mun_cor }};">{{ formatar_numero_br(linha.mun) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="2">Totais</td>
+              <td class="col-qtd">{{ formatar_numero_br(ns.total_qtd) }}</td>
+              <td class="col-valor">{{ formatar_numero_br(ns.total_valor) }}</td>
+              <td class="col-mb">{{ formatar_numero_br(ns.total_mb) }}</td>
+              <td class="col-mun">{{ formatar_numero_br(mun_total) }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    {% else %}
+      <div class="sem-dados">
+        Nenhum dado diário encontrado para o período informado.
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}
