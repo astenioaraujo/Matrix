@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, session, redirect, url_for, request, flash
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import RealDictCursor, execute_values
 from openpyxl import load_workbook
 import tempfile
 import os
@@ -1431,27 +1431,32 @@ def vendas_importar_diarias():
         conn.commit()
 
         lote = 5000
+        sql_insert = """
+            INSERT INTO vendas_diarias (
+                cod_empresa,
+                cod_filial,
+                data,
+                dia_semana,
+                codigo_produto,
+                descricao,
+                custo,
+                preco_venda,
+                quantidade,
+                valor,
+                margem_bruta
+            )
+            VALUES %s
+        """
+
         for i in range(0, len(dados), lote):
             bloco = dados[i:i + lote]
 
-            cur.executemany("""
-                INSERT INTO vendas_diarias (
-                    cod_empresa,
-                    cod_filial,
-                    data,
-                    dia_semana,
-                    codigo_produto,
-                    descricao,
-                    custo,
-                    preco_venda,
-                    quantidade,
-                    valor,
-                    margem_bruta
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, bloco)
-
-            conn.commit()
+            execute_values(
+                cur,
+                sql_insert,
+                bloco,
+                page_size=lote
+            )
 
             processados = min(i + len(bloco), len(dados))
             percentual = 70 + int((processados / len(dados)) * 25)
@@ -1465,6 +1470,7 @@ def vendas_importar_diarias():
                 total_linhas=len(dados),
                 linhas_processadas=processados
             )
+
             conn.commit()
 
         atualizar_job_importacao(
@@ -1525,6 +1531,7 @@ def vendas_importar_diarias():
         nome_empresa=nome_empresa,
         job_id=job_id
     )
+
 # =========================
 # CONSULTAS
 # =========================

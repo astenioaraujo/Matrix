@@ -48,6 +48,14 @@
       border-bottom: 4px solid var(--yellow);
       flex: 0 0 auto;
     }
+
+    .header-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
   
     .brand {
       display: flex;
@@ -81,6 +89,23 @@
       color: #cfcfcf;
       letter-spacing: 1.4px;
       text-transform: uppercase;
+    }
+
+    .topo-usuario {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 13px;
+    }
+
+    .topo-info {
+      color: #f2f2f2;
+      white-space: nowrap;
+    }
+
+    .topo-info strong {
+      color: #ffffff;
     }
   
     .container {
@@ -218,12 +243,36 @@
 </head>
 <body>
   <header>
-    <div class="brand">
-      <div class="brand-mark"></div>
-      <div class="brand-text">
-        <div class="brand-title">MATRIX</div>
-        <div class="brand-subtitle">Data Intelligence</div>
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-mark"></div>
+        <div class="brand-text">
+          <div class="brand-title">MATRIX</div>
+          <div class="brand-subtitle">Data Intelligence</div>
+        </div>
       </div>
+
+      {% if session.get("id_usuario") %}
+        <div class="topo-usuario">
+          <div class="topo-info">
+            👤 <strong>{{ session.get("nome_usuario") }}</strong>
+          </div>
+
+          {% if session.get("nome_empresa") %}
+            <div class="topo-info">
+              🏢 <strong>{{ session.get("nome_empresa") }}</strong>
+            </div>
+          {% endif %}
+
+          <a href="{{ url_for('auth.trocar_empresa') }}" class="btn btn-secondary">
+            Trocar empresa
+          </a>
+
+          <a href="{{ url_for('auth.logout') }}" class="btn btn-blue">
+            Sair
+          </a>
+        </div>
+      {% endif %}
     </div>
   </header>
 
@@ -235,4 +284,4 @@
     MATRIX · Consultas e análise de dados
   </footer>
 </body>
-</html>
+</html>ß
