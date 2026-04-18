@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+{% include "components/nav.html" %}
 
 <style>
   html, body {
@@ -140,7 +141,44 @@
     z-index: 3;
     background: #fff;
   }
+  .btn-acao {
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 15px;          /* 👈 FORÇA IGUALDADE */
+    font-family: inherit;     /* 👈 GARANTE PADRÃO DO SISTEMA */
+    line-height: 1.2;
+    border: 1px solid #c7c7c7;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;     /* 👈 MELHOR ALINHAMENTO */
+    align-items: center;      /* 👈 CENTRALIZA TEXTO */
+    justify-content: center;
+  }
 
+    /* VERDE - CARREGAR */
+    .btn-carregar {
+      background: #2e9b57;
+      color: #fff;
+      border: 1px solid #2e9b57;
+    }
+
+    .btn-carregar:hover {
+      background: #25834a;
+      border-color: #25834a;
+    }
+
+    /* ROXO - LIMPAR */
+    .btn-limpar {
+      background: #7b1fa2;
+      color: #fff;
+      border: 1px solid #7b1fa2;
+    }
+
+    .btn-limpar:hover {
+        background: #5e1780;
+        border-color: #5e1780;
+    }
   .linha-cabecalho-grupo td:first-child {
     position: sticky;
     left: 0;
@@ -160,10 +198,6 @@
 
 <div class="page-matricial">
   <h2>Consulta Matricial</h2>
-
-  <div style="margin-bottom: 14px;">
-    <a class="btn btn-secondary" href="{{ url_for('financeiro.menu_empresa') }}">⟨ Voltar para o menu</a>
-  </div>
 
   <form method="get" style="margin-bottom: 20px;">
     <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;">
@@ -198,8 +232,9 @@
       </div>
 
       <div>
-        <button type="submit" class="btn">Aplicar filtros</button>
-        <a href="{{ url_for('financeiro.matricial') }}" class="btn btn-secondary">Limpar</a>
+        <button type="submit" class="btn-acao btn-carregar">
+          Carregar
+        </button>
       </div>
     </div>
   </form>

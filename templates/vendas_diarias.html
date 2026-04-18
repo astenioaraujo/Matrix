@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% include "components/nav.html" %}
 
 <style>
   .pagina-titulo {
@@ -34,6 +35,28 @@
 
   .btn-topo:hover {
     background: #ededed;
+  }
+
+  .btn-importar {
+    background: #2e9b57;
+    color: #fff;
+    border: 1px solid #2e9b57;
+  }
+
+  .btn-importar:hover {
+    background: #25834a;
+    border-color: #25834a;
+  }
+
+  .btn-consultas {
+    background: #1a73e8;
+    color: #fff;
+    border: 1px solid #1a73e8;
+  }
+
+  .btn-consultas:hover {
+    background: #155bc1;
+    border-color: #155bc1;
   }
 
   .painel-filtros {
@@ -97,10 +120,11 @@
   }
 
   .resumo-faixa {
-    display: flex;
+    display: inline-flex;
     flex-wrap: wrap;
     gap: 12px;
     margin-bottom: 16px;
+    width: fit-content;
   }
 
   .resumo-card {
@@ -109,6 +133,7 @@
     border-radius: 10px;
     padding: 12px 16px;
     min-width: 140px;
+    flex: 0 0 auto;
   }
 
   .resumo-card .rotulo {
@@ -246,16 +271,12 @@
   </div>
 
   <div class="acoes-topo">
-    <a class="btn-topo" href="{{ url_for('vendas.vendas_importar_diarias') }}">
+    <a class="btn-topo btn-importar" href="{{ url_for('vendas.vendas_importar_diarias') }}">
       Importar Vendas Diárias
     </a>
 
-    <a class="btn-topo" href="{{ url_for('vendas.vendas_consultas') }}">
+    <a class="btn-topo btn-consultas" href="{{ url_for('vendas.vendas_consultas') }}">
       Consultas
-    </a>
-
-    <a class="btn-topo" href="{{ url_for('sistema.menu_vendas') }}">
-      ← Menu de Vendas
     </a>
   </div>
 
@@ -320,10 +341,18 @@
             <tr class="{% if linha.dia_semana == 'Domingo' %}linha-domingo{% endif %}">
               <td class="col-data">{{ linha.data_fmt }}</td>
               <td class="col-dia">{{ linha.dia_semana }}</td>
-              <td class="col-qtd" style="background: {{ linha.quantidade_cor }};">{{ formatar_numero_br(linha.quantidade) }}</td>
-              <td class="col-valor" style="background: {{ linha.valor_cor }};">{{ formatar_numero_br(linha.valor) }}</td>
-              <td class="col-mb" style="background: {{ linha.mb_cor }};">{{ formatar_numero_br(linha.mb) }}</td>
-              <td class="col-mun" style="background: {{ linha.mun_cor }};">{{ formatar_numero_br(linha.mun) }}</td>
+              <td class="col-qtd" style="background: {{ linha.quantidade_cor }};">
+                {{ formatar_numero_br(linha.quantidade) }}
+              </td>
+              <td class="col-valor" style="background: {{ linha.valor_cor }};">
+                {{ formatar_numero_br(linha.valor) }}
+              </td>
+              <td class="col-mb" style="background: {{ linha.mb_cor }};">
+                {{ formatar_numero_br(linha.mb) }}
+              </td>
+              <td class="col-mun" style="background: {{ linha.mun_cor }};">
+                {{ formatar_numero_br(linha.mun) }}
+              </td>
             </tr>
             {% endfor %}
           </tbody>

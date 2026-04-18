@@ -870,7 +870,9 @@ def vendas_painel():
         grade_mun=grade_mun,
         resumo_projecao=resumo_projecao,
         variacoes_projecoes=variacoes_projecoes,
-        formatar_numero_br=formatar_numero_br
+        formatar_numero_br=formatar_numero_br,
+        url_voltar=url_for("sistema.menu_vendas"),
+        texto_voltar="← Voltar"
     )
 
 
@@ -886,16 +888,19 @@ def vendas_importar_painel():
     nome_empresa = session.get("nome_empresa", "")
     padrao = obter_parametros_padrao_importacao()
 
-    if request.method == "GET":
-        return render_template(
-            "vendas_importar_painel.html",
-            nome_empresa=nome_empresa,
-            ano_sugerido=padrao["ano"],
-            mes_sugerido=padrao["mes"],
-            dia_base_sugerido=padrao["dia_base"],
-            dias_mes_sugerido=padrao["dias_mes"]
-        )
+    return render_template(
+        "vendas_importar_painel.html",
+        nome_empresa=nome_empresa,
+        ano_sugerido=padrao["ano"],
+        mes_sugerido=padrao["mes"],
+        dia_base_sugerido=padrao["dia_base"],
+        dias_mes_sugerido=padrao["dias_mes"],
 
+        # 👇 ADICIONAR ISSO
+        url_voltar=url_for("vendas.vendas_painel"),
+        texto_voltar="← Voltar para Painel"
+    )
+    
     arquivo = request.files.get("arquivo")
     ano_txt = (request.form.get("ano") or "").strip()
     mes_txt = (request.form.get("mes") or "").strip()
@@ -1183,7 +1188,9 @@ def vendas_diarias():
         data_ini=data_ini.strftime("%Y-%m-%d"),
         data_fim=data_fim.strftime("%Y-%m-%d"),
         linhas_totais=linhas_totais,
-        formatar_numero_br=formatar_numero_br
+        formatar_numero_br=formatar_numero_br,
+        url_voltar=url_for("sistema.menu_vendas"),
+        texto_voltar="← Voltar"
     )
 # =========================
 # VENDAS DIÁRIAS IMPORTAR
@@ -1656,7 +1663,9 @@ def vendas_consultas():
         cod_filial_sel=cod_filial_sel,
         data_ini=data_ini.strftime("%Y-%m-%d"),
         data_fim=data_fim.strftime("%Y-%m-%d"),
-        formatar_numero_br=formatar_numero_br
+        formatar_numero_br=formatar_numero_br,
+        url_voltar=url_for("vendas.vendas_diarias"),
+        texto_voltar="← Voltar"
     )
 
 
@@ -1824,7 +1833,9 @@ def vendas_consulta_produto():
         cod_filial_sel=cod_filial_sel,
         data_ini=data_ini.strftime("%Y-%m-%d"),
         produto_sel=produto_sel,
-        formatar_numero_br=formatar_numero_br
+        formatar_numero_br=formatar_numero_br,
+        url_voltar=url_for("vendas.vendas_consultas"),
+        texto_voltar="← Voltar"
     )
 
 

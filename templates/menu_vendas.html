@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% include "components/nav.html" %}
 
 <style>
   .pagina-titulo {
@@ -76,10 +77,6 @@
 
     <a class="btn-produto" href="{{ url_for('vendas.vendas_consulta_produto') }}">
       Consulta por Produto
-    </a>
-
-    <a class="btn-voltar" href="{{ url_for('sistema.selecionar_sistema') }}">
-      ← Voltar
     </a>
 
   </div>

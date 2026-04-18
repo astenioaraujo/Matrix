@@ -1,18 +1,13 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<title>Menu Principal</title>
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
 
 <style>
-  body {
-    font-family: Arial, sans-serif;
-    margin: 20px;
-    color: #111;
-  }
-
-  h1 {
+  .pagina-titulo {
     font-size: 36px;
+    font-weight: 800;
     margin-bottom: 10px;
   }
 
@@ -32,7 +27,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 220px;
     height: 60px;
     border-radius: 12px;
     text-decoration: none;
@@ -43,7 +37,6 @@
     transition: all 0.2s ease;
     text-align: center;
     padding: 0 10px;
-    box-sizing: border-box;
   }
 
   .menu-botoes a:hover {
@@ -56,10 +49,9 @@
   .btn-import { background: #5a8dee; }
   .btn-cad { background: #6c757d; }
   .btn-matricial { background: #8e6bbf; }
-  .btn-trocar { background: #c77d2b; }
   .btn-mb { background: #2f9e9e; }
   .btn-exclusoes { background: #b02a37; }
-  .btn-sistemas { background: #444; }
+  .btn-trocar { background: #c77d2b; }
 
   .painel {
     margin-top: 20px;
@@ -111,16 +103,9 @@
     font-weight: 700;
     border-top: 2px solid #999;
   }
-
-  td:last-child, th:last-child {
-    font-weight: 700;
-  }
 </style>
-</head>
 
-<body>
-
-<h1>Menu do Financeiro</h1>
+<div class="pagina-titulo">Menu do Financeiro</div>
 
 <div class="empresa">
   <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
@@ -128,9 +113,12 @@
 
 <div class="menu-botoes">
 
-  <!-- FINANCEIRO -->
+  <!-- VOLTAR PRIMEIRO -->
+
+
+  <!-- MÓDULOS -->
   <a class="btn-resultado" href="{{ url_for('financeiro.resultado_mb', ano=ano_atual) }}">
-    📊 Resultado MB
+    Resultado MB
   </a>
 
   <a class="btn-lanc" href="{{ url_for('financeiro.listar_lancamentos') }}">
@@ -159,15 +147,6 @@
 
   <a class="btn-exclusoes" href="{{ url_for('financeiro.exclusoes') }}">
     Exclusões
-  </a>
-
-  <!-- GERAL -->
-  <a class="btn-sistemas" href="{{ url_for('sistema.selecionar_sistema') }}">
-    ⬅ Menu Principal
-  </a>
-
-  <a class="btn-trocar" href="{{ url_for('auth.trocar_empresa') }}">
-    Trocar Empresa
   </a>
 
 </div>
@@ -231,5 +210,4 @@
 {% endif %}
 </div>
 
-</body>
-</html>
+{% endblock %}

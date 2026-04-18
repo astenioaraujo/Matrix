@@ -1,246 +1,358 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<title>Dados Detalhados</title>
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
 
 <style>
-body {
-    font-family: Arial;
-    margin: 20px;
-}
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
 
-h1 {
-    margin-bottom: 10px;
-}
-
-.filtros {
+  .pagina-subtitulo {
+    font-size: 18px;
     margin-bottom: 20px;
-}
+  }
 
-table {
-    border-collapse: collapse;
+  .painel-filtros {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 24px;
+    max-width: 920px;
+  }
+
+  .grid-filtros {
+    display: grid;
+    grid-template-columns: 140px 140px 140px auto;
+    gap: 12px;
+    align-items: end;
+    justify-content: start;
+  }
+
+  .campo label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .campo input,
+  .campo select {
     width: 100%;
-    font-size: 13px;
-}
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid #c9c9c9;
+    border-radius: 8px;
+    font-size: 15px;
+    background: #fff;
+  }
 
-th, td {
-    border: 1px solid #ccc;
-    padding: 6px;
+  .btn-acao {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 10px 18px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 15px;
+    font-family: inherit;
+    line-height: 1.2;
+    border: 1px solid #c7c7c7;
+    box-sizing: border-box;
+    cursor: pointer;
     white-space: nowrap;
-}
+  }
 
-th {
-    background: #f2f2f2;
+  .btn-gerar {
+    background: #2e9b57;
+    color: #fff;
+    border-color: #2e9b57;
+  }
+
+  .btn-gerar:hover {
+    background: #25834a;
+    border-color: #25834a;
+  }
+
+  .bloco {
+    margin-top: 28px;
+  }
+
+  .bloco-titulo {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: #b02a37;
+  }
+
+  .tabela-wrap {
+    overflow-x: auto;
+    overflow-y: visible;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    background: #fff;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: max-content;
+    min-width: 100%;
+    font-size: 13px;
+  }
+
+  th, td {
+    border: 1px solid #d7d7d7;
+    padding: 7px 10px;
+    white-space: nowrap;
+  }
+
+  th {
+    background: #dbe8f4;
     text-align: center;
-}
+    font-weight: 700;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
 
-.td-num {
+  .th-left,
+  .td-left {
+    text-align: left;
+  }
+
+  .td-num {
     text-align: right;
-}
+  }
 
-.linha-conta td {
-    background: #d0d0d0 !important;   /* cinza mais forte */
-    font-weight: bold;
-}
+  .linha-conta td {
+    background: #d0d0d0 !important;
+    font-weight: 700;
+  }
 
-.linha-total td {
-    background: #eeeeee !important;   /* cinza mais leve */
-    font-weight: bold;
-}
-.linha-geral {
-    background: #ffe0b2;
-    font-weight: bold;
-}
+  .linha-total td {
+    background: #eeeeee !important;
+    font-weight: 700;
+  }
 
-.zebra:nth-child(even) {
+  .linha-geral td {
+    background: #ffe0b2 !important;
+    font-weight: 700;
+  }
+
+  .zebra:nth-child(even) {
     background: #fafafa;
-}
+  }
 
-.linha-separadora td {
+  .linha-separadora td {
     border: none;
-    height: 32px;   /* ← DOBRO DO ESPAÇO */
+    height: 24px;
     background: #ffffff;
     padding: 0;
-}
+  }
 
-.hm-0  { background-color: #f8696b; color: #000; }
-.hm-1  { background-color: #f86d6c; color: #000; }
-.hm-2  { background-color: #f8716d; color: #000; }
-.hm-3  { background-color: #f8756e; color: #000; }
-.hm-4  { background-color: #f8796f; color: #000; }
-.hm-5  { background-color: #f97d70; color: #000; }
-.hm-6  { background-color: #f98171; color: #000; }
-.hm-7  { background-color: #f98572; color: #000; }
-.hm-8  { background-color: #fa8973; color: #000; }
-.hm-9  { background-color: #fa8d74; color: #000; }
-.hm-10 { background-color: #fa9175; color: #000; }
-.hm-11 { background-color: #fb9576; color: #000; }
-.hm-12 { background-color: #fb9977; color: #000; }
-.hm-13 { background-color: #fb9e78; color: #000; }
-.hm-14 { background-color: #fca279; color: #000; }
-.hm-15 { background-color: #fca67a; color: #000; }
-.hm-16 { background-color: #fcaa7b; color: #000; }
-.hm-17 { background-color: #fdae7c; color: #000; }
-.hm-18 { background-color: #fdb27d; color: #000; }
-.hm-19 { background-color: #fdb67e; color: #000; }
-.hm-20 { background-color: #feba7f; color: #000; }
-.hm-21 { background-color: #febe80; color: #000; }
-.hm-22 { background-color: #fec281; color: #000; }
-.hm-23 { background-color: #ffc682; color: #000; }
-.hm-24 { background-color: #ffca83; color: #000; }
-.hm-25 { background-color: #ffeb84; color: #000; }
-.hm-26 { background-color: #f7ea82; color: #000; }
-.hm-27 { background-color: #efe980; color: #000; }
-.hm-28 { background-color: #e7e87e; color: #000; }
-.hm-29 { background-color: #dfe77c; color: #000; }
-.hm-30 { background-color: #d7e67a; color: #000; }
-.hm-31 { background-color: #cfe578; color: #000; }
-.hm-32 { background-color: #c7e476; color: #000; }
-.hm-33 { background-color: #bfe374; color: #000; }
-.hm-34 { background-color: #b7e272; color: #000; }
-.hm-35 { background-color: #afe170; color: #000; }
-.hm-36 { background-color: #a7e06e; color: #000; }
-.hm-37 { background-color: #9fdf6c; color: #000; }
-.hm-38 { background-color: #97de6a; color: #000; }
-.hm-39 { background-color: #8fdd68; color: #000; }
-.hm-40 { background-color: #87dc66; color: #000; }
-.hm-41 { background-color: #7fdb64; color: #000; }
-.hm-42 { background-color: #77da62; color: #000; }
-.hm-43 { background-color: #6fd960; color: #000; }
-.hm-44 { background-color: #67d85e; color: #000; }
-.hm-45 { background-color: #5fd75c; color: #000; }
-.hm-46 { background-color: #57d65a; color: #000; }
-.hm-47 { background-color: #4fd558; color: #000; }
-.hm-48 { background-color: #47d456; color: #000; }
-.hm-49 { background-color: #3fd354; color: #000; }
-.hm-50 { background-color: #63be7b; color: #000; }
+  .sem-dados {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 20px;
+    color: #666;
+  }
+
+  .hm-0  { background-color: #f8696b; color: #000; }
+  .hm-1  { background-color: #f86d6c; color: #000; }
+  .hm-2  { background-color: #f8716d; color: #000; }
+  .hm-3  { background-color: #f8756e; color: #000; }
+  .hm-4  { background-color: #f8796f; color: #000; }
+  .hm-5  { background-color: #f97d70; color: #000; }
+  .hm-6  { background-color: #f98171; color: #000; }
+  .hm-7  { background-color: #f98572; color: #000; }
+  .hm-8  { background-color: #fa8973; color: #000; }
+  .hm-9  { background-color: #fa8d74; color: #000; }
+  .hm-10 { background-color: #fa9175; color: #000; }
+  .hm-11 { background-color: #fb9576; color: #000; }
+  .hm-12 { background-color: #fb9977; color: #000; }
+  .hm-13 { background-color: #fb9e78; color: #000; }
+  .hm-14 { background-color: #fca279; color: #000; }
+  .hm-15 { background-color: #fca67a; color: #000; }
+  .hm-16 { background-color: #fcaa7b; color: #000; }
+  .hm-17 { background-color: #fdae7c; color: #000; }
+  .hm-18 { background-color: #fdb27d; color: #000; }
+  .hm-19 { background-color: #fdb67e; color: #000; }
+  .hm-20 { background-color: #feba7f; color: #000; }
+  .hm-21 { background-color: #febe80; color: #000; }
+  .hm-22 { background-color: #fec281; color: #000; }
+  .hm-23 { background-color: #ffc682; color: #000; }
+  .hm-24 { background-color: #ffca83; color: #000; }
+  .hm-25 { background-color: #ffeb84; color: #000; }
+  .hm-26 { background-color: #f7ea82; color: #000; }
+  .hm-27 { background-color: #efe980; color: #000; }
+  .hm-28 { background-color: #e7e87e; color: #000; }
+  .hm-29 { background-color: #dfe77c; color: #000; }
+  .hm-30 { background-color: #d7e67a; color: #000; }
+  .hm-31 { background-color: #cfe578; color: #000; }
+  .hm-32 { background-color: #c7e476; color: #000; }
+  .hm-33 { background-color: #bfe374; color: #000; }
+  .hm-34 { background-color: #b7e272; color: #000; }
+  .hm-35 { background-color: #afe170; color: #000; }
+  .hm-36 { background-color: #a7e06e; color: #000; }
+  .hm-37 { background-color: #9fdf6c; color: #000; }
+  .hm-38 { background-color: #97de6a; color: #000; }
+  .hm-39 { background-color: #8fdd68; color: #000; }
+  .hm-40 { background-color: #87dc66; color: #000; }
+  .hm-41 { background-color: #7fdb64; color: #000; }
+  .hm-42 { background-color: #77da62; color: #000; }
+  .hm-43 { background-color: #6fd960; color: #000; }
+  .hm-44 { background-color: #67d85e; color: #000; }
+  .hm-45 { background-color: #5fd75c; color: #000; }
+  .hm-46 { background-color: #57d65a; color: #000; }
+  .hm-47 { background-color: #4fd558; color: #000; }
+  .hm-48 { background-color: #47d456; color: #000; }
+  .hm-49 { background-color: #3fd354; color: #000; }
+  .hm-50 { background-color: #63be7b; color: #000; }
+
+  @media (max-width: 900px) {
+    .grid-filtros {
+      grid-template-columns: 1fr;
+    }
+
+    .painel-filtros {
+      max-width: 100%;
+    }
+  }
 </style>
 
-</head>
+<div class="card">
+  <div class="pagina-titulo">Dados Detalhados</div>
 
-<body>
+  <form method="GET" class="painel-filtros">
+    <div class="grid-filtros">
+      <div class="campo">
+        <label for="ano">Ano</label>
+        <input type="number" id="ano" name="ano" value="{{ ano }}" required>
+      </div>
 
-<h1>Dados Detalhados</h1>
+      <div class="campo">
+        <label for="mes">Mês</label>
+        <input type="number" id="mes" name="mes" value="{{ mes }}" required>
+      </div>
 
-<div style="margin-bottom: 10px;">
-    <a href="{{ url_for('financeiro.menu_empresa') }}" class="btn-voltar">
-        ← Voltar ao Menu
-    </a>
+      <div class="campo">
+        <label for="grupo">Grupo</label>
+        <input type="text" id="grupo" name="grupo" value="{{ grupo or 4 }}" required>
+      </div>
+
+      <div>
+        <button type="submit" class="btn-acao btn-gerar">Carregar</button>
+      </div>
+    </div>
+  </form>
+
+  {% if dados %}
+    <div class="bloco">
+      <div class="bloco-titulo">Detalhamento por Histórico</div>
+
+      <div class="tabela-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="th-left">Ano</th>
+              <th class="th-left">Mês</th>
+              <th class="th-left">Grupo</th>
+              <th class="th-left">Histórico</th>
+              <th>Total</th>
+              {% for f in filiais %}
+                <th>{{ mapa_filiais[f] }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+
+          <tbody>
+            <tr class="linha-separadora">
+              <td colspan="{{ 5 + filiais|length }}"></td>
+            </tr>
+
+            {% for conta, info in dados.items() %}
+              <tr class="linha-conta">
+                <td colspan="{{ 5 + filiais|length }}">
+                  Conta: {{ conta }} - {{ info.nome }}
+                </td>
+              </tr>
+
+              {% for hist, linha in info.linhas.items() %}
+                <tr class="zebra">
+                  <td class="td-left">{{ ano }}</td>
+                  <td class="td-left">{{ mes }}</td>
+                  <td class="td-left">{{ grupo }}</td>
+                  <td class="td-left">{{ hist }}</td>
+
+                  {% set total = linha.filiais.values()|sum %}
+                  <td class="td-num">
+                    {{ "{:,.2f}".format(total).replace(",", "X").replace(".", ",").replace("X", ".") }}
+                  </td>
+
+                  {% for f in filiais %}
+                    {% set v = linha.filiais[f] %}
+                    <td class="td-num {{ linha.classes[f] }}">
+                      {{ "{:,.2f}".format(v).replace(",", "X").replace(".", ",").replace("X", ".") if v != 0 else "" }}
+                    </td>
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+
+              <tr class="linha-total">
+                <td colspan="4">TOTAL CONTA</td>
+
+                {% set total_conta = info.totais.values()|sum %}
+                <td class="td-num">
+                  {{ "{:,.2f}".format(total_conta).replace(",", "X").replace(".", ",").replace("X", ".") }}
+                </td>
+
+                {% for f in filiais %}
+                  {% set v = info.totais[f] %}
+                  <td class="td-num">
+                    {{ "{:,.2f}".format(v).replace(",", "X").replace(".", ",").replace("X", ".") if v != 0 else "" }}
+                  </td>
+                {% endfor %}
+              </tr>
+
+              <tr class="linha-separadora">
+                <td colspan="{{ 5 + filiais|length }}"></td>
+              </tr>
+              <tr class="linha-separadora">
+                <td colspan="{{ 5 + filiais|length }}"></td>
+              </tr>
+            {% endfor %}
+
+            <tr class="linha-geral">
+              <td colspan="4">TOTAL GERAL</td>
+
+              {% set total_geral = totais_gerais.values()|sum %}
+              <td class="td-num">
+                {{ "{:,.2f}".format(total_geral).replace(",", "X").replace(".", ",").replace("X", ".") }}
+              </td>
+
+              {% for f in filiais %}
+                {% set v = totais_gerais[f] %}
+                <td class="td-num">
+                  {{ "{:,.2f}".format(v).replace(",", "X").replace(".", ",").replace("X", ".") if v != 0 else "" }}
+                </td>
+              {% endfor %}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="sem-dados">
+      Nenhum dado encontrado para os filtros informados.
+    </div>
+  {% endif %}
 </div>
 
-<div class="filtros">
-    <form method="GET">
-        Ano: <input type="number" name="ano" value="{{ ano }}" required>
-        Mês: <input type="number" name="mes" value="{{ mes }}" required>
-        Grupo: <input type="text" name="grupo" value="{{ grupo or 4 }}" required>
-        <button type="submit">Gerar</button>
-    </form>
-</div>
-
-{% if dados %}
-
-<table>
-
-<thead>
-<tr>
-    <th>Ano</th>
-    <th>Mês</th>
-    <th>Grupo</th>
-    <th>Histórico</th>
-    <th>Total</th>
-
-    {% for f in filiais %}
-        <th>{{ mapa_filiais[f] }}</th>
-    {% endfor %}
-    </tr>
-</thead>
-
-<tbody>
-
-
-<tr class="linha-separadora">
-    <td colspan="{{ 5 + filiais|length }}"></td>
-</tr>
-
-{% for conta, info in dados.items() %}
-
-<tr class="linha-conta">
-    <td colspan="{{ 5 + filiais|length }}">
-        Conta: {{ conta }} - {{ info.nome }}
-    </td>
-</tr>
-
-{% for hist, linha in info.linhas.items() %}
-
-<tr class="zebra">
-    <td>{{ ano }}</td>
-    <td>{{ mes }}</td>
-    <td>{{ grupo }}</td>
-    <td>{{ hist }}</td>
-
-    {% set total = linha.filiais.values()|sum %}
-    <td class="td-num">
-        {{ "{:,.2f}".format(total).replace(",", "X").replace(".", ",").replace("X", ".") }}
-    </td>
-
-    {% for f in filiais %}
-        {% set v = linha.filiais[f] %}
-        <td class="td-num {{ linha.classes[f] }}">
-            {{ "{:,.2f}".format(v).replace(",", "X").replace(".", ",").replace("X", ".") if v != 0 else "" }}
-        </td>
-    {% endfor %}
-</tr>
-
-{% endfor %}
-
-<tr class="linha-total">
-    <td colspan="4">TOTAL CONTA</td>
-
-    {% set total_conta = info.totais.values()|sum %}
-    <td class="td-num">
-        {{ "{:,.2f}".format(total_conta).replace(",", "X").replace(".", ",").replace("X", ".") }}
-    </td>
-
-    {% for f in filiais %}
-        {% set v = info.totais[f] %}
-        <td class="td-num">
-            {{ "{:,.2f}".format(v).replace(",", "X").replace(".", ",").replace("X", ".") if v != 0 else "" }}
-        </td>
-    {% endfor %}
-</tr>
-
-<tr class="linha-separadora">
-    <td colspan="{{ 5 + filiais|length }}"></td>
-</tr>
-<tr class="linha-separadora">
-    <td colspan="{{ 5 + filiais|length }}"></td>
-</tr>
-
-{% endfor %}
-
-<tr class="linha-geral">
-    <td colspan="4">TOTAL GERAL</td>
-
-    {% set total_geral = totais_gerais.values()|sum %}
-    <td class="td-num">
-        {{ "{:,.2f}".format(total_geral).replace(",", "X").replace(".", ",").replace("X", ".") }}
-    </td>
-
-    {% for f in filiais %}
-        {% set v = totais_gerais[f] %}
-        <td class="td-num">
-            {{ "{:,.2f}".format(v).replace(",", "X").replace(".", ",").replace("X", ".") if v != 0 else "" }}
-        </td>
-    {% endfor %}
-</tr>
-
-</tbody>
-</table>
-
-{% else %}
-    <p>Nenhum dado encontrado para os filtros informados.</p>
-{% endif %}
-
-</body>
-</html>
+{% endblock %}

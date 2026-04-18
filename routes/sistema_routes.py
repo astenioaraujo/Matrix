@@ -35,5 +35,7 @@ def menu_vendas():
 
     return render_template(
         "menu_vendas.html",
-        nome_empresa=session.get("nome_empresa")
+        nome_empresa=session.get("nome_empresa"),
+        empresa_ativa=session.get("cod_empresa"),
+        url_voltar=url_for("sistema.selecionar_sistema")
     )

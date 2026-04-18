@@ -89,6 +89,8 @@ def listar_importacoes():
         erro=erro,
         empresa_ativa=session["cod_empresa"],
         nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_empresa"),  
+        texto_voltar="← Voltar"
     )
 
 

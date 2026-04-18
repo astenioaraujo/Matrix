@@ -1,63 +1,66 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <title>Cadastros</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-        }
+{% extends "base.html" %}
 
-        h2 {
-            margin-bottom: 10px;
-        }
+{% block content %}
 
-        .empresa {
-            font-size: 18px;
-            margin-bottom: 24px;
-        }
+{% include "components/nav.html" %}
 
-        .menu {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 14px;
-        }
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+    color: #111;
+  }
 
-        .menu a {
-            display: inline-block;
-            padding: 14px 22px;
-            border: 1px solid #c7c7c7;
-            border-radius: 12px;
-            text-decoration: none;
-            color: #1657c8;
-            font-weight: 700;
-            font-size: 20px;
-            background: #f8f8f8;
-        }
+  .empresa {
+    font-size: 18px;
+    margin-bottom: 24px;
+    color: #222;
+  }
 
-        .menu a:hover {
-            background: #eeeeee;
-        }
-    </style>
-</head>
-<body>
-    <h2>Cadastros</h2>
+  .menu {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+  }
 
-    <div class="empresa">
-        <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
-    </div>
+  .menu a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 56px;
+    padding: 14px 22px;
+    border: 1px solid #c7c7c7;
+    border-radius: 12px;
+    text-decoration: none;
+    color: #1657c8;
+    font-weight: 700;
+    font-size: 18px;
+    background: #f8f8f8;
+    transition: 0.15s ease;
+  }
 
-    <div class="menu">
-        <a href="{{ url_for('financeiro.cadastrar_filiais') }}">Filiais</a>
+  .menu a:hover {
+    background: #eeeeee;
+    transform: translateY(-1px);
+  }
+</style>
 
-        <a href="{{ url_for('financeiro.grupos_gerenciais') }}">Grupos Gerenciais</a>
+<div class="pagina-titulo">Cadastros</div>
 
-        <a href="{{ url_for('financeiro.contas_gerenciais') }}">Contas Gerenciais</a>
+<div class="empresa">
+    <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
 
-        <a href="{{ url_for('financeiro.classificacoes_automaticas') }}">Classificações Automáticas</a>
+<div class="menu">
 
-        <a href="{{ url_for('financeiro.menu_empresa') }}">Voltar ao Menu</a>
-    </div>
-</body>
-</html>
+    <a href="{{ url_for('financeiro.grupos_gerenciais') }}">Grupos Gerenciais</a>
+
+    <a href="{{ url_for('financeiro.contas_gerenciais') }}">Contas Gerenciais</a>
+
+    <a href="{{ url_for('financeiro.classificacoes_automaticas') }}">
+        Classificações Automáticas
+    </a>
+</div>
+
+{% endblock %}

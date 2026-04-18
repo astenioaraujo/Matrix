@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, session
+from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify
 from datetime import datetime
 import math
 
@@ -7,6 +7,45 @@ from services.dashboard_service import montar_dashboard
 from utils.formatters import formatar_numero_br, formatar_int
 
 financeiro_bp = Blueprint("financeiro", __name__)
+
+def eh_ajax():
+    return request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+
+def filial_para_dict(f):
+    return {
+        "cod_filial": f[0],
+        "nome_filial": f[1],
+        "nome_filial_importacao": f[2] or "",
+        "ativo": bool(f[3]),
+        "qtde_lancamentos": int(f[4] or 0),
+    }
+
+
+def buscar_filiais_empresa(cur, cod_empresa):
+    cur.execute("""
+        SELECT
+            f.cod_filial,
+            f.nome_filial,
+            f.nome_filial_importacao,
+            f.ativo,
+            COALESCE(l.qtde_lancamentos, 0) AS qtde_lancamentos
+        FROM filiais f
+        LEFT JOIN (
+            SELECT
+                cod_empresa,
+                cod_filial,
+                COUNT(*) AS qtde_lancamentos
+            FROM lancamentos
+            WHERE cod_empresa = %s
+            GROUP BY cod_empresa, cod_filial
+        ) l
+            ON l.cod_empresa = f.cod_empresa
+           AND l.cod_filial = f.cod_filial
+        WHERE f.cod_empresa = %s
+        ORDER BY f.cod_filial
+    """, (cod_empresa, cod_empresa))
+    return cur.fetchall()
 
 def conta_para_ordenacao(valor):
     texto = str(valor or "").strip()
@@ -204,16 +243,16 @@ def menu_empresa():
     linhas, totais = montar_dashboard(session["cod_empresa"])
 
     return render_template(
-        "menu.html",
+        "menu_financeiro.html",
         empresa_ativa=session["cod_empresa"],
         nome_empresa_ativa=session["nome_empresa"],
         linhas_dashboard=linhas,
         totais_dashboard=totais,
         formatar_numero_br=formatar_numero_br,
         formatar_int=formatar_int,
-        ano_atual=datetime.now().year
+        ano_atual=datetime.now().year,
+        url_voltar=url_for("sistema.selecionar_sistema")   # 👈 ESSENCIAL
     )
-
 
 # =========================
 # CADASTROS
@@ -223,12 +262,15 @@ def menu_cadastros():
     if "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
 
+    empresa_ativa = session.get("cod_empresa")
+    nome_empresa_ativa = session.get("nome_empresa")
+
     return render_template(
         "cadastros.html",
-        empresa_ativa=session["cod_empresa"],
-        nome_empresa_ativa=session["nome_empresa"],
+        empresa_ativa=empresa_ativa,
+        nome_empresa_ativa=nome_empresa_ativa,
+        url_voltar=url_for("financeiro.menu_empresa")
     )
-
 
 # =========================
 # FILIAIS
@@ -236,6 +278,8 @@ def menu_cadastros():
 @financeiro_bp.route("/filiais", methods=["GET", "POST"])
 def cadastrar_filiais():
     if "cod_empresa" not in session:
+        if eh_ajax():
+            return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
         return redirect(url_for("auth.index"))
 
     mensagem = ""
@@ -287,6 +331,17 @@ def cadastrar_filiais():
                     conn.commit()
                     mensagem = f"Filial incluída com sucesso. Código gerado: {proximo_codigo}"
 
+                    if eh_ajax():
+                        filiais = buscar_filiais_empresa(cur, cod_empresa)
+                        filial_nova = next((f for f in filiais if int(f[0]) == int(proximo_codigo)), None)
+
+                        return jsonify({
+                            "ok": True,
+                            "mensagem": mensagem,
+                            "acao": "novo",
+                            "filial": filial_para_dict(filial_nova) if filial_nova else None
+                        })
+
                 elif acao == "alterar":
                     if not cod_filial_raw:
                         raise ValueError("Selecione uma filial para alterar.")
@@ -315,6 +370,17 @@ def cadastrar_filiais():
 
                     conn.commit()
                     mensagem = "Filial alterada com sucesso."
+
+                    if eh_ajax():
+                        filiais = buscar_filiais_empresa(cur, cod_empresa)
+                        filial_alt = next((f for f in filiais if int(f[0]) == int(cod_filial)), None)
+
+                        return jsonify({
+                            "ok": True,
+                            "mensagem": mensagem,
+                            "acao": "alterar",
+                            "filial": filial_para_dict(filial_alt) if filial_alt else None
+                        })
 
                 elif acao == "excluir":
                     if not cod_filial_raw:
@@ -345,6 +411,14 @@ def cadastrar_filiais():
                     conn.commit()
                     mensagem = "Filial excluída com sucesso."
 
+                    if eh_ajax():
+                        return jsonify({
+                            "ok": True,
+                            "mensagem": mensagem,
+                            "acao": "excluir",
+                            "cod_filial": cod_filial
+                        })
+
                 elif acao == "carregar":
                     if not cod_filial_raw:
                         raise ValueError("Selecione uma filial para carregar.")
@@ -366,33 +440,26 @@ def cadastrar_filiais():
                     if not filial_edicao:
                         raise ValueError("Filial não encontrada.")
 
+                    if eh_ajax():
+                        return jsonify({
+                            "ok": True,
+                            "acao": "carregar",
+                            "filial": {
+                                "cod_filial": filial_edicao[0],
+                                "nome_filial": filial_edicao[1],
+                                "nome_filial_importacao": filial_edicao[2] or "",
+                                "ativo": bool(filial_edicao[3]),
+                            }
+                        })
+
             except Exception as e:
                 conn.rollback()
                 erro = str(e)
 
-        cur.execute("""
-            SELECT
-                f.cod_filial,
-                f.nome_filial,
-                f.nome_filial_importacao,
-                f.ativo,
-                COALESCE(l.qtde_lancamentos, 0) AS qtde_lancamentos
-            FROM filiais f
-            LEFT JOIN (
-                SELECT
-                    cod_empresa,
-                    cod_filial,
-                    COUNT(*) AS qtde_lancamentos
-                FROM lancamentos
-                WHERE cod_empresa = %s
-                GROUP BY cod_empresa, cod_filial
-            ) l
-                ON l.cod_empresa = f.cod_empresa
-               AND l.cod_filial = f.cod_filial
-            WHERE f.cod_empresa = %s
-            ORDER BY f.cod_filial
-        """, (cod_empresa, cod_empresa))
-        filiais = cur.fetchall()
+                if eh_ajax():
+                    return jsonify({"ok": False, "erro": erro}), 400
+
+        filiais = buscar_filiais_empresa(cur, cod_empresa)
 
     finally:
         cur.close()
@@ -406,8 +473,10 @@ def cadastrar_filiais():
         erro=erro,
         empresa_ativa=session["cod_empresa"],
         nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("sistema.selecionar_sistema"),
+        url_menu_modulo=url_for("financeiro.menu_empresa"),
+        texto_menu_modulo="Menu do Financeiro"
     )
-
 
 # =========================
 # GRUPOS GERENCIAIS
@@ -805,6 +874,8 @@ def listar_lancamentos():
         busca=busca,
         empresa_ativa=session["cod_empresa"],
         nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_empresa"),
+        texto_voltar="← Voltar"
     )
 
 
@@ -867,8 +938,28 @@ def resultado_mb():
     ano = request.args.get("ano", type=int)
     mes = request.args.get("mes", type=int)
 
-    if not ano:
-        ano = datetime.now().year
+    hoje = datetime.now()
+
+    # Sugere o mês anterior
+    if not ano and not mes:
+        if hoje.month == 1:
+            ano = hoje.year - 1
+            mes = 12
+        else:
+            ano = hoje.year
+            mes = hoje.month - 1
+    elif ano and not mes:
+        if hoje.month == 1:
+            mes = 12
+            if ano == hoje.year:
+                ano = ano - 1
+        else:
+            mes = hoje.month - 1
+    elif mes and not ano:
+        if hoje.month == 1 and mes == 12:
+            ano = hoje.year - 1
+        else:
+            ano = hoje.year
 
     conn = get_connection()
     cur = conn.cursor()
@@ -960,8 +1051,8 @@ def resultado_mb():
         mes=mes,
         empresa_ativa=session["cod_empresa"],
         nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_empresa")
     )
-
 
 # =========================
 # ROTAS PROVISÓRIAS
@@ -1010,7 +1101,9 @@ def matricial():
         filial_sel=filial_sel,
         empresa_ativa=session["cod_empresa"],
         nome_empresa_ativa=session["nome_empresa"],
-        formatar_numero_br=formatar_numero_br
+        formatar_numero_br=formatar_numero_br,
+        url_voltar=url_for("financeiro.menu_empresa"),
+        texto_voltar="← Voltar"
     )
     
 
@@ -1150,12 +1243,180 @@ def dados_detalhados():
         totais_gerais=totais_gerais,
         empresa_ativa=session["cod_empresa"],
         nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_empresa"),
+        texto_voltar="← Voltar"
     )
-@financeiro_bp.route("/margem_bruta")
+@financeiro_bp.route("/margem_bruta", methods=["GET", "POST"])
 def margem_bruta():
-    return "Tela de margem bruta ainda não migrada."
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    mensagem = ""
+    erro = ""
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            SELECT cod_filial, nome_filial
+            FROM filiais
+            WHERE cod_empresa = %s
+              AND ativo = TRUE
+            ORDER BY cod_filial
+        """, (cod_empresa,))
+        filiais = cur.fetchall()
+
+        if request.method == "POST":
+            try:
+                for chave, valor_txt in request.form.items():
+                    if not chave.startswith("valor_"):
+                        continue
+
+                    _, ano_txt, mes_txt, cod_filial_txt = chave.split("_", 3)
+
+                    ano = int(ano_txt)
+                    mes = int(mes_txt)
+                    cod_filial = int(cod_filial_txt)
+
+                    valor_txt = (valor_txt or "").strip()
+                    if valor_txt == "":
+                        valor = 0.0
+                    else:
+                        valor = float(valor_txt.replace(".", "").replace(",", "."))
+
+                    cur.execute("""
+                        INSERT INTO margem_bruta (
+                            cod_empresa,
+                            cod_filial,
+                            ano,
+                            mes,
+                            valor
+                        )
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (cod_empresa, cod_filial, ano, mes)
+                        DO UPDATE SET valor = EXCLUDED.valor
+                    """, (cod_empresa, cod_filial, ano, mes, valor))
+
+                conn.commit()
+                mensagem = "Margem bruta salva com sucesso."
+
+            except Exception as e:
+                conn.rollback()
+                erro = str(e)
+
+        cur.execute("""
+            SELECT DISTINCT ano, mes
+            FROM margem_bruta
+            WHERE cod_empresa = %s
+            ORDER BY ano, mes
+        """, (cod_empresa,))
+        periodos = cur.fetchall()
+
+        cur.execute("""
+            SELECT cod_filial, ano, mes, valor
+            FROM margem_bruta
+            WHERE cod_empresa = %s
+            ORDER BY ano, mes, cod_filial
+        """, (cod_empresa,))
+        registros = cur.fetchall()
+
+    finally:
+        cur.close()
+        conn.close()
+
+    mapa = {}
+    for cod_filial, ano, mes, valor in registros:
+        chave = (ano, mes)
+        if chave not in mapa:
+            mapa[chave] = {"ano": ano, "mes": mes, "valores": {}, "total": 0.0}
+
+        v = float(valor or 0)
+        mapa[chave]["valores"][cod_filial] = v
+        mapa[chave]["total"] += v
+
+    linhas = []
+    for ano, mes in periodos:
+        chave = (ano, mes)
+        if chave in mapa:
+            linhas.append(mapa[chave])
+        else:
+            linhas.append({
+                "ano": ano,
+                "mes": mes,
+                "valores": {},
+                "total": 0.0
+            })
+
+    return render_template(
+        "margem_bruta.html",
+        filiais=filiais,
+        linhas=linhas,
+        mensagem=mensagem,
+        erro=erro,
+        empresa_ativa=session["cod_empresa"],
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_empresa"),
+        texto_voltar="← Voltar"
+    )
 
 
+@financeiro_bp.route("/importar_margem_bruta", methods=["POST"])
+def importar_margem_bruta():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    arquivo = request.files.get("arquivo")
+
+    if not arquivo or arquivo.filename == "":
+        return redirect(url_for("financeiro.margem_bruta"))
+
+    import tempfile
+    from openpyxl import load_workbook
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        arquivo.save(tmp.name)
+        tmp.close()
+
+        wb = load_workbook(tmp.name, data_only=True)
+        ws = wb.worksheets[0]
+
+        # 🔴 AJUSTE AQUI conforme seu layout de Excel
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            ano, mes, cod_filial, valor = row[:4]
+
+            if not ano or not mes or not cod_filial:
+                continue
+
+            valor = float(valor or 0)
+
+            cur.execute("""
+                INSERT INTO margem_bruta
+                (cod_empresa, cod_filial, ano, mes, valor)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (cod_empresa, cod_filial, ano, mes)
+                DO UPDATE SET valor = EXCLUDED.valor
+            """, (cod_empresa, int(cod_filial), int(ano), int(mes), valor))
+
+        conn.commit()
+
+    except Exception as e:
+        conn.rollback()
+        print("Erro importação MB:", e)
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return redirect(url_for("financeiro.margem_bruta"))
+    
 @financeiro_bp.route("/exclusoes")
 def exclusoes():
     return "Tela de exclusões ainda não migrada."

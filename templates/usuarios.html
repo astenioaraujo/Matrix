@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
 
+{% include "components/nav.html" %}
+
 <style>
   .pagina-titulo {
     font-size: 30px;
@@ -27,10 +29,18 @@
     color: #fff;
   }
 
+  .btn-novo:hover {
+    background: #0d47a1;
+  }
+
   .btn-toggle {
     color: #1565c0;
     font-weight: 700;
     text-decoration: none;
+  }
+
+  .btn-toggle:hover {
+    text-decoration: underline;
   }
 
   .flash-msg {
@@ -51,10 +61,25 @@
     color: #9f2f2f;
     border: 1px solid #efc2c2;
   }
+
+  /* melhora visual da tabela */
+  .table-wrapper {
+    margin-top: 10px;
+  }
+
+  table {
+    font-size: 13px;
+  }
+
+  th {
+    background: #f1f1f1;
+  }
 </style>
 
 <div class="pagina-titulo">Usuários</div>
-<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+<div class="pagina-subtitulo">
+  Empresa: <strong>{{ nome_empresa }}</strong>
+</div>
 
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}
@@ -67,7 +92,9 @@
 {% endwith %}
 
 <div class="acoes">
-  <a href="{{ url_for('usuarios.novo_usuario') }}" class="btn-novo">Novo usuário</a>
+  <a href="{{ url_for('usuarios.novo_usuario') }}" class="btn-novo">
+    + Novo usuário
+  </a>
 </div>
 
 <div class="table-wrapper">
@@ -89,8 +116,9 @@
         <td>{{ u.perfil_empresa }}</td>
         <td>{{ "Sim" if u.ativo else "Não" }}</td>
         <td>
-          <a class="btn-toggle" href="{{ url_for('usuarios.toggle_usuario', id_usuario=u.id_usuario) }}">
-            Ativar / Inativar
+          <a class="btn-toggle"
+             href="{{ url_for('usuarios.toggle_usuario', id_usuario=u.id_usuario) }}">
+            Alternar
           </a>
         </td>
       </tr>

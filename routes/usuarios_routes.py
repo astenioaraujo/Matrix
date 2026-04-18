@@ -38,7 +38,9 @@ def listar_usuarios():
     return render_template(
         "usuarios.html",
         usuarios=usuarios,
-        nome_empresa=nome_empresa
+        nome_empresa=nome_empresa,
+        url_voltar=url_for("sistema.selecionar_sistema"),
+        mostrar_menu_modulo=False  # 🔥 DESLIGA botão azul
     )
 
 

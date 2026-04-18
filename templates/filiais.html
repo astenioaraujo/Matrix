@@ -1,207 +1,199 @@
-<!DOCTYPE html>
-<html lang="pt-br">
-<head>
-    <meta charset="UTF-8">
-    <title>Cadastro de Filiais</title>
+{% extends "base.html" %}
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 30px;
-        }
+{% block content %}
 
-        h1 {
-            margin-bottom: 5px;
-        }
+{% include "components/nav.html" %}
 
-        .topo {
-            margin-bottom: 20px;
-        }
+<style>
+    .pagina-titulo {
+        font-size: 34px;
+        font-weight: 800;
+        margin-bottom: 8px;
+        color: #111;
+    }
 
-        .menu-links a {
-            margin-right: 15px;
-            font-weight: bold;
-            text-decoration: none;
-            color: #1a73e8;
-        }
+    .pagina-subtitulo {
+        font-size: 20px;
+        margin-bottom: 24px;
+        color: #222;
+    }
+    .modo-edicao {
+        box-sizing: border-box;
+    }
 
-        .box {
-            border: 1px solid #ccc;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            width: 900px;
-            max-width: 100%;
-            box-sizing: border-box;
-        }
+    .linha-em-edicao td {
+        background: #eef5ff !important;
+    }
+    .box {
+        border: 1px solid #ccc;
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        width: 900px;
+        max-width: 100%;
+        box-sizing: border-box;
+        background: #fff;
+    }
 
-        label {
-            display: block;
-            margin-top: 10px;
-            font-weight: bold;
-        }
+    label {
+        display: block;
+        margin-top: 10px;
+        font-weight: bold;
+    }
 
-        input[type="text"] {
-            width: 100%;
-            padding: 8px;
-            margin-top: 5px;
-            border-radius: 6px;
-            border: 1px solid #ccc;
-            box-sizing: border-box;
-        }
+    input[type="text"] {
+        width: 100%;
+        padding: 8px;
+        margin-top: 5px;
+        border-radius: 6px;
+        border: 1px solid #ccc;
+        box-sizing: border-box;
+    }
 
-        .linha-checkbox {
-            margin-top: 14px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-weight: bold;
-        }
+    .linha-checkbox {
+        margin-top: 14px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: bold;
+    }
 
-        .linha-checkbox input[type="checkbox"] {
-            transform: scale(1.1);
-        }
+    .linha-checkbox input[type="checkbox"] {
+        transform: scale(1.1);
+    }
 
-        .botoes {
-            margin-top: 18px;
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
+    .botoes {
+        margin-top: 18px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
 
-        button {
-            padding: 10px 15px;
-            border-radius: 8px;
-            border: 1px solid #ccc;
-            cursor: pointer;
-            font-weight: bold;
-        }
+    button {
+        padding: 10px 15px;
+        border-radius: 8px;
+        border: 1px solid #ccc;
+        cursor: pointer;
+        font-weight: bold;
+    }
 
-        .btn-primary {
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-        }
+    .btn-primary {
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+    }
 
-        .btn-danger {
-            background-color: #e74c3c;
-            color: white;
-            border: none;
-        }
+    .btn-danger {
+        background-color: #e74c3c;
+        color: white;
+        border: none;
+    }
 
-        .btn-danger:disabled {
-            background-color: #f1b0a8;
-            color: #fff;
-            cursor: not-allowed;
-            opacity: 0.7;
-        }
+    .btn-danger:disabled {
+        background-color: #f1b0a8;
+        color: #fff;
+        cursor: not-allowed;
+        opacity: 0.7;
+    }
 
-        .btn-secondary {
-            background-color: #ddd;
-        }
+    .btn-secondary {
+        background-color: #ddd;
+    }
 
-        table {
-            border-collapse: collapse;
-            width: 900px;
-            max-width: 100%;
-        }
+    .table-local {
+        border-collapse: collapse;
+        width: 900px;
+        max-width: 100%;
+        background: #fff;
+    }
 
-        th, td {
-            border: 1px solid #ccc;
-            padding: 8px;
-            text-align: left;
-            vertical-align: middle;
-        }
+    .table-local th,
+    .table-local td {
+        border: 1px solid #ccc;
+        padding: 8px;
+        text-align: left;
+        vertical-align: middle;
+    }
 
-        th {
-            background-color: #f0f0f0;
-        }
+    .table-local th {
+        background-color: #f0f0f0;
+    }
 
-        .msg {
-            color: green;
-            margin-bottom: 10px;
-            font-weight: bold;
-        }
+    .msg {
+        color: green;
+        margin-bottom: 10px;
+        font-weight: bold;
+    }
 
-        .erro {
-            color: red;
-            margin-bottom: 10px;
-            font-weight: bold;
-        }
+    .erro {
+        color: red;
+        margin-bottom: 10px;
+        font-weight: bold;
+    }
 
-        .btn-editar {
-            background-color: #1a73e8;
-            color: white;
-            border: none;
-        }
+    .btn-editar {
+        background-color: #1a73e8;
+        color: white;
+        border: none;
+    }
 
-        .acoes-linha {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
+    .acoes-linha {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
 
-        .hint {
-            font-size: 12px;
-            color: #666;
-            margin-top: 4px;
-        }
-    </style>
-</head>
+    .hint {
+        font-size: 12px;
+        color: #666;
+        margin-top: 4px;
+    }
 
-<body>
+    .linha-selecionada td {
+        background: #eef5ff !important;
+    }
+</style>
 
-<div class="topo">
-    <h1>Cadastro de Filiais</h1>
+<div class="pagina-titulo">Cadastro de Filiais</div>
+<div class="pagina-subtitulo">
     <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
-
-    <div class="menu-links">
-        <a href="{{ url_for('financeiro.menu_empresa') }}">Menu Principal</a>
-        <a href="{{ url_for('financeiro.menu_cadastros') }}">Cadastros</a>
-    </div>
 </div>
 
-{% if mensagem %}
-<div class="msg">{{ mensagem }}</div>
-{% endif %}
+<div id="msgBox" class="msg" {% if not mensagem %}style="display:none;"{% endif %}>
+    {{ mensagem or "" }}
+</div>
 
-{% if erro %}
-<div class="erro">{{ erro }}</div>
-{% endif %}
+<div id="erroBox" class="erro" {% if not erro %}style="display:none;"{% endif %}>
+    {{ erro or "" }}
+</div>
 
 <div class="box">
-    <form method="post">
+    <form id="formFilial" method="post">
 
         <label>Código</label>
-        <input type="text" name="cod_filial"
+        <input type="text" id="cod_filial" name="cod_filial"
                value="{{ filial_edicao[0] if filial_edicao else '' }}"
                readonly>
 
         <label>Nome</label>
-        <input type="text" name="nome_filial"
+        <input type="text" id="nome_filial" name="nome_filial"
                value="{{ filial_edicao[1] if filial_edicao else '' }}">
 
         <label>Nome para Importação</label>
-        <input type="text" name="nome_filial_importacao"
+        <input type="text" id="nome_filial_importacao" name="nome_filial_importacao"
                value="{{ filial_edicao[2] if filial_edicao else '' }}">
         <div class="hint">Informe exatamente como a filial aparece no relatório Excel.</div>
 
         <label class="linha-checkbox">
-            <input type="checkbox" name="ativo"
+            <input type="checkbox" id="ativo" name="ativo"
                    {% if filial_edicao and filial_edicao[3] %}checked{% endif %}>
             Ativo
         </label>
 
         <div class="botoes">
-            {% if filial_edicao %}
-                <button type="submit" name="acao" value="alterar" class="btn-primary">
-                    Salvar
-                </button>
-            {% else %}
-                <button type="submit" name="acao" value="novo" class="btn-primary">
-                    Novo
-                </button>
-            {% endif %}
+            <button type="button" id="btnSalvar" class="btn-primary">
+                {% if filial_edicao %}Salvar{% else %}Novo{% endif %}
+            </button>
 
             {% set qtde_edicao = 0 %}
             {% if filial_edicao %}
@@ -212,27 +204,20 @@
                 {% endfor %}
             {% endif %}
 
-            <button type="submit"
-                    name="acao"
-                    value="excluir"
+            <button type="button"
+                    id="btnExcluir"
                     class="btn-danger"
                     {% if not filial_edicao or qtde_edicao > 0 %}disabled{% endif %}>
                 Excluir
             </button>
 
-            <a href="{{ url_for('financeiro.cadastrar_filiais') }}">
-                <button type="button" class="btn-secondary">Limpar</button>
-            </a>
-
-            <a href="{{ url_for('financeiro.menu_empresa') }}">
-                <button type="button" class="btn-secondary">Voltar</button>
-            </a>
+            <button type="button" id="btnLimpar" class="btn-secondary">Limpar</button>
         </div>
 
     </form>
 </div>
 
-<table>
+<table class="table-local" id="tabelaFiliais">
     <tr>
         <th>Código</th>
         <th>Nome</th>
@@ -243,36 +228,352 @@
     </tr>
 
     {% for f in filiais %}
-    <tr>
+    <tr id="linha-filial-{{ f[0] }}"
+        data-cod-filial="{{ f[0] }}"
+        data-qtde-lancamentos="{{ f[4] }}">
+
         <td>{{ f[0] }}</td>
-        <td>{{ f[1] }}</td>
-        <td>{{ f[2] or '' }}</td>
-        <td>{{ 'Sim' if f[3] else 'Não' }}</td>
+
+        <td>
+            <span class="modo-texto" id="txt-nome-{{ f[0] }}">{{ f[1] }}</span>
+            <input class="modo-edicao"
+                   id="inp-nome-{{ f[0] }}"
+                   type="text"
+                   value="{{ f[1] }}"
+                   style="display:none; width:100%;">
+        </td>
+
+        <td>
+            <span class="modo-texto" id="txt-import-{{ f[0] }}">{{ f[2] or '' }}</span>
+            <input class="modo-edicao"
+                   id="inp-import-{{ f[0] }}"
+                   type="text"
+                   value="{{ f[2] or '' }}"
+                   style="display:none; width:100%;">
+        </td>
+
+        <td>
+            <span class="modo-texto" id="txt-ativo-{{ f[0] }}">{{ 'Sim' if f[3] else 'Não' }}</span>
+            <input class="modo-edicao"
+                   id="inp-ativo-{{ f[0] }}"
+                   type="checkbox"
+                   {% if f[3] %}checked{% endif %}
+                   style="display:none;">
+        </td>
+
         <td>{{ f[4] }}</td>
+
         <td>
             <div class="acoes-linha">
-                <form method="post" style="display:inline;">
-                    <input type="hidden" name="cod_filial" value="{{ f[0] }}">
-                    <button type="submit" name="acao" value="carregar" class="btn-editar">
-                        Editar
-                    </button>
-                </form>
+                <button type="button"
+                        class="btn-editar"
+                        id="btn-editar-{{ f[0] }}"
+                        onclick="entrarModoEdicao({{ f[0] }})">
+                    Editar
+                </button>
 
-                <form method="post" style="display:inline;">
-                    <input type="hidden" name="cod_filial" value="{{ f[0] }}">
-                    <button type="submit"
-                            name="acao"
-                            value="excluir"
-                            class="btn-danger"
-                            {% if f[4] > 0 %}disabled{% endif %}>
-                        Excluir
-                    </button>
-                </form>
+                <button type="button"
+                        class="btn-primary"
+                        id="btn-salvar-inline-{{ f[0] }}"
+                        onclick="salvarFilialInline({{ f[0] }})"
+                        style="display:none;">
+                    Salvar
+                </button>
+
+                <button type="button"
+                        class="btn-secondary"
+                        id="btn-cancelar-inline-{{ f[0] }}"
+                        onclick="cancelarEdicao({{ f[0] }})"
+                        style="display:none;">
+                    Cancelar
+                </button>
+
+                <button type="button"
+                        class="btn-danger"
+                        onclick="excluirFilialDaLinha({{ f[0] }}, {{ f[4] }})"
+                        {% if f[4] > 0 %}disabled{% endif %}>
+                    Excluir
+                </button>
             </div>
         </td>
     </tr>
     {% endfor %}
 </table>
 
-</body>
-</html>
+<script>
+    function mostrarMensagem(texto) {
+        const msgBox = document.getElementById("msgBox");
+        const erroBox = document.getElementById("erroBox");
+        erroBox.style.display = "none";
+        erroBox.textContent = "";
+        msgBox.textContent = texto || "";
+        msgBox.style.display = texto ? "block" : "none";
+    }
+
+    function mostrarErro(texto) {
+        const msgBox = document.getElementById("msgBox");
+        const erroBox = document.getElementById("erroBox");
+        msgBox.style.display = "none";
+        msgBox.textContent = "";
+        erroBox.textContent = texto || "";
+        erroBox.style.display = texto ? "block" : "none";
+    }
+
+    function limparSelecaoTabela() {
+        document.querySelectorAll("#tabelaFiliais tr.linha-selecionada").forEach(tr => {
+            tr.classList.remove("linha-selecionada");
+        });
+    }
+
+    function destacarLinha(codFilial) {
+        limparSelecaoTabela();
+        const linha = document.getElementById(`linha-filial-${codFilial}`);
+        if (linha) {
+            linha.classList.add("linha-selecionada");
+        }
+    }
+
+    function atualizarEstadoBotoes() {
+        const codFilial = document.getElementById("cod_filial").value.trim();
+        const btnSalvar = document.getElementById("btnSalvar");
+        const btnExcluir = document.getElementById("btnExcluir");
+
+        if (codFilial) {
+            btnSalvar.textContent = "Salvar";
+
+            const linha = document.getElementById(`linha-filial-${codFilial}`);
+            const qtdeLanc = linha ? parseInt(linha.dataset.qtdeLancamentos || "0", 10) : 0;
+            btnExcluir.disabled = qtdeLanc > 0;
+        } else {
+            btnSalvar.textContent = "Novo";
+            btnExcluir.disabled = true;
+        }
+    }
+
+    function limparFormulario() {
+        document.getElementById("cod_filial").value = "";
+        document.getElementById("nome_filial").value = "";
+        document.getElementById("nome_filial_importacao").value = "";
+        document.getElementById("ativo").checked = false;
+        limparSelecaoTabela();
+        atualizarEstadoBotoes();
+        mostrarMensagem("");
+        mostrarErro("");
+    }
+
+    async function carregarFilialDaLinha(codFilial) {
+        try {
+            const formData = new FormData();
+            formData.append("acao", "carregar");
+            formData.append("cod_filial", codFilial);
+
+            const resp = await fetch("{{ url_for('financeiro.cadastrar_filiais') }}", {
+                method: "POST",
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                body: formData
+            });
+
+            const dados = await resp.json();
+
+            if (!resp.ok || !dados.ok) {
+                mostrarErro(dados.erro || "Erro ao carregar filial.");
+                return;
+            }
+
+            document.getElementById("cod_filial").value = dados.filial.cod_filial;
+            document.getElementById("nome_filial").value = dados.filial.nome_filial || "";
+            document.getElementById("nome_filial_importacao").value = dados.filial.nome_filial_importacao || "";
+            document.getElementById("ativo").checked = !!dados.filial.ativo;
+
+            destacarLinha(dados.filial.cod_filial);
+            atualizarEstadoBotoes();
+            mostrarMensagem("");
+            mostrarErro("");
+        } catch (e) {
+            mostrarErro("Erro ao carregar filial.");
+        }
+    }
+
+
+    function entrarModoEdicao(codFilial) {
+        const linha = document.getElementById(`linha-filial-${codFilial}`);
+        linha.classList.add("linha-em-edicao");
+
+        document.getElementById(`txt-nome-${codFilial}`).style.display = "none";
+        document.getElementById(`txt-import-${codFilial}`).style.display = "none";
+        document.getElementById(`txt-ativo-${codFilial}`).style.display = "none";
+
+        document.getElementById(`inp-nome-${codFilial}`).style.display = "inline-block";
+        document.getElementById(`inp-import-${codFilial}`).style.display = "inline-block";
+        document.getElementById(`inp-ativo-${codFilial}`).style.display = "inline-block";
+
+        document.getElementById(`btn-editar-${codFilial}`).style.display = "none";
+        document.getElementById(`btn-salvar-inline-${codFilial}`).style.display = "inline-block";
+        document.getElementById(`btn-cancelar-inline-${codFilial}`).style.display = "inline-block";
+    }
+
+    function cancelarEdicao(codFilial) {
+        const linha = document.getElementById(`linha-filial-${codFilial}`);
+        linha.classList.remove("linha-em-edicao");
+
+        document.getElementById(`inp-nome-${codFilial}`).value =
+            document.getElementById(`txt-nome-${codFilial}`).textContent.trim();
+
+        document.getElementById(`inp-import-${codFilial}`).value =
+            document.getElementById(`txt-import-${codFilial}`).textContent.trim();
+
+        document.getElementById(`inp-ativo-${codFilial}`).checked =
+            document.getElementById(`txt-ativo-${codFilial}`).textContent.trim() === "Sim";
+
+        document.getElementById(`txt-nome-${codFilial}`).style.display = "inline";
+        document.getElementById(`txt-import-${codFilial}`).style.display = "inline";
+        document.getElementById(`txt-ativo-${codFilial}`).style.display = "inline";
+
+        document.getElementById(`inp-nome-${codFilial}`).style.display = "none";
+        document.getElementById(`inp-import-${codFilial}`).style.display = "none";
+        document.getElementById(`inp-ativo-${codFilial}`).style.display = "none";
+
+        document.getElementById(`btn-editar-${codFilial}`).style.display = "inline-block";
+        document.getElementById(`btn-salvar-inline-${codFilial}`).style.display = "none";
+        document.getElementById(`btn-cancelar-inline-${codFilial}`).style.display = "none";
+    }
+
+    async function salvarFilialInline(codFilial) {
+        const nomeFilial = document.getElementById(`inp-nome-${codFilial}`).value.trim();
+        const nomeImportacao = document.getElementById(`inp-import-${codFilial}`).value.trim();
+        const ativo = document.getElementById(`inp-ativo-${codFilial}`).checked;
+
+        const formData = new FormData();
+        formData.append("acao", "alterar");
+        formData.append("cod_filial", codFilial);
+        formData.append("nome_filial", nomeFilial);
+        formData.append("nome_filial_importacao", nomeImportacao);
+        if (ativo) {
+            formData.append("ativo", "on");
+        }
+
+        try {
+            const resp = await fetch("{{ url_for('financeiro.cadastrar_filiais') }}", {
+                method: "POST",
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                body: formData
+            });
+
+            const dados = await resp.json();
+
+            if (!resp.ok || !dados.ok) {
+                mostrarErro(dados.erro || "Erro ao salvar filial.");
+                return;
+            }
+
+            document.getElementById(`txt-nome-${codFilial}`).textContent = dados.filial.nome_filial || "";
+            document.getElementById(`txt-import-${codFilial}`).textContent = dados.filial.nome_filial_importacao || "";
+            document.getElementById(`txt-ativo-${codFilial}`).textContent = dados.filial.ativo ? "Sim" : "Não";
+
+            mostrarMensagem(dados.mensagem || "Filial alterada com sucesso.");
+            cancelarEdicao(codFilial);
+        } catch (e) {
+            mostrarErro("Erro ao salvar filial.");
+        }
+    }
+    
+    async function salvarFilial() {
+        const codFilial = document.getElementById("cod_filial").value.trim();
+        const nomeFilial = document.getElementById("nome_filial").value.trim();
+        const nomeImportacao = document.getElementById("nome_filial_importacao").value.trim();
+        const ativo = document.getElementById("ativo").checked;
+
+        const formData = new FormData();
+        formData.append("acao", codFilial ? "alterar" : "novo");
+        formData.append("cod_filial", codFilial);
+        formData.append("nome_filial", nomeFilial);
+        formData.append("nome_filial_importacao", nomeImportacao);
+        if (ativo) {
+            formData.append("ativo", "on");
+        }
+
+        try {
+            const resp = await fetch("{{ url_for('financeiro.cadastrar_filiais') }}", {
+                method: "POST",
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                body: formData
+            });
+
+            const dados = await resp.json();
+
+            if (!resp.ok || !dados.ok) {
+                mostrarErro(dados.erro || "Erro ao salvar filial.");
+                return;
+            }
+
+            mostrarMensagem(dados.mensagem || "Operação realizada com sucesso.");
+            location.reload();
+        } catch (e) {
+            mostrarErro("Erro ao salvar filial.");
+        }
+    }
+
+    async function excluirFilialAtual() {
+        const codFilial = document.getElementById("cod_filial").value.trim();
+
+        if (!codFilial) {
+            mostrarErro("Selecione uma filial para excluir.");
+            return;
+        }
+
+        const linha = document.getElementById(`linha-filial-${codFilial}`);
+        const qtdeLanc = linha ? parseInt(linha.dataset.qtdeLancamentos || "0", 10) : 0;
+
+        if (qtdeLanc > 0) {
+            mostrarErro("Esta filial possui lançamentos e não pode ser excluída.");
+            return;
+        }
+
+        if (!confirm("Deseja realmente excluir esta filial?")) {
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append("acao", "excluir");
+        formData.append("cod_filial", codFilial);
+
+        try {
+            const resp = await fetch("{{ url_for('financeiro.cadastrar_filiais') }}", {
+                method: "POST",
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                body: formData
+            });
+
+            const dados = await resp.json();
+
+            if (!resp.ok || !dados.ok) {
+                mostrarErro(dados.erro || "Erro ao excluir filial.");
+                return;
+            }
+
+            mostrarMensagem(dados.mensagem || "Filial excluída com sucesso.");
+            location.reload();
+        } catch (e) {
+            mostrarErro("Erro ao excluir filial.");
+        }
+    }
+
+    function excluirFilialDaLinha(codFilial, qtdeLanc) {
+        if (qtdeLanc > 0) {
+            mostrarErro("Esta filial possui lançamentos e não pode ser excluída.");
+            return;
+        }
+
+        carregarFilialDaLinha(codFilial).then(() => {
+            excluirFilialAtual();
+        });
+    }
+
+    document.getElementById("btnSalvar").addEventListener("click", salvarFilial);
+    document.getElementById("btnExcluir").addEventListener("click", excluirFilialAtual);
+    document.getElementById("btnLimpar").addEventListener("click", limparFormulario);
+
+    atualizarEstadoBotoes();
+</script>
+
+{% endblock %}

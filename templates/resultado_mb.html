@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-
+{% include "components/nav.html" %}
 <style>
   html, body {
     overflow-x: auto !important;
@@ -96,20 +96,6 @@
 </style>
 
 <h2>Resultado por Margem Bruta</h2>
-<div style="margin-bottom: 20px;">
-  <a href="{{ url_for('financeiro.menu_empresa') }}"
-     style="
-       display:inline-block;
-       padding:10px 18px;
-       background:#2f6db5;
-       color:white;
-       text-decoration:none;
-       border-radius:8px;
-       font-weight:bold;
-     ">
-     ← Voltar ao Menu
-  </a>
-</div>
 
 <form method="get" class="filtro">
   Ano:

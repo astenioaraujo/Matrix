@@ -1,19 +1,18 @@
 {% extends "base.html" %}
 {% block content %}
 
+{% include "components/nav.html" %}
+
 <style>
-  html, body {
-    overflow-x: auto !important;
-    overflow-y: auto !important;
-    height: auto !important;
-    max-height: none !important;
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
   }
 
-  main, .content, .content-wrapper, .container, .page-mb {
-    overflow: visible !important;
-    overflow-y: visible !important;
-    height: auto !important;
-    max-height: none !important;
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
   }
 
   .page-mb {
@@ -21,72 +20,6 @@
     width: max-content;
     min-width: 100%;
     padding-bottom: 80px;
-  }
-
-  .table-wrapper {
-    display: block;
-    width: max-content;
-    min-width: 100%;
-    overflow-x: auto;
-    overflow-y: visible !important;
-    height: auto !important;
-    max-height: none !important;
-    border: 1px solid #d9d9d9;
-    border-radius: 10px;
-    background: #fff;
-    margin-bottom: 60px;
-  }
-
-  .mb-tabela {
-    border-collapse: collapse;
-    width: max-content;
-    min-width: 100%;
-  }
-
-  .mb-tabela th,
-  .mb-tabela td {
-    border: 1px solid #d9d9d9;
-    padding: 4px 8px;
-    white-space: nowrap;
-  }
-
-  .mb-tabela thead th {
-    background: #2f6db5;
-    color: #fff;
-    font-weight: bold;
-    text-align: center;
-  }
-
-  .mb-tabela td.num,
-  .mb-tabela th.num {
-    text-align: right;
-  }
-
-  .mb-tabela input {
-    width: 110px;
-    border: none;
-    outline: none;
-    background: transparent;
-    text-align: right;
-    padding: 2px 4px;
-    border-radius: 0;
-  }
-
-  .mb-tabela input:focus {
-    background: #fff8cc;
-  }
-
-  .linha-divisao td {
-    border-top: 4px solid #000 !important;
-  }
-
-  .col-ano { width: 80px; }
-  .col-mes { width: 80px; }
-  .col-total { width: 110px; }
-  .col-filial { width: 110px; }
-
-  .titulo-sec {
-    margin-bottom: 12px;
   }
 
   .mensagem-sucesso {
@@ -108,7 +41,7 @@
   }
 
   .barra-acoes {
-    margin-bottom: 14px;
+    margin-bottom: 16px;
     display: flex;
     gap: 10px;
     align-items: center;
@@ -121,18 +54,145 @@
     align-items: center;
     flex-wrap: wrap;
     margin: 0;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 14px;
+  }
+
+  .form-importar input[type="file"] {
+    padding: 8px 10px;
+    border: 1px solid #cfcfcf;
+    border-radius: 8px;
+    background: #fff;
+    font: inherit;
+  }
+
+  .btn-acao {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 10px 18px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 15px;
+    font-family: inherit;
+    line-height: 1.2;
+    border: 1px solid #c7c7c7;
+    box-sizing: border-box;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .btn-importar {
+    background: #2e9b57;
+    color: #fff;
+    border-color: #2e9b57;
+  }
+
+  .btn-importar:hover {
+    background: #25834a;
+    border-color: #25834a;
+  }
+
+  .btn-salvar {
+    background: #1a73e8;
+    color: #fff;
+    border-color: #1a73e8;
+  }
+
+  .btn-salvar:hover {
+    background: #155bc1;
+    border-color: #155bc1;
+  }
+
+  .painel-edicao {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 18px;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .table-wrapper {
+    display: block;
+    width: max-content;
+    min-width: 100%;
+    overflow-x: auto;
+    overflow-y: visible;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    background: #fff;
+    margin-bottom: 24px;
+  }
+
+  .mb-tabela {
+    border-collapse: collapse;
+    width: max-content;
+    min-width: 100%;
+    font-size: 13px;
+  }
+
+  .mb-tabela th,
+  .mb-tabela td {
+    border: 1px solid #d9d9d9;
+    padding: 4px 8px;
+    white-space: nowrap;
+  }
+
+  .mb-tabela thead th {
+    background: #2f6db5;
+    color: #fff;
+    font-weight: 700;
+    text-align: center;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+
+  .mb-tabela td.num,
+  .mb-tabela th.num {
+    text-align: right;
+  }
+
+  .mb-tabela input {
+    width: 110px;
+    border: none;
+    outline: none;
+    background: transparent;
+    text-align: right;
+    padding: 2px 4px;
+    border-radius: 0;
+    font: inherit;
+  }
+
+  .mb-tabela input:focus {
+    background: #fff8cc;
+  }
+
+  .linha-divisao td {
+    border-top: 4px solid #000 !important;
+  }
+
+  .col-ano { width: 80px; }
+  .col-mes { width: 80px; }
+  .col-total { width: 110px; }
+  .col-filial { width: 110px; }
+
+  .acoes-rodape {
+    margin-top: 14px;
   }
 </style>
 
 <div class="page-mb">
-  <h2>Margem Bruta</h2>
+  <div class="pagina-titulo">Margem Bruta</div>
 
-  <div class="titulo-sec">
-    Empresa ativa: <strong>{{ empresa_ativa }} - {{ nome_empresa_ativa }}</strong>
-  </div>
-
-  <div style="margin-bottom: 14px;">
-    <a class="btn btn-secondary" href="{{ url_for('financeiro.menu_empresa') }}">⟨ Voltar</a>
+  <div class="pagina-subtitulo">
+    Empresa: <strong>{{ empresa_ativa }} - {{ nome_empresa_ativa }}</strong>
   </div>
 
   {% if mensagem %}
@@ -144,15 +204,18 @@
   {% endif %}
 
   <div class="barra-acoes">
-    <form method="post" action="{{ url_for('importar_margem_bruta') }}" enctype="multipart/form-data" class="form-importar">
+    <form method="post"
+        action="{{ url_for('financeiro.importar_margem_bruta') }}"
+        enctype="multipart/form-data"
+        class="form-importar">
       <input type="file" name="arquivo" accept=".xlsx,.xlsm,.xls" required>
-      <button type="submit" class="btn btn-blue">Importar Excel</button>
+      <button type="submit" class="btn-acao btn-importar">Importar Excel</button>
     </form>
   </div>
 
-  <form method="post" action="{{ url_for('margem_bruta') }}">
-    <div style="margin-bottom: 14px;">
-      <button type="submit" class="btn btn-primary">Salvar Margem Bruta</button>
+  <form method="post" action="{{ url_for('financeiro.margem_bruta') }}">
+    <div class="painel-edicao">
+      <button type="submit" class="btn-acao btn-salvar">Salvar Margem Bruta</button>
     </div>
 
     <div class="table-wrapper">
@@ -204,8 +267,8 @@
       </table>
     </div>
 
-    <div style="margin-top: 14px;">
-      <button type="submit" class="btn btn-primary">Salvar Margem Bruta</button>
+    <div class="acoes-rodape">
+      <button type="submit" class="btn-acao btn-salvar">Salvar Margem Bruta</button>
     </div>
   </form>
 </div>
@@ -235,4 +298,4 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 </script>
 
-{% endblock %}
+{% endblock %} 

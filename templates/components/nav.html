@@ -1,0 +1,59 @@
+<div class="barra-navegacao">
+
+  {% if url_voltar %}
+    <a class="btn-nav btn-nav-voltar" href="{{ url_voltar }}">
+      {{ texto_voltar or "← Voltar" }}
+    </a>
+  {% endif %}
+
+
+</div>
+
+<style>
+  .barra-navegacao {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+
+  .btn-nav {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 10px 18px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 15px;
+    transition: 0.15s ease;
+    border: none;
+    box-sizing: border-box;
+    white-space: nowrap;
+  }
+
+  .btn-nav:hover {
+    transform: translateY(-1px);
+  }
+
+  .btn-nav-voltar {
+    background: #fff4a3;
+    color: #333;
+    border: 1px solid #e6d96a;
+  }
+
+  .btn-nav-voltar:hover {
+    background: #ffec80;
+  }
+
+  .btn-nav-modulo {
+    background: #2f66e0;
+    color: #fff;
+  }
+
+  .btn-nav-modulo:hover {
+    background: #2455c0;
+  }
+</style>

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% include "components/nav.html" %}
 
 <style>
   .pagina-titulo {
@@ -73,13 +74,14 @@
   }
 
   .btn-importar {
-    background: #1565c0;
+    background: #2e9b57;
     color: #fff;
-    border-color: #1565c0;
+    border-color: #2e9b57;
   }
 
   .btn-importar:hover {
-    filter: brightness(0.95);
+    background: #25834a;
+    border-color: #25834a;
   }
 
   .flash-msg {
@@ -179,15 +181,8 @@
 
       <div class="acoes">
         <button type="submit" class="btn-acao btn-importar">Importar</button>
-
-        <a class="btn-acao" href="{{ url_for('vendas.vendas_painel') }}">
-          ← Voltar para Painel
-        </a>
-
-        <a class="btn-acao" href="{{ url_for('sistema.menu_vendas') }}">
-          Menu de Vendas
-        </a>
       </div>
+
     </form>
 
     {% if filiais_nao_encontradas %}

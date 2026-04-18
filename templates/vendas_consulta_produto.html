@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% include "components/nav.html" %}
 
 <style>
   .pagina-titulo {
@@ -131,11 +132,6 @@
     Empresa: <strong>{{ nome_empresa }}</strong>
   </div>
 
-  <div class="acoes-topo">
-    <a class="btn-topo" href="{{ url_for('vendas.vendas_diarias') }}">Vendas Diárias</a>
-    <a class="btn-topo" href="{{ url_for('vendas.vendas_consultas') }}">Consultas</a>
-    <a class="btn-topo" href="{{ url_for('sistema.menu_vendas') }}">← Menu de Vendas</a>
-  </div>
 
   <form method="get" class="painel-filtros">
     <div class="grid-filtros">
