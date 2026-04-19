@@ -1,122 +1,213 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Classificações Automáticas</title>
+{% extends "base.html" %}
+{% block content %}
 
-    <style>
-        body {
-            font-family: Arial;
-            margin: 20px;
-        }
+{% include "components/nav.html" %}
 
-        h1 {
-            margin-bottom: 5px;
-        }
+<style>
+    .pagina-titulo {
+        font-size: 34px;
+        font-weight: 800;
+        margin-bottom: 8px;
+        color: #111;
+    }
 
-        .botoes {
-            margin: 15px 0;
-        }
+    .pagina-subtitulo {
+        font-size: 20px;
+        margin-bottom: 24px;
+        color: #222;
+    }
 
-        button {
-            padding: 10px 16px;
-            border-radius: 8px;
-            border: 1px solid #ccc;
-            background: #f3f4f6;
-            cursor: pointer;
-        }
+    .topo {
+        display: flex;
+        justify-content: flex-start;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+    }
 
-        button:hover {
-            background: #e5e7eb;
-        }
+    .btn-salvar {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 10px 18px;
+        border-radius: 10px;
+        border: 1px solid #1a73e8;
+        background: #1a73e8;
+        color: #fff;
+        font-weight: 700;
+        font-size: 15px;
+        cursor: pointer;
+        box-sizing: border-box;
+        white-space: nowrap;
+    }
 
-        .btn-excluir {
-            width: 100%;
-        }
+    .btn-salvar:hover {
+        background: #155bc1;
+        border-color: #155bc1;
+    }
 
-        table {
-            border-collapse: collapse;
-            width: 100%;
-        }
+    .btn-excluir {
+        width: 100%;
+        min-height: 40px;
+        border-radius: 8px;
+        border: 1px solid #d62828;
+        background: #d62828;
+        color: #fff;
+        font-weight: 700;
+        cursor: pointer;
+    }
 
-        th, td {
-            border: 1px solid #ddd;
-            padding: 6px;
-        }
+    .btn-excluir:hover {
+        background: #b91f1f;
+        border-color: #b91f1f;
+    }
 
-        th {
-            background: #f5f5f5;
-        }
+    .total {
+        font-size: 18px;
+        font-weight: 700;
+        margin-bottom: 14px;
+    }
 
-        input, select {
-            width: 100%;
-            box-sizing: border-box;
-            padding: 6px;
-        }
+    .mensagem {
+        color: #1d5c1d;
+        background: #eaf7ea;
+        border: 1px solid #a7d7a7;
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+    }
 
-        .col-texto { width: 30%; }
-        .col-grupo { width: 6%; }
-        .col-conta { width: 6%; }
-        .col-descricao { width: 24%; }
-        .col-complemento { width: 24%; }
-        .col-acao { width: 10%; }
+    .erro {
+        color: #7a1f1f;
+        background: #fdecec;
+        border: 1px solid #efb2b2;
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+    }
 
-        .mensagem { color: green; margin-bottom: 10px; }
-        .erro { color: red; margin-bottom: 10px; }
+    .table-wrapper {
+        overflow-x: auto;
+        border: 1px solid #d9d9d9;
+        border-radius: 10px;
+        background: #fff;
+    }
 
-        /* MODAL */
-        .modal-fundo {
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.35);
-            display: none;
-            align-items: center;
-            justify-content: center;
-        }
+    table {
+        border-collapse: collapse;
+        width: 100%;
+        min-width: 1200px;
+    }
 
-        .modal-caixa {
-            background: white;
-            padding: 24px;
-            border-radius: 16px;
-            width: 420px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
+    th, td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        vertical-align: middle;
+    }
 
-        .modal-titulo {
-            font-size: 22px;
-            font-weight: bold;
-            margin-bottom: 10px;
-        }
+    th {
+        background: #dbe8f4;
+        font-weight: 700;
+        text-align: left;
+    }
 
-        .modal-texto {
-            margin-bottom: 20px;
-        }
+    input, select {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px 10px;
+        border-radius: 6px;
+        border: 1px solid #bbb;
+        background: #fff;
+        font: inherit;
+    }
 
-        .modal-botoes {
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
-        }
+    .col-texto { width: 30%; }
+    .col-grupo { width: 7%; }
+    .col-conta { width: 7%; }
+    .col-descricao { width: 24%; }
+    .col-complemento { width: 22%; }
+    .col-acao { width: 10%; }
 
-        .btn-confirmar {
-            background: #d62828;
-            color: white;
-        }
+    .acoes-rodape {
+        margin-top: 15px;
+    }
 
-        .btn-confirmar:hover {
-            background: #b91c1c;
-        }
-    </style>
-</head>
+    .linha-nova td {
+        background: #fafafa;
+    }
 
-<body>
+    .descricao-fixa {
+        color: #444;
+        font-weight: 600;
+    }
 
-<h1>Classificações Automáticas</h1>
-<p><b>Empresa:</b> {{ empresa_ativa }} - {{ nome_empresa_ativa }}</p>
+    .modal-fundo {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.35);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+    }
 
-<div class="botoes">
-    <a href="/cadastros"><button>Cadastros</button></a>
-    <a href="/menu"><button>Menu</button></a>
+    .modal-caixa {
+        background: white;
+        padding: 24px;
+        border-radius: 16px;
+        width: 420px;
+        max-width: calc(100vw - 32px);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+
+    .modal-titulo {
+        font-size: 22px;
+        font-weight: bold;
+        margin-bottom: 10px;
+    }
+
+    .modal-texto {
+        margin-bottom: 20px;
+    }
+
+    .modal-botoes {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
+    .btn-modal {
+        min-height: 42px;
+        padding: 10px 16px;
+        border-radius: 10px;
+        border: 1px solid #c7c7c7;
+        background: #f3f4f6;
+        cursor: pointer;
+        font-weight: 700;
+    }
+
+    .btn-modal:hover {
+        background: #e5e7eb;
+    }
+
+    .btn-confirmar {
+        background: #d62828;
+        color: white;
+        border-color: #d62828;
+    }
+
+    .btn-confirmar:hover {
+        background: #b91c1c;
+        border-color: #b91c1c;
+    }
+</style>
+
+<div class="pagina-titulo">Classificações Automáticas</div>
+
+<div class="pagina-subtitulo">
+    <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
 </div>
 
 {% if mensagem %}
@@ -128,104 +219,107 @@
 {% endif %}
 
 <form method="POST">
+    <div class="topo">
+        <div class="total">
+            Total de classificações: {{ classificacoes|length }}
+        </div>
 
-<button type="submit" name="acao" value="salvar">Salvar Alterações</button>
-
-<br><br>
-
-<table>
-<thead>
-<tr>
-    <th class="col-texto">Texto</th>
-    <th class="col-grupo">Grupo</th>
-    <th class="col-conta">Conta</th>
-    <th class="col-descricao">Descrição</th>
-    <th class="col-complemento">Complemento</th>
-    <th class="col-acao">Ação</th>
-</tr>
-</thead>
-
-<tbody>
-
-<!-- LINHA NOVA -->
-<tr>
-    <td><input name="texto[]"></td>
-
-    <td>
-        <select name="cod_grupo[]">
-            <option value=""></option>
-            {% for g in range(1, 8) %}
-                <option value="{{ g }}">{{ g }}</option>
-            {% endfor %}
-        </select>
-    </td>
-
-    <td>
-        <select name="cod_conta[]">
-            <option value=""></option>
-            {% for n in range(1, 16) %}
-                <option value="{{ n }}">{{ n }}</option>
-            {% endfor %}
-        </select>
-    </td>
-
-    <td></td>
-    <td><input name="complemento[]"></td>
-    <td></td>
-
-    <input type="hidden" name="id_classificacao[]" value="">
-</tr>
-
-{% for c in classificacoes %}
-<tr>
-    <td>
-        <input name="texto[]" value="{{ c[1] }}">
-    </td>
-
-    <td>
-        <select name="cod_grupo[]">
-            <option value=""></option>
-            {% for g in range(1, 8) %}
-                <option value="{{ g }}" {% if c[2] == g %}selected{% endif %}>{{ g }}</option>
-            {% endfor %}
-        </select>
-    </td>
-
-    <td>
-        <select name="cod_conta[]">
-            <option value=""></option>
-            {% for n in range(1, 16) %}
-                <option value="{{ n }}" {% if c[3] == n %}selected{% endif %}>{{ n }}</option>
-            {% endfor %}
-        </select>
-    </td>
-
-    <td>
-        {{ c[4] or '' }}
-    </td>
-
-    <td>
-        <input name="complemento[]" value="{{ c[5] or '' }}">
-    </td>
-
-    <td>
-        <button type="button"
-                class="btn-excluir"
-                onclick="abrirModalExclusao('{{ c[0] }}', this)">
-            Excluir
+        <button type="submit" name="acao" value="salvar" class="btn-salvar">
+            Salvar Alterações
         </button>
-    </td>
+    </div>
 
-    <input type="hidden" name="id_classificacao[]" value="{{ c[0] }}">
-</tr>
-{% endfor %}
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th class="col-texto">Texto</th>
+                    <th class="col-grupo">Grupo</th>
+                    <th class="col-conta">Conta</th>
+                    <th class="col-descricao">Descrição</th>
+                    <th class="col-complemento">Complemento</th>
+                    <th class="col-acao">Ação</th>
+                </tr>
+            </thead>
 
-</tbody>
-</table>
+            <tbody>
+                <tr class="linha-nova">
+                    <td><input name="texto[]" value=""></td>
+
+                    <td>
+                        <select name="cod_grupo[]">
+                            <option value=""></option>
+                            {% for g in range(1, 8) %}
+                                <option value="{{ g }}">{{ g }}</option>
+                            {% endfor %}
+                        </select>
+                    </td>
+
+                    <td>
+                        <select name="cod_conta[]">
+                            <option value=""></option>
+                            {% for n in range(1, 16) %}
+                                <option value="{{ n }}">{{ n }}</option>
+                            {% endfor %}
+                        </select>
+                    </td>
+
+                    <td></td>
+                    <td><input name="complemento[]" value=""></td>
+                    <td></td>
+
+                    <input type="hidden" name="id_classificacao[]" value="">
+                </tr>
+
+                {% for c in classificacoes %}
+                <tr>
+                    <td>
+                        <input name="texto[]" value="{{ c[1] }}">
+                    </td>
+
+                    <td>
+                        <select name="cod_grupo[]">
+                            <option value=""></option>
+                            {% for g in range(1, 8) %}
+                                <option value="{{ g }}" {% if c[2] == g %}selected{% endif %}>{{ g }}</option>
+                            {% endfor %}
+                        </select>
+                    </td>
+
+                    <td>
+                        <select name="cod_conta[]">
+                            <option value=""></option>
+                            {% for n in range(1, 16) %}
+                                <option value="{{ n }}" {% if c[3] == n %}selected{% endif %}>{{ n }}</option>
+                            {% endfor %}
+                        </select>
+                    </td>
+
+                    <td class="descricao-fixa">
+                        {{ c[4] or '' }}
+                    </td>
+
+                    <td>
+                        <input name="complemento[]" value="{{ c[5] or '' }}">
+                    </td>
+
+                    <td>
+                        <button type="button"
+                                class="btn-excluir"
+                                onclick="abrirModalExclusao('{{ c[0] }}', this)">
+                            Excluir
+                        </button>
+                    </td>
+
+                    <input type="hidden" name="id_classificacao[]" value="{{ c[0] }}">
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 
 </form>
 
-<!-- MODAL -->
 <div id="modal" class="modal-fundo">
     <div class="modal-caixa">
         <div class="modal-titulo">Confirmar exclusão</div>
@@ -234,8 +328,8 @@
         </div>
 
         <div class="modal-botoes">
-            <button onclick="fecharModal()">Cancelar</button>
-            <button class="btn-confirmar" onclick="confirmarExclusao()">Excluir</button>
+            <button type="button" class="btn-modal" onclick="fecharModal()">Cancelar</button>
+            <button type="button" class="btn-modal btn-confirmar" onclick="confirmarExclusao()">Excluir</button>
         </div>
     </div>
 </div>
@@ -257,7 +351,6 @@ function fecharModal() {
 }
 
 async function confirmarExclusao() {
-
     const formData = new FormData();
     formData.append("id_excluir", idExcluir);
 
@@ -285,5 +378,4 @@ document.getElementById("modal").addEventListener("click", e => {
 });
 </script>
 
-</body>
-</html>
+{% endblock %}

@@ -266,7 +266,7 @@ def menu_cadastros():
     nome_empresa_ativa = session.get("nome_empresa")
 
     return render_template(
-        "cadastros.html",
+        "menu_cadastros.html",
         empresa_ativa=empresa_ativa,
         nome_empresa_ativa=nome_empresa_ativa,
         url_voltar=url_for("financeiro.menu_empresa")
@@ -505,6 +505,8 @@ def grupos_gerenciais():
         grupos=grupos,
         empresa_ativa=session["cod_empresa"],
         nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_cadastros"),
+        texto_voltar="← Voltar"
     )
 
 
@@ -581,6 +583,8 @@ def contas_gerenciais():
         erro=erro,
         empresa_ativa=session["cod_empresa"],
         nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_cadastros"),
+        texto_voltar="← Voltar"
     )
 
 
@@ -718,6 +722,8 @@ def classificacoes_automaticas():
         erro=erro,
         empresa_ativa=session["cod_empresa"],
         nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_cadastros"),
+        texto_voltar="← Voltar"
     )
 
 
@@ -982,19 +988,23 @@ def resultado_mb():
                 where_mes = "AND mes = %s"
                 params.append(mes)
 
+            campo_valor = "valor"
+            if tabela == "vendas_mb_sintetico":
+                campo_valor = "margem_bruta"
+
             cur.execute(f"""
-                SELECT cod_filial, COALESCE(SUM(valor), 0)
+                SELECT cod_filial, COALESCE(SUM({campo_valor}), 0)
                 FROM {tabela}
                 WHERE cod_empresa = %s
-                  AND ano = %s
-                  {where_mes}
-                  {filtro_extra}
+                AND ano = %s
+                {where_mes}
+                {filtro_extra}
                 GROUP BY cod_filial
             """, params)
 
             return {r[0]: float(r[1]) for r in cur.fetchall()}
 
-        mb = buscar_valores("margem_bruta", "")
+        mb = buscar_valores("vendas_mb_sintetico", "")
         desp = buscar_valores("lancamentos", "AND grupo = '4'")
         inv = buscar_valores("lancamentos", "AND grupo = '5'")
         div = buscar_valores("lancamentos", "AND grupo = '6'")
@@ -1287,16 +1297,18 @@ def margem_bruta():
                         valor = float(valor_txt.replace(".", "").replace(",", "."))
 
                     cur.execute("""
-                        INSERT INTO margem_bruta (
+                        INSERT INTO vendas_mb_sintetico (
                             cod_empresa,
                             cod_filial,
                             ano,
                             mes,
-                            valor
+                            margem_bruta
                         )
                         VALUES (%s, %s, %s, %s, %s)
                         ON CONFLICT (cod_empresa, cod_filial, ano, mes)
-                        DO UPDATE SET valor = EXCLUDED.valor
+                        DO UPDATE SET
+                            margem_bruta = EXCLUDED.margem_bruta,
+                            data_importacao = NOW()
                     """, (cod_empresa, cod_filial, ano, mes, valor))
 
                 conn.commit()
@@ -1308,15 +1320,15 @@ def margem_bruta():
 
         cur.execute("""
             SELECT DISTINCT ano, mes
-            FROM margem_bruta
+            FROM vendas_mb_sintetico
             WHERE cod_empresa = %s
             ORDER BY ano, mes
         """, (cod_empresa,))
         periodos = cur.fetchall()
 
         cur.execute("""
-            SELECT cod_filial, ano, mes, valor
-            FROM margem_bruta
+            SELECT cod_filial, ano, mes, margem_bruta
+            FROM vendas_mb_sintetico
             WHERE cod_empresa = %s
             ORDER BY ano, mes, cod_filial
         """, (cod_empresa,))
@@ -1327,12 +1339,17 @@ def margem_bruta():
         conn.close()
 
     mapa = {}
-    for cod_filial, ano, mes, valor in registros:
+    for cod_filial, ano, mes, margem_bruta in registros:
         chave = (ano, mes)
         if chave not in mapa:
-            mapa[chave] = {"ano": ano, "mes": mes, "valores": {}, "total": 0.0}
+            mapa[chave] = {
+                "ano": ano,
+                "mes": mes,
+                "valores": {},
+                "total": 0.0
+            }
 
-        v = float(valor or 0)
+        v = float(margem_bruta or 0)
         mapa[chave]["valores"][cod_filial] = v
         mapa[chave]["total"] += v
 
@@ -1417,6 +1434,181 @@ def importar_margem_bruta():
 
     return redirect(url_for("financeiro.margem_bruta"))
     
-@financeiro_bp.route("/exclusoes")
+# =========================
+# EXCLUSÕES DE LANÇAMENTOS
+# =========================
+@financeiro_bp.route("/exclusoes", methods=["GET", "POST"])
 def exclusoes():
-    return "Tela de exclusões ainda não migrada."
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    mensagem = ""
+    erro = ""
+
+    # filtros
+    ano_sel = request.values.get("ano", "")
+    mes_sel = request.values.get("mes", "")
+    filial_sel = request.values.get("filial", "")
+    grupo_sel = request.values.get("grupo", "")
+    conta_sel = request.values.get("conta", "")
+    data_ini = request.values.get("data_ini", "")
+    data_fim = request.values.get("data_fim", "")
+    busca = request.values.get("busca", "")
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        # =========================
+        # EXCLUSÃO (POST)
+        # =========================
+        if request.method == "POST":
+            ids = request.form.getlist("ids_marcados")
+
+            if ids:
+                cur.execute(f"""
+                    DELETE FROM lancamentos
+                    WHERE id_lancamento = ANY(%s)
+                      AND cod_empresa = %s
+                """, (ids, cod_empresa))
+
+                conn.commit()
+                mensagem = f"{len(ids)} lançamento(s) excluído(s) com sucesso."
+            else:
+                erro = "Nenhum registro selecionado."
+
+        # =========================
+        # FILTROS DINÂMICOS
+        # =========================
+        where = ["cod_empresa = %s"]
+        params = [cod_empresa]
+
+        if ano_sel:
+            where.append("ano = %s")
+            params.append(ano_sel)
+
+        if mes_sel:
+            where.append("mes = %s")
+            params.append(mes_sel)
+
+        if filial_sel:
+            where.append("nome_filial = %s")
+            params.append(filial_sel)
+
+        if grupo_sel:
+            where.append("grupo = %s")
+            params.append(grupo_sel)
+
+        if conta_sel:
+            where.append("conta = %s")
+            params.append(conta_sel)
+
+        if data_ini:
+            where.append("data >= %s")
+            params.append(data_ini)
+
+        if data_fim:
+            where.append("data <= %s")
+            params.append(data_fim)
+
+        if busca:
+            where.append("""
+                (historico ILIKE %s OR
+                 descricao_conta ILIKE %s OR
+                 complemento ILIKE %s)
+            """)
+            like = f"%{busca}%"
+            params.extend([like, like, like])
+
+        where_sql = " AND ".join(where)
+
+        # =========================
+        # CONSULTA PRINCIPAL
+        # =========================
+        cur.execute(f"""
+            SELECT
+                id_lancamento,
+                data,
+                nome_filial,
+                historico,
+                valor,
+                grupo,
+                conta,
+                descricao_conta,
+                complemento,
+                cod_empresa
+            FROM lancamentos
+            WHERE {where_sql}
+            ORDER BY data DESC, id_lancamento DESC
+            LIMIT 1000
+        """, params)
+
+        rows = cur.fetchall()
+
+        # =========================
+        # COMBOS (FILTROS)
+        # =========================
+        cur.execute("""
+            SELECT DISTINCT ano FROM lancamentos
+            WHERE cod_empresa = %s
+            ORDER BY ano DESC
+        """, (cod_empresa,))
+        anos = [r[0] for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT DISTINCT mes FROM lancamentos
+            WHERE cod_empresa = %s
+            ORDER BY mes
+        """, (cod_empresa,))
+        meses = [r[0] for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT DISTINCT nome_filial FROM lancamentos
+            WHERE cod_empresa = %s
+            ORDER BY nome_filial
+        """, (cod_empresa,))
+        filiais = [r[0] for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT DISTINCT grupo FROM lancamentos
+            WHERE cod_empresa = %s
+            ORDER BY grupo
+        """, (cod_empresa,))
+        grupos = [r[0] for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT DISTINCT conta FROM lancamentos
+            WHERE cod_empresa = %s
+            ORDER BY conta
+        """, (cod_empresa,))
+        contas = [r[0] for r in cur.fetchall()]
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "exclusoes.html",
+        rows=rows,
+        anos=anos,
+        meses=meses,
+        filiais=filiais,
+        grupos=grupos,
+        contas=contas,
+        ano_sel=ano_sel,
+        mes_sel=mes_sel,
+        filial_sel=filial_sel,
+        grupo_sel=grupo_sel,
+        conta_sel=conta_sel,
+        data_ini=data_ini,
+        data_fim=data_fim,
+        busca=busca,
+        mensagem=mensagem,
+        erro=erro,
+        empresa_ativa=session["cod_empresa"],
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_empresa"),
+        texto_voltar="← Voltar"
+    )

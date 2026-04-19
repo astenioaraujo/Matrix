@@ -19,8 +19,8 @@
   }
 
   .menu {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(3, 220px);  /* 3 botões iguais */
     gap: 14px;
   }
 
@@ -30,18 +30,19 @@
     justify-content: center;
     min-height: 56px;
     padding: 14px 22px;
-    border: 1px solid #c7c7c7;
+    border: 1px solid #6b4f2a;
     border-radius: 12px;
     text-decoration: none;
-    color: #1657c8;
+    color: #fff;
     font-weight: 700;
     font-size: 18px;
-    background: #f8f8f8;
+    background: #6b4f2a;
     transition: 0.15s ease;
   }
 
   .menu a:hover {
-    background: #eeeeee;
+    background: #5a4123;
+    border-color: #5a4123;
     transform: translateY(-1px);
   }
 </style>

@@ -1,90 +1,77 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <title>Grupos Gerenciais</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-            color: #111;
-        }
+{% extends "base.html" %}
+{% block content %}
 
-        h2 {
-            margin-bottom: 10px;
-        }
+{% include "components/nav.html" %}
 
-        .empresa {
-            font-size: 18px;
-            margin-bottom: 24px;
-        }
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        color: #111;
+    }
 
-        .menu {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 14px;
-            margin-bottom: 24px;
-        }
+    h2 {
+        margin-bottom: 10px;
+    }
 
-        .menu a {
-            display: inline-block;
-            padding: 14px 22px;
-            border: 1px solid #c7c7c7;
-            border-radius: 12px;
-            text-decoration: none;
-            color: #1657c8;
-            font-weight: 700;
-            font-size: 20px;
-            background: #f8f8f8;
-        }
+    .empresa {
+        font-size: 18px;
+        margin-bottom: 24px;
+    }
 
-        .menu a:hover {
-            background: #eeeeee;
-        }
+    .total {
+        font-size: 18px;
+        font-weight: 700;
+        margin-bottom: 14px;
+    }
 
-        .total {
-            font-size: 18px;
-            font-weight: 700;
-            margin-bottom: 14px;
-        }
+    .table-wrapper {
+        overflow-x: auto;
+        border: 1px solid #d9d9d9;
+        border-radius: 10px;
+        background: #fff;
+        width: fit-content;
+        max-width: 100%;
+    }
 
-        table {
-            border-collapse: collapse;
-            width: 900px;
-            max-width: 100%;
-        }
+    table {
+        border-collapse: collapse;
+        width: auto;
+        min-width: 600px;
+        font-size: 14px;
+    }
 
-        th, td {
-            border: 1px solid #cfcfcf;
-            padding: 10px 12px;
-            text-align: left;
-        }
+    th, td {
+        border: 1px solid #dddddd;
+        padding: 10px 12px;
+        text-align: left;
+        white-space: nowrap;
+    }
 
-        th {
-            background: #f2f2f2;
-        }
+    th {
+        background: #dbe8f4;
+        font-weight: 700;
+    }
 
-        tbody tr:hover {
-            background: #fafafa;
-        }
-    </style>
-</head>
-<body>
-    <h2>Grupos Gerenciais</h2>
+    tbody tr:nth-child(even) {
+        background: #fafafa;
+    }
 
-    <div class="empresa">
-        <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
-    </div>
+    tbody tr:hover {
+        background: #f1f1f1;
+    }
+</style>
 
-    <div class="menu">
-        <a href="{{ url_for('financeiro.menu_cadastros') }}">Voltar a Cadastros</a>
-        <a href="{{ url_for('financeiro.menu_empresa') }}">Voltar ao Menu</a>
-    </div>
+<h2>Grupos Gerenciais</h2>
 
-    <div class="total">
-        Total de grupos: {{ grupos|length }}
-    </div>
+<div class="empresa">
+    <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
 
+<div class="total">
+    Total de grupos: {{ grupos|length }}
+</div>
+
+<div class="table-wrapper">
     <table>
         <thead>
             <tr>
@@ -103,5 +90,6 @@
             {% endfor %}
         </tbody>
     </table>
-</body>
-</html>
+</div>
+
+{% endblock %}

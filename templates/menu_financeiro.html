@@ -44,14 +44,31 @@
     filter: brightness(0.95);
   }
 
-  .btn-resultado { background: #2a8f4a; }
-  .btn-lanc { background: #3b6fb6; }
-  .btn-import { background: #5a8dee; }
-  .btn-cad { background: #6c757d; }
-  .btn-matricial { background: #8e6bbf; }
-  .btn-mb { background: #2f9e9e; }
-  .btn-exclusoes { background: #b02a37; }
-  .btn-trocar { background: #c77d2b; }
+  .menu-botoes a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 60px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 16px;
+    color: #fff;
+
+    background: #6b4f2a;
+    border: 1px solid #6b4f2a;
+
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+    transition: all 0.2s ease;
+    text-align: center;
+    padding: 0 10px;
+}
+
+.menu-botoes a:hover {
+    transform: translateY(-2px);
+    background: #5a4123;
+    border-color: #5a4123;
+}
 
   .painel {
     margin-top: 20px;

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+{% include "components/nav.html" %}
 
 <style>
   .msg-ok {
@@ -36,7 +37,16 @@
   .btn-danger:hover {
     background: #b91f1f;
   }
+  .btn-primary {
+  background: #1a73e8;
+  color: #fff;
+  border: 1px solid #1a73e8;
+  }
 
+  .btn-primary:hover {
+    background: #155bc1;
+    border-color: #155bc1;
+  }
   .num {
     text-align: right;
   }
@@ -44,10 +54,6 @@
 
 <h2>Exclusão de lançamentos</h2>
 
-<p style="margin-top: -8px; color: #555;">
-  Empresa ativa: <strong>{{ empresa_ativa }} - {{ nome_empresa_ativa }}</strong>
-  · <a href="{{ url_for('trocar_empresa') }}">trocar empresa</a>
-</p>
 
 {% if mensagem %}
   <div class="msg-ok">{{ mensagem }}</div>
@@ -123,15 +129,13 @@
     </div>
 
     <div>
-      <button type="submit" class="btn btn-primary">Filtrar</button>
-      <a href="{{ url_for('exclusoes') }}" class="btn btn-secondary">Limpar</a>
+      <button type="submit" class="btn btn-primary">Carregar</button>
     </div>
   </div>
 </form>
 
 <div class="topo-acoes">
   <span><strong>{{ rows|length }}</strong> registro(s) encontrado(s).</span>
-  <a class="btn btn-secondary" href="{{ url_for('financeiro.menu_empresa') }}">Voltar ao menu</a>
 </div>
 
 <form method="post" onsubmit="return confirm('Confirma a exclusão dos lançamentos marcados?');">

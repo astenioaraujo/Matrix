@@ -203,20 +203,8 @@
     <div class="mensagem-erro">{{ erro }}</div>
   {% endif %}
 
-  <div class="barra-acoes">
-    <form method="post"
-        action="{{ url_for('financeiro.importar_margem_bruta') }}"
-        enctype="multipart/form-data"
-        class="form-importar">
-      <input type="file" name="arquivo" accept=".xlsx,.xlsm,.xls" required>
-      <button type="submit" class="btn-acao btn-importar">Importar Excel</button>
-    </form>
-  </div>
 
   <form method="post" action="{{ url_for('financeiro.margem_bruta') }}">
-    <div class="painel-edicao">
-      <button type="submit" class="btn-acao btn-salvar">Salvar Margem Bruta</button>
-    </div>
 
     <div class="table-wrapper">
       <table class="mb-tabela">
@@ -265,10 +253,6 @@
           {% endfor %}
         </tbody>
       </table>
-    </div>
-
-    <div class="acoes-rodape">
-      <button type="submit" class="btn-acao btn-salvar">Salvar Margem Bruta</button>
     </div>
   </form>
 </div>

@@ -1,138 +1,164 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <title>Contas Gerenciais</title>
+{% extends "base.html" %}
+{% block content %}
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-        }
+{% include "components/nav.html" %}
 
-        h2 {
-            margin-bottom: 10px;
-        }
+<style>
+    .pagina-titulo {
+        font-size: 34px;
+        font-weight: 800;
+        margin-bottom: 8px;
+        color: #111;
+    }
 
-        .empresa {
-            font-size: 18px;
-            margin-bottom: 20px;
-        }
+    .pagina-subtitulo {
+        font-size: 20px;
+        margin-bottom: 24px;
+        color: #222;
+    }
 
-        .topo {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
+    .topo {
+        display: flex;
+        justify-content: flex-start;
+        align-items: center;
+        gap: 16px;   /* pode aumentar um pouco o espaço */
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+    }
 
-        .botoes-topo a {
-            display: inline-block;
-            padding: 10px 16px;
-            border: 1px solid #c7c7c7;
-            border-radius: 10px;
-            text-decoration: none;
-            color: #1657c8;
-            font-weight: 700;
-            background: #f8f8f8;
-            margin-right: 8px;
-        }
+    .btn-salvar {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 44px;
+        padding: 10px 18px;
+        border-radius: 10px;
+        border: 1px solid #1a73e8;
+        background: #1a73e8;
+        color: #fff;
+        font-weight: 700;
+        font-size: 15px;
+        cursor: pointer;
+        box-sizing: border-box;
+        white-space: nowrap;
+    }
 
-        .botoes-topo a:hover {
-            background: #eeeeee;
-        }
+    .btn-salvar:hover {
+        background: #155bc1;
+        border-color: #155bc1;
+    }
 
-        .btn-salvar {
-            padding: 12px 18px;
-            border: 1px solid #c7c7c7;
-            border-radius: 10px;
-            background: #f8f8f8;
-            font-weight: bold;
-            color: #1657c8;
-            cursor: pointer;
-        }
+    .total {
+        font-size: 18px;
+        font-weight: 700;
+        margin-bottom: 14px;
+    }
 
-        .btn-salvar:hover {
-            background: #eeeeee;
-        }
+    .mensagem {
+        color: #1d5c1d;
+        background: #eaf7ea;
+        border: 1px solid #a7d7a7;
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+    }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
+    .erro {
+        color: #7a1f1f;
+        background: #fdecec;
+        border: 1px solid #efb2b2;
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+    }
 
-        th {
-            background: #f0f0f0;
-            text-align: left;
-        }
+    .table-wrapper {
+        overflow-x: auto;
+        border: 1px solid #d9d9d9;
+        border-radius: 10px;
+        background: #fff;
+    }
 
-        th, td {
-            padding: 8px;
-            border: 1px solid #ccc;
-        }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 900px;
+    }
 
-        th:nth-child(1), td:nth-child(1) { width: 60px; text-align: center; }
-        th:nth-child(2), td:nth-child(2) { width: 120px; }
-        th:nth-child(3), td:nth-child(3) { width: 70px; text-align: center; }
-        th:nth-child(4), td:nth-child(4) { width: auto; }
+    th {
+        background: #dbe8f4;
+        text-align: left;
+        font-weight: 700;
+    }
 
-        input[type="text"] {
-            width: 100%;
-            padding: 6px;
-            box-sizing: border-box;
-            border-radius: 6px;
-            border: 1px solid #bbb;
-        }
+    th, td {
+        padding: 8px;
+        border: 1px solid #ccc;
+    }
 
-        .mensagem {
-            color: green;
-            margin-bottom: 10px;
-        }
+    th:nth-child(1), td:nth-child(1) {
+        width: 60px;
+        text-align: center;
+    }
 
-        .erro {
-            color: red;
-            margin-bottom: 10px;
-        }
+    th:nth-child(2), td:nth-child(2) {
+        width: 140px;
+    }
 
-        .linha-separadora td {
-            padding: 0 !important;
-            height: 8px;
-            background: #000;
-            border: 0 !important;
-        }
-    </style>
-</head>
+    th:nth-child(3), td:nth-child(3) {
+        width: 70px;
+        text-align: center;
+    }
 
-<body>
+    th:nth-child(4), td:nth-child(4) {
+        width: auto;
+    }
 
-    <h2>Contas Gerenciais</h2>
+    input[type="text"] {
+        width: 100%;
+        padding: 8px 10px;
+        box-sizing: border-box;
+        border-radius: 6px;
+        border: 1px solid #bbb;
+        background: #fff;
+    }
 
-    <div class="empresa">
-        <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
-    </div>
+    .linha-separadora td {
+        padding: 0 !important;
+        height: 8px;
+        background: #000;
+        border: 0 !important;
+    }
 
+    .acoes-rodape {
+        margin-top: 15px;
+    }
+</style>
+
+<div class="pagina-titulo">Contas Gerenciais</div>
+
+<div class="pagina-subtitulo">
+    <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+{% if mensagem %}
+    <div class="mensagem">{{ mensagem }}</div>
+{% endif %}
+
+{% if erro %}
+    <div class="erro">{{ erro }}</div>
+{% endif %}
+
+<form method="post">
     <div class="topo">
-        <div class="botoes-topo">
-            <a href="{{ url_for('financeiro.menu_cadastros') }}">Cadastros</a>
-            <a href="{{ url_for('financeiro.menu_empresa') }}">Menu</a>
+        <div class="total">
+            Total de contas: {{ contas|length }}
         </div>
 
-        <form method="post">
-            <button type="submit" class="btn-salvar">Salvar Alterações</button>
-        </form>
+        <button type="submit" class="btn-salvar">Salvar Alterações</button>
     </div>
 
-    <h3>Total de contas: {{ contas|length }}</h3>
-
-    {% if mensagem %}
-        <div class="mensagem">{{ mensagem }}</div>
-    {% endif %}
-
-    {% if erro %}
-        <div class="erro">{{ erro }}</div>
-    {% endif %}
-
-    <form method="post">
+    <div class="table-wrapper">
         <table>
             <thead>
                 <tr>
@@ -145,7 +171,7 @@
 
             <tbody>
                 {% for c in contas %}
-                    {% if not loop.first and contas[loop.index0][0] != contas[loop.index0-1][0] %}
+                    {% if not loop.first and contas[loop.index0][0] != contas[loop.index0 - 1][0] %}
                     <tr class="linha-separadora">
                         <td colspan="4"></td>
                     </tr>
@@ -164,11 +190,8 @@
                 {% endfor %}
             </tbody>
         </table>
+    </div>
 
-        <div style="margin-top:15px;">
-            <button type="submit" class="btn-salvar">Salvar Alterações</button>
-        </div>
-    </form>
+</form>
 
-</body>
-</html>
+{% endblock %}
