@@ -2,6 +2,8 @@
 
 {% block content %}
 
+{% include "components/nav.html" %}
+
 <style>
   .pagina-titulo {
     font-size: 30px;
@@ -207,14 +209,6 @@
 
       <div class="acoes">
         <button type="submit" class="btn-acao btn-importar" id="btn-importar">Importar</button>
-
-        <a class="btn-acao" href="{{ url_for('vendas.vendas_diarias') }}">
-          ← Voltar para Vendas Diárias
-        </a>
-
-        <a class="btn-acao" href="{{ url_for('sistema.menu_vendas') }}">
-          Menu de Vendas
-        </a>
       </div>
     </form>
 

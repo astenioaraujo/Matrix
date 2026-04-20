@@ -78,18 +78,21 @@
   }
 
   .tabela-wrap {
-    overflow: visible;
+    overflow-x: auto;
+    overflow-y: visible;
     border: 1px solid #d9d9d9;
     border-radius: 8px;
     background: #fff;
-    width: max-content;
-    min-width: 100%;
+    width: fit-content;
+    max-width: 100%;
   }
-
+  .linha-domingo td {
+  border-top: 3px solid #b02a37; /* vermelho do título */
+  }
+  
   table {
     border-collapse: collapse;
-    width: max-content;
-    min-width: 100%;
+    width: auto;
     font-size: 13px;
   }
 
@@ -117,6 +120,19 @@
     max-width: 110px;
   }
 
+  th.col-quant, td.col-quant {
+    width: 120px;
+    min-width: 120px;
+    max-width: 120px;
+  }
+
+  th.col-valor, td.col-valor,
+  th.col-margem, td.col-margem {
+    width: 130px;
+    min-width: 130px;
+    max-width: 130px;
+  }
+
   .sem-dados {
     background: #fff;
     border: 1px solid #d9d9d9;
@@ -131,7 +147,6 @@
   <div class="pagina-subtitulo">
     Empresa: <strong>{{ nome_empresa }}</strong>
   </div>
-
 
   <form method="get" class="painel-filtros">
     <div class="grid-filtros">
@@ -184,14 +199,14 @@
             <th class="col-custo">PR. CUSTO</th>
             <th class="col-preco">PR. VENDA</th>
             <th class="col-mun">MUN</th>
-            <th>QUANT</th>
-            <th>VALOR</th>
-            <th>MARGEM</th>
+            <th class="col-quant">QUANT</th>
+            <th class="col-valor">VALOR</th>
+            <th class="col-margem">MARGEM</th>
           </tr>
         </thead>
         <tbody>
           {% for linha in linhas %}
-          <tr>
+          <tr class="{% if linha.dia_semana == 'Domingo' %}linha-domingo{% endif %}">
             <td class="num">{{ linha.cod_filial }}</td>
             <td>{{ linha.nome_filial }}</td>
             <td>{{ linha.data_fmt }}</td>
@@ -201,9 +216,9 @@
             <td class="num col-custo" style="background: {{ linha.custo_cor }};">{{ formatar_numero_br(linha.custo) }}</td>
             <td class="num col-preco" style="background: {{ linha.preco_venda_cor }};">{{ formatar_numero_br(linha.preco_venda) }}</td>
             <td class="num col-mun" style="background: {{ linha.mun_cor }};">{{ formatar_numero_br(linha.mun) }}</td>
-            <td class="num" style="background: {{ linha.quantidade_cor }};">{{ formatar_numero_br(linha.quantidade) }}</td>
-            <td class="num" style="background: {{ linha.valor_cor }};">{{ formatar_numero_br(linha.valor) }}</td>
-            <td class="num" style="background: {{ linha.margem_bruta_cor }};">{{ formatar_numero_br(linha.margem_bruta) }}</td>
+            <td class="num col-quant" style="background: {{ linha.quantidade_cor }};">{{ formatar_numero_br(linha.quantidade) }}</td>
+            <td class="num col-valor" style="background: {{ linha.valor_cor }};">{{ formatar_numero_br(linha.valor) }}</td>
+            <td class="num col-margem" style="background: {{ linha.margem_bruta_cor }};">{{ formatar_numero_br(linha.margem_bruta) }}</td>
           </tr>
           {% endfor %}
         </tbody>

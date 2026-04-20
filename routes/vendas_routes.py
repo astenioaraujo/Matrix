@@ -880,6 +880,7 @@ def vendas_painel():
 # IMPORTAÇÃO DO PAINEL
 # =========================
 @vendas_bp.route("/painel/importar", methods=["GET", "POST"])
+@vendas_bp.route("/painel/importar", methods=["GET", "POST"])
 def vendas_importar_painel():
     if "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
@@ -888,18 +889,25 @@ def vendas_importar_painel():
     nome_empresa = session.get("nome_empresa", "")
     padrao = obter_parametros_padrao_importacao()
 
-    return render_template(
-        "vendas_importar_painel.html",
-        nome_empresa=nome_empresa,
-        ano_sugerido=padrao["ano"],
-        mes_sugerido=padrao["mes"],
-        dia_base_sugerido=padrao["dia_base"],
-        dias_mes_sugerido=padrao["dias_mes"],
+    if request.method == "GET":
+        return render_template(
+            "vendas_importar_painel.html",
+            nome_empresa=nome_empresa,
+            ano_sugerido=padrao["ano"],
+            mes_sugerido=padrao["mes"],
+            dia_base_sugerido=padrao["dia_base"],
+            dias_mes_sugerido=padrao["dias_mes"],
+            url_voltar=url_for("vendas.vendas_painel"),
+            texto_voltar="← Voltar para Painel"
+        )
 
-        # 👇 ADICIONAR ISSO
-        url_voltar=url_for("vendas.vendas_painel"),
-        texto_voltar="← Voltar para Painel"
-    )
+    arquivo = request.files.get("arquivo")
+    ano_txt = (request.form.get("ano") or "").strip()
+    mes_txt = (request.form.get("mes") or "").strip()
+    dia_base_txt = (request.form.get("dia_base") or "").strip()
+    dias_mes_txt = (request.form.get("dias_mes") or "").strip()
+
+
     
     arquivo = request.files.get("arquivo")
     ano_txt = (request.form.get("ano") or "").strip()
@@ -1118,7 +1126,9 @@ def vendas_importar_painel():
         ano_sugerido=ano,
         mes_sugerido=mes,
         dia_base_sugerido=dia_base,
-        dias_mes_sugerido=dias_mes
+        dias_mes_sugerido=dias_mes,
+        url_voltar=url_for("vendas.vendas_painel"),
+        texto_voltar="← Voltar para Painel"
     )
 
 
@@ -1208,7 +1218,9 @@ def vendas_importar_diarias():
         return render_template(
             "vendas_importar_diarias.html",
             nome_empresa=nome_empresa,
-            job_id=None
+            job_id=None,
+            url_voltar=url_for("sistema.menu_vendas"),
+            texto_voltar="← Voltar"
         )
 
     arquivo = request.files.get("arquivo")
@@ -1536,7 +1548,9 @@ def vendas_importar_diarias():
     return render_template(
         "vendas_importar_diarias.html",
         nome_empresa=nome_empresa,
-        job_id=job_id
+        job_id=job_id,
+        url_voltar=url_for("sistema.menu_vendas"),
+        texto_voltar="← Voltar"
     )
 
 # =========================

@@ -62,33 +62,10 @@
       align-items: center;
       gap: 14px;
     }
-  
-    .brand-mark {
-      width: 14px;
-      height: 38px;
-      background: var(--yellow);
-      border-radius: 3px;
-      flex: 0 0 auto;
-    }
-  
-    .brand-text {
-      display: flex;
-      flex-direction: column;
-      line-height: 1;
-    }
-  
-    .brand-title {
-      font-size: 28px;
-      font-weight: 900;
-      letter-spacing: 1px;
-    }
-  
-    .brand-subtitle {
-      margin-top: 4px;
-      font-size: 12px;
-      color: #cfcfcf;
-      letter-spacing: 1.4px;
-      text-transform: uppercase;
+
+    .brand img {
+      height: 60px;
+      display: block;
     }
 
     .topo-usuario {
@@ -245,11 +222,7 @@
   <header>
     <div class="header-inner">
       <div class="brand">
-        <div class="brand-mark"></div>
-        <div class="brand-text">
-          <div class="brand-title">MATRX</div>
-          <div class="brand-subtitle">Data Intelligence</div>
-        </div>
+        <img src="{{ url_for('static', filename='img/logo_matrx.png') }}" alt="MATRX">
       </div>
 
       {% if session.get("id_usuario") %}

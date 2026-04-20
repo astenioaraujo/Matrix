@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify
 from datetime import datetime
 import math
-
+from psycopg2.extras import RealDictCursor
 from db import get_connection
 from services.dashboard_service import montar_dashboard
 from utils.formatters import formatar_numero_br, formatar_int
@@ -1065,7 +1065,7 @@ def resultado_mb():
     )
 
 # =========================
-# ROTAS PROVISÓRIAS
+# MATRICIAL
 # =========================
 
 
@@ -1115,7 +1115,235 @@ def matricial():
         url_voltar=url_for("financeiro.menu_empresa"),
         texto_voltar="← Voltar"
     )
-    
+
+# =========================
+# VARIACOES 
+# =========================
+
+@financeiro_bp.route("/variacoes")
+def variacoes():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    ano_sel = (request.args.get("ano") or "").strip()
+    filial_sel = (request.args.get("filial") or "").strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+
+        # captura o parâmetro original
+        ano_param = request.args.get("ano", None)
+
+        # lista de anos
+        cur.execute("""
+            SELECT DISTINCT ano
+            FROM lancamentos
+            WHERE cod_empresa = %s
+              AND ano IS NOT NULL
+            ORDER BY ano
+        """, (cod_empresa,))
+        anos = [r["ano"] for r in cur.fetchall()]
+
+        # definição do ano selecionado
+        if ano_param is None:
+            # primeira vez: seleciona o último ano existente na base
+            ano_sel = str(anos[-1]) if anos else ""
+        else:
+            # veio da tela (pode ser "" = Todos ou um ano específico)
+            ano_sel = ano_param
+
+
+        # lista de filiais
+        cur.execute("""
+            SELECT cod_filial, nome_filial
+            FROM filiais
+            WHERE cod_empresa = %s
+              AND ativo = TRUE
+            ORDER BY cod_filial
+        """, (cod_empresa,))
+        filiais = cur.fetchall()
+
+        # contas gerenciais por grupo
+        cur.execute("""
+            SELECT
+                cg.cod_grupo,
+                gg.descricao AS nome_grupo,
+                cg.cod_conta,
+                cg.descricao
+            FROM contas_gerenciais cg
+            LEFT JOIN grupos_gerenciais gg
+              ON gg.cod_grupo = cg.cod_grupo
+            WHERE cg.cod_empresa = %s
+            ORDER BY cg.cod_grupo, cg.cod_conta
+        """, (cod_empresa,))
+        contas = cur.fetchall()
+
+        contas_por_grupo = {}
+        for c in contas:
+            g = c["cod_grupo"]
+            if g not in contas_por_grupo:
+                contas_por_grupo[g] = {
+                    "nome_grupo": c["nome_grupo"] or f"Grupo {g}",
+                    "contas": []
+                }
+            contas_por_grupo[g]["contas"].append({
+                "cod_conta": c["cod_conta"],
+                "descricao": c["descricao"] or "-"
+            })
+
+        # valores dos lançamentos
+        params = [cod_empresa]
+        sql_ano = ""
+        sql_filial = ""
+
+        if ano_sel:
+            sql_ano = "AND l.ano >= %s"
+            params.append(int(ano_sel))
+
+        if filial_sel:
+            sql_filial = "AND l.cod_filial = %s"
+            params.append(filial_sel)
+
+        cur.execute(f"""
+            SELECT
+                l.grupo,
+                l.conta,
+                l.ano,
+                l.mes,
+                COALESCE(SUM(l.valor), 0) AS valor
+            FROM lancamentos l
+            WHERE l.cod_empresa = %s
+            {sql_ano}
+            {sql_filial}
+            AND l.grupo IS NOT NULL
+            AND l.conta IS NOT NULL
+            GROUP BY l.grupo, l.conta, l.ano, l.mes
+            ORDER BY l.ano, l.mes, l.grupo, l.conta
+        """, params)
+
+        valores = cur.fetchall()
+
+    finally:
+        cur.close()
+        conn.close()
+
+    mapa_valores = {}
+    for v in valores:
+        chave = (
+            str(v["grupo"]).strip(),
+            str(v["conta"]).strip(),
+            int(v["ano"]),
+            int(v["mes"])
+        )
+        mapa_valores[chave] = float(v["valor"] or 0)
+
+    mapa_meses = {
+        1: "JAN", 2: "FEV", 3: "MAR", 4: "ABR",
+        5: "MAI", 6: "JUN", 7: "JUL", 8: "AGO",
+        9: "SET", 10: "OUT", 11: "NOV", 12: "DEZ"
+    }
+    periodos = sorted(
+    {(int(v["ano"]), int(v["mes"])) for v in valores},
+    key=lambda x: (x[0], x[1])
+    )    
+
+    grupos = []
+    for grupo in sorted(contas_por_grupo.keys(), key=lambda x: int(x)):
+        info = contas_por_grupo[grupo]
+        linhas = []
+        ultimo_ano = None
+
+        for ano, num_mes in periodos:
+            linha = {
+                "ano": ano,
+                "mes_num": num_mes,
+                "mes_nome": mapa_meses[num_mes],
+                "valores": [],
+                "total_mes": 0.0,
+                "quebra_ano": False
+            }
+
+            if ultimo_ano is not None and ano != ultimo_ano:
+                linha["quebra_ano"] = True
+
+            ultimo_ano = ano
+
+            for conta in info["contas"]:
+                valor = mapa_valores.get(
+                    (str(grupo), str(conta["cod_conta"]), ano, num_mes),
+                    0.0
+                )
+                linha["valores"].append(valor)
+                linha["total_mes"] += valor
+
+            linhas.append(linha)
+
+        grupos.append({
+            "cod_grupo": grupo,
+            "nome_grupo": info["nome_grupo"],
+            "contas": info["contas"],
+            "linhas": linhas
+        })
+    def cor_excel(valor, vmin, vmax):
+        if valor is None:
+            return ""
+
+        if vmax == vmin:
+            return ""
+
+        ratio = (valor - vmin) / (vmax - vmin)
+        ratio = max(0, min(1, ratio))
+
+        if ratio < 0.5:
+            r = 255
+            g = int(255 * (ratio * 2))
+            b = 0
+        else:
+            r = int(255 * (1 - (ratio - 0.5) * 2))
+            g = 255
+            b = 0
+
+        return f"background-color: rgb({r},{g},{b});"
+
+    for grupo in grupos:
+        colunas = list(zip(*[linha["valores"] for linha in grupo["linhas"]]))
+        grupo["min_max"] = []
+
+        for col in colunas:
+            valores_validos = [v for v in col if v is not None]
+
+            if valores_validos:
+                grupo["min_max"].append({
+                    "min": min(valores_validos),
+                    "max": max(valores_validos)
+                })
+            else:
+                grupo["min_max"].append({
+                    "min": 0,
+                    "max": 0
+                })
+    return render_template(
+        "variacoes.html",
+        anos=anos,
+        ano_sel=ano_sel,
+        filiais=filiais,
+        filial_sel=filial_sel,
+        grupos=grupos,
+        nome_empresa=session.get("nome_empresa", ""),
+        empresa_ativa=session.get("cod_empresa", ""),
+        url_voltar=url_for("financeiro.menu_empresa"),
+        texto_voltar="← Voltar",
+        formatar_numero_br=formatar_numero_br,
+        cor_excel=cor_excel
+    )
+
+# =========================
+# DADOS DETALHADOS
+# =========================
 
 @financeiro_bp.route("/dados_detalhados")
 def dados_detalhados():
@@ -1256,6 +1484,11 @@ def dados_detalhados():
         url_voltar=url_for("financeiro.menu_empresa"),
         texto_voltar="← Voltar"
     )
+
+# =========================
+# MARGEM BRUTA
+# =========================
+
 @financeiro_bp.route("/margem_bruta", methods=["GET", "POST"])
 def margem_bruta():
     if "cod_empresa" not in session:
@@ -1378,61 +1611,6 @@ def margem_bruta():
         texto_voltar="← Voltar"
     )
 
-
-@financeiro_bp.route("/importar_margem_bruta", methods=["POST"])
-def importar_margem_bruta():
-    if "cod_empresa" not in session:
-        return redirect(url_for("auth.index"))
-
-    cod_empresa = str(session["cod_empresa"]).strip()
-
-    arquivo = request.files.get("arquivo")
-
-    if not arquivo or arquivo.filename == "":
-        return redirect(url_for("financeiro.margem_bruta"))
-
-    import tempfile
-    from openpyxl import load_workbook
-
-    conn = get_connection()
-    cur = conn.cursor()
-
-    try:
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-        arquivo.save(tmp.name)
-        tmp.close()
-
-        wb = load_workbook(tmp.name, data_only=True)
-        ws = wb.worksheets[0]
-
-        # 🔴 AJUSTE AQUI conforme seu layout de Excel
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            ano, mes, cod_filial, valor = row[:4]
-
-            if not ano or not mes or not cod_filial:
-                continue
-
-            valor = float(valor or 0)
-
-            cur.execute("""
-                INSERT INTO margem_bruta
-                (cod_empresa, cod_filial, ano, mes, valor)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (cod_empresa, cod_filial, ano, mes)
-                DO UPDATE SET valor = EXCLUDED.valor
-            """, (cod_empresa, int(cod_filial), int(ano), int(mes), valor))
-
-        conn.commit()
-
-    except Exception as e:
-        conn.rollback()
-        print("Erro importação MB:", e)
-
-    finally:
-        cur.close()
-        conn.close()
-
-    return redirect(url_for("financeiro.margem_bruta"))
     
 # =========================
 # EXCLUSÕES DE LANÇAMENTOS

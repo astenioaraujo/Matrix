@@ -1,11 +1,12 @@
 <div class="barra-navegacao">
 
+
+  <!-- BOTÃO VOLTAR -->
   {% if url_voltar %}
     <a class="btn-nav btn-nav-voltar" href="{{ url_voltar }}">
       {{ texto_voltar or "← Voltar" }}
     </a>
   {% endif %}
-
 
 </div>
 
@@ -13,11 +14,18 @@
   .barra-navegacao {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 16px;
     margin-bottom: 18px;
     flex-wrap: wrap;
   }
 
+  /* LOGO */
+  .logo-area img {
+    height: 42px;
+    opacity: 0.95;
+  }
+
+  /* BOTÕES */
   .btn-nav {
     display: inline-flex;
     align-items: center;
@@ -38,6 +46,7 @@
     transform: translateY(-1px);
   }
 
+  /* VOLTAR */
   .btn-nav-voltar {
     background: #fff4a3;
     color: #333;
@@ -48,12 +57,13 @@
     background: #ffec80;
   }
 
+  /* PADRÃO MARROM (se usar depois) */
   .btn-nav-modulo {
-    background: #2f66e0;
+    background: #6b4f2a;
     color: #fff;
   }
 
   .btn-nav-modulo:hover {
-    background: #2455c0;
+    background: #5a4123;
   }
 </style>
