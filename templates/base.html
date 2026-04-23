@@ -57,6 +57,27 @@
       flex-wrap: wrap;
     }
   
+    .pagina-wrap {
+      max-width: 1280px;
+    }
+
+    .pagina-titulo {
+      font-size: 40px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      color: #111;
+      line-height: 1.15;
+    }
+
+    .pagina-subtitulo {
+      font-size: 22px;
+      margin-bottom: 30px;
+      color: #333;
+    }
+
+    .pagina-subtitulo strong {
+      color: #111;
+    }
     .brand {
       display: flex;
       align-items: center;
@@ -145,6 +166,29 @@
   
     .btn-blue:hover {
       background: var(--blue-hover);
+    }
+    .nav-acoes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 20px;
+    }
+
+    .btn-nav {
+      display: inline-block;
+      background: #7b5a2a;
+      color: #fff;
+      padding: 14px 26px;
+      border-radius: 16px;
+      font-weight: 700;
+      text-decoration: none;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+      transition: 0.15s;
+    }
+
+    .btn-nav:hover {
+      transform: translateY(-2px);
+      filter: brightness(0.95);
     }
   
     .table-wrapper {

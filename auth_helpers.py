@@ -29,3 +29,23 @@ def admin_empresa_obrigatorio(f):
 
         return f(*args, **kwargs)
     return wrapper
+
+def superusuario_obrigatorio(f):
+
+    @wraps(f)
+
+    def wrapper(*args, **kwargs):
+
+        if "id_usuario" not in session:
+
+            return redirect(url_for("auth.index"))
+
+        if session.get("tipo_global") != "superusuario":
+
+            flash("Acesso permitido somente para superusuários.", "error")
+
+            return redirect(url_for("sistema.selecionar_sistema"))
+
+        return f(*args, **kwargs)
+
+    return wrapper

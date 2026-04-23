@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .painel-filtro {
+    max-width: 1400px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+  }
+
+  .linha-filtros {
+    display: grid;
+    grid-template-columns: 220px auto;
+    gap: 18px;
+    align-items: end;
+  }
+
+  .campo label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .campo input {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .btn-filtrar {
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid #1565c0;
+    background: #1565c0;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .tabela-wrapper {
+    max-width: 1400px;
+    overflow: auto;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    background: #fff;
+  }
+
+  th, td {
+    border: 1px solid #dcdcdc;
+    padding: 10px 12px;
+    white-space: nowrap;
+  }
+
+  th {
+    background: #f1f1f1;
+    text-align: left;
+  }
+
+  .col-data {
+    width: 140px;
+    min-width: 140px;
+    max-width: 140px;
+  }
+
+  .col-preco {
+    width: 180px;
+    min-width: 180px;
+    max-width: 180px;
+    text-align: right;
+    font-family: monospace;
+  }
+
+  td.valor {
+    text-align: right;
+    font-family: monospace;
+    transition: background-color 0.2s ease;
+  }
+
+  .sem-dados {
+    font-weight: 700;
+    color: #666;
+  }
+</style>
+
+<div class="pagina-titulo">Consultar Preço de Compra</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="painel-filtro">
+  <form method="get">
+    <div class="linha-filtros">
+      <div class="campo">
+        <label for="data_ini">A partir de</label>
+        <input type="date" id="data_ini" name="data_ini" value="{{ data_ini }}">
+      </div>
+      <div>
+        <button type="submit" class="btn-filtrar">Filtrar</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+{% if datas %}
+  <div class="tabela-wrapper">
+    <table id="tabela-precos-compra">
+      <thead>
+        <tr>
+          <th class="col-data">Data</th>
+          {% for p in produtos %}
+            <th class="col-preco">{{ p.cod_produto }} - {{ p.descricao }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in datas %}
+        <tr>
+          <td class="col-data">{{ d.strftime("%d/%m/%Y") }}</td>
+          {% for p in produtos %}
+            {% set valor = linhas_por_data[d].get(p.cod_produto|string, 0) %}
+            <td
+              class="valor col-preco heat-col-{{ loop.index0 }}"
+              data-col="{{ loop.index0 }}"
+              data-valor="{{ valor }}"
+            >
+              {{ valor | br }}
+            </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="sem-dados">Nenhum preço encontrado no período.</div>
+{% endif %}
+
+<script>
+  function hexToRgb(hex) {
+    hex = hex.replace("#", "");
+    return {
+      r: parseInt(hex.substring(0, 2), 16),
+      g: parseInt(hex.substring(2, 4), 16),
+      b: parseInt(hex.substring(4, 6), 16)
+    };
+  }
+
+  function rgbToHex(r, g, b) {
+    const toHex = (v) => {
+      const h = Math.round(v).toString(16).padStart(2, "0");
+      return h;
+    };
+    return "#" + toHex(r) + toHex(g) + toHex(b);
+  }
+
+  function mixColors(c1, c2, t) {
+    const a = hexToRgb(c1);
+    const b = hexToRgb(c2);
+    return rgbToHex(
+      a.r + (b.r - a.r) * t,
+      a.g + (b.g - a.g) * t,
+      a.b + (b.b - a.b) * t
+    );
+  }
+
+  function gerarPaleta51Faixas() {
+    const vermelho = "#f8696b";
+    const amarelo  = "#ffeb84";
+    const verde    = "#63be7b";
+
+    const cores = [];
+
+    for (let i = 0; i <= 50; i++) {
+      if (i <= 25) {
+        const t = i / 25;
+        cores.push(mixColors(vermelho, amarelo, t));
+      } else {
+        const t = (i - 25) / 25;
+        cores.push(mixColors(amarelo, verde, t));
+      }
+    }
+
+    return cores;
+  }
+
+  function parseNumero(valor) {
+    if (valor === null || valor === undefined || valor === "") return null;
+    const n = Number(valor);
+    return isNaN(n) ? null : n;
+  }
+
+  function aplicarMapaCalorPorColuna() {
+    const paleta = gerarPaleta51Faixas();
+    const totalColunas = {{ produtos|length }};
+
+    for (let col = 0; col < totalColunas; col++) {
+      const celulas = Array.from(document.querySelectorAll('.heat-col-' + col));
+      const valores = celulas
+        .map(td => parseNumero(td.dataset.valor))
+        .filter(v => v !== null);
+
+      if (valores.length === 0) continue;
+
+      const min = Math.min(...valores);
+      const max = Math.max(...valores);
+
+      celulas.forEach(td => {
+        const valor = parseNumero(td.dataset.valor);
+        if (valor === null) return;
+
+        let faixa = 25;
+
+        if (max > min) {
+          const proporcao = (valor - min) / (max - min);
+          faixa = Math.round(proporcao * 50);
+        }
+
+        faixa = Math.max(0, Math.min(50, faixa));
+        td.style.backgroundColor = paleta[faixa];
+      });
+    }
+  }
+
+  aplicarMapaCalorPorColuna();
+</script>
+
+{% endblock %}

@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .bloco-filial {
+    margin-bottom: 30px;
+    background: #fff;
+    border-radius: 14px;
+    border: 1px solid #ddd;
+    padding: 20px;
+    max-width: 1200px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+
+  .titulo-filial {
+    font-size: 20px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+  }
+
+  th, td {
+    padding: 8px 10px;
+    border: 1px solid #ddd;
+    white-space: nowrap;
+  }
+
+  th {
+    background: #f1f1f1;
+    text-align: left;
+  }
+
+  td.valor {
+    text-align: right;
+  }
+
+  input.campo {
+    width: 160px;
+  }
+
+  .status {
+    font-size: 12px;
+    margin-left: 6px;
+    color: green;
+    font-weight: 700;
+  }
+
+  .status.erro {
+    color: #9f2f2f;
+  }
+</style>
+
+<div class="pagina-titulo">Capacidade de Tanques</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+{% for cod_filial, f in filiais.items() %}
+  <div class="bloco-filial">
+
+    <div class="titulo-filial">
+      Filial {{ cod_filial }} - {{ f.nome_filial }}
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Produto</th>
+          <th>Descrição</th>
+          <th>Capacidade</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {% for item in f.itens %}
+        <tr>
+          <td>{{ item.cod_produto }}</td>
+          <td>{{ item.descricao }}</td>
+          <td>
+            <input
+              type="text"
+              class="campo"
+              data-filial="{{ item.cod_filial }}"
+              data-produto="{{ item.cod_produto }}"
+              value="{{ item.capacidade_tanque | br }}"
+            >
+            <span id="s_{{ item.cod_filial }}_{{ item.cod_produto }}" class="status"></span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+  </div>
+{% endfor %}
+
+<script>
+function formatarNumeroBR(valor) {
+  if (!valor) return "";
+
+  valor = valor.toString().replace(/\D/g, "");
+  if (valor === "") return "";
+
+  valor = (parseInt(valor, 10) / 100).toFixed(2);
+  valor = valor.replace(".", ",");
+  valor = valor.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+
+  return valor;
+}
+
+function normalizarValorExistente(valor) {
+  if (!valor) return "";
+
+  let texto = valor.toString().trim();
+  if (texto.includes(",")) return texto;
+
+  let numero = Number(texto);
+  if (isNaN(numero)) return texto;
+
+  return numero.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
+function salvar(input) {
+  if (input.dataset.salvando === "1") return;
+
+  const filial = input.dataset.filial;
+  const produto = input.dataset.produto;
+  const status = document.getElementById("s_" + filial + "_" + produto);
+
+  const form = new URLSearchParams();
+  form.append("cod_filial", filial);
+  form.append("cod_produto", produto);
+  form.append("capacidade", input.value);
+
+  input.dataset.salvando = "1";
+  status.textContent = "Salvando...";
+  status.classList.remove("erro");
+
+  fetch('{{ url_for("operacoes.ajax_salvar_capacidade") }}', {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "X-Requested-With": "XMLHttpRequest"
+    },
+    body: form.toString()
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      status.textContent = "✔";
+      status.classList.remove("erro");
+      setTimeout(() => {
+        status.textContent = "";
+      }, 1200);
+    } else {
+      status.textContent = data.erro || "Erro";
+      status.classList.add("erro");
+    }
+  })
+  .catch(() => {
+    status.textContent = "Erro";
+    status.classList.add("erro");
+  })
+  .finally(() => {
+    input.dataset.salvando = "0";
+  });
+}
+
+document.querySelectorAll(".campo").forEach(input => {
+  input.value = normalizarValorExistente(input.value);
+
+  input.addEventListener("input", function() {
+    this.value = formatarNumeroBR(this.value);
+  });
+
+  input.addEventListener("focus", function() {
+    this.select();
+  });
+
+  input.addEventListener("blur", function() {
+    salvar(this);
+  });
+
+  input.addEventListener("keydown", function(e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      salvar(this);
+    }
+  });
+});
+</script>
+
+{% endblock %}

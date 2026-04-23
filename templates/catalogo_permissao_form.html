@@ -18,11 +18,6 @@
     margin-bottom: 8px;
   }
 
-  .subtitulo {
-    font-size: 18px;
-    margin-bottom: 20px;
-  }
-
   .linha-form {
     margin-bottom: 16px;
   }
@@ -33,8 +28,7 @@
     margin-bottom: 6px;
   }
 
-  .linha-form input,
-  .linha-form select {
+  .linha-form input {
     width: 100%;
     box-sizing: border-box;
   }
@@ -81,11 +75,7 @@
 
 <div class="box">
   <div class="titulo">
-    {% if usuario %}Editar usuário{% else %}Novo usuário{% endif %}
-  </div>
-
-  <div class="subtitulo">
-    Empresa: <strong>{{ nome_empresa }}</strong>
+    {% if permissao %}Editar permissão{% else %}Nova permissão{% endif %}
   </div>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
@@ -97,59 +87,39 @@
   {% endwith %}
 
   <form method="post">
+ 
     <div class="linha-form">
-      <label for="nome">Nome</label>
-      <input
-        type="text"
-        id="nome"
-        name="nome"
-        value="{{ usuario.nome if usuario else '' }}"
-        required
-      >
+        <label for="ordem">Ordem</label>
+        <input type="number" id="ordem" name="ordem" value="{{ permissao.ordem if permissao else 0 }}" required>
+      </div>
+ 
+    <div class="linha-form">
+      <label for="sistema">Sistema</label>
+      <input type="text" id="sistema" name="sistema" value="{{ permissao.sistema if permissao else '' }}" required>
     </div>
 
     <div class="linha-form">
-      <label for="email">Email</label>
-      <input
-        type="email"
-        id="email"
-        name="email"
-        value="{{ usuario.email if usuario else '' }}"
-        required
-      >
+      <label for="opcao">Opção</label>
+      <input type="text" id="opcao" name="opcao" value="{{ permissao.opcao if permissao else '' }}" required>
     </div>
 
     <div class="linha-form">
-      <label for="senha">
-        {% if usuario %}Nova senha (deixe em branco para manter a atual){% else %}Senha inicial{% endif %}
-      </label>
-      <input
-        type="password"
-        id="senha"
-        name="senha"
-        {% if not usuario %}required{% endif %}
-      >
+      <label for="descricao">Descrição</label>
+      <input type="text" id="descricao" name="descricao" value="{{ permissao.descricao if permissao else '' }}" required>
     </div>
 
-    <div class="linha-form">
-      <label for="perfil_empresa">Perfil</label>
-      <select id="perfil_empresa" name="perfil_empresa">
-        <option value="admin" {% if usuario and usuario.perfil_empresa == 'admin' %}selected{% endif %}>Admin</option>
-        <option value="operador" {% if usuario and usuario.perfil_empresa == 'operador' %}selected{% endif %}>Operador</option>
-        <option value="consulta" {% if usuario and usuario.perfil_empresa == 'consulta' %}selected{% endif %}>Consulta</option>
-      </select>
-    </div>
+
 
     <div class="linha-form">
       <label>
-        <input type="checkbox" name="ativo" {% if not usuario or usuario.ativo %}checked{% endif %}>
-        Usuário ativo
+        <input type="checkbox" name="ativo" {% if not permissao or permissao.ativo %}checked{% endif %}>
+        Ativo
       </label>
     </div>
 
     <div class="acoes">
       <button type="submit" class="btn-salvar">Salvar</button>
-      <a href="{{ url_voltar or url_for('usuarios.listar_usuarios') }}" class="btn-voltar">Voltar</a>
+      <a href="{{ url_for('usuarios.catalogo_permissoes') }}" class="btn-voltar">Voltar</a>
     </div>
   </form>
 </div>

@@ -1219,7 +1219,7 @@ def vendas_importar_diarias():
             "vendas_importar_diarias.html",
             nome_empresa=nome_empresa,
             job_id=None,
-            url_voltar=url_for("sistema.menu_vendas"),
+            url_voltar=url_for("vendas.vendas_diarias"),
             texto_voltar="← Voltar"
         )
 
@@ -1549,7 +1549,7 @@ def vendas_importar_diarias():
         "vendas_importar_diarias.html",
         nome_empresa=nome_empresa,
         job_id=job_id,
-        url_voltar=url_for("sistema.menu_vendas"),
+        url_voltar=url_for("vendas.vendas_diarias"),
         texto_voltar="← Voltar"
     )
 
@@ -1678,10 +1678,13 @@ def vendas_consultas():
         data_ini=data_ini.strftime("%Y-%m-%d"),
         data_fim=data_fim.strftime("%Y-%m-%d"),
         formatar_numero_br=formatar_numero_br,
-        url_voltar=url_for("vendas.vendas_diarias"),
+        url_voltar=url_for("sistema.menu_vendas"),
         texto_voltar="← Voltar"
     )
 
+# --------------------------------------------------------
+# IMPORTAR - PROGRESSO
+# --------------------------------------------------------
 
 @vendas_bp.route("/diarias/importar/progresso/<job_id>")
 def vendas_importar_diarias_progresso(job_id):
@@ -1733,6 +1736,10 @@ def vendas_importar_diarias_progresso(job_id):
     finally:
         cur.close()
         conn.close()
+
+# ------------------------------------------
+# CONSULTA POR PRODUTO
+# ------------------------------------------
 
 @vendas_bp.route("/consulta_produto")
 def vendas_consulta_produto():
@@ -1848,7 +1855,7 @@ def vendas_consulta_produto():
         data_ini=data_ini.strftime("%Y-%m-%d"),
         produto_sel=produto_sel,
         formatar_numero_br=formatar_numero_br,
-        url_voltar=url_for("vendas.vendas_consultas"),
+        url_voltar=url_for("sistema.menu_vendas"),
         texto_voltar="← Voltar"
     )
 

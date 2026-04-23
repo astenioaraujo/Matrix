@@ -41,10 +41,10 @@
 
   .grid-botoes {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(260px, 320px));
     gap: 20px;
+    justify-content: start;
   }
-
   .btn-sistema {
     display: flex;
     flex-direction: column;
@@ -71,6 +71,10 @@
     font-size: 30px;
     margin-bottom: 8px;
     line-height: 1;
+  }
+
+  .btn-operacoes {
+    background: #e07a2f;
   }
 
   .btn-financeiro {
@@ -128,27 +132,42 @@
     <div class="secao-titulo">Acesso aos módulos</div>
 
     <div class="grid-botoes">
-      <a class="btn-sistema btn-financeiro" href="{{ url_for('financeiro.menu_empresa') }}">
-        <div class="btn-icone">💰</div>
-        <div>Financeiro</div>
-      </a>
 
-      <a class="btn-sistema btn-vendas" href="{{ url_for('sistema.menu_vendas') }}">
-        <div class="btn-icone">📊</div>
-        <div>Vendas</div>
-      </a>
+      {% if pode_operacoes %}
+        <a class="btn-sistema btn-operacoes" href="{{ url_for('operacoes.menu_operacoes') }}">
+          <div class="btn-icone">⛽</div>
+          <div>Operações</div>
+        </a>
+      {% endif %}
 
-      <a class="btn-sistema btn-config" href="{{ url_for('financeiro.cadastrar_filiais') }}">
-        <div class="btn-icone">⚙️</div>
-        <div>Configurações</div>
-      </a>
+      {% if pode_financeiro %}
+        <a class="btn-sistema btn-financeiro" href="{{ url_for('financeiro.menu_empresa') }}">
+          <div class="btn-icone">💰</div>
+          <div>Financeiro</div>
+        </a>
+      {% endif %}
 
-      {% if session.get("tipo_global") == "superusuario" or session.get("perfil_empresa") == "admin" %}
-        <a class="btn-sistema btn-usuarios" href="{{ url_for('usuarios.listar_usuarios') }}">
+      {% if pode_vendas %}
+        <a class="btn-sistema btn-vendas" href="{{ url_for('sistema.menu_vendas') }}">
+          <div class="btn-icone">📊</div>
+          <div>Vendas</div>
+        </a>
+      {% endif %}
+
+      {% if pode_configuracoes %}
+        <a class="btn-sistema btn-config" href="{{ url_for('financeiro.cadastrar_filiais') }}">
+          <div class="btn-icone">⚙️</div>
+          <div>Configurações</div>
+        </a>
+      {% endif %}
+
+      {% if pode_usuarios %}
+        <a class="btn-sistema btn-usuarios" href="{{ url_for('usuarios.menu_usuarios') }}">
           <div class="btn-icone">👥</div>
           <div>Usuários</div>
         </a>
       {% endif %}
+
     </div>
   </div>
 </div>

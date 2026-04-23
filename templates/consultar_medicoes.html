@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .painel-filtro {
+    max-width: 1400px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+  }
+
+  .linha-filtros {
+    display: grid;
+    grid-template-columns: 220px 320px auto;
+    gap: 18px;
+    align-items: end;
+  }
+
+  .col-num {
+    width: 160px;
+    text-align: right;
+  }
+
+  .campo label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .campo input,
+  .campo select {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .acoes {
+    display: flex;
+    gap: 10px;
+  }
+
+  .btn-filtrar {
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid #1565c0;
+    background: #1565c0;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn-limpar {
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid #c7c7c7;
+    background: #f7f7f7;
+    color: #1f3c88;
+    text-decoration: none;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .bloco-filial {
+    max-width: 1400px;
+    margin-bottom: 22px;
+  }
+
+  .titulo-filial {
+    font-weight: 800;
+    font-size: 18px;
+    margin-bottom: 8px;
+    padding: 10px 14px;
+    background: #f1f1f1;
+    border: 1px solid #d9d9d9;
+    border-radius: 12px;
+  }
+
+  .tabela-wrapper {
+    max-width: 1400px;
+    overflow: auto;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #dcdcdc;
+    padding: 10px 12px;
+    white-space: nowrap;
+  }
+
+  th {
+    background: #f1f1f1;
+    text-align: left;
+  }
+
+  td.valor {
+    text-align: right;
+    font-family: monospace;
+  }
+
+  .linha-total td {
+    font-weight: 800;
+    background: #e3f0ff;
+    color: #0b3d91;
+  }
+
+  .sem-dados {
+    max-width: 1400px;
+    font-weight: 700;
+    color: #666;
+    margin-top: 12px;
+  }
+</style>
+
+<div class="pagina-titulo">Consultar Medições</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="painel-filtro">
+  <form method="get">
+    <div class="linha-filtros">
+      <div class="campo">
+        <label for="data">Data</label>
+        <input type="date" id="data" name="data" value="{{ data_sel }}">
+      </div>
+
+      <div class="campo">
+        <label for="cod_filial">Filial</label>
+        <select id="cod_filial" name="cod_filial">
+          <option value="">Todas</option>
+          {% for f in filiais %}
+            <option value="{{ f.cod_filial }}" {% if filial_sel|string == f.cod_filial|string %}selected{% endif %}>
+              {{ f.cod_filial }} - {{ f.nome_filial }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="acoes">
+        <button type="submit" class="btn-filtrar">Filtrar</button>
+        <a href="{{ url_for('operacoes.consultar_medicoes') }}" class="btn-limpar">Limpar</a>
+      </div>
+    </div>
+  </form>
+</div>
+
+{% if linhas %}
+
+{% set ns = namespace(
+  filial_atual='',
+  total_capacidade=0,
+  total_medicao=0,
+  total_descarregada=0,
+  total_vendida=0,
+  geral_capacidade=0,
+  geral_medicao=0,
+  geral_descarregada=0,
+  geral_vendida=0
+) %}
+
+{% for l in linhas %}
+  {% set chave_filial = (l.cod_filial|string) ~ ' - ' ~ (l.nome_filial or '') %}
+
+  {% if ns.filial_atual != chave_filial %}
+    {% if not loop.first %}
+      <tr class="linha-total">
+        <td></td>
+        <td></td>
+        <td style="text-align:right;">Totais da Filial</td>
+        <td class="valor col-num">{{ ns.total_capacidade | br }}</td>
+        <td class="valor col-num">{{ ns.total_medicao | br }}</td>
+        <td class="valor col-num">{{ ns.total_descarregada | br }}</td>
+        <td class="valor col-num">{{ ns.total_vendida | br }}</td>
+      </tr>
+      </tbody></table></div></div>
+    {% endif %}
+
+    {% set ns.total_capacidade = 0 %}
+    {% set ns.total_medicao = 0 %}
+    {% set ns.total_descarregada = 0 %}
+    {% set ns.total_vendida = 0 %}
+
+    <div class="bloco-filial">
+      <div class="titulo-filial">
+        Filial: {{ l.cod_filial }} - {{ l.nome_filial or "" }}
+      </div>
+
+      <div class="tabela-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Produto</th>
+              <th>Descrição</th>
+              <th class="col-num">Capacidade Tanques</th>
+              <th class="col-num">Medição</th>
+              <th class="col-num">Quantidade Descarregada</th>
+              <th class="col-num">Quantidade Vendida</th>
+            </tr>
+          </thead>
+          <tbody>
+
+    {% set ns.filial_atual = chave_filial %}
+  {% endif %}
+
+  {% set ns.total_capacidade = ns.total_capacidade + (l.capacidade_tanque or 0) %}
+  {% set ns.total_medicao = ns.total_medicao + (l.quantidade_medida or 0) %}
+  {% set ns.total_descarregada = ns.total_descarregada + (l.quantidade_descarregada or 0) %}
+  {% set ns.total_vendida = ns.total_vendida + (l.quantidade_vendida or 0) %}
+
+  {% set ns.geral_capacidade = ns.geral_capacidade + (l.capacidade_tanque or 0) %}
+  {% set ns.geral_medicao = ns.geral_medicao + (l.quantidade_medida or 0) %}
+  {% set ns.geral_descarregada = ns.geral_descarregada + (l.quantidade_descarregada or 0) %}
+  {% set ns.geral_vendida = ns.geral_vendida + (l.quantidade_vendida or 0) %}
+
+  <tr>
+    <td>{{ l.data_medicao.strftime("%d/%m/%Y") if l.data_medicao else "" }}</td>
+    <td>{{ l.cod_produto }}</td>
+    <td>{{ l.descricao or "" }}</td>
+    <td class="valor col-num">{{ l.capacidade_tanque | br }}</td>
+    <td class="valor col-num">{{ l.quantidade_medida | br }}</td>
+    <td class="valor col-num">{{ l.quantidade_descarregada | br }}</td>
+    <td class="valor col-num">{{ l.quantidade_vendida | br }}</td>
+  </tr>
+
+  {% if loop.last %}
+    <tr class="linha-total">
+      <td></td>
+      <td></td>
+      <td style="text-align:right;">Totais da Filial</td>
+      <td class="valor col-num">{{ ns.total_capacidade | br }}</td>
+      <td class="valor col-num">{{ ns.total_medicao | br }}</td>
+      <td class="valor col-num">{{ ns.total_descarregada | br }}</td>
+      <td class="valor col-num">{{ ns.total_vendida | br }}</td>
+    </tr>
+    </tbody></table></div></div>
+  {% endif %}
+{% endfor %}
+
+<!-- TOTAL GERAL -->
+<div class="bloco-filial">
+  <div class="titulo-filial" style="background:#e3f0ff; color:#0b3d91;">
+    Total Geral
+  </div>
+
+  <div class="tabela-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th></th>
+          <th></th>
+          <th></th>
+          <th class="col-num">Capacidade Tanques</th>
+          <th class="col-num">Medição</th>
+          <th class="col-num">Quantidade Descarregada</th>
+          <th class="col-num">Quantidade Vendida</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="linha-total">
+          <td></td>
+          <td></td>
+          <td style="text-align:right;"></td>
+          <td class="valor col-num">{{ ns.geral_capacidade | br }}</td>
+          <td class="valor col-num">{{ ns.geral_medicao | br }}</td>
+          <td class="valor col-num">{{ ns.geral_descarregada | br }}</td>
+          <td class="valor col-num">{{ ns.geral_vendida | br }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% else %}
+<div class="sem-dados">
+  Nenhuma medição encontrada para os filtros informados.
+</div>
+{% endif %}
+
+{% endblock %}

@@ -43,6 +43,17 @@
     text-decoration: underline;
   }
 
+  .btn-excluir {
+    color: #b42318;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .btn-excluir:hover {
+    text-decoration: underline;
+  }
+
   .flash-msg {
     padding: 10px 14px;
     border-radius: 8px;
@@ -62,7 +73,6 @@
     border: 1px solid #efc2c2;
   }
 
-  /* melhora visual da tabela */
   .table-wrapper {
     margin-top: 10px;
   }
@@ -73,6 +83,13 @@
 
   th {
     background: #f1f1f1;
+  }
+
+  .acoes-links {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
   }
 </style>
 
@@ -105,7 +122,7 @@
         <th>Email</th>
         <th>Perfil</th>
         <th>Ativo</th>
-        <th>Ação</th>
+        <th>Ações</th>
       </tr>
     </thead>
     <tbody>
@@ -116,15 +133,60 @@
         <td>{{ u.perfil_empresa }}</td>
         <td>{{ "Sim" if u.ativo else "Não" }}</td>
         <td>
-          <a class="btn-toggle"
-             href="{{ url_for('usuarios.toggle_usuario', id_usuario=u.id_usuario) }}">
-            Alternar
-          </a>
+          <div class="acoes-links">
+            <a class="btn-toggle"
+               href="{{ url_for('usuarios.editar_usuario', id_usuario=u.id_usuario) }}">
+              Editar
+            </a>
+
+            <a class="btn-toggle"
+               href="{{ url_for('usuarios.toggle_usuario', id_usuario=u.id_usuario) }}">
+              Alternar
+            </a>
+
+            {% if u.pode_excluir %}
+              <a href="#"
+                 class="btn-excluir btn-excluir-usuario"
+                 data-id="{{ u.id_usuario }}">
+                Excluir
+              </a>
+            {% endif %}
+          </div>
         </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+
+<script>
+document.querySelectorAll(".btn-excluir-usuario").forEach(function(btn) {
+  btn.addEventListener("click", function(e) {
+    e.preventDefault();
+
+    const idUsuario = this.dataset.id;
+
+    if (!confirm("Deseja realmente excluir este usuário?")) {
+      return;
+    }
+
+    fetch(`/usuarios/ajax/excluir/${idUsuario}`, {
+      method: "POST",
+      headers: {
+        "X-Requested-With": "XMLHttpRequest"
+      }
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        alert(data.erro || "Não foi possível excluir.");
+        return;
+      }
+      window.location.reload();
+    })
+    .catch(() => alert("Erro ao excluir usuário."));
+  });
+});
+</script>
 
 {% endblock %}

@@ -1,0 +1,363 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .flash-msg {
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-weight: 600;
+  }
+
+  .flash-success {
+    background: #e6f4ea;
+    color: #1e6b34;
+    border: 1px solid #b7dfc2;
+  }
+
+  .flash-error {
+    background: #fdeaea;
+    color: #9f2f2f;
+    border: 1px solid #efc2c2;
+  }
+
+  .painel-form {
+    max-width: 1400px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+
+  .linha-topo {
+    display: grid;
+    grid-template-columns: 220px 320px 1fr;
+    gap: 18px;
+    align-items: end;
+    margin-bottom: 24px;
+  }
+
+  .campo label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .status-salvo {
+    margin-left: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #1e6b34;
+  }
+
+  .status-erro {
+    color: #9f2f2f;
+  }
+
+  .campo input,
+  .campo select {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .aviso-bloqueio {
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: #fff4e5;
+    color: #8a4b00;
+    border: 1px solid #f0c27b;
+    font-weight: 700;
+  }
+
+  .tabela-wrapper {
+    margin-top: 12px;
+    overflow-x: auto;
+  }
+
+  .col-num {
+    width: 160px;
+    text-align: right;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    background: #fff;
+  }
+
+  th, td {
+    border: 1px solid #dcdcdc;
+    padding: 10px 12px;
+    text-align: left;
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+
+  th {
+    background: #f1f1f1;
+  }
+
+  td.valor {
+    text-align: right;
+  }
+
+  .sem-filial {
+    margin-top: 12px;
+    font-weight: 700;
+    color: #9f2f2f;
+  }
+
+  .input-medicao {
+    width: 150px;
+  }
+</style>
+
+<div class="pagina-titulo">Informar Medições</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<div class="painel-form">
+  <form method="post">
+    <div class="linha-topo">
+      <div class="campo">
+        <label>Data</label>
+        <input type="text" value="{{ hoje }}" readonly>
+      </div>
+
+      <div class="campo">
+        <label for="cod_filial">Filial</label>
+        <select name="cod_filial" id="cod_filial" onchange="window.location='{{ url_for('operacoes.informar_medicoes') }}?cod_filial=' + this.value">
+          <option value="">Selecione</option>
+          {% for f in filiais %}
+            <option value="{{ f.cod_filial }}" {% if filial_sel|string == f.cod_filial|string %}selected{% endif %}>
+              {{ f.cod_filial }} - {{ f.nome_filial }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="campo">
+        {% if bloqueado_horario %}
+          <div class="aviso-bloqueio">
+            Alterações bloqueadas. A medição só pode ser alterada até 10:00.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if filial_sel %}
+      {% if produtos %}
+        <div class="tabela-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Produto</th>
+                <th class="col-num">Capacidade Tanques</th>
+                <th class="col-num">Medição</th>
+
+                <th class="col-num">
+                  Quantidade Descarregada<br>
+                  <span style="font-weight: normal; font-size: 12px;">(dia anterior)</span>
+                </th>
+
+                <th class="col-num">
+                  Quantidade Vendida<br>
+                  <span style="font-weight: normal; font-size: 12px;">(dia anterior)</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in produtos %}
+              {% set med = medicoes_existentes.get(p.cod_produto|string, {}) %}
+              <tr>
+                <td>{{ p.cod_produto }}</td>
+                <td>{{ p.descricao }}</td>
+                <td class="valor col-num">{{ p.capacidade_tanque | br }}</td>
+
+                <td class="col-num">
+                  <input
+                    type="text"
+                    class="input-medicao campo-valor"
+                    data-cod-produto="{{ p.cod_produto }}"
+                    data-cod-filial="{{ filial_sel }}"
+                    data-campo="quantidade_medida"
+                    name="med_{{ p.cod_produto }}"
+                    value="{{ med.get('quantidade_medida', '') }}"
+                    {% if bloqueado_horario %}disabled{% endif %}
+                  >
+                </td>
+
+                <td class="col-num">
+                  <input
+                    type="text"
+                    class="input-medicao campo-valor"
+                    data-cod-produto="{{ p.cod_produto }}"
+                    data-cod-filial="{{ filial_sel }}"
+                    data-campo="quantidade_descarregada"
+                    name="desc_{{ p.cod_produto }}"
+                    value="{{ med.get('quantidade_descarregada', '') }}"
+                    {% if bloqueado_horario %}disabled{% endif %}
+                  >
+                </td>
+
+                <td class="col-num">
+                  <input
+                    type="text"
+                    class="input-medicao campo-valor"
+                    data-cod-produto="{{ p.cod_produto }}"
+                    data-cod-filial="{{ filial_sel }}"
+                    data-campo="quantidade_vendida"
+                    name="vend_{{ p.cod_produto }}"
+                    value="{{ med.get('quantidade_vendida', '') }}"
+                    {% if bloqueado_horario %}disabled{% endif %}
+                  >
+                  <span class="status-salvo" id="status_{{ p.cod_produto }}"></span>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="sem-filial">
+          Não há tanques cadastrados para esta filial.
+        </div>
+      {% endif %}
+    {% else %}
+      <div class="sem-filial">
+        Selecione uma filial para informar as medições.
+      </div>
+    {% endif %}
+  </form>
+</div>
+
+<script>
+  function formatarNumeroBR(valor) {
+    if (!valor) return "";
+
+    valor = valor.toString().replace(/\D/g, "");
+    if (valor === "") return "";
+
+    valor = (parseInt(valor, 10) / 100).toFixed(2);
+    valor = valor.replace(".", ",");
+    valor = valor.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+
+    return valor;
+  }
+
+  function normalizarValorExistente(valor) {
+    if (!valor) return "";
+
+    let texto = valor.toString().trim();
+    if (texto.includes(",")) return texto;
+
+    let numero = Number(texto);
+    if (isNaN(numero)) return texto;
+
+    return numero.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+
+  async function salvarCampo(input) {
+    if (input.dataset.salvando === "1") return;
+
+    const codProduto = input.dataset.codProduto;
+    const codFilial = input.dataset.codFilial;
+    const campo = input.dataset.campo;
+    const status = document.getElementById("status_" + codProduto);
+
+    const formData = new URLSearchParams();
+    formData.append("cod_filial", codFilial);
+    formData.append("cod_produto", codProduto);
+    formData.append("campo", campo);
+    formData.append("valor", input.value);
+
+    input.dataset.salvando = "1";
+    status.textContent = "Salvando...";
+    status.classList.remove("status-erro");
+
+    try {
+      const resposta = await fetch('{{ url_for("operacoes.ajax_salvar_medicao") }}', {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-Requested-With": "XMLHttpRequest"
+        },
+        body: formData.toString()
+      });
+
+      const data = await resposta.json();
+
+      if (data.ok) {
+        status.textContent = "Salvo";
+        status.classList.remove("status-erro");
+        setTimeout(() => {
+          status.textContent = "";
+        }, 1500);
+      } else {
+        status.textContent = data.erro || "Erro";
+        status.classList.add("status-erro");
+      }
+    } catch (e) {
+      status.textContent = "Erro ao salvar";
+      status.classList.add("status-erro");
+    } finally {
+      input.dataset.salvando = "0";
+    }
+  }
+
+  document.querySelectorAll(".campo-valor").forEach(function(input) {
+    input.value = normalizarValorExistente(input.value);
+
+    input.addEventListener("input", function() {
+      this.value = formatarNumeroBR(this.value);
+    });
+
+    input.addEventListener("keydown", function(e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        salvarCampo(this);
+      }
+    });
+
+    input.addEventListener("blur", function() {
+      salvarCampo(this);
+    });
+
+    input.addEventListener("focus", function() {
+      this.select();
+    });
+  });
+</script>
+
+{% endblock %}

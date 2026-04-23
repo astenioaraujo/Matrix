@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .table-wrapper {
+    margin-top: 10px;
+    overflow: auto;
+  }
+
+  table {
+    font-size: 13px;
+    border-collapse: collapse;
+    min-width: max-content;
+    background: #fff;
+  }
+
+  th, td {
+    border: 1px solid #dcdcdc;
+    padding: 8px 10px;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  th {
+    background: #f1f1f1;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+
+  th.col-usuario, td.col-usuario {
+    text-align: left;
+    min-width: 220px;
+  }
+
+  .acoes-lote {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .btn-mini {
+    display: inline-block;
+    padding: 6px 10px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 700;
+    background: #1565c0;
+    color: #fff;
+    cursor: pointer;
+    border: none;
+  }
+
+  .btn-mini:hover {
+    background: #0d47a1;
+  }
+
+  .chk-permissao {
+    transform: scale(1.15);
+    cursor: pointer;
+  }
+
+  th small {
+    display: block;
+    font-size: 10px;
+    color: #666;
+    font-weight: 600;
+    margin-top: 2px;
+  }
+</style>
+
+<div class="pagina-titulo">Permissão por Sistema e Atividades</div>
+<div class="pagina-subtitulo">
+  Empresa: <strong>{{ nome_empresa }}</strong>
+</div>
+
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr>
+        <th class="col-usuario">Usuário</th>
+        <th>Email</th>
+        <th>Perfil</th>
+        <th>Ações</th>
+        {% for p in permissoes %}
+          <th title="{{ p.descricao }}">
+            {{ p.sistema }}<br>
+            <small>{{ p.descricao }}</small>
+          </th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in usuarios %}
+      <tr>
+        <td class="col-usuario">{{ u.nome }}</td>
+        <td>{{ u.email }}</td>
+        <td>{{ u.perfil_empresa }}</td>
+        <td>
+          <div class="acoes-lote">
+            <button type="button" class="btn-mini btn-marcar-todas-permissoes" data-id="{{ u.id_usuario }}">Todos</button>
+            <button type="button" class="btn-mini btn-desmarcar-todas-permissoes" data-id="{{ u.id_usuario }}">Nenhum</button>
+          </div>
+        </td>
+
+        {% for p in permissoes %}
+          {% set chave = p.sistema ~ '|' ~ p.opcao %}
+          <td>
+            <input
+              type="checkbox"
+              class="chk-permissao"
+              data-id-usuario="{{ u.id_usuario }}"
+              data-sistema="{{ p.sistema }}"
+              data-opcao="{{ p.opcao }}"
+              {% if vinculos.get(u.id_usuario, {}).get(chave, false) %}checked{% endif %}
+            >
+          </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+document.querySelectorAll(".chk-permissao").forEach(function(chk) {
+  chk.addEventListener("change", function() {
+    const formData = new URLSearchParams();
+    formData.append("id_usuario", this.dataset.idUsuario);
+    formData.append("sistema", this.dataset.sistema);
+    formData.append("opcao", this.dataset.opcao);
+    formData.append("ativo", this.checked ? "true" : "false");
+
+    fetch('{{ url_for("usuarios.toggle_permissao_usuario") }}', {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Requested-With": "XMLHttpRequest"
+      },
+      body: formData.toString()
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        alert("Erro ao atualizar permissão.");
+        this.checked = !this.checked;
+      }
+    })
+    .catch(() => {
+      alert("Erro ao atualizar permissão.");
+      this.checked = !this.checked;
+    });
+  });
+});
+
+document.querySelectorAll(".btn-marcar-todas-permissoes").forEach(function(btn) {
+  btn.addEventListener("click", function() {
+    const idUsuario = this.dataset.id;
+
+    const formData = new URLSearchParams();
+    formData.append("id_usuario", idUsuario);
+    formData.append("ativo", "true");
+
+    fetch('{{ url_for("usuarios.permissoes_em_lote") }}', {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Requested-With": "XMLHttpRequest"
+      },
+      body: formData.toString()
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        alert("Erro ao marcar todas as permissões.");
+        return;
+      }
+
+      document.querySelectorAll('.chk-permissao[data-id-usuario="' + idUsuario + '"]').forEach(function(chk) {
+        chk.checked = true;
+      });
+    })
+    .catch(() => alert("Erro ao marcar todas as permissões."));
+  });
+});
+
+document.querySelectorAll(".btn-desmarcar-todas-permissoes").forEach(function(btn) {
+  btn.addEventListener("click", function() {
+    const idUsuario = this.dataset.id;
+
+    const formData = new URLSearchParams();
+    formData.append("id_usuario", idUsuario);
+    formData.append("ativo", "false");
+
+    fetch('{{ url_for("usuarios.permissoes_em_lote") }}', {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Requested-With": "XMLHttpRequest"
+      },
+      body: formData.toString()
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) {
+        alert("Erro ao desmarcar todas as permissões.");
+        return;
+      }
+
+      document.querySelectorAll('.chk-permissao[data-id-usuario="' + idUsuario + '"]').forEach(function(chk) {
+        chk.checked = false;
+      });
+    })
+    .catch(() => alert("Erro ao desmarcar todas as permissões."));
+  });
+});
+</script>
+
+{% endblock %}
