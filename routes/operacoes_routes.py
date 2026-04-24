@@ -433,7 +433,6 @@ def consultar_medicoes():
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
-        # filiais permitidas
         if tipo_global == "superusuario":
             cur.execute("""
                 SELECT cod_filial, nome_filial
@@ -444,7 +443,9 @@ def consultar_medicoes():
             """, (cod_empresa,))
             filiais = cur.fetchall() or []
         else:
-            filiais_permitidas = usuario_filiais_ativas(id_usuario, cod_empresa)
+            filiais_permitidas = [
+                int(x) for x in usuario_filiais_ativas(id_usuario, cod_empresa)
+            ]
 
             if not filiais_permitidas:
                 flash("Você não possui filiais habilitadas.", "error")
