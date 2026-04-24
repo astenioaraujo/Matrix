@@ -106,14 +106,14 @@ def informar_medicoes():
     tipo_global = str(session.get("tipo_global") or "").strip().lower()
 
     hoje = date.today()
-    agora = datetime.now()
-    bloqueado_horario = (tipo_global != "superusuario" and agora.hour >= 10)
+
+    # BLOQUEIO REMOVIDO
+    bloqueado_horario = False
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
-        # Filiais permitidas
         if tipo_global == "superusuario":
             cur.execute(
                 """
@@ -138,15 +138,14 @@ def informar_medicoes():
                 SELECT cod_filial, nome_filial
                 FROM filiais
                 WHERE cod_empresa = %s
-                AND ativo = TRUE
-                AND cod_filial = ANY(%s)
+                  AND ativo = TRUE
+                  AND cod_filial = ANY(%s)
                 ORDER BY cod_filial
                 """,
                 (cod_empresa, filiais_permitidas),
             )
             filiais = cur.fetchall() or []
 
-        # Filial selecionada
         filial_sel_txt = (request.values.get("cod_filial") or "").strip()
         filial_sel = int(filial_sel_txt) if filial_sel_txt.isdigit() else None
 
@@ -171,11 +170,11 @@ def informar_medicoes():
                     COALESCE(ct.capacidade_tanque, 0) AS capacidade_tanque
                 FROM combustiveis c
                 JOIN capacidade_tanques ct
-                ON ct.cod_empresa = c.cod_empresa
-                AND ct.cod_filial = %s
-                AND ct.cod_produto = c.cod_produto
+                  ON ct.cod_empresa = c.cod_empresa
+                 AND ct.cod_filial = %s
+                 AND ct.cod_produto = c.cod_produto
                 WHERE c.cod_empresa = %s
-                AND COALESCE(ct.capacidade_tanque, 0) > 0
+                  AND COALESCE(ct.capacidade_tanque, 0) > 0
                 ORDER BY c.cod_produto
                 """,
                 (filial_sel, cod_empresa),
@@ -183,7 +182,7 @@ def informar_medicoes():
             produtos = cur.fetchall() or []
 
             cur.execute(
-            """
+                """
                 SELECT
                     cod_produto,
                     quantidade_medida,
@@ -191,8 +190,8 @@ def informar_medicoes():
                     quantidade_vendida
                 FROM medicoes
                 WHERE cod_empresa = %s
-                AND cod_filial = %s
-                AND data_medicao = %s
+                  AND cod_filial = %s
+                  AND data_medicao = %s
                 """,
                 (cod_empresa, filial_sel, hoje),
             )
@@ -205,13 +204,7 @@ def informar_medicoes():
                     "quantidade_vendida": r["quantidade_vendida"],
                 }
 
-
-        # Salvar
         if request.method == "POST":
-            if bloqueado_horario:
-                flash("A medição só pode ser alterada até 10:00 da manhã.", "error")
-                return redirect(url_for("operacoes.informar_medicoes", cod_filial=filial_sel))
-
             try:
                 cod_filial = int(request.form.get("cod_filial") or 0)
             except ValueError:
@@ -232,17 +225,16 @@ def informar_medicoes():
                     COALESCE(ct.capacidade_tanque, 0) AS capacidade_tanque
                 FROM combustiveis c
                 JOIN capacidade_tanques ct
-                ON ct.cod_empresa = c.cod_empresa
-                AND ct.cod_filial = %s
-                AND ct.cod_produto = c.cod_produto
+                  ON ct.cod_empresa = c.cod_empresa
+                 AND ct.cod_filial = %s
+                 AND ct.cod_produto = c.cod_produto
                 WHERE c.cod_empresa = %s
-                AND COALESCE(ct.capacidade_tanque, 0) > 0
+                  AND COALESCE(ct.capacidade_tanque, 0) > 0
                 ORDER BY c.cod_produto
                 """,
                 (cod_filial, cod_empresa),
             )
             produtos_salvar = cur.fetchall() or []
-
 
             for p in produtos_salvar:
                 cod_produto = str(p["cod_produto"]).strip()
@@ -771,12 +763,6 @@ def ajax_salvar_medicao():
     cod_empresa = str(session["cod_empresa"]).strip()
     tipo_global = str(session.get("tipo_global") or "").strip().lower()
 
-    agora = datetime.now()
-    bloqueado_horario = (tipo_global != "superusuario" and agora.hour >= 10)
-
-    if bloqueado_horario:
-        return {"ok": False, "erro": "A medição só pode ser alterada até 10:00 da manhã."}, 400
-
     cod_filial_txt = (request.form.get("cod_filial") or "").strip()
     if not cod_filial_txt.isdigit():
         return {"ok": False, "erro": "Selecione a filial."}, 400
@@ -800,10 +786,12 @@ def ajax_salvar_medicao():
 
     if tipo_global != "superusuario":
         filiais_permitidas = [int(x) for x in usuario_filiais_ativas(id_usuario, cod_empresa)]
+
         if cod_filial not in filiais_permitidas:
             return {"ok": False, "erro": "Filial não permitida para este usuário."}, 403
 
     valor_txt = valor_txt.replace(".", "").replace(",", ".")
+
     try:
         quantidade = float(valor_txt) if valor_txt else 0.0
     except ValueError:
@@ -864,12 +852,16 @@ def ajax_salvar_medicao():
 
         conn.commit()
         return {"ok": True}
+
     except Exception as e:
         conn.rollback()
         return {"ok": False, "erro": str(e)}, 500
+
     finally:
         cur.close()
         conn.close()
+
+
 # --------------------------------
 # CAPACIDADE TANQUES
 # --------------------------------       
