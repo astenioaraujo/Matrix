@@ -1746,6 +1746,7 @@ def consultar_vendas():
     data_sel = (request.args.get("data") or "").strip()
     if not data_sel:
         data_sel = (date.today() - timedelta(days=1)).isoformat()
+    data_medicao = (date.fromisoformat(data_sel) + timedelta(days=1)).isoformat()
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -1807,7 +1808,7 @@ def consultar_vendas():
             ORDER BY b.cod_filial, b.cod_produto
         """
 
-        params = [cod_empresa] + params_filiais + [cod_empresa, data_sel]
+        params = [cod_empresa] + params_filiais + [cod_empresa, data_medicao]
 
         cur.execute(sql, params)
         linhas = cur.fetchall() or []
