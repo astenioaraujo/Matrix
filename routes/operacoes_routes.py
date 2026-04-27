@@ -30,7 +30,6 @@ def formatar_numero_br(valor):
     except:
         return "0,00"
 
-
 #------------------------------------------
 # MENU OPERACOES
 #------------------------------------------
@@ -47,28 +46,49 @@ def menu_operacoes():
     cod_empresa = str(session["cod_empresa"]).strip()
     tipo_global = str(session.get("tipo_global") or "").strip().lower()
 
+
     if tipo_global == "superusuario":
-        pode_informar = True
-        pode_consultar = True
-        pode_configuracoes = True
-        pode_informar_preco = True
-        pode_consultar_preco = True
+        permissoes = {
+            "pode_informar_medicoes": True,
+            "pode_consultar_medicoes": True,
+            "pode_informar_preco_compra": True,
+            "pode_consultar_preco_compra": True,
+            "pode_informar_compras": True,
+            "pode_informar_descarregos": True,
+            "pode_consultar_estoques": True,
+            "pode_consultar_vendas": True,
+            "pode_configuracoes": True,
+        }
     else:
-        pode_informar = usuario_tem_permissao(
-            id_usuario, cod_empresa, "OPERACOES", "INFORMAR_MEDICOES"
-        )
-        pode_consultar = usuario_tem_permissao(
-            id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_MEDICOES"
-        )
-        pode_configuracoes = usuario_tem_permissao(
-            id_usuario, cod_empresa, "OPERACOES", "CONFIGURACOES"
-        )
-        pode_informar_preco = usuario_tem_permissao(
-            id_usuario, cod_empresa, "OPERACOES", "INFORMAR_PRECO_COMPRA"
-        )
-        pode_consultar_preco = usuario_tem_permissao(
-            id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_PRECO_COMPRA"
-        )
+        permissoes = {
+            "pode_informar_medicoes": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "INFORMAR_MEDICOES"
+            ),
+            "pode_consultar_medicoes": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_MEDICOES"
+            ),
+            "pode_informar_preco_compra": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "INFORMAR_PRECO_COMPRA"
+            ),
+            "pode_consultar_preco_compra": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_PRECO_COMPRA"
+            ),
+            "pode_informar_compras": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "INFORMAR_COMPRAS"
+            ),
+            "pode_informar_descarregos": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "INFORMAR_DESCARREGOS"
+            ),
+            "pode_consultar_estoques": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_ESTOQUES"
+            ),
+            "pode_consultar_vendas": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_VENDAS"
+            ),
+            "pode_configuracoes": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "CONFIGURACOES"
+            ),
+        }
 
     return render_template(
         "menu_operacoes.html",
@@ -76,13 +96,8 @@ def menu_operacoes():
         nome_empresa=session.get("nome_empresa", ""),
         url_voltar=url_for("sistema.selecionar_sistema"),
         texto_voltar="← Voltar",
-        pode_informar=pode_informar,
-        pode_consultar=pode_consultar,
-        pode_configuracoes=pode_configuracoes,
-        pode_informar_preco=pode_informar_preco,
-        pode_consultar_preco=pode_consultar_preco,
+        **permissoes
     )
-
 
 # ---------------------------------------
 # INFORMAR MEDICOES

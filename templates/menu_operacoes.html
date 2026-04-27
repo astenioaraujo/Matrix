@@ -81,19 +81,19 @@
 
 <div class="menu-botoes">
 
-  {% if pode_informar %}
+  {% if pode_informar_medicoes %}
     <a href="{{ url_for('operacoes.informar_medicoes') }}" class="btn-informar">
       Informar Medições
     </a>
   {% endif %}
 
-  {% if pode_consultar %}
+  {% if pode_consultar_medicoes %}
     <a href="{{ url_for('operacoes.consultar_medicoes') }}" class="btn-consultar">
       Consultar Medições
     </a>
   {% endif %}
 
-  {% if pode_informar_preco %}
+  {% if pode_informar_preco_compra %}
     <a href="{{ url_for('operacoes.informar_preco_compra') }}" class="btn-informar">
       Informar Preço de Compra
     </a>
@@ -106,24 +106,25 @@
   {% endif %}
 
 
-  {% if pode_informar %}
+  {% if pode_informar_compras %}
   <a href="{{ url_for('operacoes.informar_compras_combustiveis') }}" class="btn-informar">
     Informar Compras
   </a>
   {% endif %}
 
-  {% if pode_informar %}
+  {% if pode_informar_descarregos %}
   <a href="{{ url_for('operacoes.informar_descarregos_combustiveis') }}" class="btn-informar">
     Informar Descarregos
   </a>
   {% endif %}
 
-  {% if pode_consultar %}
+  {% if pode_consultar_estoques %}
   <a href="{{ url_for('operacoes.consultar_estoques') }}" class="btn-consultar">
     Consultar Estoques
   </a>
   {% endif %}
-  {% if pode_consultar %}
+  
+  {% if pode_consultar_vendas %}
   <a href="{{ url_for('operacoes.consultar_vendas') }}" class="btn-consultar">
     Consultar Vendas
   </a>
