@@ -155,9 +155,9 @@
         <select id="cod_filial" name="cod_filial">
           <option value="">(Todas)</option>
           {% for f in filiais %}
-            <option value="{{ f.cod_filial }}" {% if cod_filial_sel == f.cod_filial|string %}selected{% endif %}>
-              {{ f.cod_filial }}
-            </option>
+          <option value="{{ f.cod_filial }}" {% if cod_filial_sel == f.cod_filial|string %}selected{% endif %}>
+            {{ f.cod_filial }} - {{ f.nome_filial }}      
+          </option>
           {% endfor %}
         </select>
       </div>
