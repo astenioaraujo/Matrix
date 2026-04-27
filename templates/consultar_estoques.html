@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 10px; }
+  .empresa { font-size: 22px; margin-bottom: 24px; }
+
+  .painel {
+    width: max-content;
+    min-width: calc(100vw - 40px);
+    max-width: none;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+    overflow-x: auto;
+  }
+
+  table {
+    width: max-content;
+    min-width: 2100px;
+    border-collapse: collapse;
+    font-size: 14px;
+    table-layout: fixed;
+  }
+
+  th, td {
+    border: 1px solid #dcdcdc;
+    padding: 8px;
+    white-space: nowrap;
+  }
+
+  th {
+    background: #f1f1f1;
+    font-weight: 800;
+    text-align: center;
+  }
+
+  .linha-filtro {
+    display: flex;
+    gap: 14px;
+    align-items: end;
+    margin-bottom: 20px;
+  }
+
+  label { font-weight: 700; display: block; margin-bottom: 6px; }
+
+  input {
+    padding: 8px;
+    border: 1px solid #cfcfcf;
+    border-radius: 6px;
+  }
+
+  .btn {
+    padding: 9px 14px;
+    border-radius: 8px;
+    border: 1px solid #1565c0;
+    background: #1565c0;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .col-filial { width: 170px; font-weight: 800; }
+  .col-produto { width: 220px; font-weight: 700; }
+  .col-num { width: 135px; text-align: right; }
+
+  .linha-filial td {
+    background: #eef4ff;
+    font-weight: 900;
+    font-size: 15px;
+  }
+
+  .linha-total-filial td {
+    background: #f5f5f5;
+    font-weight: 900;
+  }
+
+  .linha-total-geral td {
+    background: #dfe6e9;
+    font-weight: 900;
+    font-size: 15px;
+  }
+
+  .linha-espaco td {
+    height: 12px;
+    border: none;
+    background: #fff;
+  }
+
+  .total-calculado {
+    background: #fffbe6;
+    font-weight: 900;
+  }
+
+  .medicao-atual {
+    background: #e8f5e9;
+    font-weight: 900;
+  }
+
+  .perda-negativa {
+    color: #c62828;
+    background: #ffebee;
+    font-weight: 900;
+  }
+
+  .sobra-positiva {
+    color: #2e7d32;
+    background: #e8f5e9;
+    font-weight: 900;
+  }
+</style>
+
+<div class="pagina-titulo">Consulta de Estoques</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="painel">
+  <form method="get">
+    <div class="linha-filtro">
+      <div>
+        <label>Data do Estoque</label>
+        <input type="date" name="data" value="{{ data_sel }}">
+      </div>
+
+      <button type="submit" class="btn">Filtrar</button>
+    </div>
+  </form>
+
+  <table>
+    <thead>
+      <tr>
+        <th class="col-filial">Filial</th>
+        <th class="col-produto">Produto</th>
+        <th class="col-num">Capacidade Tanque</th>
+        <th class="col-num">Medição Anterior<br>{{ data_anterior.strftime("%d/%m/%Y") }}</th>
+        <th class="col-num">Compras</th>
+        <th class="col-num">Estoque em Trânsito</th>
+        <th class="col-num">Descarregos</th>
+        <th class="col-num">Empréstimos</th>
+        <th class="col-num">Vendas</th>
+        <th class="col-num">Total Calculado</th>
+        <th class="col-num">Medição Atual<br>{{ data_sel[8:10] }}/{{ data_sel[5:7] }}/{{ data_sel[0:4] }}</th>
+        <th class="col-num">Perdas/Sobras</th>
+        <th class="col-num">Vendas Sistema</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% set ns = namespace(
+        filial_atual=None,
+
+        f_capacidade=0,
+        f_anterior=0,
+        f_compras=0,
+        f_transito=0,
+        f_descarregos=0,
+        f_emprestimos=0,
+        f_vendas=0,
+        f_calculado=0,
+        f_atual=0,
+        f_perda=0,
+        f_vendas_sistema=0,
+
+        g_capacidade=0,
+        g_anterior=0,
+        g_compras=0,
+        g_transito=0,
+        g_descarregos=0,
+        g_emprestimos=0,
+        g_vendas=0,
+        g_calculado=0,
+        g_atual=0,
+        g_perda=0,
+        g_vendas_sistema=0
+      ) %}
+
+      {% for l in linhas %}
+
+        {% if ns.filial_atual != l.cod_filial %}
+
+          {% if ns.filial_atual is not none %}
+            <tr class="linha-total-filial">
+              <td colspan="2">TOTAL FILIAL</td>
+              <td class="col-num">{{ ns.f_capacidade | br }}</td>
+              <td class="col-num">{{ ns.f_anterior | br }}</td>
+              <td class="col-num">{{ ns.f_compras | br }}</td>
+              <td class="col-num">{{ ns.f_transito | br }}</td>
+              <td class="col-num">{{ ns.f_descarregos | br }}</td>
+              <td class="col-num">{{ ns.f_emprestimos | br }}</td>
+              <td class="col-num">{{ ns.f_vendas | br }}</td>
+              <td class="col-num total-calculado">{{ ns.f_calculado | br }}</td>
+              <td class="col-num medicao-atual">{{ ns.f_atual | br }}</td>
+              <td class="col-num {% if ns.f_perda < 0 %}perda-negativa{% elif ns.f_perda > 0 %}sobra-positiva{% endif %}">
+                {{ ns.f_perda | br }}
+              </td>
+              <td class="col-num">{{ ns.f_vendas_sistema | br }}</td>
+            </tr>
+
+            <tr class="linha-espaco"><td colspan="13"></td></tr>
+          {% endif %}
+
+          {% set ns.filial_atual = l.cod_filial %}
+
+          {% set ns.f_capacidade = 0 %}
+          {% set ns.f_anterior = 0 %}
+          {% set ns.f_compras = 0 %}
+          {% set ns.f_transito = 0 %}
+          {% set ns.f_descarregos = 0 %}
+          {% set ns.f_emprestimos = 0 %}
+          {% set ns.f_vendas = 0 %}
+          {% set ns.f_calculado = 0 %}
+          {% set ns.f_atual = 0 %}
+          {% set ns.f_perda = 0 %}
+          {% set ns.f_vendas_sistema = 0 %}
+
+          <tr class="linha-filial">
+            <td colspan="13">{{ l.cod_filial }} - {{ l.nome_filial }}</td>
+          </tr>
+
+        {% endif %}
+
+        {% set med = l.medicao_atual or 0 %}
+        {% set calc = l.estoque_calculado or 0 %}
+        {% set perda_sobra = med - calc %}
+
+        {% set ns.f_capacidade = ns.f_capacidade + (l.capacidade_tanque or 0) %}
+        {% set ns.f_anterior = ns.f_anterior + (l.medicao_anterior or 0) %}
+        {% set ns.f_compras = ns.f_compras + (l.compras or 0) %}
+        {% set ns.f_transito = ns.f_transito + (l.estoque_transito or 0) %}
+        {% set ns.f_descarregos = ns.f_descarregos + (l.descarregos or 0) %}
+        {% set ns.f_emprestimos = ns.f_emprestimos + (l.emprestimos or 0) %}
+        {% set ns.f_vendas = ns.f_vendas + (l.vendas or 0) %}
+        {% set ns.f_calculado = ns.f_calculado + (l.estoque_calculado or 0) %}
+        {% set ns.f_atual = ns.f_atual + (l.medicao_atual or 0) %}
+        {% set ns.f_perda = ns.f_perda + perda_sobra %}
+        {% set ns.f_vendas_sistema = ns.f_vendas_sistema + (l.vendas_sistema or 0) %}
+
+        {% set ns.g_capacidade = ns.g_capacidade + (l.capacidade_tanque or 0) %}
+        {% set ns.g_anterior = ns.g_anterior + (l.medicao_anterior or 0) %}
+        {% set ns.g_compras = ns.g_compras + (l.compras or 0) %}
+        {% set ns.g_transito = ns.g_transito + (l.estoque_transito or 0) %}
+        {% set ns.g_descarregos = ns.g_descarregos + (l.descarregos or 0) %}
+        {% set ns.g_emprestimos = ns.g_emprestimos + (l.emprestimos or 0) %}
+        {% set ns.g_vendas = ns.g_vendas + (l.vendas or 0) %}
+        {% set ns.g_calculado = ns.g_calculado + (l.estoque_calculado or 0) %}
+        {% set ns.g_atual = ns.g_atual + (l.medicao_atual or 0) %}
+        {% set ns.g_perda = ns.g_perda + perda_sobra %}
+        {% set ns.g_vendas_sistema = ns.g_vendas_sistema + (l.vendas_sistema or 0) %}
+
+        <tr>
+          <td class="col-filial">{{ l.cod_filial }} - {{ l.nome_filial }}</td>
+          <td class="col-produto">{{ l.cod_produto }} - {{ l.produto }}</td>
+          <td class="col-num">{{ l.capacidade_tanque | br }}</td>
+          <td class="col-num">{{ l.medicao_anterior | br }}</td>
+          <td class="col-num">{{ l.compras | br }}</td>
+          <td class="col-num">{{ l.estoque_transito | br }}</td>
+          <td class="col-num">{{ l.descarregos | br }}</td>
+          <td class="col-num">{{ l.emprestimos | br }}</td>
+          <td class="col-num">{{ l.vendas | br }}</td>
+          <td class="col-num total-calculado">{{ l.estoque_calculado | br }}</td>
+          <td class="col-num medicao-atual">{{ l.medicao_atual | br }}</td>
+          <td class="col-num {% if perda_sobra < 0 %}perda-negativa{% elif perda_sobra > 0 %}sobra-positiva{% endif %}">
+            {{ perda_sobra | br }}
+          </td>
+          <td class="col-num">{{ l.vendas_sistema | br }}</td>
+        </tr>
+
+      {% endfor %}
+
+      {% if ns.filial_atual is not none %}
+        <tr class="linha-total-filial">
+          <td colspan="2">TOTAL FILIAL</td>
+          <td class="col-num">{{ ns.f_capacidade | br }}</td>
+          <td class="col-num">{{ ns.f_anterior | br }}</td>
+          <td class="col-num">{{ ns.f_compras | br }}</td>
+          <td class="col-num">{{ ns.f_transito | br }}</td>
+          <td class="col-num">{{ ns.f_descarregos | br }}</td>
+          <td class="col-num">{{ ns.f_emprestimos | br }}</td>
+          <td class="col-num">{{ ns.f_vendas | br }}</td>
+          <td class="col-num total-calculado">{{ ns.f_calculado | br }}</td>
+          <td class="col-num medicao-atual">{{ ns.f_atual | br }}</td>
+          <td class="col-num {% if ns.f_perda < 0 %}perda-negativa{% elif ns.f_perda > 0 %}sobra-positiva{% endif %}">
+            {{ ns.f_perda | br }}
+          </td>
+          <td class="col-num">{{ ns.f_vendas_sistema | br }}</td>
+        </tr>
+
+        <tr class="linha-espaco"><td colspan="13"></td></tr>
+
+        <tr class="linha-total-geral">
+          <td colspan="2">TOTAL GERAL</td>
+          <td class="col-num">{{ ns.g_capacidade | br }}</td>
+          <td class="col-num">{{ ns.g_anterior | br }}</td>
+          <td class="col-num">{{ ns.g_compras | br }}</td>
+          <td class="col-num">{{ ns.g_transito | br }}</td>
+          <td class="col-num">{{ ns.g_descarregos | br }}</td>
+          <td class="col-num">{{ ns.g_emprestimos | br }}</td>
+          <td class="col-num">{{ ns.g_vendas | br }}</td>
+          <td class="col-num total-calculado">{{ ns.g_calculado | br }}</td>
+          <td class="col-num medicao-atual">{{ ns.g_atual | br }}</td>
+          <td class="col-num {% if ns.g_perda < 0 %}perda-negativa{% elif ns.g_perda > 0 %}sobra-positiva{% endif %}">
+            {{ ns.g_perda | br }}
+          </td>
+          <td class="col-num">{{ ns.g_vendas_sistema | br }}</td>
+        </tr>
+      {% endif %}
+
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

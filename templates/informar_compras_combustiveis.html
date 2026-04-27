@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 10px; }
+  .empresa { font-size: 22px; margin-bottom: 24px; }
+
+  .painel {
+    max-width: 1600px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+
+  .linha-filtro { display: flex; gap: 14px; align-items: end; margin-bottom: 20px; }
+  label { font-weight: 700; margin-bottom: 6px; display: block; }
+
+  input, select {
+    padding: 8px;
+    border: 1px solid #cfcfcf;
+    border-radius: 6px;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { border: 1px solid #dcdcdc; padding: 8px; }
+  th { background: #f1f1f1; }
+
+  .col-id { width: 70px; text-align: center; }
+  .col-qtd { width: 140px; text-align: right; }
+  .col-status { width: 110px; text-align: center; }
+  .col-acoes { width: 170px; text-align: center; }
+
+  .btn {
+    padding: 8px 12px;
+    background: #1565c0;
+    color: #fff;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-weight: 700;
+  }
+
+  .btn-excluir {
+    background: #fff;
+    color: #b00020;
+    border: 1px solid #b00020;
+    margin-left: 5px;
+  }
+
+  .status-aberta { color: green; font-weight: 800; }
+  .status-fechada { color: red; font-weight: 800; }
+
+  .texto-bloqueado { font-weight: 700; }
+</style>
+
+<div class="pagina-titulo">Informar Compras de Combustíveis</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="painel">
+
+<form method="get">
+  <div class="linha-filtro">
+    <div>
+      <label>Data</label>
+      <input type="date" name="data" value="{{ data_sel }}">
+    </div>
+
+    <button class="btn">Filtrar</button>
+  </div>
+</form>
+
+<table>
+<thead>
+<tr>
+  <th>ID</th>
+  <th>Filial</th>
+  <th>Produto</th>
+  <th>Qtd</th>
+  <th>Preço</th>
+  <th>Valor</th>
+  <th>Fornecedor</th>
+  <th>Descarregos</th>
+  <th>Status</th>
+  <th>Ação</th>
+</tr>
+</thead>
+
+<tbody>
+
+<!-- NOVO -->
+<tr>
+<form method="post">
+<input type="hidden" name="data" value="{{ data_sel }}">
+
+<td>Novo</td>
+
+<td>
+<select name="cod_filial" required>
+<option value="">Selecione</option>
+{% for f in filiais %}
+<option value="{{ f.cod_filial }}">{{ f.cod_filial }} - {{ f.nome_filial }}</option>
+{% endfor %}
+</select>
+</td>
+
+<td>
+<select name="cod_produto" id="novo_produto" required>
+<option value="">Selecione</option>
+{% for p in produtos %}
+<option value="{{ p.cod_produto }}">{{ p.cod_produto }} - {{ p.descricao }}</option>
+{% endfor %}
+</select>
+</td>
+
+<td>
+<input type="text" id="novo_quantidade" name="quantidade_comprada" placeholder="0,00">
+</td>
+
+<td>
+<input type="text" id="novo_preco" name="preco_unitario" placeholder="0,0000">
+</td>
+
+<td id="novo_valor">0,00</td>
+
+<td>
+<select name="id_fornecedor" required>
+<option value="">Selecione</option>
+{% for fo in fornecedores %}
+<option value="{{ fo.id_fornecedor }}">
+{{ fo.nome_fornecedor }}{% if fo.cidade_base %} - {{ fo.cidade_base }}{% endif %}
+</option>
+{% endfor %}
+</select>
+</td>
+
+<td>-</td>
+<td>-</td>
+
+<td>
+<button class="btn">Adicionar</button>
+</td>
+
+</form>
+</tr>
+
+<!-- LISTA -->
+{% for c in compras %}
+{% set bloqueado = c.total_descarregado > 0 %}
+
+<tr>
+<form method="post">
+<input type="hidden" name="id_compra" value="{{ c.id_compra }}">
+<input type="hidden" name="data" value="{{ data_sel }}">
+
+<td>{{ c.id_compra }}</td>
+
+<td>
+{% if bloqueado %}
+<span class="texto-bloqueado">{{ c.cod_filial }} - {{ c.nome_filial }}</span>
+{% else %}
+<select name="cod_filial">
+{% for f in filiais %}
+<option value="{{ f.cod_filial }}" {% if f.cod_filial == c.cod_filial %}selected{% endif %}>
+{{ f.cod_filial }} - {{ f.nome_filial }}
+</option>
+{% endfor %}
+</select>
+{% endif %}
+</td>
+
+<td>
+{% if bloqueado %}
+<span class="texto-bloqueado">{{ c.cod_produto }} - {{ c.produto }}</span>
+{% else %}
+<select name="cod_produto">
+{% for p in produtos %}
+<option value="{{ p.cod_produto }}" {% if p.cod_produto == c.cod_produto %}selected{% endif %}>
+{{ p.cod_produto }} - {{ p.descricao }}
+</option>
+{% endfor %}
+</select>
+{% endif %}
+</td>
+
+<td class="col-qtd">
+{% if bloqueado %}
+{{ c.quantidade_comprada | br }}
+{% else %}
+<input type="text" name="quantidade_comprada" value="{{ c.quantidade_comprada | br }}">
+{% endif %}
+</td>
+
+<td class="col-qtd">
+{% if bloqueado %}
+{{ c.preco_unitario | br }}
+{% else %}
+<input type="text" name="preco_unitario" value="{{ c.preco_unitario | br }}">
+{% endif %}
+</td>
+
+<td class="col-qtd">
+{{ c.valor_comprado | br }}
+</td>
+
+<td>
+{% if bloqueado %}
+{{ c.nome_fornecedor }}
+{% else %}
+<select name="id_fornecedor">
+{% for fo in fornecedores %}
+<option value="{{ fo.id_fornecedor }}" {% if fo.id_fornecedor == c.id_fornecedor %}selected{% endif %}>
+{{ fo.nome_fornecedor }}
+</option>
+{% endfor %}
+</select>
+{% endif %}
+</td>
+
+<td class="col-qtd">{{ c.total_descarregado | br }}</td>
+
+<td>
+{% if c.status == 'FECHADA' %}
+<span class="status-fechada">Fechada</span>
+{% else %}
+<span class="status-aberta">Aberta</span>
+{% endif %}
+</td>
+
+<td>
+{% if not bloqueado %}
+<button class="btn">Salvar</button>
+</form>
+
+<form method="post" action="{{ url_for('operacoes.excluir_compra_combustivel', id_compra=c.id_compra) }}">
+<input type="hidden" name="data" value="{{ data_sel }}">
+<button class="btn-excluir">Excluir</button>
+</form>
+{% else %}
+Bloqueada
+{% endif %}
+</td>
+
+</tr>
+{% endfor %}
+
+</tbody>
+</table>
+
+</div>
+
+<script>
+function parseBR(v){ return parseFloat(v.replace(/\./g,"").replace(",", ".")) || 0; }
+
+function formatBR(v){
+return v.toLocaleString("pt-BR",{minimumFractionDigits:2});
+}
+
+function recalcular(){
+let q=parseBR(novo_quantidade.value);
+let p=parseBR(novo_preco.value);
+novo_valor.innerText=formatBR(q*p);
+}
+
+novo_quantidade.oninput=recalcular;
+novo_preco.oninput=recalcular;
+
+novo_produto.onchange=function(){
+fetch(`/operacoes/precos-compra/ajax-buscar?cod_produto=${this.value}&data={{ data_sel }}`)
+.then(r=>r.json())
+.then(d=>{
+if(d.ok){
+novo_preco.value=formatBR(d.preco);
+recalcular();
+}
+});
+}
+</script>
+
+{% endblock %}

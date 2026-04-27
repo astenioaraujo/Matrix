@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .painel {
+    max-width: 1000px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15px;
+  }
+
+  th, td {
+    border: 1px solid #dcdcdc;
+    padding: 8px;
+  }
+
+  th {
+    background: #f1f1f1;
+    font-weight: 800;
+    text-align: left;
+  }
+
+  input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px;
+    border: 1px solid #cfcfcf;
+    border-radius: 6px;
+  }
+
+  .col-id {
+    width: 80px;
+    text-align: center;
+  }
+
+  .col-ativo {
+    width: 90px;
+    text-align: center;
+  }
+
+  .col-acoes {
+    width: 170px;
+    text-align: center;
+  }
+
+  .btn-salvar {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid #1565c0;
+    background: #1565c0;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn-excluir {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid #b00020;
+    background: #fff;
+    color: #b00020;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .linha-novo td {
+    background: #fffbe6;
+  }
+</style>
+
+<div class="pagina-titulo">Fornecedores de Combustíveis</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="painel">
+  <table>
+    <thead>
+      <tr>
+        <th class="col-id">ID</th>
+        <th>Nome do Fornecedor</th>
+        <th>Cidade/Base</th>
+        <th class="col-ativo">Ativo</th>
+        <th class="col-acoes">Ações</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      <tr class="linha-novo">
+        <form method="post">
+          <td class="col-id">Novo</td>
+          <td>
+            <input type="text" name="nome_fornecedor" placeholder="Ex: Petrobras" required>
+          </td>
+          <td>
+            <input type="text" name="cidade_base" placeholder="Ex: Cabedelo">
+          </td>
+          <td class="col-ativo">
+            <input type="checkbox" name="ativo" checked>
+          </td>
+          <td class="col-acoes">
+            <button type="submit" class="btn-salvar">Adicionar</button>
+          </td>
+        </form>
+      </tr>
+
+      {% for f in fornecedores %}
+        <tr>
+          <form method="post">
+            <input type="hidden" name="id_fornecedor" value="{{ f.id_fornecedor }}">
+
+            <td class="col-id">{{ f.id_fornecedor }}</td>
+
+            <td>
+              <input type="text" name="nome_fornecedor" value="{{ f.nome_fornecedor }}" required>
+            </td>
+
+            <td>
+              <input type="text" name="cidade_base" value="{{ f.cidade_base or '' }}">
+            </td>
+
+            <td class="col-ativo">
+              <input type="checkbox" name="ativo" {% if f.ativo %}checked{% endif %}>
+            </td>
+
+            <td class="col-acoes">
+              <button type="submit" class="btn-salvar">Salvar</button>
+          </form>
+
+              <form method="post"
+                    action="{{ url_for('operacoes.excluir_fornecedor_combustivel', id_fornecedor=f.id_fornecedor) }}"
+                    style="display:inline;"
+                    onsubmit="return confirm('Confirma excluir este fornecedor?');">
+                <button type="submit" class="btn-excluir">Excluir</button>
+              </form>
+            </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

@@ -33,18 +33,43 @@
     font-weight: 600;
     font-size: 16px;
     color: #fff;
-    background: #6b4f2a;
-    border: 1px solid #6b4f2a;
     box-shadow: 0 3px 8px rgba(0,0,0,0.15);
     transition: all 0.2s ease;
     text-align: center;
     padding: 0 10px;
   }
 
-  .menu-botoes a:hover {
-    transform: translateY(-2px);
-    background: #5a4123;
-    border-color: #5a4123;
+  /* 🔶 INFORMAR (marrom claro) */
+  .btn-informar {
+    background: #876A50;
+    border: 1px solid #876A50;
+  }
+
+  .btn-informar:hover {
+    background: #755840;
+    border-color: #755840;
+  }
+
+  /* 🔶 CONSULTAR (marrom médio) */
+  .btn-consultar {
+    background: #7D4820;
+    border: 1px solid #7D4820;
+  }
+
+  .btn-consultar:hover {
+    background: #693d1a;
+    border-color: #693d1a;
+  }
+
+  /* 🔶 CONFIGURAÇÕES (marrom forte) */
+  .btn-config {
+    background: #4E3322;
+    border: 1px solid #4E3322;
+  }
+
+  .btn-config:hover {
+    background: #3f291b;
+    border-color: #3f291b;
   }
 </style>
 
@@ -57,31 +82,55 @@
 <div class="menu-botoes">
 
   {% if pode_informar %}
-    <a href="{{ url_for('operacoes.informar_medicoes') }}">
+    <a href="{{ url_for('operacoes.informar_medicoes') }}" class="btn-informar">
       Informar Medições
     </a>
   {% endif %}
 
   {% if pode_consultar %}
-    <a href="{{ url_for('operacoes.consultar_medicoes') }}">
+    <a href="{{ url_for('operacoes.consultar_medicoes') }}" class="btn-consultar">
       Consultar Medições
     </a>
   {% endif %}
 
   {% if pode_informar_preco %}
-    <a href="{{ url_for('operacoes.informar_preco_compra') }}">
+    <a href="{{ url_for('operacoes.informar_preco_compra') }}" class="btn-informar">
       Informar Preço de Compra
     </a>
   {% endif %}
 
   {% if pode_consultar_preco %}
-    <a href="{{ url_for('operacoes.consultar_preco_compra') }}">
+    <a href="{{ url_for('operacoes.consultar_preco_compra') }}" class="btn-consultar">
       Consultar Preço de Compra
     </a>
   {% endif %}
 
+
+  {% if pode_informar %}
+  <a href="{{ url_for('operacoes.informar_compras_combustiveis') }}" class="btn-informar">
+    Informar Compras
+  </a>
+  {% endif %}
+
+  {% if pode_informar %}
+  <a href="{{ url_for('operacoes.informar_descarregos_combustiveis') }}" class="btn-informar">
+    Informar Descarregos
+  </a>
+  {% endif %}
+
+  {% if pode_consultar %}
+  <a href="{{ url_for('operacoes.consultar_estoques') }}" class="btn-consultar">
+    Consultar Estoques
+  </a>
+  {% endif %}
+  {% if pode_consultar %}
+  <a href="{{ url_for('operacoes.consultar_vendas') }}" class="btn-consultar">
+    Consultar Vendas
+  </a>
+  {% endif %}
+
   {% if pode_configuracoes %}
-    <a href="{{ url_for('operacoes.menu_configuracoes') }}">
+    <a href="{{ url_for('operacoes.menu_configuracoes') }}" class="btn-config">
       Configurações de Operações
     </a>
   {% endif %}

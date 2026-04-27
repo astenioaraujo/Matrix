@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 10px; }
+  .empresa { font-size: 22px; margin-bottom: 24px; }
+
+  .painel {
+    max-width: 1800px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+    overflow-x: auto;
+  }
+
+  .linha-filtro {
+    display: flex;
+    gap: 14px;
+    align-items: end;
+    margin-bottom: 20px;
+  }
+
+  label { font-weight: 700; display: block; margin-bottom: 6px; }
+
+  input {
+    padding: 8px;
+    border: 1px solid #cfcfcf;
+    border-radius: 6px;
+  }
+
+  .btn {
+    padding: 9px 14px;
+    border-radius: 8px;
+    border: 1px solid #1565c0;
+    background: #1565c0;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: none;
+  }
+
+  table {
+    width: 100%;
+    min-width: 1500px;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #dcdcdc;
+    padding: 8px;
+  }
+
+  th {
+    background: #f1f1f1;
+    font-weight: 800;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  td {
+    white-space: nowrap;
+  }
+
+  .col-filial {
+    font-weight: 800;
+  }
+
+  .col-produto {
+    font-weight: 700;
+  }
+
+  .col-num {
+    text-align: right;
+  }
+
+  .linha-filial td {
+    background: #eef4ff;
+    font-weight: 900;
+    font-size: 15px;
+  }
+
+  .total-calculado {
+    background: #fffbe6;
+    font-weight: 900;
+  }
+
+  .medicao-atual {
+    background: #e8f5e9;
+    font-weight: 900;
+  }
+</style>
+
+<div class="pagina-titulo">Consulta de Estoques</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="painel">
+  <form method="get">
+    <div class="linha-filtro">
+      <div>
+        <label>Data do Estoque</label>
+        <input type="date" name="data" value="{{ data_sel }}">
+      </div>
+
+      <button type="submit" class="btn">Filtrar</button>
+    </div>
+  </form>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Filial</th>
+        <th>Produto</th>
+        <th>Capacidade Tanque</th>
+        <th>Medição Anterior<br>{{ data_anterior.strftime("%d/%m/%Y") }}</th>
+        <th>Vendas</th>
+        <th>Compras</th>
+        <th>Estoque em Trânsito</th>
+        <th>Descarregos</th>
+        <th>Empréstimos</th>
+        <th>Total Calculado</th>
+        <th>Medição Atual<br>{{ data_sel[8:10] }}/{{ data_sel[5:7] }}/{{ data_sel[0:4] }}</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% set ns = namespace(filial_atual=None) %}
+
+      {% for l in linhas %}
+        {% if ns.filial_atual != l.cod_filial %}
+          {% set ns.filial_atual = l.cod_filial %}
+          <tr class="linha-filial">
+            <td colspan="11">
+              {{ l.cod_filial }} - {{ l.nome_filial }}
+            </td>
+          </tr>
+        {% endif %}
+
+        <tr>
+          <td class="col-filial">{{ l.cod_filial }} - {{ l.nome_filial }}</td>
+          <td class="col-produto">{{ l.cod_produto }} - {{ l.produto }}</td>
+          <td class="col-num">{{ l.capacidade_tanque | br }}</td>
+          <td class="col-num">{{ l.medicao_anterior | br }}</td>
+          <td class="col-num">{{ l.vendas | br }}</td>
+          <td class="col-num">{{ l.compras | br }}</td>
+          <td class="col-num">{{ l.estoque_transito | br }}</td>
+          <td class="col-num">{{ l.descarregos | br }}</td>
+          <td class="col-num">{{ l.emprestimos | br }}</td>
+          <td class="col-num total-calculado">{{ l.estoque_calculado | br }}</td>
+          <td class="col-num medicao-atual">{{ l.medicao_atual | br }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

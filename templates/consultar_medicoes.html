@@ -170,6 +170,28 @@
   </form>
 </div>
 
+<!-- ALERTA DE FILIAIS SEM MEDIÇÃO -->
+{% if filiais_sem_medicao %}
+  <div style="
+    max-width: 1400px;
+    margin: 0 0 20px 0;
+    padding: 16px 20px;
+    border-radius: 14px;
+    background: #ffe5e5;
+    border: 1px solid #ff9b9b;
+    color: #b00020;
+    font-weight: 800;
+  ">
+    Filiais sem medição lançada para a data {{ data_sel }}:
+
+    <ul style="margin: 10px 0 0 22px;">
+      {% for f in filiais_sem_medicao %}
+        <li>{{ f.cod_filial }} - {{ f.nome_filial }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
 {% if linhas %}
 
 {% set ns = namespace(
@@ -190,8 +212,7 @@
   {% if ns.filial_atual != chave_filial %}
     {% if not loop.first %}
       <tr class="linha-total">
-        <td></td>
-        <td></td>
+        <td></td><td></td>
         <td style="text-align:right;">Totais da Filial</td>
         <td class="valor col-num">{{ ns.total_capacidade | br }}</td>
         <td class="valor col-num">{{ ns.total_medicao | br }}</td>
@@ -234,11 +255,6 @@
   {% set ns.total_descarregada = ns.total_descarregada + (l.quantidade_descarregada or 0) %}
   {% set ns.total_vendida = ns.total_vendida + (l.quantidade_vendida or 0) %}
 
-  {% set ns.geral_capacidade = ns.geral_capacidade + (l.capacidade_tanque or 0) %}
-  {% set ns.geral_medicao = ns.geral_medicao + (l.quantidade_medida or 0) %}
-  {% set ns.geral_descarregada = ns.geral_descarregada + (l.quantidade_descarregada or 0) %}
-  {% set ns.geral_vendida = ns.geral_vendida + (l.quantidade_vendida or 0) %}
-
   <tr>
     <td>{{ l.data_medicao.strftime("%d/%m/%Y") if l.data_medicao else "" }}</td>
     <td>{{ l.cod_produto }}</td>
@@ -249,53 +265,7 @@
     <td class="valor col-num">{{ l.quantidade_vendida | br }}</td>
   </tr>
 
-  {% if loop.last %}
-    <tr class="linha-total">
-      <td></td>
-      <td></td>
-      <td style="text-align:right;">Totais da Filial</td>
-      <td class="valor col-num">{{ ns.total_capacidade | br }}</td>
-      <td class="valor col-num">{{ ns.total_medicao | br }}</td>
-      <td class="valor col-num">{{ ns.total_descarregada | br }}</td>
-      <td class="valor col-num">{{ ns.total_vendida | br }}</td>
-    </tr>
-    </tbody></table></div></div>
-  {% endif %}
 {% endfor %}
-
-<!-- TOTAL GERAL -->
-<div class="bloco-filial">
-  <div class="titulo-filial" style="background:#e3f0ff; color:#0b3d91;">
-    Total Geral
-  </div>
-
-  <div class="tabela-wrapper">
-    <table>
-      <thead>
-        <tr>
-          <th></th>
-          <th></th>
-          <th></th>
-          <th class="col-num">Capacidade Tanques</th>
-          <th class="col-num">Medição</th>
-          <th class="col-num">Quantidade Descarregada</th>
-          <th class="col-num">Quantidade Vendida</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr class="linha-total">
-          <td></td>
-          <td></td>
-          <td style="text-align:right;"></td>
-          <td class="valor col-num">{{ ns.geral_capacidade | br }}</td>
-          <td class="valor col-num">{{ ns.geral_medicao | br }}</td>
-          <td class="valor col-num">{{ ns.geral_descarregada | br }}</td>
-          <td class="valor col-num">{{ ns.geral_vendida | br }}</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-</div>
 
 {% else %}
 <div class="sem-dados">
