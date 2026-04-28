@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 36px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 30px;
+  }
+
+  .menu-botoes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 260px);
+    gap: 14px;
+  }
+
+  .menu-botoes a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 70px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 17px;
+    color: #fff;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+    text-align: center;
+    padding: 0 14px;
+  }
+
+  .btn-configurar {
+    background: #0f766e;
+  }
+
+  .btn-executar {
+    background: #2563eb;
+  }
+</style>
+
+<div class="pagina-titulo">Menu de Vistorias</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ nome_empresa }}
+</div>
+
+<div class="menu-botoes">
+
+  {% if pode_configurar_checklists %}
+    <a href="{{ url_for('vistorias.configurar_checklists') }}" class="btn-configurar">
+      Configurar Checklists
+    </a>
+  {% endif %}
+
+  {% if pode_executar_vistorias %}
+    <a href="{{ url_for('vistorias.executar_vistorias') }}" class="btn-executar">
+      Executar Vistorias
+    </a>
+  {% endif %}
+
+</div>
+
+{% endblock %}

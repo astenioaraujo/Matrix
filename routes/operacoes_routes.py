@@ -877,10 +877,15 @@ def informar_compras_combustiveis():
 
     data_sel = (request.values.get("data") or "").strip()
     if not data_sel:
-        data_sel = date.today().isoformat()
+        data_sel = (date.today() - timedelta(days=1)).isoformat()
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    resumo_compras = []
+    total_geral_qtd = 0
+    total_geral_valor = 0
+    preco_medio_geral = 0
 
     try:
         if tipo_global == "superusuario":
@@ -1005,6 +1010,7 @@ def informar_compras_combustiveis():
                     preco_unitario,
                     valor_comprado
                 ))
+
             conn.commit()
             flash("Compra salva com sucesso.", "success")
             return redirect(url_for("operacoes.informar_compras_combustiveis", data=data_sel))
@@ -1058,6 +1064,39 @@ def informar_compras_combustiveis():
 
         compras = cur.fetchall() or []
 
+        resumo_produtos = {}
+
+        for c in compras:
+            cod_produto = str(c["cod_produto"] or "").strip()
+            produto = c["produto"] or cod_produto
+
+            qtd = float(c["quantidade_comprada"] or 0)
+            valor = float(c["valor_comprado"] or 0)
+
+            if cod_produto not in resumo_produtos:
+                resumo_produtos[cod_produto] = {
+                    "cod_produto": cod_produto,
+                    "produto": produto,
+                    "quantidade": 0,
+                    "valor": 0,
+                    "preco_medio": 0,
+                }
+
+            resumo_produtos[cod_produto]["quantidade"] += qtd
+            resumo_produtos[cod_produto]["valor"] += valor
+
+            total_geral_qtd += qtd
+            total_geral_valor += valor
+
+        for r in resumo_produtos.values():
+            if r["quantidade"] > 0:
+                r["preco_medio"] = r["valor"] / r["quantidade"]
+
+        resumo_compras = list(resumo_produtos.values())
+
+        if total_geral_qtd > 0:
+            preco_medio_geral = total_geral_valor / total_geral_qtd
+
     except Exception as e:
         conn.rollback()
         flash(f"Erro ao processar compras: {e}", "error")
@@ -1065,6 +1104,10 @@ def informar_compras_combustiveis():
         filiais = []
         produtos = []
         fornecedores = []
+        resumo_compras = []
+        total_geral_qtd = 0
+        total_geral_valor = 0
+        preco_medio_geral = 0
 
     finally:
         cur.close()
@@ -1079,6 +1122,10 @@ def informar_compras_combustiveis():
         produtos=produtos,
         fornecedores=fornecedores,
         compras=compras,
+        resumo_compras=resumo_compras,
+        total_geral_qtd=total_geral_qtd,
+        total_geral_valor=total_geral_valor,
+        preco_medio_geral=preco_medio_geral,
         url_voltar=url_for("operacoes.menu_operacoes"),
         texto_voltar="← Voltar",
     )
@@ -1148,7 +1195,7 @@ def informar_descarregos_combustiveis():
 
     data_sel = (request.values.get("data") or "").strip()
     if not data_sel:
-        data_sel = date.today().isoformat()
+        data_sel = (date.today() - timedelta(days=1)).isoformat()
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)

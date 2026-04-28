@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 32px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 20px;
+    margin-bottom: 25px;
+  }
+
+  .card-form {
+    max-width: 600px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 14px;
+    padding: 24px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  }
+
+  .campo {
+    margin-bottom: 16px;
+  }
+
+  .campo label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .campo input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #c9c9c9;
+    border-radius: 8px;
+    font-size: 15px;
+  }
+
+  .acoes {
+    margin-top: 20px;
+  }
+
+  .btn {
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: none;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn-salvar {
+    background: #2f66e0;
+    color: #fff;
+  }
+
+  .btn-salvar:hover {
+    background: #1f4fc0;
+  }
+</style>
+
+<div class="pagina-titulo">Novo Checklist</div>
+
+<div class="empresa">
+  Empresa: <strong>{{ nome_empresa }}</strong>
+</div>
+
+<div class="card-form">
+
+  <form method="post">
+
+    <div class="campo">
+      <label>Código do Checklist</label>
+      <input type="text" name="codigo_checklist" placeholder="Ex: VIST_PADRAO" required>
+    </div>
+
+    <div class="campo">
+      <label>Descrição</label>
+      <input type="text" name="descricao" placeholder="Ex: Checklist padrão de vistoria operacional" required>
+    </div>
+
+    <div class="acoes">
+      <button type="submit" class="btn btn-salvar">
+        💾 Criar Checklist
+      </button>
+    </div>
+
+  </form>
+
+</div>
+
+{% endblock %}

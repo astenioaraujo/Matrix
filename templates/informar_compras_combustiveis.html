@@ -14,6 +14,7 @@
     border-radius: 16px;
     padding: 20px;
     box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
   }
 
   .linha-filtro { display: flex; gap: 14px; align-items: end; margin-bottom: 20px; }
@@ -43,7 +44,17 @@
     cursor: pointer;
     font-weight: 700;
   }
-
+  .btn-dia {
+    width: 38px;
+    height: 34px;
+    padding: 0;
+    font-size: 14px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: middle;
+  }
   .btn-excluir {
     background: #fff;
     color: #b00020;
@@ -55,6 +66,24 @@
   .status-fechada { color: red; font-weight: 800; }
 
   .texto-bloqueado { font-weight: 700; }
+
+  .resumo {
+    max-width: 900px;
+  }
+
+  .resumo h3 {
+    margin-top: 0;
+    font-size: 22px;
+  }
+
+  .resumo-total {
+    background: #f3f3f3;
+    font-weight: 800;
+  }
+
+  .num {
+    text-align: right;
+  }
 </style>
 
 <div class="pagina-titulo">Informar Compras de Combustíveis</div>
@@ -67,12 +96,21 @@
 
 <form method="get">
   <div class="linha-filtro">
+
     <div>
       <label>Data</label>
-      <input type="date" name="data" value="{{ data_sel }}">
+      <input type="date" id="data_sel" name="data" value="{{ data_sel }}">
     </div>
-
+  
+    <!-- BOTÃO VOLTAR DIA -->
+    <button type="button" class="btn btn-dia" onclick="mudarData(-1)">◀</button>
+  
+    <!-- BOTÃO AVANÇAR DIA -->
+    <button type="button" class="btn btn-dia" onclick="mudarData(1)">▶</button>
+  
+    <!-- FILTRAR -->
     <button class="btn">Filtrar</button>
+  
   </div>
 </form>
 
@@ -234,18 +272,23 @@
 </td>
 
 <td>
-{% if not bloqueado %}
-<button class="btn">Salvar</button>
-</form>
-
-<form method="post" action="{{ url_for('operacoes.excluir_compra_combustivel', id_compra=c.id_compra) }}">
-<input type="hidden" name="data" value="{{ data_sel }}">
-<button class="btn-excluir">Excluir</button>
-</form>
-{% else %}
-Bloqueada
-{% endif %}
-</td>
+  {% if not bloqueado %}
+    <button type="submit" class="btn">Salvar</button>
+  
+    <button
+      type="submit"
+      class="btn-excluir"
+      formaction="{{ url_for('operacoes.excluir_compra_combustivel', id_compra=c.id_compra) }}"
+      formmethod="post"
+      onclick="return confirm('Excluir esta compra?');">
+      Excluir
+    </button>
+  </form>
+  {% else %}
+    Bloqueada
+  </form>
+  {% endif %}
+  </td>
 
 </tr>
 {% endfor %}
@@ -253,6 +296,39 @@ Bloqueada
 </tbody>
 </table>
 
+</div>
+
+<div class="painel resumo">
+  <h3>Resumo das Compras</h3>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Combustível</th>
+        <th class="num">Quantidade</th>
+        <th class="num">Preço Médio</th>
+        <th class="num">Valor</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for r in resumo_compras %}
+      <tr>
+        <td>{{ r.produto }}</td>
+        <td class="num">{{ r.quantidade | br }}</td>
+        <td class="num">{{ r.preco_medio | br }}</td>
+        <td class="num">{{ r.valor | br }}</td>
+      </tr>
+      {% endfor %}
+
+      <tr class="resumo-total">
+        <td>TOTAL GERAL</td>
+        <td class="num">{{ total_geral_qtd | br }}</td>
+        <td class="num">{{ preco_medio_geral | br }}</td>
+        <td class="num">{{ total_geral_valor | br }}</td>
+      </tr>
+    </tbody>
+  </table>
 </div>
 
 <script>
@@ -280,6 +356,19 @@ novo_preco.value=formatBR(d.preco);
 recalcular();
 }
 });
+}
+
+function mudarData(dias){
+  let input = document.getElementById("data_sel");
+  if(!input.value) return;
+
+  let data = new Date(input.value);
+  data.setDate(data.getDate() + dias);
+
+  let nova = data.toISOString().split("T")[0];
+
+  // redireciona já com a nova data
+  window.location.href = "?data=" + nova;
 }
 </script>
 

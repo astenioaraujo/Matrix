@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+
+  .empresa {
+    font-size: 20px;
+    margin-bottom: 22px;
+  }
+
+  .acoes-topo {
+    margin-bottom: 20px;
+  }
+
+  .btn-topo {
+    display: inline-block;
+    padding: 10px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    border: 1px solid #c7c7c7;
+    background: #f7f7f7;
+    color: #1f3c88;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    background: #fff;
+  }
+
+  th, td {
+    border: 1px solid #ddd;
+    padding: 9px 10px;
+  }
+
+  th {
+    background: #dbe8f4;
+    text-align: left;
+  }
+
+  .badge {
+    padding: 4px 9px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 13px;
+  }
+
+  .ativo {
+    background: #d9fbe3;
+    color: #166534;
+  }
+
+  .arquivado {
+    background: #eee;
+    color: #555;
+  }
+</style>
+
+<div class="pagina-titulo">Configurar Checklists</div>
+
+<div class="empresa">
+  Empresa: <strong>{{ nome_empresa }}</strong>
+</div>
+
+<div class="acoes-topo">
+  <a class="btn-topo" href="{{ url_for('vistorias.novo_checklist') }}">
+    + Novo Checklist
+  </a>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Código</th>
+      <th>Descrição</th>
+      <th>Versão</th>
+      <th>Status</th>
+      <th>Ação</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    {% for c in checklists %}
+      <tr>
+        <td>{{ c.id_checklist }}</td>
+        <td>{{ c.codigo_checklist }}</td>
+        <td>{{ c.descricao }}</td>
+        <td>{{ c.versao }}</td>
+        <td>
+          <span class="badge {% if c.status == 'ATIVO' %}ativo{% else %}arquivado{% endif %}">
+            {{ c.status }}
+          </span>
+        </td>
+        <td>
+          <a href="{{ url_for('vistorias.editar_checklist', id_checklist=c.id_checklist) }}">
+            Editar
+          </a>
+        </td>
+      </tr>
+    {% else %}
+      <tr>
+        <td colspan="6">Nenhum checklist cadastrado.</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% endblock %}

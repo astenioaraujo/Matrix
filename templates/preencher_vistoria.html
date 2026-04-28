@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    background: #fff;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #ddd;
+    padding: 7px 8px;
+  }
+
+  th {
+    background: #dbe8f4;
+    text-align: center;
+  }
+
+  .col-seq { width: 55px; }
+  .col-cod { width: 70px; }
+  .col-criterio { width: 42%; }
+  .col-pontos { width: 80px; }
+  .col-atendido { width: 70px; }
+  .col-observacao { width: 38%; }
+  .col-pontuacao { width: 80px; }
+
+  .grupo td {
+    background: #eef4ff;
+    color: #1f4ed8;
+    font-weight: 800;
+    border-top: 3px solid #1f4ed8;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  tbody tr.grupo:first-child td {
+    border-top: none;
+  }
+
+  .linha-atendida td {
+    background: #e9fbe7;
+  }
+
+  .linha-nao-atendida td {
+    background: #fdeaea;
+  }
+
+  .num {
+    text-align: right;
+  }
+
+  .centro {
+    text-align: center;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 34px;
+    box-sizing: border-box;
+  }
+
+  input[type="checkbox"] {
+    transform: scale(1.25);
+    cursor: pointer;
+  }
+
+  .topo {
+    margin-bottom: 18px;
+  }
+
+  .nota {
+    font-size: 22px;
+    font-weight: 800;
+    margin: 15px 0;
+  }
+
+  .barra-nota-wrap {
+    width: 320px;
+    height: 18px;
+    background: #ddd;
+    border-radius: 999px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .barra-nota {
+    height: 100%;
+    width: 0%;
+    background: #2f66e0;
+    transition: width 0.2s ease;
+  }
+
+  .btn-salvar {
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: none;
+    font-weight: 700;
+    cursor: pointer;
+    background: #2f66e0;
+    color: #fff;
+  }
+
+  .barra-acoes {
+    margin-bottom: 16px;
+  }
+</style>
+
+<div class="topo">
+  <h1>Preencher Vistoria</h1>
+
+  <p>
+    Filial: <strong>{{ execucao.cod_filial }} - {{ execucao.nome_filial }}</strong><br>
+    Checklist: <strong>{{ execucao.codigo_checklist }} - {{ execucao.checklist_descricao }} - v{{ execucao.versao }}</strong><br>
+    Data: <strong>{{ execucao.data_vistoria }}</strong>
+  </p>
+
+  <div class="nota">
+    Nota atual: <span id="nota-atual">{{ "%.2f"|format(execucao.nota or 0) }}</span>
+
+    <div class="barra-nota-wrap">
+      <div id="barra-nota" class="barra-nota"></div>
+    </div>
+  </div>
+</div>
+
+<form method="post">
+
+  <div class="barra-acoes">
+    <button type="submit" class="btn-salvar">💾 Salvar Vistoria</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th class="col-seq">Seq</th>
+        <th class="col-cod">Código</th>
+        <th class="col-criterio">Critério</th>
+        <th class="col-pontos">Pontos<br>Poss.</th>
+        <th class="col-atendido">Atend.</th>
+        <th class="col-observacao">Observação</th>
+        <th class="col-pontuacao">Pont.</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for i in itens %}
+        <tr class="{% if i.tipo_linha == 'GRUPO' %}grupo{% endif %}">
+          <td class="num">{{ i.sequencia }}</td>
+          <td>{{ i.codigo_item }}</td>
+          <td>{{ i.descricao }}</td>
+          <td class="num">{{ i.pontos_possiveis }}</td>
+
+          {% if i.tipo_linha == 'GRUPO' %}
+            <td colspan="3"></td>
+          {% else %}
+            <td class="centro">
+              <input
+                type="checkbox"
+                class="check-atendido"
+                name="atendido_{{ i.id_execucao_item }}"
+                value="SIM"
+                {% if i.atendido == 'SIM' %}checked{% endif %}>
+            </td>
+
+            <td>
+              <textarea name="observacao_{{ i.id_execucao_item }}">{{ i.observacao or "" }}</textarea>
+            </td>
+
+            <td class="num pontuacao-item" data-pontos="{{ i.pontos_possiveis }}">
+              {{ "%.2f"|format(i.pontuacao or 0) }}
+            </td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+</form>
+
+<script>
+  function recalcularNota() {
+    let totalPossivel = 0;
+    let totalObtido = 0;
+
+    document.querySelectorAll(".check-atendido").forEach(function(check) {
+      const linha = check.closest("tr");
+      const pontuacaoEl = linha.querySelector(".pontuacao-item");
+      const pontos = parseFloat(pontuacaoEl.dataset.pontos || "0");
+
+      linha.classList.remove("linha-atendida", "linha-nao-atendida");
+
+      totalPossivel += pontos;
+
+      if (check.checked) {
+        totalObtido += pontos;
+        pontuacaoEl.textContent = pontos.toFixed(2);
+        linha.classList.add("linha-atendida");
+      } else {
+        pontuacaoEl.textContent = "0.00";
+        linha.classList.add("linha-nao-atendida");
+      }
+    });
+
+    let nota = 0;
+    if (totalPossivel > 0) {
+      nota = (totalObtido / totalPossivel) * 10;
+    }
+
+    document.getElementById("nota-atual").textContent = nota.toFixed(2);
+
+    const percentual = Math.max(0, Math.min(100, nota * 10));
+    const barra = document.getElementById("barra-nota");
+
+    if (barra) {
+      barra.style.width = percentual + "%";
+    }
+  }
+
+  document.querySelectorAll(".check-atendido").forEach(function(check) {
+    check.addEventListener("change", recalcularNota);
+  });
+
+  recalcularNota();
+</script>
+
+{% endblock %}

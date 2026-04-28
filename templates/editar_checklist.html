@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 32px;
+    font-weight: 800;
+    margin-bottom: 6px;
+  }
+
+  .sub {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .painel {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+
+  .grid-novo {
+    display: grid;
+    grid-template-columns: 120px 140px 1fr 140px auto;
+    gap: 10px;
+    align-items: end;
+  }
+
+  .campo label {
+    font-weight: 700;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .campo input, .campo select {
+    width: 100%;
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #ddd;
+    padding: 6px 8px;
+  }
+
+  th {
+    background: #dbe8f4;
+  }
+
+  td input, td select {
+    width: 100%;
+    border: none;
+    background: transparent;
+  }
+
+  .col-drag { width: 45px; text-align: center; }
+  .col-seq { width: 90px; }
+  .col-tipo { width: 110px; }
+  .col-cod { width: 120px; }
+  .col-pontos { width: 120px; }
+  .col-acao { width: 90px; text-align: center; }
+
+  .drag-handle {
+    cursor: grab;
+    font-size: 20px;
+    font-weight: 800;
+    color: #555;
+    user-select: none;
+  }
+
+  .sortable-ghost {
+    opacity: 0.45;
+    background: #fff3cd;
+  }
+
+  .grupo td {
+    background: #eef4ff;
+    color: #1f4ed8;
+    font-weight: 800;
+    border-top: 3px solid #1f4ed8;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  tbody tr.grupo:first-child td {
+    border-top: none;
+  }
+
+  .grupo td:nth-child(5) input {
+    color: #1f4ed8;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .acoes {
+    margin-top: 15px;
+  }
+
+  .btn {
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: none;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn-salvar {
+    background: #2f66e0;
+    color: #fff;
+  }
+
+  .btn-add {
+    background: #198754;
+    color: #fff;
+  }
+
+  .btn-excluir {
+    background: #b02a37;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+</style>
+
+<div class="pagina-titulo">
+  Checklist: {{ checklist.descricao }}
+</div>
+
+<div class="sub">
+  Código: <strong>{{ checklist.codigo_checklist }}</strong> |
+  Versão: <strong>{{ checklist.versao }}</strong>
+</div>
+
+<div class="painel">
+  <form method="post" action="{{ url_for('vistorias.adicionar_item_checklist', id_checklist=checklist.id_checklist) }}">
+    <div class="grid-novo">
+
+      <div class="campo">
+        <label>Tipo</label>
+        <select name="tipo_linha">
+          <option value="ITEM">ITEM</option>
+          <option value="GRUPO">GRUPO</option>
+        </select>
+      </div>
+
+      <div class="campo">
+        <label>Código</label>
+        <input type="text" name="codigo_item">
+      </div>
+
+      <div class="campo">
+        <label>Descrição</label>
+        <input type="text" name="descricao" required>
+      </div>
+
+      <div class="campo">
+        <label>Pontos</label>
+        <input type="number" step="0.01" name="pontos_possiveis" value="5">
+      </div>
+
+      <div>
+        <button class="btn btn-add">+ Adicionar</button>
+      </div>
+
+    </div>
+  </form>
+</div>
+
+<form method="post" action="{{ url_for('vistorias.salvar_itens_checklist', id_checklist=checklist.id_checklist) }}">
+  <div class="painel">
+    <div class="acoes" style="margin-top: 0; margin-bottom: 15px;">
+        <button class="btn btn-salvar">💾 Salvar Alterações</button>
+    </div>
+    
+    <table>
+      <thead>
+        <tr>
+          <th class="col-drag">Mover</th>
+          <th class="col-seq">Seq</th>
+          <th class="col-tipo">Tipo</th>
+          <th class="col-cod">Código</th>
+          <th>Descrição</th>
+          <th class="col-pontos">Pontos</th>
+          <th class="col-acao">Ação</th>
+        </tr>
+      </thead>
+
+      <tbody id="lista-itens">
+        {% for i in itens %}
+          <tr data-id-item="{{ i.id_item }}" class="{% if i.tipo_linha == 'GRUPO' %}grupo{% endif %}">
+
+            <td class="col-drag">
+              <span class="drag-handle">☰</span>
+            </td>
+
+            <td>
+              <input class="campo-sequencia" type="number" name="sequencia_{{ i.id_item }}" value="{{ i.sequencia }}">
+            </td>
+
+            <td>
+              {% if i.tipo_linha == 'GRUPO' %}
+                <input type="hidden" name="tipo_linha_{{ i.id_item }}" value="GRUPO">
+                <strong>GRUPO</strong>
+              {% else %}
+                <select name="tipo_linha_{{ i.id_item }}">
+                  <option value="ITEM" selected>ITEM</option>
+                </select>
+              {% endif %}
+            </td>
+
+            <td>
+              <input type="text" name="codigo_item_{{ i.id_item }}" value="{{ i.codigo_item }}">
+            </td>
+
+            <td>
+              <input type="text" name="descricao_{{ i.id_item }}" value="{{ i.descricao }}">
+            </td>
+
+            <td>
+              <input type="number" step="0.01" name="pontos_possiveis_{{ i.id_item }}" value="{{ i.pontos_possiveis }}">
+            </td>
+
+            <td class="col-acao">
+              <button
+                type="submit"
+                class="btn-excluir"
+                formaction="{{ url_for('vistorias.excluir_item_checklist', id_checklist=checklist.id_checklist, id_item=i.id_item) }}"
+                formmethod="post"
+                onclick="return confirm('Excluir esta linha do checklist?');">
+                Excluir
+              </button>
+            </td>
+
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+  </div>
+</form>
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+
+<script>
+  const lista = document.getElementById("lista-itens");
+
+  if (lista) {
+    new Sortable(lista, {
+      handle: ".drag-handle",
+      animation: 150,
+      ghostClass: "sortable-ghost",
+      onEnd: function () {
+        const linhas = lista.querySelectorAll("tr");
+
+        linhas.forEach(function (linha, index) {
+          const campoSeq = linha.querySelector(".campo-sequencia");
+          if (campoSeq) {
+            campoSeq.value = index + 1;
+          }
+        });
+      }
+    });
+  }
+</script>
+
+{% endblock %}

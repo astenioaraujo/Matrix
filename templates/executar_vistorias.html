@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+
+  .empresa {
+    font-size: 18px;
+    margin-bottom: 22px;
+  }
+
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 22px;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.05);
+    margin-bottom: 22px;
+  }
+
+  .card-filtro,
+  .card-nova {
+    max-width: 820px;
+  }
+
+  .titulo-bloco {
+    font-size: 21px;
+    font-weight: 800;
+    margin-bottom: 16px;
+  }
+
+  .grid-filtro {
+    display: grid;
+    grid-template-columns: 120px 120px auto;
+    gap: 14px;
+    align-items: end;
+  }
+
+  .grid-nova {
+    display: grid;
+    grid-template-columns: 220px 1fr 190px auto;
+    gap: 14px;
+    align-items: end;
+  }
+
+  label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  input,
+  select {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #cfcfcf;
+    font-size: 15px;
+  }
+
+  .btn-primary {
+    background: #2f66e0;
+    color: #fff;
+    border: none;
+    padding: 11px 18px;
+    border-radius: 11px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .btn-primary:hover {
+    background: #1f4ed8;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th, td {
+    padding: 10px 9px;
+    border-bottom: 1px solid #eee;
+  }
+
+  th {
+    background: #eef3fb;
+    font-weight: 800;
+  }
+
+  tr:hover {
+    background: #f9fbff;
+  }
+
+  .col-checklist {
+    width: 260px;
+  }
+
+  .col-status {
+    width: 140px;
+    text-align: center;
+  }
+
+  .td-status {
+    text-align: center;
+    padding: 6px 6px;
+  }
+
+  .form-status {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+  }
+
+  .check-status {
+    width: auto;
+    transform: scale(1.1);
+    margin: 0;
+    padding: 0;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 5px 11px;
+    border-radius: 999px;
+    font-weight: 800;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .badge-aberta {
+    background: #fff3cd;
+    color: #9a6a00;
+  }
+
+  .badge-finalizada {
+    background: #d1e7dd;
+    color: #146c43;
+  }
+
+  .nota {
+    font-weight: 900;
+    font-size: 16px;
+  }
+
+  .nota-baixa { color: #dc3545; }
+  .nota-media { color: #b58900; }
+  .nota-alta { color: #198754; }
+
+  .acao-editar {
+    color: #1f4ed8;
+    font-weight: 800;
+    text-decoration: none;
+  }
+
+  .acao-editar:hover {
+    text-decoration: underline;
+  }
+
+  .bloqueado {
+    color: #777;
+    font-weight: 700;
+  }
+</style>
+
+<div class="pagina-titulo">Executar Vistoria</div>
+
+<div class="empresa">
+  Empresa: <strong>{{ nome_empresa }}</strong>
+</div>
+
+<!-- FILTRO -->
+<div class="card card-filtro">
+  <div class="titulo-bloco">Filtrar vistorias</div>
+
+  <form method="get" class="grid-filtro">
+    <div>
+      <label>Ano</label>
+      <input type="number" name="ano" value="{{ ano_sel }}">
+    </div>
+
+    <div>
+      <label>Mês</label>
+      <input type="number" name="mes" value="{{ mes_sel }}">
+    </div>
+
+    <div>
+      <button type="submit" class="btn-primary">Filtrar</button>
+    </div>
+  </form>
+</div>
+
+<!-- LISTA -->
+<div class="card">
+  <div class="titulo-bloco">Vistorias do período</div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Data</th>
+        <th>Filial</th>
+        <th class="col-checklist">Checklist</th>
+        <th>Executor</th>
+        <th class="col-status">Status</th>
+        <th>Nota</th>
+        <th>Ação</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for v in vistorias_mes %}
+      <tr>
+        <td>{{ v.id_execucao }}</td>
+        <td>{{ v.data_vistoria }}</td>
+        <td>{{ v.cod_filial }} - {{ v.nome_filial }}</td>
+        <td>{{ v.codigo_checklist }}</td>
+        <td>{{ v.nome_executor or "-" }}</td>
+
+        <!-- STATUS -->
+        <td class="td-status">
+          {% if v.pode_alterar_status %}
+            <form method="post"
+                  action="{{ url_for('vistorias.alterar_status_vistoria', id_execucao=v.id_execucao) }}"
+                  class="form-status">
+
+              <input type="checkbox"
+                     name="finalizada"
+                     class="check-status"
+                     onchange="this.form.submit()"
+                     {% if v.status == 'FINALIZADA' %}checked{% endif %}>
+
+              {% if v.status == 'FINALIZADA' %}
+                <span class="badge badge-finalizada">FINALIZADA</span>
+              {% else %}
+                <span class="badge badge-aberta">ABERTA</span>
+              {% endif %}
+            </form>
+          {% else %}
+            {% if v.status == 'FINALIZADA' %}
+              <span class="badge badge-finalizada">FINALIZADA</span>
+            {% else %}
+              <span class="badge badge-aberta">ABERTA</span>
+            {% endif %}
+          {% endif %}
+        </td>
+
+        <!-- NOTA -->
+        <td>
+          <span class="nota
+            {% if (v.nota or 0) < 5 %}nota-baixa
+            {% elif (v.nota or 0) < 8 %}nota-media
+            {% else %}nota-alta{% endif %}
+          ">
+            {{ "%.2f"|format(v.nota or 0) }}
+          </span>
+        </td>
+
+        <!-- AÇÕES -->
+        <td>
+          {% if v.pode_editar %}
+            <a class="acao-editar"
+               href="{{ url_for('vistorias.preencher_vistoria', id_execucao=v.id_execucao) }}">
+              ✏️ Editar
+            </a>
+          {% else %}
+            <span class="bloqueado">🔒 Bloqueada</span>
+          {% endif %}
+
+          {% if v.pode_excluir %}
+            <form method="post"
+                  action="{{ url_for('vistorias.excluir_vistoria', id_execucao=v.id_execucao) }}"
+                  style="display:inline; margin-left:8px;">
+              <button type="submit"
+                      onclick="return confirm('Excluir esta vistoria?');"
+                      style="background:#b02a37; color:#fff; border:none; border-radius:8px; padding:5px 9px; font-weight:700;">
+                🗑 Excluir
+              </button>
+            </form>
+          {% endif %}
+        </td>
+
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- NOVA -->
+<div class="card card-nova">
+  <div class="titulo-bloco">Nova Vistoria</div>
+
+  <form method="post" class="grid-nova">
+    <div>
+      <label>Filial</label>
+      <select name="cod_filial" required>
+        <option value="">Selecione</option>
+        {% for f in filiais %}
+          <option value="{{ f.cod_filial }}">
+            {{ f.cod_filial }} - {{ f.nome_filial }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label>Checklist</label>
+      <select name="id_checklist" required>
+        <option value="">Selecione</option>
+        {% for c in checklists %}
+          <option value="{{ c.id_checklist }}">
+            {{ c.codigo_checklist }} - {{ c.descricao }} - v{{ c.versao }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label>Data da vistoria</label>
+      <input type="date" name="data_vistoria" required>
+    </div>
+
+    <div>
+      <button type="submit" class="btn-primary">🚀 Iniciar</button>
+    </div>
+  </form>
+</div>
+
+{% endblock %}

@@ -93,6 +93,14 @@
     background: #b02a37;
   }
 
+  .btn-compliance {
+  background: #4b5563;
+  }
+
+  .btn-vistorias {
+  background: #0f766e;
+  }
+
   @media (max-width: 700px) {
     .pagina-wrap {
       max-width: 100%;
@@ -151,6 +159,20 @@
         <a class="btn-sistema btn-vendas" href="{{ url_for('sistema.menu_vendas') }}">
           <div class="btn-icone">📊</div>
           <div>Vendas</div>
+        </a>
+      {% endif %}
+
+      {% if pode_compliance %}
+        <a class="btn-sistema btn-compliance" href="{{ url_for('compliance.menu_compliance') }}">
+          <div class="btn-icone">🛡️</div>
+          <div>Compliance</div>
+        </a>
+      {% endif %}
+
+      {% if pode_vistorias %}
+        <a class="btn-sistema btn-vistorias" href="{{ url_for('vistorias.menu_vistorias') }}">
+          <div class="btn-icone">📝</div>
+          <div>Vistorias</div>
         </a>
       {% endif %}
 
