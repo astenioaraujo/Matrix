@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #ddd;
+    padding: 7px 8px;
+  }
+
+  th {
+    background: #dbe8f4;
+    text-align: center;
+  }
+
+  .col-seq { width: 55px; text-align: right; }
+  .col-codigo { width: 70px; text-align: center; }
+  .col-criterio { width: 38%; }
+  .col-pontos { width: 95px; text-align: center; }
+  .col-atendido { width: 90px; text-align: center; }
+  .col-observacao { width: auto; }
+  .col-pontuacao { width: 80px; text-align: right; }
+
+  .grupo td {
+    background: #eef4ff;
+    color: #1f4ed8;
+    font-weight: 800;
+    border-top: 3px solid #1f4ed8;
+  }
+
+  .nota {
+    font-size: 22px;
+    font-weight: 800;
+    margin: 15px 0;
+  }
+
+  .info {
+    margin-bottom: 18px;
+  }
+</style>
+
+<h1>Visualizar Vistoria</h1>
+
+<div class="info">
+  Filial: <strong>{{ execucao.cod_filial }} - {{ execucao.nome_filial }}</strong><br>
+  Checklist: <strong>{{ execucao.codigo_checklist }} - {{ execucao.checklist_descricao }} - v{{ execucao.versao }}</strong><br>
+  Data: <strong>{{ execucao.data_vistoria }}</strong><br>
+  Status: <strong>{{ execucao.status }}</strong>
+</div>
+
+<div class="nota">
+  Nota: {{ "%.2f"|format(execucao.nota or 0) }}
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th class="col-seq">Seq</th>
+      <th class="col-codigo">Código</th>
+      <th class="col-criterio">Critério</th>
+      <th class="col-pontos">Pontos<br>Poss.</th>
+      <th class="col-atendido">Atendido</th>
+      <th class="col-observacao">Observação</th>
+      <th class="col-pontuacao">Pont.</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    {% for i in itens %}
+    <tr class="{% if i.tipo_linha == 'GRUPO' %}grupo{% endif %}">
+      <td class="col-seq">{{ i.sequencia }}</td>
+      <td class="col-codigo">{{ i.codigo_item }}</td>
+      <td class="col-criterio">{{ i.descricao }}</td>
+      <td class="col-pontos">{{ "%.2f"|format(i.pontos_possiveis or 0) }}</td>
+
+      {% if i.tipo_linha == 'GRUPO' %}
+        <td colspan="3"></td>
+      {% else %}
+        <td class="col-atendido">
+          {% if i.atendido == 'SIM' %}✅{% else %}❌{% endif %}
+        </td>
+
+        <td class="col-observacao">{{ i.observacao or "" }}</td>
+        <td class="col-pontuacao">{{ "%.2f"|format(i.pontuacao or 0) }}</td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% endblock %}

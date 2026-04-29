@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, session, redirect, url_for, request, flash
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import RealDictCursor, execute_batch
 from datetime import date
 
 from db import get_connection
@@ -49,9 +49,11 @@ def menu_vistorias():
     if tipo_global == "superusuario":
         pode_configurar_checklists = True
         pode_executar_vistorias = True
+        pode_consultar_vistorias = True
     else:
         pode_configurar_checklists = usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "CONFIGURAR_CHECKLISTS")
         pode_executar_vistorias = usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "EXECUTAR_VISTORIAS")
+        pode_consultar_vistorias = usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "CONSULTAR_VISTORIAS")
 
     return render_template(
         "menu_vistorias.html",
@@ -60,6 +62,7 @@ def menu_vistorias():
         texto_voltar="← Voltar",
         pode_configurar_checklists=pode_configurar_checklists,
         pode_executar_vistorias=pode_executar_vistorias,
+        pode_consultar_vistorias=pode_consultar_vistorias,        
     )
 
 
@@ -810,3 +813,140 @@ def alterar_status_vistoria(id_execucao):
 
     return redirect(url_for("vistorias.executar_vistorias"))
 
+# ---------------------------------------
+# CONSULTAR VISTORIAS
+# ---------------------------------------
+@vistorias_bp.route("/consultar")
+@permissao_obrigatoria("VISTORIAS", "CONSULTAR_VISTORIAS", redirecionar_para="vistorias.menu_vistorias")
+def consultar_vistorias():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa")
+
+    hoje = date.today()
+
+    ano_sel = (request.args.get("ano") or str(hoje.year)).strip()
+    mes_sel = (request.args.get("mes") or "").strip()
+
+    if mes_sel:
+        mes_sel = mes_sel.zfill(2)
+        data_ini = f"{ano_sel}-{mes_sel}-01"
+
+        if mes_sel == "12":
+            data_fim = f"{int(ano_sel)+1}-01-01"
+        else:
+            data_fim = f"{ano_sel}-{str(int(mes_sel)+1).zfill(2)}-01"
+    else:
+        data_ini = f"{ano_sel}-01-01"
+        data_fim = f"{int(ano_sel)+1}-01-01"
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT
+                e.id_execucao,
+                e.data_vistoria,
+                e.status,
+                COALESCE(e.nota, 0) AS nota,
+                e.nome_executor,
+                f.cod_filial,
+                f.nome_filial,
+                c.codigo_checklist,
+                c.descricao AS checklist_descricao
+            FROM vistorias_execucoes e
+            LEFT JOIN filiais f
+              ON f.cod_empresa = e.cod_empresa
+             AND f.cod_filial = e.cod_filial
+            LEFT JOIN vistorias_checklists c
+              ON c.id_checklist = e.id_checklist
+            WHERE e.cod_empresa = %s
+              AND e.data_vistoria >= %s
+              AND e.data_vistoria < %s
+            ORDER BY e.data_vistoria DESC, e.id_execucao DESC
+        """, (cod_empresa, data_ini, data_fim))
+
+        vistorias = cur.fetchall() or []
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "consultar_vistorias.html",
+        nome_empresa=nome_empresa,
+        vistorias=vistorias,
+        ano_sel=ano_sel,
+        mes_sel=mes_sel,
+        url_voltar=url_for("vistorias.menu_vistorias"),
+        texto_voltar="← Voltar",
+    )
+
+# ---------------------------------------
+# VISUALIZAR VISTORIA - SOMENTE LEITURA
+# ---------------------------------------
+@vistorias_bp.route("/execucao/<int:id_execucao>/visualizar")
+@permissao_obrigatoria(
+    "VISTORIAS",
+    "CONSULTAR_VISTORIAS",
+    redirecionar_para="vistorias.menu_vistorias",
+)
+def visualizar_vistoria(id_execucao):
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT
+                e.*,
+                f.nome_filial,
+                c.codigo_checklist,
+                c.descricao AS checklist_descricao,
+                c.versao
+            FROM vistorias_execucoes e
+            LEFT JOIN filiais f
+              ON f.cod_empresa = e.cod_empresa
+             AND f.cod_filial = e.cod_filial
+            LEFT JOIN vistorias_checklists c
+              ON c.id_checklist = e.id_checklist
+            WHERE e.id_execucao = %s
+              AND e.cod_empresa = %s
+        """, (id_execucao, cod_empresa))
+
+        execucao = cur.fetchone()
+
+        if not execucao:
+            flash("Vistoria não encontrada.", "error")
+            return redirect(url_for("vistorias.consultar_vistorias"))
+
+        cur.execute("""
+            SELECT *
+            FROM vistorias_execucao_itens
+            WHERE id_execucao = %s
+            ORDER BY sequencia
+        """, (id_execucao,))
+
+        itens = cur.fetchall() or []
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "visualizar_vistoria.html",
+        execucao=execucao,
+        itens=itens,
+        url_voltar=url_for("vistorias.consultar_vistorias"),
+        texto_voltar="← Voltar",
+    )

@@ -18,31 +18,55 @@
 
   .menu-botoes {
     display: grid;
-    grid-template-columns: repeat(auto-fill, 260px);
+    grid-template-columns: repeat(auto-fill, 220px);
     gap: 14px;
+    margin-bottom: 50px;
   }
 
   .menu-botoes a {
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 70px;
+    height: 60px;
     border-radius: 12px;
     text-decoration: none;
-    font-weight: 700;
-    font-size: 17px;
+    font-weight: 600;
+    font-size: 16px;
     color: #fff;
     box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+    transition: all 0.2s ease;
     text-align: center;
-    padding: 0 14px;
+    padding: 0 10px;
   }
 
-  .btn-configurar {
-    background: #0f766e;
+  .btn-informar {
+    background: #876A50;
+    border: 1px solid #876A50;
   }
 
-  .btn-executar {
-    background: #2563eb;
+  .btn-informar:hover {
+    background: #755840;
+    border-color: #755840;
+  }
+
+  .btn-consultar {
+    background: #7D4820;
+    border: 1px solid #7D4820;
+  }
+
+  .btn-consultar:hover {
+    background: #693d1a;
+    border-color: #693d1a;
+  }
+
+  .btn-config {
+    background: #4E3322;
+    border: 1px solid #4E3322;
+  }
+
+  .btn-config:hover {
+    background: #3f291b;
+    border-color: #3f291b;
   }
 </style>
 
@@ -54,18 +78,25 @@
 
 <div class="menu-botoes">
 
-  {% if pode_configurar_checklists %}
-    <a href="{{ url_for('vistorias.configurar_checklists') }}" class="btn-configurar">
-      Configurar Checklists
-    </a>
-  {% endif %}
+
 
   {% if pode_executar_vistorias %}
-    <a href="{{ url_for('vistorias.executar_vistorias') }}" class="btn-executar">
+    <a href="{{ url_for('vistorias.executar_vistorias') }}" class="btn-informar">
       Executar Vistorias
     </a>
   {% endif %}
 
+  {% if pode_consultar_vistorias %}
+    <a href="{{ url_for('vistorias.consultar_vistorias') }}" class="btn-consultar">
+      Consultar Vistorias
+    </a>
+  {% endif %}
+  
+  {% if pode_configurar_checklists %}
+    <a href="{{ url_for('vistorias.configurar_checklists') }}" class="btn-config">
+      Configurar Checklists
+    </a>
+  {% endif %}
 </div>
 
 {% endblock %}
