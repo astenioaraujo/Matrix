@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, session, redirect, url_for, flash, request
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
 
 from db import get_connection
 from security_helpers import (
@@ -10,6 +11,9 @@ from security_helpers import (
 )
 
 operacoes_bp = Blueprint("operacoes", __name__)
+
+def hoje_br():
+    return datetime.now(ZoneInfo("America/Sao_Paulo")).date()
 
 def parse_valor_br(valor_txt):
     valor_txt = (valor_txt or "").strip()
@@ -120,7 +124,7 @@ def informar_medicoes():
     nome_empresa = session.get("nome_empresa", "")
     tipo_global = str(session.get("tipo_global") or "").strip().lower()
 
-    hoje = date.today()
+    hoje = hoje_br()
 
     # BLOQUEIO REMOVIDO
     bloqueado_horario = False
@@ -439,7 +443,7 @@ def consultar_medicoes():
 
     data_sel = (request.args.get("data") or "").strip()
     if not data_sel:
-        data_sel = date.today().isoformat()
+        data_sel = hoje_br().isoformat()
 
     filial_sel_txt = (request.args.get("cod_filial") or "").strip()
     filial_sel = int(filial_sel_txt) if filial_sel_txt.isdigit() else None
@@ -597,7 +601,7 @@ def informar_preco_compra():
     data_sel = (request.args.get("data") or "").strip()
 
     if not data_sel:
-        data_sel = date.today().isoformat()
+        data_sel = hoje_br().isoformat()
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -662,7 +666,7 @@ def consultar_preco_compra():
     data_ini = (request.args.get("data_ini") or "").strip()
 
     if not data_ini:
-        data_ini = date.today().replace(day=1).isoformat()
+        data_ini = hoje_br().replace(day=1).isoformat()
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -877,7 +881,7 @@ def informar_compras_combustiveis():
 
     data_sel = (request.values.get("data") or "").strip()
     if not data_sel:
-        data_sel = (date.today() - timedelta(days=1)).isoformat()
+        data_sel = (hoje_br() - timedelta(days=1)).isoformat()
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -1195,7 +1199,7 @@ def informar_descarregos_combustiveis():
 
     data_sel = (request.values.get("data") or "").strip()
     if not data_sel:
-        data_sel = (date.today() - timedelta(days=1)).isoformat()
+        data_sel = (hoje_br() - timedelta(days=1)).isoformat()
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -1537,7 +1541,7 @@ def consultar_estoques():
     data_sel = (request.args.get("data") or "").strip()
 
     if not data_sel:
-        data_sel = (date.today() - timedelta(days=1)).isoformat()
+        data_sel = (hoje_br() - timedelta(days=1)).isoformat()
 
     data_base = date.fromisoformat(data_sel)
     data_anterior = data_base - timedelta(days=1)
@@ -1792,7 +1796,7 @@ def consultar_vendas():
 
     data_sel = (request.args.get("data") or "").strip()
     if not data_sel:
-        data_sel = (date.today() - timedelta(days=1)).isoformat()
+        data_sel = (hoje_br() - timedelta(days=1)).isoformat()
     data_medicao = (date.fromisoformat(data_sel) + timedelta(days=1)).isoformat()
 
     conn = get_connection()
@@ -2051,7 +2055,7 @@ def ajax_salvar_medicao():
     except ValueError:
         quantidade = 0.0
 
-    hoje = date.today()
+    hoje = hoje_br()
 
     conn = get_connection()
     cur = conn.cursor()
