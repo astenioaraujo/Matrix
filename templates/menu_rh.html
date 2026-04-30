@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 36px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 30px;
+  }
+
+  .menu-botoes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 220px);
+    gap: 14px;
+    margin-bottom: 50px;
+  }
+
+  .menu-botoes a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 60px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 16px;
+    color: #fff;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+    transition: all 0.2s ease;
+    text-align: center;
+    padding: 0 10px;
+  }
+
+  .btn-informar {
+    background: #876A50;
+    border: 1px solid #876A50;
+  }
+
+  .btn-informar:hover {
+    background: #755840;
+    border-color: #755840;
+  }
+
+  .btn-consultar {
+    background: #7D4820;
+    border: 1px solid #7D4820;
+  }
+
+  .btn-consultar:hover {
+    background: #693d1a;
+    border-color: #693d1a;
+  }
+
+  .btn-config {
+    background: #4E3322;
+    border: 1px solid #4E3322;
+  }
+
+  .btn-config:hover {
+    background: #3f291b;
+    border-color: #3f291b;
+  }
+</style>
+
+<div class="pagina-titulo">Menu de RH</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="menu-botoes">
+
+  {% if pode_avaliacoes %}
+    <a href="#" class="btn-consultar">
+      Avaliações
+    </a>
+  {% endif %}
+
+  {% if pode_importar_abastecimentos %}
+    <a href="{{ url_for('rh.importar_abastecimentos') }}" class="btn-informar">
+        Importar Abastecimentos
+    </a>
+   {% endif %}
+
+    {% if pode_consultar_abastecimentos %}
+    <a href="{{ url_for('rh.consultar_abastecimentos') }}" class="btn-consultar">
+        Consultar Abastecimentos
+    </a>
+    {% endif %}
+
+  {% if pode_configuracoes_rh %}
+    <a href="#" class="btn-config">
+      Configuração de RH
+    </a>
+  {% endif %}
+
+</div>
+
+{% endblock %}

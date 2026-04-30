@@ -19,7 +19,9 @@
     margin-bottom: 30px;
     color: #333;
   }
-
+  .btn-rh {
+  background: #7c3aed;
+}
   .pagina-subtitulo strong {
     color: #111;
   }
@@ -176,6 +178,13 @@
         </a>
       {% endif %}
 
+      {% if pode_rh %}
+        <a class="btn-sistema btn-rh" href="{{ url_for('rh.menu_rh') }}">
+          <div class="btn-icone">👔</div>
+          <div>RH</div>
+        </a>
+      {% endif %}
+      
       {% if pode_configuracoes %}
         <a class="btn-sistema btn-config" href="{{ url_for('financeiro.cadastrar_filiais') }}">
           <div class="btn-icone">⚙️</div>

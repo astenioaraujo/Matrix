@@ -23,6 +23,7 @@ def selecionar_sistema():
         pode_configuracoes = True
         pode_compliance = True
         pode_vistorias = True
+        pode_rh = True
         pode_usuarios = True
     else:
         pode_operacoes = usuario_tem_permissao(id_usuario, cod_empresa, "OPERACOES", "MENU")
@@ -31,6 +32,7 @@ def selecionar_sistema():
         pode_configuracoes = usuario_tem_permissao(id_usuario, cod_empresa, "CONFIGURACOES", "MENU")
         pode_compliance = usuario_tem_permissao(id_usuario, cod_empresa, "COMPLIANCE", "MENU")
         pode_vistorias = usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "MENU")
+        pode_rh = usuario_tem_permissao(id_usuario, cod_empresa, "RH", "MENU")
         pode_usuarios = usuario_tem_permissao(id_usuario, cod_empresa, "USUARIOS", "MENU")
 
     return render_template(
@@ -41,6 +43,7 @@ def selecionar_sistema():
         pode_vendas=pode_vendas,
         pode_compliance=pode_compliance,
         pode_vistorias=pode_vistorias,
+        pode_rh=pode_rh,
         pode_configuracoes=pode_configuracoes,
         pode_usuarios=pode_usuarios
     )

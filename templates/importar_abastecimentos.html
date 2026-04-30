@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 20px;
+    margin-bottom: 25px;
+  }
+
+  .card {
+    max-width: 700px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 16px;
+    padding: 30px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+    margin-bottom: 20px;
+  }
+
+  .btn-upload {
+    background: #876A50;
+    color: #fff;
+    border: none;
+    padding: 12px 18px;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .btn-upload:hover {
+    background: #6e543f;
+  }
+
+  input[type="file"] {
+    margin-bottom: 20px;
+  }
+
+  .resumo p {
+    margin: 6px 0;
+    font-size: 15px;
+  }
+
+  .resumo strong {
+    color: #333;
+  }
+</style>
+
+<div class="pagina-titulo">Importar Abastecimentos</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="card">
+  <form method="POST" enctype="multipart/form-data">
+
+    <div>
+      <label><strong>Selecione o arquivo Excel:</strong></label><br><br>
+      <input type="file" name="arquivo" accept=".xlsx" required>
+    </div>
+
+    <button type="submit" class="btn-upload">
+      Importar Arquivo
+    </button>
+
+  </form>
+</div>
+
+<!-- ✅ AQUI ESTAVA FALTANDO -->
+{% if resumo %}
+<div class="card resumo">
+  <h3 style="margin-bottom: 12px;">Resumo da Importação</h3>
+
+  <p><strong>Arquivo:</strong> {{ resumo.arquivo }}</p>
+
+  <p><strong>Mês(es) importado(s):</strong> {{ resumo.meses_importados }}</p>
+
+  <p><strong>Registros importados:</strong> {{ resumo.linhas }}</p>
+
+  <p><strong>Total de Litros:</strong>
+    {{ "{:,.2f}".format(resumo.total_quantidade).replace(",", "X").replace(".", ",").replace("X", ".") }}
+  </p>
+
+  <p><strong>Total em Valor:</strong>
+    R$ {{ "{:,.2f}".format(resumo.total_valor).replace(",", "X").replace(".", ",").replace("X", ".") }}
+  </p>
+</div>
+{% endif %}
+
+{% endblock %}

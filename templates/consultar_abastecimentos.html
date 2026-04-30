@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+{% macro cor_heat(valor, minimo, maximo) %}
+  {% set valor = valor or 0 %}
+  {% set minimo = minimo or 0 %}
+  {% set maximo = maximo or 0 %}
+
+  {% if maximo > minimo %}
+    {% set nivel = (((valor - minimo) / (maximo - minimo)) * 50) | int %}
+  {% else %}
+    {% set nivel = 25 %}
+  {% endif %}
+
+  {% if nivel < 0 %}
+    {% set nivel = 0 %}
+  {% endif %}
+
+  {% if nivel > 50 %}
+    {% set nivel = 50 %}
+  {% endif %}
+
+  {% if nivel <= 25 %}
+    {% set p = nivel / 25 %}
+    {% set r = 248 %}
+    {% set g = (105 + ((235 - 105) * p)) | int %}
+    {% set b = (107 + ((132 - 107) * p)) | int %}
+  {% else %}
+    {% set p = (nivel - 25) / 25 %}
+    {% set r = (255 - ((255 - 99) * p)) | int %}
+    {% set g = (235 - ((235 - 190) * p)) | int %}
+    {% set b = (132 - ((132 - 123) * p)) | int %}
+  {% endif %}
+
+  rgb({{ r }}, {{ g }}, {{ b }})
+{% endmacro %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 10px; }
+  .empresa { font-size: 20px; margin-bottom: 22px; }
+
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 22px;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.05);
+    margin-bottom: 22px;
+    overflow-x: auto;
+  }
+
+  .grid-filtro {
+    display: grid;
+    grid-template-columns: 130px 130px 280px 260px auto;
+    gap: 14px;
+    align-items: end;
+  }
+
+  label { font-weight: 700; display: block; margin-bottom: 6px; }
+
+  input, select {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #cfcfcf;
+    font-size: 15px;
+  }
+
+  .btn {
+    background: #876A50;
+    color: #fff;
+    border: none;
+    padding: 11px 18px;
+    border-radius: 11px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  table {
+    width: auto;
+    min-width: 980px;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  th, td {
+    padding: 7px 10px;
+    border-bottom: 1px solid #eee;
+    white-space: nowrap;
+  }
+
+  th {
+    background: #eef3fb;
+    font-weight: 800;
+    text-align: left;
+  }
+
+  .col-func { min-width: 360px; }
+  .col-num { min-width: 115px; }
+
+  .num { text-align: right; }
+
+  .heat-cell {
+    font-weight: 700;
+    color: #111;
+    text-align: right;
+  }
+
+  .total td {
+    font-weight: 900;
+    background: #f5f5f5;
+    border-top: 2px solid #333;
+  }
+
+  .total-filial td {
+    font-weight: 900;
+    background: #fff6d8;
+    border-top: 2px solid #c59b2b;
+    border-bottom: 2px solid #c59b2b;
+  }
+
+  .filial-linha td {
+    background: #eef4ff;
+    color: #1f4ed8;
+    font-weight: 900;
+    border-top: 2px solid #1f4ed8;
+  }
+
+  .espaco-filial td {
+    padding: 18px 0;
+    border: none;
+    background: transparent;
+  }
+
+  .sem-dados {
+    text-align: center;
+    padding: 20px;
+    color: #777;
+    font-weight: 600;
+  }
+</style>
+
+<div class="pagina-titulo">Consultar Abastecimentos</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="card">
+  <form method="get" class="grid-filtro">
+    <div>
+      <label>Ano</label>
+      <input type="number" name="ano" value="{{ ano_sel }}">
+    </div>
+
+    <div>
+      <label>Mês</label>
+      <input type="number" name="mes" value="{{ mes_sel }}" min="1" max="12">
+    </div>
+
+    <div>
+      <label>Filial</label>
+      <select name="cod_filial">
+        <option value="">Todas</option>
+        {% for f in filiais %}
+          <option value="{{ f.cod_filial }}" {% if filial_sel|string == f.cod_filial|string %}selected{% endif %}>
+            {{ f.cod_filial }} - {{ f.nome_filial }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label>Ordenar por</label>
+      <select name="ordem">
+        <option value="qtd" {% if ordem_sel == "qtd" %}selected{% endif %}>Abastecimentos</option>
+        <option value="volume" {% if ordem_sel == "volume" %}selected{% endif %}>Volume</option>
+        <option value="valor" {% if ordem_sel == "valor" %}selected{% endif %}>Valor</option>
+        <option value="ticket" {% if ordem_sel == "ticket" %}selected{% endif %}>Ticket Médio</option>
+        <option value="litros_abast" {% if ordem_sel == "litros_abast" %}selected{% endif %}>Lts/Abast.</option>
+      </select>
+    </div>
+
+    <div>
+      <button type="submit" class="btn">Filtrar</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th class="col-func">Funcionário</th>
+        <th class="col-num">Abast.</th>
+        <th class="col-num">Volume</th>
+        <th class="col-num">Valor</th>
+        <th class="col-num">Ticket Médio</th>
+        <th class="col-num">Lts/Abast.</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% if linhas %}
+        {% set ns = namespace(filial_atual=None) %}
+
+        {% for l in linhas %}
+          {% set cod_filial = l.cod_filial if l.cod_filial else 0 %}
+          {% set nome_filial = l.nome_filial if l.nome_filial else "Sem filial informada" %}
+          {% set h = heatmap[cod_filial] %}
+
+          {% if ns.filial_atual != cod_filial %}
+            {% if ns.filial_atual is not none %}
+              {% set tf = totais_filiais[ns.filial_atual] %}
+
+              <tr class="total-filial">
+                <td>Total da Filial</td>
+                <td class="num">{{ "{:,.0f}".format(tf.qtd_abastecimentos or 0).replace(",", ".") }}</td>
+                <td class="num">{{ "{:,.2f}".format(tf.total_litros or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+                <td class="num">{{ "{:,.2f}".format(tf.total_valor or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+                <td class="num">{{ "{:,.2f}".format(tf.ticket_medio or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+                <td class="num">{{ "{:,.2f}".format(tf.litros_por_abastecimento or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+              </tr>
+
+              <tr class="espaco-filial">
+                <td colspan="6"></td>
+              </tr>
+            {% endif %}
+
+            {% set ns.filial_atual = cod_filial %}
+
+            <tr class="filial-linha">
+              <td colspan="6">
+                {{ cod_filial }} - {{ nome_filial }}
+              </td>
+            </tr>
+          {% endif %}
+
+          <tr>
+            <td>{{ l.funcionario }}</td>
+
+            <td class="num heat-cell" style="background: {{ cor_heat(l.qtd_abastecimentos, h.qtd.min, h.qtd.max) }};">
+              {{ "{:,.0f}".format(l.qtd_abastecimentos or 0).replace(",", ".") }}
+            </td>
+
+            <td class="num heat-cell" style="background: {{ cor_heat(l.total_litros, h.litros.min, h.litros.max) }};">
+              {{ "{:,.2f}".format(l.total_litros or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}
+            </td>
+
+            <td class="num heat-cell" style="background: {{ cor_heat(l.total_valor, h.valor.min, h.valor.max) }};">
+              {{ "{:,.2f}".format(l.total_valor or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}
+            </td>
+
+            <td class="num heat-cell" style="background: {{ cor_heat(l.ticket_medio, h.ticket.min, h.ticket.max) }};">
+              {{ "{:,.2f}".format(l.ticket_medio or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}
+            </td>
+
+            <td class="num heat-cell" style="background: {{ cor_heat(l.litros_por_abastecimento, h.litros_abast.min, h.litros_abast.max) }};">
+              {{ "{:,.2f}".format(l.litros_por_abastecimento or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}
+            </td>
+          </tr>
+        {% endfor %}
+
+        {% if ns.filial_atual is not none %}
+          {% set tf = totais_filiais[ns.filial_atual] %}
+          <tr class="total-filial">
+            <td>Total da Filial</td>
+            <td class="num">{{ "{:,.0f}".format(tf.qtd_abastecimentos or 0).replace(",", ".") }}</td>
+            <td class="num">{{ "{:,.2f}".format(tf.total_litros or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+            <td class="num">{{ "{:,.2f}".format(tf.total_valor or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+            <td class="num">{{ "{:,.2f}".format(tf.ticket_medio or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+            <td class="num">{{ "{:,.2f}".format(tf.litros_por_abastecimento or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+          </tr>
+        {% endif %}
+
+      {% else %}
+        <tr>
+          <td colspan="6" class="sem-dados">
+            Nenhum abastecimento encontrado para o período selecionado.
+          </td>
+        </tr>
+      {% endif %}
+
+      <tr class="total">
+        <td>Total Geral</td>
+        <td class="num">{{ "{:,.0f}".format(totais.qtd_abastecimentos or 0).replace(",", ".") }}</td>
+        <td class="num">{{ "{:,.2f}".format(totais.total_litros or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+        <td class="num">{{ "{:,.2f}".format(totais.total_valor or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+        <td class="num">{{ "{:,.2f}".format(totais.ticket_medio or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+        <td class="num">{{ "{:,.2f}".format(totais.litros_por_abastecimento or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
