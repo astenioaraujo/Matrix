@@ -1,6 +1,10 @@
 import os
-import psycopg2
 from dotenv import load_dotenv
+import psycopg2
+
+# Carrega .env apenas no ambiente local
+if os.getenv("RENDER") is None:
+    load_dotenv()
 
 def get_connection():
     return psycopg2.connect(
