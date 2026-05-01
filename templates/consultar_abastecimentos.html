@@ -14,13 +14,8 @@
     {% set nivel = 25 %}
   {% endif %}
 
-  {% if nivel < 0 %}
-    {% set nivel = 0 %}
-  {% endif %}
-
-  {% if nivel > 50 %}
-    {% set nivel = 50 %}
-  {% endif %}
+  {% if nivel < 0 %}{% set nivel = 0 %}{% endif %}
+  {% if nivel > 50 %}{% set nivel = 50 %}{% endif %}
 
   {% if nivel <= 25 %}
     {% set p = nivel / 25 %}
@@ -108,10 +103,22 @@
     text-align: right;
   }
 
-  .total td {
+  .filial-linha td {
+    background: #eef4ff;
+    color: #1f4ed8;
     font-weight: 900;
-    background: #f5f5f5;
-    border-top: 2px solid #333;
+    border-top: 2px solid #1f4ed8;
+  }
+
+  .cabecalho-filial td {
+    background: #eef3fb !important;
+    color: #111;
+    font-weight: 900;
+    border-bottom: 2px solid #d6dce8;
+  }
+
+  .cabecalho-filial td:not(:first-child) {
+    text-align: right;
   }
 
   .total-filial td {
@@ -121,11 +128,10 @@
     border-bottom: 2px solid #c59b2b;
   }
 
-  .filial-linha td {
-    background: #eef4ff;
-    color: #1f4ed8;
+  .total td {
     font-weight: 900;
-    border-top: 2px solid #1f4ed8;
+    background: #f5f5f5;
+    border-top: 2px solid #333;
   }
 
   .espaco-filial td {
@@ -157,7 +163,7 @@
 
     <div>
       <label>Mês</label>
-      <input type="number" name="mes" value="{{ mes_sel }}" min="1" max="12">
+      <input type="number" name="mes" value="{{ mes_sel }}">
     </div>
 
     <div>
@@ -191,17 +197,6 @@
 
 <div class="card">
   <table>
-    <thead>
-      <tr>
-        <th class="col-func">Funcionário</th>
-        <th class="col-num">Abast.</th>
-        <th class="col-num">Volume</th>
-        <th class="col-num">Valor</th>
-        <th class="col-num">Ticket Médio</th>
-        <th class="col-num">Lts/Abast.</th>
-      </tr>
-    </thead>
-
     <tbody>
       {% if linhas %}
         {% set ns = namespace(filial_atual=None) %}
@@ -212,9 +207,9 @@
           {% set h = heatmap[cod_filial] %}
 
           {% if ns.filial_atual != cod_filial %}
+
             {% if ns.filial_atual is not none %}
               {% set tf = totais_filiais[ns.filial_atual] %}
-
               <tr class="total-filial">
                 <td>Total da Filial</td>
                 <td class="num">{{ "{:,.0f}".format(tf.qtd_abastecimentos or 0).replace(",", ".") }}</td>
@@ -232,10 +227,18 @@
             {% set ns.filial_atual = cod_filial %}
 
             <tr class="filial-linha">
-              <td colspan="6">
-                {{ cod_filial }} - {{ nome_filial }}
-              </td>
+              <td colspan="6">{{ cod_filial }} - {{ nome_filial }}</td>
             </tr>
+
+            <tr class="cabecalho-filial">
+              <td class="col-func">Funcionário</td>
+              <td class="col-num">Abast.</td>
+              <td class="col-num">Volume</td>
+              <td class="col-num">Valor</td>
+              <td class="col-num">Ticket Médio</td>
+              <td class="col-num">Lts/Abast.</td>
+            </tr>
+
           {% endif %}
 
           <tr>
@@ -261,6 +264,7 @@
               {{ "{:,.2f}".format(l.litros_por_abastecimento or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}
             </td>
           </tr>
+
         {% endfor %}
 
         {% if ns.filial_atual is not none %}
