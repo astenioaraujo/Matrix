@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 10px; }
+  .empresa { font-size: 22px; margin-bottom: 24px; }
+
+  .painel {
+    max-width: 1600px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+  }
+
+  .linha-filtro { display: flex; gap: 14px; align-items: end; margin-bottom: 20px; }
+  label { font-weight: 700; margin-bottom: 6px; display: block; }
+
+  input, select {
+    padding: 8px;
+    border: 1px solid #cfcfcf;
+    border-radius: 6px;
+  }
+
+  .data-nav { display: flex; align-items: center; gap: 6px; }
+
+  .btn-data-nav {
+    width: 38px;
+    height: 38px;
+    border: 1px solid #8fc9a3;
+    border-radius: 9px;
+    background: #c8e6c9;
+    color: #1e6b34;
+    font-size: 18px;
+    font-weight: 900;
+    cursor: pointer;
+  }
+
+  .btn-data-nav:hover { background: #a5d6a7; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { border: 1px solid #dcdcdc; padding: 8px; }
+  th { background: #f1f1f1; }
+
+  .col-id { width: 70px; text-align: center; }
+  .col-qtd { width: 140px; text-align: right; }
+  .col-status { width: 110px; text-align: center; }
+
+  .btn {
+    padding: 8px 12px;
+    background: #1565c0;
+    color: #fff;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-weight: 700;
+  }
+
+  .btn-limpar {
+    background: #f7f7f7;
+    color: #1f3c88;
+    border: 1px solid #c7c7c7;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .status-aberta { color: green; font-weight: 800; }
+  .status-fechada { color: red; font-weight: 800; }
+
+  .resumo { max-width: 900px; }
+  .resumo h3 { margin-top: 0; font-size: 22px; }
+  .resumo-total { background: #f3f3f3; font-weight: 800; }
+  .num { text-align: right; }
+
+  .sem-dados {
+    font-weight: 700;
+    color: #666;
+    margin-top: 12px;
+  }
+</style>
+
+<div class="pagina-titulo">Consultar Compras de Combustíveis</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="painel">
+
+  <form method="get" id="formFiltro">
+    <div class="linha-filtro">
+
+      <div>
+        <label>Data</label>
+        <div class="data-nav">
+          <button type="button" class="btn-data-nav" onclick="mudarData(-1)">←</button>
+          <input type="date" id="data" name="data" value="{{ data_sel }}">
+          <button type="button" class="btn-data-nav" onclick="mudarData(1)">→</button>
+        </div>
+      </div>
+
+      <div>
+        <label>Filial</label>
+        <select id="cod_filial" name="cod_filial">
+          <option value="">Todas</option>
+          {% for f in filiais %}
+            <option value="{{ f.cod_filial }}" {% if filial_sel|string == f.cod_filial|string %}selected{% endif %}>
+              {{ f.cod_filial }} - {{ f.nome_filial }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <button type="submit" class="btn">Filtrar</button>
+
+      <a href="{{ url_for('operacoes.consultar_compras_combustiveis') }}" class="btn btn-limpar">
+        Limpar
+      </a>
+
+    </div>
+  </form>
+
+  {% if compras %}
+
+  <table>
+    <thead>
+      <tr>
+        <th class="col-id">ID</th>
+        <th>Data</th>
+        <th>Filial</th>
+        <th>Produto</th>
+        <th class="col-qtd">Qtd</th>
+        <th class="col-qtd">Preço</th>
+        <th class="col-qtd">Valor</th>
+        <th>Fornecedor</th>
+        <th class="col-qtd">Descarregos</th>
+        <th class="col-status">Status</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for c in compras %}
+      <tr>
+        <td class="col-id">{{ c.id_compra }}</td>
+
+        <td>{{ c.data_compra.strftime("%d/%m/%Y") if c.data_compra else "" }}</td>
+
+        <td>{{ c.cod_filial }} - {{ c.nome_filial }}</td>
+
+        <td>{{ c.cod_produto }} - {{ c.produto }}</td>
+
+        <td class="col-qtd">{{ c.quantidade_comprada | br }}</td>
+
+        <td class="col-qtd">{{ c.preco_unitario | br }}</td>
+
+        <td class="col-qtd">{{ c.valor_comprado | br }}</td>
+
+        <td>
+          {{ c.nome_fornecedor or "" }}
+          {% if c.cidade_base %}
+            - {{ c.cidade_base }}
+          {% endif %}
+        </td>
+
+        <td class="col-qtd">{{ c.total_descarregado | br }}</td>
+
+        <td class="col-status">
+          {% if c.status == 'FECHADA' %}
+            <span class="status-fechada">Fechada</span>
+          {% else %}
+            <span class="status-aberta">Aberta</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% else %}
+    <div class="sem-dados">
+      Nenhuma compra encontrada para os filtros informados.
+    </div>
+  {% endif %}
+
+</div>
+
+<div class="painel resumo">
+  <h3>Resumo das Compras</h3>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Combustível</th>
+        <th class="num">Quantidade</th>
+        <th class="num">Preço Médio</th>
+        <th class="num">Valor</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for r in resumo_compras %}
+      <tr>
+        <td>{{ r.produto }}</td>
+        <td class="num">{{ r.quantidade | br }}</td>
+        <td class="num">{{ r.preco_medio | br }}</td>
+        <td class="num">{{ r.valor | br }}</td>
+      </tr>
+      {% endfor %}
+
+      <tr class="resumo-total">
+        <td>TOTAL GERAL</td>
+        <td class="num">{{ total_geral_qtd | br }}</td>
+        <td class="num">{{ preco_medio_geral | br }}</td>
+        <td class="num">{{ total_geral_valor | br }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+  function mudarData(dias) {
+    const inputData = document.getElementById("data");
+
+    if (!inputData || !inputData.value) {
+      return;
+    }
+
+    const partes = inputData.value.split("-");
+    const ano = parseInt(partes[0], 10);
+    const mes = parseInt(partes[1], 10) - 1;
+    const dia = parseInt(partes[2], 10);
+
+    const data = new Date(ano, mes, dia);
+    data.setDate(data.getDate() + dias);
+
+    const novoAno = data.getFullYear();
+    const novoMes = String(data.getMonth() + 1).padStart(2, "0");
+    const novoDia = String(data.getDate()).padStart(2, "0");
+
+    inputData.value = `${novoAno}-${novoMes}-${novoDia}`;
+
+    document.getElementById("formFiltro").submit();
+  }
+</script>
+
+{% endblock %}

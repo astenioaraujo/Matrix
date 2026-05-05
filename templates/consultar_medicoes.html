@@ -127,13 +127,37 @@
     background: #e3f0ff;
     color: #0b3d91;
   }
+  .data-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 
-  .sem-dados {
-    max-width: 1400px;
-    font-weight: 700;
-    color: #666;
-    margin-top: 12px;
-  }
+.data-nav input {
+  flex: 1;
+}
+
+.btn-data-nav {
+  width: 38px;
+  height: 38px;
+  border: 1px solid #c7c7c7;
+  border-radius: 9px;
+  background: #c8e6c9;  /* verde mais consistente */
+  color: #111;
+  font-size: 18px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.btn-data-nav:hover {
+  background: #a5d6a7; /* hover mais visível */
+}
+.sem-dados {
+  max-width: 1400px;
+  font-weight: 700;
+  color: #666;
+  margin-top: 12px;
+}
 </style>
 
 <div class="pagina-titulo">Consultar Medições</div>
@@ -147,7 +171,13 @@
     <div class="linha-filtros">
       <div class="campo">
         <label for="data">Data</label>
-        <input type="date" id="data" name="data" value="{{ data_sel }}">
+        <div class="data-nav">
+          <button type="button" class="btn-data-nav" onclick="mudarData(-1)">←</button>
+        
+          <input type="date" id="data" name="data" value="{{ data_sel }}">
+        
+          <button type="button" class="btn-data-nav" onclick="mudarData(1)">→</button>
+        </div>
       </div>
 
       <div class="campo">
@@ -273,4 +303,30 @@
 </div>
 {% endif %}
 
+
+<script>
+  function mudarData(dias) {
+    const inputData = document.getElementById("data");
+
+    if (!inputData || !inputData.value) {
+      return;
+    }
+
+    const partes = inputData.value.split("-");
+    const ano = parseInt(partes[0], 10);
+    const mes = parseInt(partes[1], 10) - 1;
+    const dia = parseInt(partes[2], 10);
+
+    const data = new Date(ano, mes, dia);
+    data.setDate(data.getDate() + dias);
+
+    const novoAno = data.getFullYear();
+    const novoMes = String(data.getMonth() + 1).padStart(2, "0");
+    const novoDia = String(data.getDate()).padStart(2, "0");
+
+    inputData.value = `${novoAno}-${novoMes}-${novoDia}`;
+
+    inputData.form.submit();
+  }
+</script>
 {% endblock %}

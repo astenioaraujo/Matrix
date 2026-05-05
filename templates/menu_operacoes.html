@@ -112,10 +112,32 @@
   </a>
   {% endif %}
 
+  {% if pode_consultar_compras %}
+  <a href="{{ url_for('operacoes.consultar_compras_combustiveis') }}" class="btn-consultar">
+    Consultar Compras
+  </a>
+  {% endif %}
+  {% if pode_consultar_resumo_compras %}
+  <a href="{{ url_for('operacoes.consultar_resumo_compras_combustiveis') }}" class="btn-consultar">
+    Consultar Resumo de Compras
+  </a>
+  {% endif %}
+
   {% if pode_informar_descarregos %}
   <a href="{{ url_for('operacoes.informar_descarregos_combustiveis') }}" class="btn-informar">
     Informar Descarregos
   </a>
+  {% endif %}
+
+  {% if pode_consultar_descarregos %}
+  <a href="{{ url_for('operacoes.consultar_descarregos_combustiveis') }}" class="btn-consultar">
+    Consultar Descarregos
+  </a>
+  {% endif %}
+  {% if pode_consultar_resumo_descarregos %}
+    <a href="{{ url_for('operacoes.consultar_resumo_descarregos_combustiveis') }}" class="btn-consultar">
+      Consultar Resumo de Descarregos
+    </a>
   {% endif %}
 
   {% if pode_consultar_estoques %}
@@ -123,6 +145,8 @@
     Consultar Estoques
   </a>
   {% endif %}
+  
+
   
   {% if pode_consultar_vendas %}
   <a href="{{ url_for('operacoes.consultar_vendas') }}" class="btn-consultar">

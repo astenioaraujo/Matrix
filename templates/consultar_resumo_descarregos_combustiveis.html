@@ -1,0 +1,443 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  html, body {
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+  }
+
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .painel {
+    max-width: 1600px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+  }
+
+  .linha-filtro {
+    display: flex;
+    gap: 14px;
+    align-items: end;
+    margin-bottom: 20px;
+  }
+
+  label {
+    font-weight: 700;
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  input, select {
+    padding: 8px;
+    border: 1px solid #cfcfcf;
+    border-radius: 6px;
+  }
+
+  .mes-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .btn-mes-nav {
+    width: 38px;
+    height: 38px;
+    border: 1px solid #8fc9a3;
+    border-radius: 9px;
+    background: #c8e6c9;
+    color: #1e6b34;
+    font-size: 18px;
+    font-weight: 900;
+    cursor: pointer;
+  }
+
+  .btn-mes-nav:hover {
+    background: #a5d6a7;
+  }
+
+  .btn {
+    padding: 8px 12px;
+    background: #1565c0;
+    color: #fff;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-weight: 700;
+  }
+
+  .table-wrapper {
+    display: block;
+    width: max-content;
+    min-width: max-content;
+    overflow: visible !important;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    background: #fff;
+    margin-bottom: 60px;
+  }
+
+  .matriz-tabela {
+    border-collapse: collapse;
+    width: max-content;
+    min-width: max-content;
+    font-size: 14px;
+  }
+
+  .matriz-tabela th,
+  .matriz-tabela td {
+    border: 1px solid #d9d9d9;
+    padding: 7px 10px;
+    white-space: nowrap;
+  }
+
+  .matriz-tabela thead th {
+    background: #f3f3f3;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    font-weight: 800;
+  }
+
+  .matriz-tabela th:nth-child(1),
+  .matriz-tabela td:nth-child(1) {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    background: #fff;
+  }
+
+  .matriz-tabela th:nth-child(2),
+  .matriz-tabela td:nth-child(2) {
+    position: sticky;
+    left: 110px;
+    z-index: 3;
+    background: #fff;
+  }
+
+  .col-data {
+    width: 110px;
+  }
+
+  .col-total {
+    min-width: 130px;
+    border-right: 3px solid #8f8f8f !important;
+  }
+
+  .col-filial {
+    min-width: 100px;
+  }
+
+  .num {
+    text-align: right !important;
+  }
+
+  .linha-total td {
+    font-weight: 800;
+    background: #f3f3f3 !important;
+    border-top: 2px solid #9a9a9a;
+  }
+
+  .sem-dados {
+    font-weight: 700;
+    color: #666;
+  }
+</style>
+
+<div class="pagina-titulo">Consultar Resumo de Descarregos</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="painel">
+  <form method="get" id="formFiltro">
+    <div class="linha-filtro">
+
+      <div>
+        <label>Mês</label>
+        <div class="mes-nav">
+          <button type="button" class="btn-mes-nav" onclick="mudarMes(-1)">←</button>
+
+          <select id="mes" name="mes">
+            <option value="1" {% if mes_sel == 1 %}selected{% endif %}>Janeiro</option>
+            <option value="2" {% if mes_sel == 2 %}selected{% endif %}>Fevereiro</option>
+            <option value="3" {% if mes_sel == 3 %}selected{% endif %}>Março</option>
+            <option value="4" {% if mes_sel == 4 %}selected{% endif %}>Abril</option>
+            <option value="5" {% if mes_sel == 5 %}selected{% endif %}>Maio</option>
+            <option value="6" {% if mes_sel == 6 %}selected{% endif %}>Junho</option>
+            <option value="7" {% if mes_sel == 7 %}selected{% endif %}>Julho</option>
+            <option value="8" {% if mes_sel == 8 %}selected{% endif %}>Agosto</option>
+            <option value="9" {% if mes_sel == 9 %}selected{% endif %}>Setembro</option>
+            <option value="10" {% if mes_sel == 10 %}selected{% endif %}>Outubro</option>
+            <option value="11" {% if mes_sel == 11 %}selected{% endif %}>Novembro</option>
+            <option value="12" {% if mes_sel == 12 %}selected{% endif %}>Dezembro</option>
+          </select>
+
+          <button type="button" class="btn-mes-nav" onclick="mudarMes(1)">→</button>
+        </div>
+      </div>
+
+      <div>
+        <label>Ano</label>
+        <input type="number" id="ano" name="ano" value="{{ ano_sel }}" style="width: 110px;">
+      </div>
+
+      <button type="submit" class="btn">Filtrar</button>
+
+    </div>
+  </form>
+</div>
+
+{% if linhas|length == 0 %}
+  <div class="painel sem-dados">
+    Nenhuma compra encontrada para o mês informado.
+  </div>
+{% else %}
+
+<div class="table-wrapper">
+  <table class="matriz-tabela">
+    <colgroup>
+      <col class="col-data">
+      <col class="col-total">
+      {% for f in filiais_colunas %}
+        <col class="col-filial">
+      {% endfor %}
+    </colgroup>
+
+    <thead>
+      <tr>
+        <th>Data</th>
+        <th class="num col-total">Total</th>
+        {% for f in filiais_colunas %}
+          <th class="num">
+            {{ f.cod_filial }} - {{ f.nome_filial }}
+          </th>
+        {% endfor %}
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for l in linhas %}
+      <tr>
+        <td>{{ l.data.strftime("%d/%m/%Y") }}</td>
+        <td class="num col-total">
+            {% if l.total != 0 %}
+              {{ l.total | br }}
+            {% endif %}
+          </td>
+
+        {% for valor in l.valores %}
+        <td class="num">
+            {% if valor != 0 %}
+              {{ valor | br }}
+            {% else %}
+              
+            {% endif %}
+          </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+
+      <tr class="linha-total">
+        <td>Total Geral</td>
+            <td class="num col-total">
+                {% if total_geral != 0 %}
+                {{ total_geral | br }}
+                {% endif %}
+          </td>
+        {% for valor in total_colunas %}
+            <td class="num">
+                {% if valor != 0 %}
+                {{ valor | br }}
+                {% endif %}
+            </td>
+        {% endfor %}
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{% endif %}
+
+<script>
+  function mudarMes(delta) {
+    const mesInput = document.getElementById("mes");
+    const anoInput = document.getElementById("ano");
+
+    let mes = parseInt(mesInput.value, 10);
+    let ano = parseInt(anoInput.value, 10);
+
+    mes += delta;
+
+    if (mes < 1) {
+      mes = 12;
+      ano -= 1;
+    }
+
+    if (mes > 12) {
+      mes = 1;
+      ano += 1;
+    }
+
+    mesInput.value = mes;
+    anoInput.value = ano;
+
+    document.getElementById("formFiltro").submit();
+  }
+</script>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const tabela = document.querySelector(".matriz-tabela");
+      if (!tabela) return;
+    
+      function parseNumeroBR(texto) {
+        texto = (texto || "").trim();
+        if (!texto) return null;
+    
+        texto = texto.replace(/\./g, "").replace(",", ".");
+        const numero = parseFloat(texto);
+    
+        return isNaN(numero) ? null : numero;
+      }
+    
+      function getColorExcel(ratio) {
+        let r, g, b;
+    
+        if (ratio <= 0.5) {
+          const t = ratio / 0.5;
+          r = 248 + (255 - 248) * t;
+          g = 105 + (235 - 105) * t;
+          b = 107 + (132 - 107) * t;
+        } else {
+          const t = (ratio - 0.5) / 0.5;
+          r = 255 + (99 - 255) * t;
+          g = 235 + (190 - 235) * t;
+          b = 132 + (123 - 132) * t;
+        }
+    
+        return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+      }
+    
+      const celulasFiliais = [];
+    
+      tabela.querySelectorAll("tbody tr").forEach(function (linha) {
+    
+        // ignora linha total
+        if (linha.classList.contains("linha-total")) return;
+    
+        const celulas = linha.querySelectorAll("td");
+    
+        // começa da coluna 2 (ignora Data e Total)
+        for (let i = 2; i < celulas.length; i++) {
+          const valor = parseNumeroBR(celulas[i].innerText);
+    
+          if (valor !== null) {
+            celulasFiliais.push({
+              celula: celulas[i],
+              valor: valor
+            });
+          }
+        }
+      });
+    
+      if (!celulasFiliais.length) return;
+    
+      const valores = celulasFiliais.map(item => item.valor);
+      const min = Math.min(...valores);
+      const max = Math.max(...valores);
+    
+      celulasFiliais.forEach(function (item) {
+        let ratio = (item.valor - min) / ((max - min) || 1);
+    
+        // 51 faixas discretas
+        ratio = Math.round(ratio * 50) / 50;
+    
+        item.celula.style.background = getColorExcel(ratio);
+      });
+    });
+    </script>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const tabela = document.querySelector(".matriz-tabela");
+      if (!tabela) return;
+    
+      function parseNumeroBR(texto) {
+        texto = (texto || "").trim();
+        if (!texto) return null;
+    
+        texto = texto.replace(/\./g, "").replace(",", ".");
+        const numero = parseFloat(texto);
+    
+        return isNaN(numero) ? null : numero;
+      }
+    
+      function getColorExcel(ratio) {
+        let r, g, b;
+    
+        if (ratio <= 0.5) {
+          const t = ratio / 0.5;
+          r = 248 + (255 - 248) * t;
+          g = 105 + (235 - 105) * t;
+          b = 107 + (132 - 107) * t;
+        } else {
+          const t = (ratio - 0.5) / 0.5;
+          r = 255 + (99 - 255) * t;
+          g = 235 + (190 - 235) * t;
+          b = 132 + (123 - 132) * t;
+        }
+    
+        return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+      }
+    
+      const celulasTotais = [];
+    
+      tabela.querySelectorAll("tbody tr").forEach(function (linha) {
+        if (linha.classList.contains("linha-total")) return;
+    
+        const celulaTotal = linha.querySelectorAll("td")[1];
+        if (!celulaTotal) return;
+    
+        const valor = parseNumeroBR(celulaTotal.innerText);
+    
+        if (valor !== null) {
+          celulasTotais.push({
+            celula: celulaTotal,
+            valor: valor
+          });
+        }
+      });
+    
+      if (!celulasTotais.length) return;
+    
+      const valores = celulasTotais.map(item => item.valor);
+      const min = Math.min(...valores);
+      const max = Math.max(...valores);
+    
+      celulasTotais.forEach(function (item) {
+        let ratio = (item.valor - min) / ((max - min) || 1);
+        ratio = Math.round(ratio * 50) / 50;
+    
+        item.celula.style.background = getColorExcel(ratio);
+      });
+    });
+    </script>
+
+{% endblock %}

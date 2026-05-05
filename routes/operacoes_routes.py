@@ -58,7 +58,11 @@ def menu_operacoes():
             "pode_informar_preco_compra": True,
             "pode_consultar_preco_compra": True,
             "pode_informar_compras": True,
+            "pode_consultar_compras": True,
+            "pode_consultar_resumo_compras": True,
             "pode_informar_descarregos": True,
+            "pode_consultar_descarregos": True,
+            "pode_consultar_resumo_descarregos": True,
             "pode_consultar_estoques": True,
             "pode_consultar_vendas": True,
             "pode_configuracoes": True,
@@ -80,8 +84,24 @@ def menu_operacoes():
             "pode_informar_compras": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "INFORMAR_COMPRAS"
             ),
+
+            "pode_consultar_compras": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_COMPRAS"
+            ),
+
+            "pode_consultar_resumo_compras": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_RESUMO_COMPRAS"
+            ),
+
+
             "pode_informar_descarregos": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "INFORMAR_DESCARREGOS"
+            ),
+            "pode_consultar_descarregos": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_DESCARREGOS"
+            ),
+            "pode_consultar_resumo_descarregos": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_RESUMO_DESCARREGOS"
             ),
             "pode_consultar_estoques": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_ESTOQUES"
@@ -1133,6 +1153,370 @@ def informar_compras_combustiveis():
         url_voltar=url_for("operacoes.menu_operacoes"),
         texto_voltar="← Voltar",
     )
+
+# ---------------------------------------
+# CONSULTAR COMPRAS DE COMBUSTÍVEIS
+# ---------------------------------------
+
+@operacoes_bp.route("/compras-combustiveis/consultar")
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONSULTAR_COMPRAS",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def consultar_compras_combustiveis():
+
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    data_sel = (request.args.get("data") or "").strip()
+    if not data_sel:
+        data_sel = (hoje_br() - timedelta(days=1)).isoformat()
+
+    filial_sel_txt = (request.args.get("cod_filial") or "").strip()
+    filial_sel = int(filial_sel_txt) if filial_sel_txt.isdigit() else None
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    resumo_compras = []
+    total_geral_qtd = 0
+    total_geral_valor = 0
+    preco_medio_geral = 0
+
+    try:
+        if tipo_global == "superusuario":
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s
+                  AND ativo = TRUE
+                ORDER BY cod_filial
+            """, (cod_empresa,))
+            filiais = cur.fetchall() or []
+        else:
+            filiais_permitidas = [
+                int(x) for x in usuario_filiais_ativas(id_usuario, cod_empresa)
+            ]
+
+            if not filiais_permitidas:
+                flash("Você não possui filiais habilitadas.", "error")
+                return redirect(url_for("operacoes.menu_operacoes"))
+
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s
+                  AND ativo = TRUE
+                  AND cod_filial = ANY(%s)
+                ORDER BY cod_filial
+            """, (cod_empresa, filiais_permitidas))
+            filiais = cur.fetchall() or []
+
+        codigos_filiais = [int(f["cod_filial"]) for f in filiais]
+
+        if filial_sel is not None and tipo_global != "superusuario" and filial_sel not in codigos_filiais:
+            flash("Filial não permitida para este usuário.", "error")
+            return redirect(url_for("operacoes.consultar_compras_combustiveis"))
+
+        filtros = [
+            "cc.cod_empresa = %s",
+            "cc.data_compra = %s",
+        ]
+        params = [cod_empresa, data_sel]
+
+        if filial_sel is not None:
+            filtros.append("cc.cod_filial = %s")
+            params.append(filial_sel)
+        elif tipo_global != "superusuario":
+            filtros.append("cc.cod_filial = ANY(%s)")
+            params.append(codigos_filiais)
+
+        where_sql = " AND ".join(filtros)
+
+        cur.execute(f"""
+            SELECT
+                cc.id_compra,
+                cc.data_compra,
+                cc.cod_filial,
+                f.nome_filial,
+                cc.cod_produto,
+                c.descricao AS produto,
+                cc.quantidade_comprada,
+                cc.preco_unitario,
+                cc.valor_comprado,
+                cc.id_fornecedor,
+                fc.nome_fornecedor,
+                fc.cidade_base,
+                COALESCE(cc.status, 'ABERTA') AS status,
+                COALESCE(SUM(d.quantidade_descarregada), 0) AS total_descarregado
+            FROM compras_combustiveis cc
+            LEFT JOIN filiais f
+              ON f.cod_empresa = cc.cod_empresa
+             AND f.cod_filial = cc.cod_filial
+            LEFT JOIN combustiveis c
+              ON c.cod_empresa = cc.cod_empresa
+             AND c.cod_produto = cc.cod_produto
+            LEFT JOIN fornecedores_combustiveis fc
+              ON fc.id_fornecedor = cc.id_fornecedor
+            LEFT JOIN descarregos_combustiveis d
+              ON d.cod_empresa = cc.cod_empresa
+             AND d.id_compra = cc.id_compra
+            WHERE {where_sql}
+            GROUP BY
+                cc.id_compra,
+                cc.data_compra,
+                cc.cod_filial,
+                f.nome_filial,
+                cc.cod_produto,
+                c.descricao,
+                cc.quantidade_comprada,
+                cc.preco_unitario,
+                cc.valor_comprado,
+                cc.id_fornecedor,
+                fc.nome_fornecedor,
+                fc.cidade_base,
+                cc.status
+            ORDER BY cc.cod_filial, cc.cod_produto
+        """, params)
+
+        compras = cur.fetchall() or []
+
+        resumo_produtos = {}
+
+        for c in compras:
+            cod_produto = str(c["cod_produto"] or "").strip()
+            produto = c["produto"] or cod_produto
+
+            qtd = float(c["quantidade_comprada"] or 0)
+            valor = float(c["valor_comprado"] or 0)
+
+            if cod_produto not in resumo_produtos:
+                resumo_produtos[cod_produto] = {
+                    "cod_produto": cod_produto,
+                    "produto": produto,
+                    "quantidade": 0,
+                    "valor": 0,
+                    "preco_medio": 0,
+                }
+
+            resumo_produtos[cod_produto]["quantidade"] += qtd
+            resumo_produtos[cod_produto]["valor"] += valor
+
+            total_geral_qtd += qtd
+            total_geral_valor += valor
+
+        for r in resumo_produtos.values():
+            if r["quantidade"] > 0:
+                r["preco_medio"] = r["valor"] / r["quantidade"]
+
+        resumo_compras = list(resumo_produtos.values())
+
+        if total_geral_qtd > 0:
+            preco_medio_geral = total_geral_valor / total_geral_qtd
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao consultar compras: {e}", "error")
+        compras = []
+        filiais = []
+        resumo_compras = []
+        total_geral_qtd = 0
+        total_geral_valor = 0
+        preco_medio_geral = 0
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "consultar_compras_combustiveis.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        data_sel=data_sel,
+        filial_sel=filial_sel,
+        filiais=filiais,
+        compras=compras,
+        resumo_compras=resumo_compras,
+        total_geral_qtd=total_geral_qtd,
+        total_geral_valor=total_geral_valor,
+        preco_medio_geral=preco_medio_geral,
+        url_voltar=url_for("operacoes.menu_operacoes"),
+        texto_voltar="← Voltar",
+    )
+
+
+# ---------------------------------------
+# CONSULTAR RESUMO DE COMPRAS DE COMBUSTÍVEIS
+# ---------------------------------------
+
+@operacoes_bp.route("/compras-combustiveis/resumo")
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONSULTAR_RESUMO_COMPRAS",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def consultar_resumo_compras_combustiveis():
+
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    hoje = hoje_br()
+
+    ano_sel_txt = (request.args.get("ano") or "").strip()
+    mes_sel_txt = (request.args.get("mes") or "").strip()
+
+    ano_sel = int(ano_sel_txt) if ano_sel_txt.isdigit() else hoje.year
+    mes_sel = int(mes_sel_txt) if mes_sel_txt.isdigit() else hoje.month
+
+    if mes_sel < 1 or mes_sel > 12:
+        mes_sel = hoje.month
+
+    data_ini = date(ano_sel, mes_sel, 1)
+
+    if mes_sel == 12:
+        data_fim = date(ano_sel + 1, 1, 1)
+    else:
+        data_fim = date(ano_sel, mes_sel + 1, 1)
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        if tipo_global == "superusuario":
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s
+                  AND ativo = TRUE
+                ORDER BY cod_filial
+            """, (cod_empresa,))
+            filiais_colunas = cur.fetchall() or []
+        else:
+            filiais_permitidas = [
+                int(x) for x in usuario_filiais_ativas(id_usuario, cod_empresa)
+            ]
+
+            if not filiais_permitidas:
+                flash("Você não possui filiais habilitadas.", "error")
+                return redirect(url_for("operacoes.menu_operacoes"))
+
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s
+                  AND ativo = TRUE
+                  AND cod_filial = ANY(%s)
+                ORDER BY cod_filial
+            """, (cod_empresa, filiais_permitidas))
+            filiais_colunas = cur.fetchall() or []
+
+        codigos_filiais = [int(f["cod_filial"]) for f in filiais_colunas]
+
+        filtros_filiais = ""
+        params_filiais = []
+
+        if tipo_global != "superusuario":
+            filtros_filiais = "AND cc.cod_filial = ANY(%s)"
+            params_filiais.append(codigos_filiais)
+
+        cur.execute(f"""
+            SELECT
+                cc.data_compra,
+                cc.cod_filial,
+                SUM(COALESCE(cc.valor_comprado, 0)) AS valor_total
+            FROM compras_combustiveis cc
+            WHERE cc.cod_empresa = %s
+              AND cc.data_compra >= %s
+              AND cc.data_compra < %s
+              {filtros_filiais}
+            GROUP BY cc.data_compra, cc.cod_filial
+            ORDER BY cc.data_compra, cc.cod_filial
+        """, [cod_empresa, data_ini, data_fim] + params_filiais)
+
+        rows = cur.fetchall() or []
+
+        valores = {}
+        totais_filiais = {int(f["cod_filial"]): 0 for f in filiais_colunas}
+        total_geral = 0
+
+        for r in rows:
+            data_compra = r["data_compra"]
+            cod_filial = int(r["cod_filial"])
+            valor = float(r["valor_total"] or 0)
+
+            valores[(data_compra, cod_filial)] = valor
+            totais_filiais[cod_filial] = totais_filiais.get(cod_filial, 0) + valor
+            total_geral += valor
+
+        linhas = []
+        dia_atual = data_ini
+
+        while dia_atual < data_fim:
+            valores_dia = []
+            total_dia = 0
+
+            for f in filiais_colunas:
+                cod_filial = int(f["cod_filial"])
+                valor = valores.get((dia_atual, cod_filial), 0)
+                valores_dia.append(valor)
+                total_dia += valor
+
+            linhas.append({
+                "data": dia_atual,
+                "total": total_dia,
+                "valores": valores_dia,
+            })
+
+            dia_atual = dia_atual + timedelta(days=1)
+
+        total_colunas = [
+            totais_filiais.get(int(f["cod_filial"]), 0)
+            for f in filiais_colunas
+        ]
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao consultar resumo de compras: {e}", "error")
+        filiais_colunas = []
+        linhas = []
+        total_colunas = []
+        total_geral = 0
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "consultar_resumo_compras_combustiveis.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        ano_sel=ano_sel,
+        mes_sel=mes_sel,
+        filiais_colunas=filiais_colunas,
+        linhas=linhas,
+        total_colunas=total_colunas,
+        total_geral=total_geral,
+        url_voltar=url_for("operacoes.menu_operacoes"),
+        texto_voltar="← Voltar",
+    )
+
 # ---------------------------------------
 # EXCLUIR COMPRA DE COMBUSTÍVEL
 # ---------------------------------------
@@ -1452,6 +1836,323 @@ def informar_descarregos_combustiveis():
     )
 
 
+# ---------------------------------------
+# CONSULTAR DESCARREGOS DE COMBUSTÍVEIS
+# ---------------------------------------
+
+@operacoes_bp.route("/descarregos-combustiveis/consultar")
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONSULTAR_DESCARREGOS",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def consultar_descarregos_combustiveis():
+
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    data_sel = (request.args.get("data") or "").strip()
+    if not data_sel:
+        data_sel = (hoje_br() - timedelta(days=1)).isoformat()
+
+    filial_sel_txt = (request.args.get("cod_filial") or "").strip()
+    filial_sel = int(filial_sel_txt) if filial_sel_txt.isdigit() else None
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        if tipo_global == "superusuario":
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s
+                  AND ativo = TRUE
+                ORDER BY cod_filial
+            """, (cod_empresa,))
+            filiais = cur.fetchall() or []
+        else:
+            filiais_permitidas = [
+                int(x) for x in usuario_filiais_ativas(id_usuario, cod_empresa)
+            ]
+
+            if not filiais_permitidas:
+                flash("Você não possui filiais habilitadas.", "error")
+                return redirect(url_for("operacoes.menu_operacoes"))
+
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s
+                  AND ativo = TRUE
+                  AND cod_filial = ANY(%s)
+                ORDER BY cod_filial
+            """, (cod_empresa, filiais_permitidas))
+            filiais = cur.fetchall() or []
+
+        codigos_filiais = [int(f["cod_filial"]) for f in filiais]
+
+        if filial_sel is not None and tipo_global != "superusuario" and filial_sel not in codigos_filiais:
+            flash("Filial não permitida para este usuário.", "error")
+            return redirect(url_for("operacoes.consultar_descarregos_combustiveis"))
+
+        filtros = [
+            "d.cod_empresa = %s",
+            "d.data_descarrego = %s"
+        ]
+        params = [cod_empresa, data_sel]
+
+        if filial_sel is not None:
+            filtros.append("d.cod_filial_descarga = %s")
+            params.append(filial_sel)
+        elif tipo_global != "superusuario":
+            filtros.append("d.cod_filial_descarga = ANY(%s)")
+            params.append(codigos_filiais)
+
+        where_sql = " AND ".join(filtros)
+
+        cur.execute(f"""
+            SELECT
+                d.id_descarrego,
+                d.data_descarrego,
+                d.id_compra,
+                d.cod_filial_descarga,
+                fd.nome_filial AS nome_filial_descarga,
+                d.cod_produto,
+                c.descricao AS produto,
+                d.quantidade_descarregada,
+
+                cc.data_compra,
+                cc.cod_filial AS cod_filial_compra,
+                fc.nome_filial AS nome_filial_compra,
+
+                fo.nome_fornecedor,
+                fo.cidade_base
+
+            FROM descarregos_combustiveis d
+
+            LEFT JOIN compras_combustiveis cc
+              ON cc.cod_empresa = d.cod_empresa
+             AND cc.id_compra = d.id_compra
+
+            LEFT JOIN filiais fd
+              ON fd.cod_empresa = d.cod_empresa
+             AND fd.cod_filial = d.cod_filial_descarga
+
+            LEFT JOIN filiais fc
+              ON fc.cod_empresa = cc.cod_empresa
+             AND fc.cod_filial = cc.cod_filial
+
+            LEFT JOIN combustiveis c
+              ON c.cod_empresa = d.cod_empresa
+             AND c.cod_produto = d.cod_produto
+
+            LEFT JOIN fornecedores_combustiveis fo
+              ON fo.cod_empresa = cc.cod_empresa
+             AND fo.id_fornecedor = cc.id_fornecedor
+
+            WHERE {where_sql}
+
+            ORDER BY
+                d.cod_filial_descarga,
+                d.id_descarrego
+        """, params)
+
+        descarregos = cur.fetchall() or []
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao consultar descarregos: {e}", "error")
+        descarregos = []
+        filiais = []
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "consultar_descarregos_combustiveis.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        data_sel=data_sel,
+        filial_sel=filial_sel,
+        filiais=filiais,
+        descarregos=descarregos,
+        url_voltar=url_for("operacoes.menu_operacoes"),
+        texto_voltar="← Voltar",
+    )
+
+
+# ---------------------------------------
+# CONSULTAR RESUMO DE DESCARREGOS
+# ---------------------------------------
+
+@operacoes_bp.route("/descarregos-combustiveis/resumo")
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONSULTAR_RESUMO_DESCARREGOS",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def consultar_resumo_descarregos_combustiveis():
+
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    hoje = hoje_br()
+
+    ano_sel_txt = (request.args.get("ano") or "").strip()
+    mes_sel_txt = (request.args.get("mes") or "").strip()
+
+    ano_sel = int(ano_sel_txt) if ano_sel_txt.isdigit() else hoje.year
+    mes_sel = int(mes_sel_txt) if mes_sel_txt.isdigit() else hoje.month
+
+    if mes_sel < 1 or mes_sel > 12:
+        mes_sel = hoje.month
+
+    data_ini = date(ano_sel, mes_sel, 1)
+
+    if mes_sel == 12:
+        data_fim = date(ano_sel + 1, 1, 1)
+    else:
+        data_fim = date(ano_sel, mes_sel + 1, 1)
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        if tipo_global == "superusuario":
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s
+                  AND ativo = TRUE
+                ORDER BY cod_filial
+            """, (cod_empresa,))
+            filiais_colunas = cur.fetchall() or []
+        else:
+            filiais_permitidas = [
+                int(x) for x in usuario_filiais_ativas(id_usuario, cod_empresa)
+            ]
+
+            if not filiais_permitidas:
+                flash("Você não possui filiais habilitadas.", "error")
+                return redirect(url_for("operacoes.menu_operacoes"))
+
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s
+                  AND ativo = TRUE
+                  AND cod_filial = ANY(%s)
+                ORDER BY cod_filial
+            """, (cod_empresa, filiais_permitidas))
+            filiais_colunas = cur.fetchall() or []
+
+        codigos_filiais = [int(f["cod_filial"]) for f in filiais_colunas]
+
+        filtro_filiais = ""
+        params_filiais = []
+
+        if tipo_global != "superusuario":
+            filtro_filiais = "AND d.cod_filial_descarga = ANY(%s)"
+            params_filiais.append(codigos_filiais)
+
+        cur.execute(f"""
+            SELECT
+                d.data_descarrego,
+                d.cod_filial_descarga AS cod_filial,
+                SUM(COALESCE(d.quantidade_descarregada, 0)) AS valor_total
+            FROM descarregos_combustiveis d
+            WHERE d.cod_empresa = %s
+              AND d.data_descarrego >= %s
+              AND d.data_descarrego < %s
+              {filtro_filiais}
+            GROUP BY d.data_descarrego, d.cod_filial_descarga
+            ORDER BY d.data_descarrego, d.cod_filial_descarga
+        """, [cod_empresa, data_ini, data_fim] + params_filiais)
+
+        rows = cur.fetchall() or []
+
+        valores = {}
+        totais_filiais = {int(f["cod_filial"]): 0 for f in filiais_colunas}
+        total_geral = 0
+
+        for r in rows:
+            data_desc = r["data_descarrego"]
+            cod_filial = int(r["cod_filial"])
+            valor = float(r["valor_total"] or 0)
+
+            valores[(data_desc, cod_filial)] = valor
+            totais_filiais[cod_filial] = totais_filiais.get(cod_filial, 0) + valor
+            total_geral += valor
+
+        linhas = []
+        dia_atual = data_ini
+
+        while dia_atual < data_fim:
+            valores_dia = []
+            total_dia = 0
+
+            for f in filiais_colunas:
+                cod_filial = int(f["cod_filial"])
+                valor = valores.get((dia_atual, cod_filial), 0)
+                valores_dia.append(valor)
+                total_dia += valor
+
+            linhas.append({
+                "data": dia_atual,
+                "total": total_dia,
+                "valores": valores_dia,
+            })
+
+            dia_atual = dia_atual + timedelta(days=1)
+
+        total_colunas = [
+            totais_filiais.get(int(f["cod_filial"]), 0)
+            for f in filiais_colunas
+        ]
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao consultar resumo de descarregos: {e}", "error")
+        filiais_colunas = []
+        linhas = []
+        total_colunas = []
+        total_geral = 0
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "consultar_resumo_descarregos_combustiveis.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        ano_sel=ano_sel,
+        mes_sel=mes_sel,
+        filiais_colunas=filiais_colunas,
+        linhas=linhas,
+        total_colunas=total_colunas,
+        total_geral=total_geral,
+        url_voltar=url_for("operacoes.menu_operacoes"),
+        texto_voltar="← Voltar",
+    )
 # ---------------------------------------
 # EXCLUIR DESCARREGO DE COMBUSTÍVEL
 # ---------------------------------------
