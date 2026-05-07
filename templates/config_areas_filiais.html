@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 36px; font-weight: 800; margin-bottom: 10px; }
+  .empresa { font-size: 22px; margin-bottom: 30px; }
+
+  .painel {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 24px;
+    border: 1px solid #d9d9d9;
+  }
+
+  .linha-form {
+    display: grid;
+    grid-template-columns: 320px 320px 160px 120px;
+    gap: 14px;
+    align-items: end;
+  }
+
+  .campo {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #cfcfcf;
+    font-size: 14px;
+  }
+
+  .btn-salvar,
+  .btn-excluir {
+    height: 38px;
+    border: none;
+    border-radius: 8px;
+    padding: 0 14px;
+    font-weight: 700;
+    cursor: pointer;
+    color: #fff;
+  }
+
+  .btn-salvar { background: #2d7d46; }
+  .btn-salvar:hover { background: #25663a; }
+
+  .btn-excluir { background: #b53838; }
+  .btn-excluir:hover { background: #942d2d; }
+
+  .table-local {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    font-size: 14px;
+  }
+
+  .table-local th,
+  .table-local td {
+    border: 1px solid #d5d5d5;
+    padding: 8px;
+    text-align: left;
+  }
+
+  .table-local th {
+    background: #dbe8f4;
+    font-weight: 700;
+  }
+
+  .table-local tbody tr:nth-child(even) {
+    background: #fafafa;
+  }
+
+  .acoes {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .campo-ordem {
+    width: 90px;
+    padding: 8px;
+    border: 1px solid #cfcfcf;
+    border-radius: 8px;
+  }
+
+  @media (max-width: 900px) {
+    .linha-form { grid-template-columns: 1fr; }
+    .btn-salvar { width: 100%; }
+  }
+</style>
+
+<div class="pagina-titulo">Configuração de Áreas</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ nome_empresa }}
+</div>
+
+<div class="painel">
+  <form method="POST" action="{{ url_for('configuracoes.config_areas_filiais_salvar') }}">
+    <div class="linha-form">
+      <div>
+        <label>Área</label>
+        <select class="campo" name="id_area" required>
+          <option value="">Selecione</option>
+          {% for a in areas %}
+            <option value="{{ a.id_area }}">{{ a.nome_area }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label>Filial</label>
+        <select class="campo" name="cod_filial" required>
+          <option value="">Selecione</option>
+          {% for f in filiais %}
+            <option value="{{ f.cod_filial }}">
+              {{ f.cod_filial }} - {{ f.nome_filial }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label>Ordem</label>
+        <input class="campo" type="number" name="ordem" value="10">
+      </div>
+
+      <div>
+        <button class="btn-salvar" type="submit">Salvar</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<table class="table-local">
+  <thead>
+    <tr>
+      <th>Área</th>
+      <th>Ordem</th>
+      <th>Filial</th>
+      <th style="width: 210px;">Ações</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    {% for v in vinculacoes %}
+      <tr>
+  
+        <td>
+          {{ v.nome_area }}
+        </td>
+  
+        <td>
+          <form
+            id="form-alterar-{{ v.id_area_filial }}"
+            method="POST"
+            action="{{ url_for('configuracoes.config_areas_filiais_alterar') }}"
+          >
+            <input
+              type="hidden"
+              name="id_area_filial"
+              value="{{ v.id_area_filial }}"
+            >
+  
+            <input
+              class="campo-ordem"
+              type="number"
+              name="ordem"
+              value="{{ v.ordem }}"
+            >
+          </form>
+        </td>
+  
+        <td>
+          {{ v.cod_filial }} - {{ v.nome_filial }}
+        </td>
+  
+        <td>
+          <div class="acoes">
+  
+            <button
+              class="btn-salvar"
+              type="submit"
+              form="form-alterar-{{ v.id_area_filial }}"
+            >
+              Salvar
+            </button>
+  
+            <form
+              method="POST"
+              action="{{ url_for('configuracoes.config_areas_filiais_excluir') }}"
+              onsubmit="return confirm('Deseja excluir esta filial da área?')"
+            >
+              <input
+                type="hidden"
+                name="id_area_filial"
+                value="{{ v.id_area_filial }}"
+              >
+  
+              <button
+                class="btn-excluir"
+                type="submit"
+              >
+                Excluir
+              </button>
+  
+            </form>
+  
+          </div>
+        </td>
+  
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% endblock %}

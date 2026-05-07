@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 36px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 30px;
+  }
+
+  .acoes-topo {
+    margin-bottom: 18px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .btn-topo {
+    display: inline-block;
+    padding: 10px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    border: 1px solid #2d7d46;
+    background: #2d7d46;
+    color: #fff;
+    cursor: pointer;
+    }
+
+.btn-topo:hover {
+  background: #25663a;
+  border-color: #25663a;
+}
+
+  .tabela-wrap {
+    overflow-x: auto;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 900px;
+  }
+
+  th, td {
+    border: 1px solid #dddddd;
+    padding: 8px;
+    vertical-align: middle;
+  }
+
+  th {
+    background: #dbe8f4;
+    text-align: left;
+  }
+
+  tbody tr:nth-child(even) {
+    background: #fafafa;
+  }
+
+  input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid #bfc7d1;
+    border-radius: 6px;
+    font-size: 14px;
+    background: #fffefc;
+  }
+
+  .col-id {
+    width: 100px;
+  }
+
+  .col-nome {
+    width: 500px;
+  }
+
+  .col-ativo {
+    width: 120px;
+    text-align: center;
+  }
+
+  .col-acoes {
+    width: 220px;
+    white-space: nowrap;
+  }
+
+  .btn-salvar,
+  .btn-excluir {
+    border: none;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn-salvar {
+    background: #2d7d46;
+    color: #fff;
+    margin-right: 6px;
+  }
+
+  .btn-excluir {
+    background: #b53838;
+    color: #fff;
+  }
+
+  .flash-msg {
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-weight: 600;
+  }
+
+  .flash-success {
+    background: #e6f4ea;
+    color: #1e6b34;
+    border: 1px solid #b7dfc2;
+  }
+
+  .flash-error {
+    background: #fdeaea;
+    color: #9f2f2f;
+    border: 1px solid #efc2c2;
+  }
+</style>
+
+<div class="card">
+
+  <div class="pagina-titulo">
+    Cadastro de Áreas
+  </div>
+
+  <div class="empresa">
+    Empresa: <strong>{{ nome_empresa }}</strong>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="acoes-topo">
+
+    <form method="post" action="{{ url_for('configuracoes.config_areas_novo') }}">
+      <button type="submit" class="btn-topo">
+        + Nova Área
+      </button>
+    </form>
+
+  </div>
+
+  <div class="tabela-wrap">
+
+    <table>
+
+      <thead>
+        <tr>
+          <th class="col-id">ID</th>
+          <th class="col-nome">Nome da Área</th>
+          <th class="col-ativo">Ativa</th>
+          <th class="col-acoes">Ações</th>
+        </tr>
+      </thead>
+
+      <tbody>
+
+        {% for area in areas %}
+
+        <tr>
+
+          <form method="post" action="{{ url_for('configuracoes.config_areas_salvar') }}">
+
+            <td>
+              <input type="hidden" name="id_area" value="{{ area.id_area }}">
+              <input
+                type="text"
+                value="{{ area.id_area }}"
+                readonly
+                style="background:#f1f1f1; color:#666;"
+              >
+            </td>
+
+            <td>
+              <input
+                type="text"
+                name="nome_area"
+                value="{{ area.nome_area or '' }}"
+              >
+            </td>
+
+            <td class="col-ativo">
+              <input
+                type="checkbox"
+                name="ativo"
+                {% if area.ativo %}checked{% endif %}
+              >
+            </td>
+
+            <td class="col-acoes">
+
+              <button type="submit" class="btn-salvar">
+                Salvar
+              </button>
+
+          </form>
+
+              <form
+                method="post"
+                action="{{ url_for('configuracoes.config_areas_excluir') }}"
+                style="display:inline;"
+              >
+
+                <input
+                  type="hidden"
+                  name="id_area"
+                  value="{{ area.id_area }}"
+                >
+
+                <button
+                  type="submit"
+                  class="btn-excluir"
+                  onclick="return confirm('Excluir esta área?');"
+                >
+                  Excluir
+                </button>
+
+              </form>
+
+            </td>
+
+        </tr>
+
+        {% endfor %}
+
+      </tbody>
+
+    </table>
+
+  </div>
+
+</div>
+
+{% endblock %}

@@ -2301,12 +2301,31 @@ def consultar_estoques():
             vendas AS (
                 SELECT
                     cod_filial,
-                    cod_produto,
-                    SUM(COALESCE(quantidade_vendida, 0)) AS vendas
-                FROM medicoes
+
+                    CASE
+                        WHEN codigo_produto::text IN ('1', '9', '543') THEN 'C1'
+                        WHEN codigo_produto::text = '2' THEN 'C2'
+                        WHEN codigo_produto::text IN ('3', '7') THEN 'C3'
+                        WHEN codigo_produto::text = '5' THEN 'C4'
+                        WHEN codigo_produto::text IN ('4', '8', '10') THEN 'C5'
+                        ELSE NULL
+                    END AS cod_produto,
+
+                    SUM(COALESCE(quantidade, 0)) AS vendas
+
+                FROM vendas_diarias
                 WHERE cod_empresa = %s
-                  AND data_medicao = %s
-                GROUP BY cod_filial, cod_produto
+                AND data = %s
+                GROUP BY
+                    cod_filial,
+                    CASE
+                        WHEN codigo_produto::text IN ('1', '9', '543') THEN 'C1'
+                        WHEN codigo_produto::text = '2' THEN 'C2'
+                        WHEN codigo_produto::text IN ('3', '7') THEN 'C3'
+                        WHEN codigo_produto::text = '5' THEN 'C4'
+                        WHEN codigo_produto::text IN ('4', '8', '10') THEN 'C5'
+                        ELSE NULL
+                    END
             ),
 
 

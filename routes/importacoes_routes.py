@@ -1,6 +1,7 @@
 import subprocess
 import traceback
 import uuid
+from decimal import Decimal
 
 from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify
 from psycopg2.extras import RealDictCursor
@@ -65,11 +66,31 @@ def listar_importacoes():
             FROM importacoes
             WHERE cod_empresa = %s
               {where_extra}
-            ORDER BY data DESC, cod_filial, historico
+            ORDER BY ano, mes, cod_filial, historico
         """, params)
 
         rows = cur.fetchall()
         colnames = [d[0] for d in cur.description]
+
+        total_valor_importacoes = Decimal("0")
+        totais_filial = {}
+
+        for row in rows:
+            valor = Decimal(str(row["valor"] or 0))
+
+            total_valor_importacoes += valor
+
+            chave = (
+                row["cod_filial"],
+                row["nome_filial"],
+                row["ano"],
+                row["mes"],
+            )
+
+            if chave not in totais_filial:
+                totais_filial[chave] = Decimal("0")
+
+            totais_filial[chave] += valor
 
     finally:
         cur.close()
@@ -82,6 +103,8 @@ def listar_importacoes():
         "importacoes.html",
         rows=rows,
         colnames=colnames,
+        totais_filial=totais_filial,
+        total_valor_importacoes=total_valor_importacoes,
         total_registros=total_registros,
         total_pendentes=total_pendentes,
         somente_pendentes=somente_pendentes,
@@ -89,10 +112,58 @@ def listar_importacoes():
         erro=erro,
         empresa_ativa=session["cod_empresa"],
         nome_empresa_ativa=session["nome_empresa"],
-        url_voltar=url_for("financeiro.menu_empresa"),  
+        url_voltar=url_for("financeiro.menu_empresa"),
         texto_voltar="← Voltar"
     )
 
+
+# ---------------------------------------------------------------
+# IMPORTACAO DO PDF
+# ---------------------------------------------------------------
+
+@importacoes_bp.route("/importacoes/pdf", methods=["GET", "POST"])
+def importar_pdf_fluxo_caixa():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    mensagem = ""
+    erro = ""
+    resultado_pdf = None
+
+    if request.method == "POST":
+        try:
+            arquivo = request.files.get("arquivo")
+
+            if not arquivo:
+                raise ValueError("Selecione um arquivo PDF.")
+
+            from importa_web_postos import Importa_Fluxo_Caixa_PDF
+
+            resultado_pdf = Importa_Fluxo_Caixa_PDF(
+                arquivo_pdf=arquivo,
+                cod_empresa_fixo=session["cod_empresa"]
+            )
+
+            mensagem = "Importação do PDF concluída. Confira abaixo a auditoria por filial/mês."
+
+        except Exception as e:
+            erro = str(e)
+
+    return render_template(
+        "importar_pdf.html",
+        mensagem=mensagem,
+        erro=erro,
+        resultado_pdf=resultado_pdf,
+        empresa_ativa=session["cod_empresa"],
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("importacoes.listar_importacoes"),
+        texto_voltar="← Voltar",
+    )
+
+
+# ---------------------------------------------------------------
+# RECLASSIFICAR
+# ---------------------------------------------------------------
 
 @importacoes_bp.route("/importacoes/reclassificar", methods=["POST"])
 def reclassificar_importacoes():

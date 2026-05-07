@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 20px;
+  }
+
+  .painel {
+    max-width: 1100px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+
+  .mensagem {
+    margin-bottom: 16px;
+    font-weight: 600;
+  }
+
+  .mensagem.sucesso {
+    color: #1f7a1f;
+  }
+
+  .mensagem.erro {
+    color: #c62828;
+  }
+
+  .linha-form {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+
+  .btn {
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: 1px solid #c7c7c7;
+    background: #f5f5f5;
+    cursor: pointer;
+    font-weight: 700;
+  }
+
+  .btn:hover {
+    background: #eaeaea;
+  }
+
+  .painel-auditoria {
+    margin-top: 30px;
+    border-top: 1px solid #e1e1e1;
+    padding-top: 24px;
+  }
+
+  .titulo-auditoria {
+    font-size: 24px;
+    font-weight: 800;
+    margin-bottom: 16px;
+  }
+
+  .table-auditoria {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    background: #fff;
+  }
+
+  .table-auditoria th,
+  .table-auditoria td {
+    border: 1px solid #d9d9d9;
+    padding: 10px 12px;
+  }
+
+  .table-auditoria th {
+    background: #f2f2f2;
+    text-align: left;
+  }
+
+  .td-num {
+    text-align: right;
+    font-family: Consolas, Menlo, monospace;
+    font-weight: 700;
+  }
+
+  .ok {
+    color: #1f7a1f;
+    font-weight: 800;
+  }
+
+  .erro-auditoria {
+    color: #c62828;
+    font-weight: 800;
+  }
+
+  .linha-total {
+    background: #fafafa;
+    font-weight: 800;
+  }
+</style>
+
+<div class="pagina-titulo">
+  Importar PDF - WebPostos
+</div>
+
+<div class="painel">
+
+  {% if mensagem %}
+    <div class="mensagem sucesso">
+      {{ mensagem }}
+    </div>
+  {% endif %}
+
+  {% if erro %}
+    <div class="mensagem erro">
+      {{ erro }}
+    </div>
+  {% endif %}
+
+  <form method="post" enctype="multipart/form-data">
+    <div class="linha-form">
+      <input type="file" name="arquivo" accept="application/pdf" required>
+      <button type="submit" class="btn">Importar PDF</button>
+    </div>
+  </form>
+
+  {% if resultado_pdf %}
+
+    <div class="painel-auditoria">
+
+      <div class="titulo-auditoria">
+        Auditoria da Importação
+      </div>
+
+      <table class="table-auditoria">
+
+        <thead>
+          <tr>
+            <th>Filial</th>
+            <th>Mês/Ano</th>
+            <th class="td-num">PDF (Recebimentos - Pagamentos)</th>
+            <th class="td-num">Sistema (Contas Analíticas)</th>
+            <th class="td-num">Diferença</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+
+        <tbody>
+
+          {% for item in resultado_pdf["auditoria_filiais"] %}
+
+            {% set diferenca = (item["diferenca"] or 0)|float %}
+
+            <tr>
+
+              <td>
+                {{ item["cod_filial"] }} - {{ item["nome_filial"] }}
+              </td>
+
+              <td>
+                {{ "%02d"|format(item["mes"]) }}/{{ item["ano"] }}
+              </td>
+
+              <td class="td-num">
+                {{ "{:,.2f}".format((item["valor_pdf"] or 0)|float).replace(",", "X").replace(".", ",").replace("X", ".") }}
+              </td>
+
+              <td class="td-num">
+                {{ "{:,.2f}".format((item["valor_sistema"] or 0)|float).replace(",", "X").replace(".", ",").replace("X", ".") }}
+              </td>
+
+              <td class="td-num">
+                {{ "{:,.2f}".format(diferenca).replace(",", "X").replace(".", ",").replace("X", ".") }}
+              </td>
+
+              <td>
+                {% if diferenca == 0 %}
+                  <span class="ok">OK</span>
+                {% else %}
+                  <span class="erro-auditoria">
+                    DIFERENÇA
+                  </span>
+                {% endif %}
+              </td>
+
+            </tr>
+
+          {% endfor %}
+
+          <tr class="linha-total">
+
+            <td colspan="2">
+              TOTAL GERAL
+            </td>
+
+            <td class="td-num">
+              {{ "{:,.2f}".format((resultado_pdf["total_pdf"] or 0)|float).replace(",", "X").replace(".", ",").replace("X", ".") }}
+            </td>
+
+            <td class="td-num">
+              {{ "{:,.2f}".format((resultado_pdf["total_sistema"] or 0)|float).replace(",", "X").replace(".", ",").replace("X", ".") }}
+            </td>
+
+            <td class="td-num">
+              {{ "{:,.2f}".format((resultado_pdf["total_diferenca"] or 0)|float).replace(",", "X").replace(".", ",").replace("X", ".") }}
+            </td>
+
+            <td>
+              {% if (resultado_pdf["total_diferenca"] or 0)|float == 0 %}
+                <span class="ok">IMPORTAÇÃO VALIDADA</span>
+              {% else %}
+                <span class="erro-auditoria">
+                  VERIFICAR DIFERENÇAS
+                </span>
+              {% endif %}
+            </td>
+
+          </tr>
+
+        </tbody>
+
+      </table>
+
+    </div>
+
+  {% endif %}
+
+</div>
+
+{% endblock %}

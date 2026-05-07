@@ -1,5 +1,7 @@
 import os
 import re
+import tempfile
+import pdfplumber
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
@@ -154,6 +156,11 @@ def obter_valor_por_letra(df, row, letra_coluna, caminho_arquivo):
 
     return row.iloc[indice]
 
+def eh_conta_sintetica_excel(codigo_atual, codigo_proximo):
+    if not codigo_atual or not codigo_proximo:
+        return False
+
+    return codigo_proximo.startswith(codigo_atual + ".")
 
 def inserir_importacao(cur, registro):
     cur.execute("""
@@ -320,13 +327,6 @@ def montar_codigos_hierarquicos(df, caminho_arquivo):
     return codigos
 
 
-def eh_conta_sintetica(codigo_atual, codigo_proximo):
-    if not codigo_atual or not codigo_proximo:
-        return False
-
-    return codigo_proximo.startswith(codigo_atual + ".")
-
-
 def processar_dataframe(
     df,
     caminho_arquivo,
@@ -379,7 +379,7 @@ def processar_dataframe(
         if abs(valor) < Decimal("0.01"):
             continue
 
-        if eh_conta_sintetica(codigo_atual, codigo_proximo):
+        if eh_conta_sintetica_excel(codigo_atual, codigo_proximo):
             continue
 
         registro = {
@@ -551,3 +551,650 @@ def Importa_Web_Postos_Arquivos(
 
     finally:
         conn.close()
+
+def somar_importacoes_empresa(conn, cod_empresa):
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT COALESCE(SUM(valor), 0)
+        FROM importacoes
+        WHERE cod_empresa = %s
+    """, (str(cod_empresa).strip(),))
+
+    total = cur.fetchone()[0]
+    cur.close()
+
+    return Decimal(str(total or 0))
+
+
+def eh_conta_sintetica(codigo_atual, todos_codigos):
+    codigo_atual = str(codigo_atual or "").strip()
+
+    if not codigo_atual:
+        return False
+
+    prefixo = codigo_atual + "."
+
+    return any(
+        str(cod or "").strip().startswith(prefixo)
+        for cod in todos_codigos
+        if str(cod or "").strip() != codigo_atual
+    )
+
+
+def calcular_auditoria_movimento_pdf(conn, cod_empresa):
+    """
+    Auditoria correta:
+    Para cada filial/mês:
+    PDF = 1 - RECEBIMENTO + 2 - PAGAMENTOS
+    Sistema = soma das contas analíticas importadas
+    Diferença = Sistema - PDF
+
+    Esta função deve rodar ANTES de remover as contas sintéticas.
+    """
+    cod_empresa = str(cod_empresa).strip()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            id_lancamento,
+            cod_filial,
+            nome_filial,
+            ano,
+            mes,
+            historico,
+            valor
+        FROM importacoes
+        WHERE cod_empresa = %s
+        ORDER BY cod_filial, ano, mes, historico
+    """, (cod_empresa,))
+
+    linhas = cur.fetchall()
+    cur.close()
+
+    grupos = {}
+
+    for id_lancamento, cod_filial, nome_filial, ano, mes, historico, valor in linhas:
+        chave = (
+            int(cod_filial),
+            str(nome_filial or ""),
+            int(ano),
+            int(mes),
+        )
+
+        if chave not in grupos:
+            grupos[chave] = {
+                "linhas": [],
+                "recebimentos_pdf": Decimal("0"),
+                "pagamentos_pdf": Decimal("0"),
+            }
+
+        valor_dec = Decimal(str(valor or 0))
+        codigo = extrair_codigo_hierarquico(historico)
+        historico_norm = normalizar_texto(historico)
+
+        grupos[chave]["linhas"].append({
+            "id_lancamento": id_lancamento,
+            "codigo": codigo,
+            "historico": historico,
+            "valor": valor_dec,
+        })
+
+        # Conta sintética principal de recebimentos
+        if codigo == "1" and "receb" in historico_norm:
+            grupos[chave]["recebimentos_pdf"] += valor_dec
+
+        # Conta sintética principal de pagamentos
+        if codigo == "2" and "pag" in historico_norm:
+            grupos[chave]["pagamentos_pdf"] += valor_dec
+
+    auditoria = []
+    total_pdf = Decimal("0")
+    total_sistema = Decimal("0")
+
+    for chave, dados in grupos.items():
+        cod_filial, nome_filial, ano, mes = chave
+
+        codigos = [
+            item["codigo"]
+            for item in dados["linhas"]
+            if item["codigo"]
+        ]
+
+        movimento_sistema = Decimal("0")
+
+        for item in dados["linhas"]:
+            codigo = item["codigo"]
+
+            if not codigo:
+                continue
+
+            if eh_conta_sintetica(codigo, codigos):
+                continue
+
+            movimento_sistema += item["valor"]
+
+        recebimentos_pdf = dados["recebimentos_pdf"]
+        pagamentos_pdf = dados["pagamentos_pdf"]
+        movimento_pdf = recebimentos_pdf + pagamentos_pdf
+        diferenca = movimento_sistema - movimento_pdf
+
+        total_pdf += movimento_pdf
+        total_sistema += movimento_sistema
+
+        auditoria.append({
+            "cod_filial": cod_filial,
+            "nome_filial": nome_filial,
+            "ano": ano,
+            "mes": mes,
+            "recebimentos_pdf": recebimentos_pdf,
+            "pagamentos_pdf": pagamentos_pdf,
+            "movimento_pdf": movimento_pdf,
+            "movimento_sistema": movimento_sistema,
+            "diferenca": diferenca,
+            "status": "OK" if abs(diferenca) < Decimal("0.01") else "DIVERGENTE",
+        })
+
+    return {
+        "linhas": auditoria,
+        "total_pdf": total_pdf,
+        "total_sistema": total_sistema,
+        "diferenca_total": total_sistema - total_pdf,
+    }
+
+
+def remover_contas_sinteticas_importadas(conn, cod_empresa):
+    cod_empresa = str(cod_empresa).strip()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id_lancamento, historico
+        FROM importacoes
+        WHERE cod_empresa = %s
+    """, (cod_empresa,))
+
+    linhas = cur.fetchall()
+
+    codigos_por_id = {}
+
+    for id_lancamento, historico in linhas:
+        codigo = extrair_codigo_hierarquico(historico)
+        if codigo:
+            codigos_por_id[id_lancamento] = codigo
+
+    todos_codigos = list(codigos_por_id.values())
+
+    ids_sinteticas = [
+        id_lancamento
+        for id_lancamento, codigo in codigos_por_id.items()
+        if eh_conta_sintetica(codigo, todos_codigos)
+    ]
+
+    if ids_sinteticas:
+        cur.execute("""
+            DELETE FROM importacoes
+            WHERE cod_empresa = %s
+              AND id_lancamento = ANY(%s)
+        """, (cod_empresa, ids_sinteticas))
+
+    qtd_removidas = len(ids_sinteticas)
+    cur.close()
+
+    return qtd_removidas
+
+
+# -------------------------------------------------------------------------------------------------------------------------
+# IMPORTA PDF WEBPOSTOS
+# -------------------------------------------------------------------------------------------------------------------------
+def Importa_Fluxo_Caixa_PDF(
+    arquivo_pdf,
+    cod_empresa_fixo,
+    importar_colunas="ultima"
+):
+    if not cod_empresa_fixo:
+        raise ValueError("Cod_empresa da sessão não foi informado.")
+
+    cod_empresa = str(cod_empresa_fixo).strip()
+
+    nome_seguro = re.sub(r"[^a-zA-Z0-9_.-]", "_", arquivo_pdf.filename or "fluxo_caixa.pdf")
+    caminho_temp = os.path.join("/tmp", f"fluxo_caixa_{nome_seguro}")
+
+    arquivo_pdf.stream.seek(0)
+    arquivo_pdf.save(caminho_temp)
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    total_importado = 0
+
+    meses_map = {
+        "jan": 1, "fev": 2, "mar": 3, "abr": 4,
+        "mai": 5, "jun": 6, "jul": 7, "ago": 8,
+        "set": 9, "out": 10, "nov": 11, "dez": 12,
+    }
+
+    regex_valor = r"-?\d{1,3}(?:\.\d{3})*,\d{2}|-?\d+,\d{2}"
+    regex_conta = r"^\s*\d+(?:\.\d+)*\s*[-–_]"
+
+    def carregar_filiais_importacao():
+        cur.execute("""
+            SELECT cod_filial, nome_filial, COALESCE(nome_filial_importacao, '')
+            FROM filiais
+            WHERE cod_empresa = %s
+              AND ativo = true
+        """, (cod_empresa,))
+
+        rows = cur.fetchall() or []
+        resultado = []
+
+        for cod_filial, nome_filial, nome_importacao in rows:
+            if str(nome_importacao or "").strip():
+                resultado.append({
+                    "cod_filial": int(cod_filial),
+                    "nome_filial": nome_filial,
+                    "nome_importacao": nome_importacao,
+                    "nome_norm": normalizar_texto(nome_importacao),
+                })
+
+        return resultado
+
+    def detectar_filial_na_linha(linha, filiais_importacao):
+        linha_norm = normalizar_texto(linha)
+
+        if linha_norm.startswith("filial:"):
+            nome_pdf = linha.split(":", 1)[1].strip()
+            return buscar_filial_por_nome_importacao(conn, cod_empresa, nome_pdf)
+
+        for f in filiais_importacao:
+            if linha_norm == f["nome_norm"]:
+                return f["cod_filial"], f["nome_filial"]
+
+        return None, None
+
+    def limpar_historico(linha):
+        texto = re.sub(r"#.*$", "", linha).strip()
+        texto = re.sub(regex_valor, "", texto).strip()
+        texto = re.sub(r"\s+", " ", texto).strip()
+        return texto
+
+    def extrair_grupo_conta(linha):
+        m = re.search(r"#\s*(\d+)\s*,\s*(\d+)", linha)
+        if not m:
+            return None, None
+
+        return int(m.group(1)), int(m.group(2))
+
+    def gravar_linha_pdf(linha, cod_filial, nome_filial, meses_linha):
+        nonlocal total_importado
+
+        linha = re.sub(r"\s+", " ", linha or "").strip()
+
+        if not linha:
+            return
+
+        if not cod_filial or not nome_filial:
+            return
+
+        if not meses_linha:
+            return
+
+        grupo, conta = extrair_grupo_conta(linha)
+        valores_txt = re.findall(regex_valor, linha)
+
+        if not valores_txt:
+            return
+
+        if importar_colunas == "ultima":
+            valores_txt_usar = [valores_txt[-1]]
+            meses_usar = [meses_linha[-1]]
+        else:
+            qtd = min(len(valores_txt), len(meses_linha))
+            valores_txt_usar = valores_txt[-qtd:]
+            meses_usar = meses_linha[-qtd:]
+
+        historico = limpar_historico(linha)
+
+        if not historico:
+            return
+
+        if grupo is not None and conta is not None:
+            descricao_conta = buscar_descricao_conta_gerencial(
+                conn,
+                cod_empresa,
+                grupo,
+                conta
+            )
+        else:
+            descricao_conta = None
+
+        for idx, valor_txt in enumerate(valores_txt_usar):
+            valor = converter_decimal(valor_txt)
+
+            if abs(valor) < Decimal("0.01"):
+                continue
+
+            ano = meses_usar[idx]["ano"]
+            mes = meses_usar[idx]["mes"]
+            data_lancamento = datetime(ano, mes, 1).date().isoformat()
+
+            registro = {
+                "cod_empresa": cod_empresa,
+                "cod_filial": cod_filial,
+                "nome_filial": nome_filial,
+                "data": data_lancamento,
+                "ano": ano,
+                "mes": mes,
+                "historico": historico,
+                "valor": valor,
+                "grupo": grupo,
+                "conta": conta,
+                "descricao_conta": descricao_conta,
+                "complemento": "Importado de PDF",
+            }
+
+            inserir_importacao(cur, registro)
+            total_importado += 1
+
+    try:
+        # Tabela transitória: toda importação de PDF começa limpando a empresa atual.
+        cur.execute("""
+            DELETE FROM importacoes
+            WHERE cod_empresa = %s
+        """, (cod_empresa,))
+
+        filiais_importacao = carregar_filiais_importacao()
+
+        filial_atual = None
+        nome_filial_atual = None
+        meses_detectados = []
+
+        with pdfplumber.open(caminho_temp) as pdf:
+            for pagina in pdf.pages:
+                texto = pagina.extract_text(x_tolerance=1, y_tolerance=3) or ""
+                linhas = texto.splitlines()
+                buffer_linha = ""
+
+                for linha_original in linhas:
+                    linha = re.sub(r"\s+", " ", linha_original.strip())
+
+                    if not linha:
+                        continue
+
+                    linha_lower = linha.lower()
+
+                    cod_filial_detectada, nome_filial_detectada = detectar_filial_na_linha(
+                        linha,
+                        filiais_importacao
+                    )
+
+                    if cod_filial_detectada is not None:
+                        if buffer_linha:
+                            gravar_linha_pdf(
+                                buffer_linha,
+                                filial_atual,
+                                nome_filial_atual,
+                                list(meses_detectados)
+                            )
+
+                        filial_atual = cod_filial_detectada
+                        nome_filial_atual = nome_filial_detectada
+                        buffer_linha = ""
+                        continue
+
+                    meses_encontrados = re.findall(
+                        r"(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\.?\s+(\d{4})",
+                        linha_lower
+                    )
+
+                    if meses_encontrados:
+                        if buffer_linha:
+                            gravar_linha_pdf(
+                                buffer_linha,
+                                filial_atual,
+                                nome_filial_atual,
+                                list(meses_detectados)
+                            )
+
+                        meses_detectados = [
+                            {
+                                "mes": meses_map[mes_txt],
+                                "ano": int(ano_txt)
+                            }
+                            for mes_txt, ano_txt in meses_encontrados
+                        ]
+
+                        buffer_linha = ""
+                        continue
+
+                    if filial_atual is None or not meses_detectados:
+                        continue
+
+                    if "saldo inicial" in linha_lower or "saldo final" in linha_lower:
+                        if buffer_linha:
+                            gravar_linha_pdf(
+                                buffer_linha,
+                                filial_atual,
+                                nome_filial_atual,
+                                list(meses_detectados)
+                            )
+
+                        buffer_linha = ""
+                        continue
+
+                    if linha_lower.startswith(("total ", "totais ")):
+                        if buffer_linha:
+                            gravar_linha_pdf(
+                                buffer_linha,
+                                filial_atual,
+                                nome_filial_atual,
+                                list(meses_detectados)
+                            )
+
+                        buffer_linha = ""
+                        continue
+
+                    tem_conta = re.match(regex_conta, linha)
+
+                    if tem_conta:
+                        if buffer_linha:
+                            gravar_linha_pdf(
+                                buffer_linha,
+                                filial_atual,
+                                nome_filial_atual,
+                                list(meses_detectados)
+                            )
+
+                        buffer_linha = linha
+                    else:
+                        if buffer_linha:
+                            buffer_linha = f"{buffer_linha} {linha}"
+                        else:
+                            buffer_linha = linha
+
+                if buffer_linha:
+                    gravar_linha_pdf(
+                        buffer_linha,
+                        filial_atual,
+                        nome_filial_atual,
+                        list(meses_detectados)
+                    )
+
+        # AUDITORIA ANTES DE REMOVER SINTÉTICAS
+        auditoria_movimento = calcular_auditoria_movimento_pdf(
+            conn,
+            cod_empresa
+        )
+
+        # AGORA REMOVE AS SINTÉTICAS
+        qtd_sinteticas_removidas = remover_contas_sinteticas_importadas(
+            conn,
+            cod_empresa
+        )
+
+        # CLASSIFICA O QUE FICOU
+        total_classificado = classificar_lancamentos_importados(
+            cod_empresa_fixo=cod_empresa,
+            conn=conn
+        )
+
+        soma_importada = somar_importacoes_empresa(
+            conn,
+            cod_empresa
+        )
+
+        conn.commit()
+
+        return {
+            "total_importado": total_importado,
+            "total_sinteticas_removidas": qtd_sinteticas_removidas,
+            "total_classificado": total_classificado,
+
+            "auditoria_movimento": auditoria_movimento["linhas"],
+            "total_pdf": auditoria_movimento["total_pdf"],
+            "total_sistema": auditoria_movimento["total_sistema"],
+            "diferenca_total": auditoria_movimento["diferenca_total"],
+
+            # Mantidos por compatibilidade com telas antigas
+            "saldo_final_pdf": auditoria_movimento["total_pdf"],
+            "soma_importada": soma_importada,
+            "diferenca_saldo": auditoria_movimento["diferenca_total"],
+        }
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        cur.close()
+        conn.close()
+
+        if os.path.exists(caminho_temp):
+            os.remove(caminho_temp)
+
+
+def buscar_filial_por_nome_importacao(conn, cod_empresa, nome_pdf):
+    cur = conn.cursor()
+
+    nome_pdf_norm = normalizar_texto(nome_pdf)
+
+    cur.execute("""
+        SELECT cod_filial, nome_filial, COALESCE(nome_filial_importacao, '')
+        FROM filiais
+        WHERE cod_empresa = %s
+          AND ativo = true
+    """, (str(cod_empresa).strip(),))
+
+    filiais = cur.fetchall()
+    cur.close()
+
+    for cod_filial, nome_filial, nome_importacao in filiais:
+        if normalizar_texto(nome_importacao) == nome_pdf_norm:
+            return int(cod_filial), nome_filial
+
+    raise ValueError(
+        f"Filial NÃO encontrada para importação do PDF.\n"
+        f"Empresa={cod_empresa}\n"
+        f"Nome no PDF='{nome_pdf}'\n\n"
+        f"Verifique o campo 'nome_filial_importacao' na tabela FILIAIS."
+    )
+
+
+def buscar_descricao_conta_gerencial(conn, cod_empresa, grupo, conta):
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT descricao
+        FROM contas_gerenciais
+        WHERE cod_empresa = %s
+          AND cod_grupo = %s
+          AND cod_conta = %s
+        LIMIT 1
+    """, (
+        str(cod_empresa).strip(),
+        int(grupo),
+        int(conta)
+    ))
+
+    row = cur.fetchone()
+    cur.close()
+
+    if not row:
+        raise ValueError(
+            f"Conta gerencial não encontrada.\n"
+            f"Empresa={cod_empresa}\n"
+            f"Grupo={grupo}\n"
+            f"Conta={conta}\n\n"
+            f"Cadastre essa conta em contas_gerenciais antes de importar o PDF."
+        )
+
+    return row[0]
+
+
+def somar_importacoes_empresa(conn, cod_empresa):
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT COALESCE(SUM(valor), 0)
+        FROM importacoes
+        WHERE cod_empresa = %s
+    """, (str(cod_empresa).strip(),))
+
+    total = cur.fetchone()[0]
+    cur.close()
+
+    return Decimal(str(total or 0))
+
+
+def eh_conta_sintetica(codigo_atual, todos_codigos):
+    codigo_atual = str(codigo_atual or "").strip()
+
+    if not codigo_atual:
+        return False
+
+    prefixo = codigo_atual + "."
+
+    return any(
+        str(cod or "").strip().startswith(prefixo)
+        for cod in todos_codigos
+        if str(cod or "").strip() != codigo_atual
+    )
+
+
+def remover_contas_sinteticas_importadas(conn, cod_empresa):
+    cod_empresa = str(cod_empresa).strip()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id_lancamento, historico
+        FROM importacoes
+        WHERE cod_empresa = %s
+    """, (cod_empresa,))
+
+    linhas = cur.fetchall()
+
+    codigos_por_id = {}
+
+    for id_lancamento, historico in linhas:
+        codigo = extrair_codigo_hierarquico(historico)
+        if codigo:
+            codigos_por_id[id_lancamento] = codigo
+
+    todos_codigos = list(codigos_por_id.values())
+
+    ids_sinteticas = [
+        id_lancamento
+        for id_lancamento, codigo in codigos_por_id.items()
+        if eh_conta_sintetica(codigo, todos_codigos)
+    ]
+
+    if ids_sinteticas:
+        cur.execute("""
+            DELETE FROM importacoes
+            WHERE cod_empresa = %s
+              AND id_lancamento = ANY(%s)
+        """, (cod_empresa, ids_sinteticas))
+
+    qtd_removidas = len(ids_sinteticas)
+    cur.close()
+
+    return qtd_removidas
+

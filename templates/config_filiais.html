@@ -2,15 +2,18 @@
 
 {% block content %}
 
+{% include "components/nav.html" %}
+
 <style>
   .pagina-titulo {
-    font-size: 30px;
-    font-weight: 700;
+    font-size: 34px;
+    font-weight: 800;
     margin-bottom: 8px;
+    color: #111;
   }
 
   .pagina-subtitulo {
-    font-size: 18px;
+    font-size: 20px;
     margin-bottom: 20px;
   }
 
@@ -78,32 +81,12 @@
     background: #fffefc;
   }
 
-  .col-codigo {
-    width: 110px;
-  }
-
-  .col-nome {
-    width: 260px;
-  }
-
-  .col-import {
-    width: 300px;
-  }
-
-  .col-lanc {
-    width: 90px;
-    text-align: center;
-  }
-
-  .col-ativo {
-    width: 90px;
-    text-align: center;
-  }
-
-  .col-acoes {
-    width: 190px;
-    white-space: nowrap;
-  }
+  .col-codigo { width: 110px; }
+  .col-nome { width: 260px; }
+  .col-import { width: 300px; }
+  .col-lanc { width: 90px; text-align: center; }
+  .col-ativo { width: 90px; text-align: center; }
+  .col-acoes { width: 190px; white-space: nowrap; }
 
   .btn-salvar,
   .btn-excluir {
@@ -150,85 +133,86 @@
   }
 </style>
 
-<div class="card">
-  <div class="pagina-titulo">Cadastro de Filiais</div>
-  <div class="pagina-subtitulo">
-    Empresa: <strong>{{ nome_empresa }}</strong>
-  </div>
+<div class="pagina-titulo">Cadastro de Filiais</div>
 
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      {% for category, message in messages %}
-        <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">
-          {{ message }}
-        </div>
+<div class="pagina-subtitulo">
+  Empresa: <strong>{{ nome_empresa }}</strong>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<div class="acoes-topo">
+  <form method="post" action="{{ url_for('configuracoes.config_filiais_novo') }}">
+    <button type="submit" class="btn-topo">+ Nova Filial</button>
+  </form>
+</div>
+
+<div class="tabela-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th class="col-codigo">Cód. Filial</th>
+        <th class="col-nome">Nome da Filial</th>
+        <th class="col-import">Nome Filial Importação</th>
+        <th class="col-lanc">Lanç.</th>
+        <th class="col-ativo">Ativo</th>
+        <th class="col-acoes">Ações</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for filial in filiais %}
+      <tr>
+        <td>
+          <form method="post" action="{{ url_for('configuracoes.config_filiais_salvar') }}">
+            <input type="hidden" name="cod_filial_original" value="{{ filial.cod_filial }}">
+            <input type="hidden" name="cod_filial" value="{{ filial.cod_filial or '' }}">
+            <input type="text" value="{{ filial.cod_filial or '' }}" readonly style="background:#f1f1f1; color:#666;">
+        </td>
+
+        <td>
+            <input type="text" name="nome_filial" value="{{ filial.nome_filial or '' }}">
+        </td>
+
+        <td>
+            <input type="text" name="nome_filial_importacao" value="{{ filial.nome_filial_importacao or '' }}">
+        </td>
+
+        <td class="col-lanc">
+            {{ filial.qt_lancamentos or 0 }}
+        </td>
+
+        <td class="col-ativo">
+            <input type="checkbox" name="ativo" {% if filial.ativo %}checked{% endif %}>
+        </td>
+
+        <td class="col-acoes">
+            <button type="submit" class="btn-salvar">Salvar</button>
+          </form>
+
+          <form method="post" action="{{ url_for('configuracoes.config_filiais_excluir') }}" style="display:inline;">
+            <input type="hidden" name="cod_filial" value="{{ filial.cod_filial }}">
+            <button
+              type="submit"
+              class="btn-excluir"
+              {% if (filial.qt_lancamentos or 0) > 0 %}disabled{% endif %}
+              onclick="return confirm('Excluir esta filial?');">
+              Excluir
+            </button>
+          </form>
+        </td>
+      </tr>
       {% endfor %}
-    {% endif %}
-  {% endwith %}
-
-  <div class="acoes-topo">
-    <form method="post" action="{{ url_for('configuracoes.config_filiais_novo') }}">
-      <button type="submit" class="btn-topo">+ Nova Filial</button>
-    </form>
-
-    <a class="btn-topo" href="{{ url_for('configuracoes.menu_configuracoes') }}">
-      ← Voltar para Configurações
-    </a>
-  </div>
-
-  <div class="tabela-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th class="col-codigo">Cód. Filial</th>
-          <th class="col-nome">Nome da Filial</th>
-          <th class="col-import">Nome Filial Importação</th>
-          <th class="col-lanc">Lanç.</th>
-          <th class="col-ativo">Ativo</th>
-          <th class="col-acoes">Ações</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for filial in filiais %}
-        <tr>
-          <td>
-            <form method="post" action="{{ url_for('configuracoes.config_filiais_salvar') }}">
-              <input type="hidden" name="cod_filial_original" value="{{ filial.cod_filial }}">
-              <input type="hidden" name="cod_filial" value="{{ filial.cod_filial or '' }}">
-              <input type="text" value="{{ filial.cod_filial or '' }}" readonly style="background:#f1f1f1; color:#666;">
-          </td>
-          <td>
-              <input type="text" name="nome_filial" value="{{ filial.nome_filial or '' }}">
-          </td>
-          <td>
-              <input type="text" name="nome_filial_importacao" value="{{ filial.nome_filial_importacao or '' }}">
-          </td>
-          <td class="col-lanc">
-              {{ filial.qt_lancamentos or 0 }}
-          </td>
-          <td class="col-ativo">
-              <input type="checkbox" name="ativo" {% if filial.ativo %}checked{% endif %}>
-          </td>
-          <td class="col-acoes">
-              <button type="submit" class="btn-salvar">Salvar</button>
-            </form>
-
-            <form method="post" action="{{ url_for('configuracoes.config_filiais_excluir') }}" style="display:inline;">
-              <input type="hidden" name="cod_filial" value="{{ filial.cod_filial }}">
-              <button
-                type="submit"
-                class="btn-excluir"
-                {% if (filial.qt_lancamentos or 0) > 0 %}disabled{% endif %}
-                onclick="return confirm('Excluir esta filial?');">
-                Excluir
-              </button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+    </tbody>
+  </table>
 </div>
 
 {% endblock %}

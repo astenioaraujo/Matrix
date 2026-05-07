@@ -114,3 +114,23 @@ def menu_vendas():
         empresa_ativa=session.get("cod_empresa"),
         url_voltar=url_for("sistema.selecionar_sistema")
     )
+
+@sistema_bp.route("/entrar_configuracoes")
+def entrar_configuracoes():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global != "superusuario":
+        if not usuario_tem_permissao(id_usuario, cod_empresa, "CONFIGURACOES", "MENU"):
+            flash("Você não tem permissão para acessar Configurações.", "error")
+            return redirect(url_for("sistema.selecionar_sistema"))
+
+    session["sistema_ativo"] = "configuracoes"
+    return redirect(url_for("configuracoes.menu_configuracoes"))

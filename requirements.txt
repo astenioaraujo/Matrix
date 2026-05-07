@@ -4,3 +4,4 @@ gunicorn
 openpyxl
 pandas
 python-dotenv
+pdfplumber

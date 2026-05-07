@@ -2,28 +2,74 @@
 
 {% block content %}
 
-<div class="card">
-    <h2>Configurações</h2>
+{% include "components/nav.html" %}
 
-    <p>Empresa: <strong>{{ nome_empresa }}</strong></p>
+<style>
+  .pagina-titulo {
+    font-size: 36px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
 
-    <ul>
-        <li>
-            <a href="{{ url_for('configuracoes.config_filiais') }}">
-                Cadastro de Filiais
-            </a>
-        </li>
-        <li>
-            <a href="{{ url_for('configuracoes.config_usuarios') }}">
-                Cadastro de Usuários
-            </a>
-        </li>
-    </ul>
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 30px;
+  }
 
-    <br>
-    <a href="{{ url_for('sistema.selecionar_sistema') }}">
-        ← Voltar
-    </a>
+  .menu-botoes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 220px);
+    gap: 14px;
+    margin-bottom: 50px;
+  }
+
+  .menu-botoes a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 60px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 16px;
+    color: #fff;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+    transition: all 0.2s ease;
+    text-align: center;
+    padding: 0 10px;
+  }
+
+  .btn-config {
+    background: #4E3322;
+    border: 1px solid #4E3322;
+  }
+
+  .btn-config:hover {
+    background: #3f291b;
+    border-color: #3f291b;
+  }
+</style>
+
+<div class="pagina-titulo">Menu de Configurações</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ nome_empresa }}
+</div>
+
+<div class="menu-botoes">
+
+  <a href="{{ url_for('configuracoes.config_filiais') }}" class="btn-config">
+    Cadastro de Filiais
+  </a>
+
+  <a href="{{ url_for('configuracoes.config_areas') }}" class="btn-config">
+    Cadastro de Áreas
+  </a>
+
+  <a href="{{ url_for('configuracoes.config_areas_filiais') }}" class="btn-config">
+    Configuração de Áreas
+  </a>
+
 </div>
 
 {% endblock %}
