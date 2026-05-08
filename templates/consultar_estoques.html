@@ -187,7 +187,7 @@
 
           {% if ns.filial_atual is not none %}
           <tr class="linha-total-filial">
-            <td colspan="2">TOTAL FILIAL</td>
+            <td colspan="2" style="color: #999;">Total Filial</td>
             <td class="col-num">{{ ns.f_capacidade | br }}</td>
             <td class="col-num">{{ ns.f_anterior | br }}</td>
             <td class="col-num">{{ ns.f_descarregos | br }}</td>
@@ -251,7 +251,7 @@
         {% set ns.g_perda = ns.g_perda + perda_sobra %}
 
         <tr>
-          <td class="col-filial">{{ l.cod_filial }} - {{ l.nome_filial }}</td>
+          <td class="col-filial"></td>
           <td class="col-produto">{{ l.cod_produto }} - {{ l.produto }}</td>
           <td class="col-num">{{ l.capacidade_tanque | br }}</td>
           <td class="col-num">{{ l.medicao_anterior | br }}</td>
@@ -271,7 +271,7 @@
 
       {% if ns.filial_atual is not none %}
         <tr class="linha-total-filial">
-          <td colspan="2">TOTAL FILIAL</td>
+          <td colspan="2" style="color: #999;">Total Filial</td>
           <td class="col-num">{{ ns.f_capacidade | br }}</td>
           <td class="col-num">{{ ns.f_anterior | br }}</td>
           <td class="col-num">{{ ns.f_descarregos | br }}</td>
@@ -292,16 +292,16 @@
           <td colspan="2">TOTAL GERAL</td>
           <td class="col-num">{{ ns.g_capacidade | br }}</td>
           <td class="col-num">{{ ns.g_anterior | br }}</td>
-          <td class="col-num">{{ ns.g_compras | br }}</td>
-          <td class="col-num">{{ ns.g_transito | br }}</td>
           <td class="col-num">{{ ns.g_descarregos | br }}</td>
-          <td class="col-num">{{ ns.g_emprestimos | br }}</td>
           <td class="col-num">{{ ns.g_vendas | br }}</td>
           <td class="col-num total-calculado">{{ ns.g_calculado | br }}</td>
           <td class="col-num medicao-atual">{{ ns.g_atual | br }}</td>
           <td class="col-num divisor-direita {% if ns.g_perda < 0 %}perda-negativa{% elif ns.g_perda > 0 %}sobra-positiva{% endif %}">
             {{ ns.g_perda | br }}
           </td>
+          <td class="col-num">{{ ns.g_compras | br }}</td>
+          <td class="col-num">{{ ns.g_transito | br }}</td>
+          <td class="col-num">{{ ns.g_emprestimos | br }}</td>
         </tr>
       {% endif %}
 
