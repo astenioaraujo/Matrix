@@ -2242,7 +2242,7 @@ def consultar_estoques():
     data_sel = (request.args.get("data") or "").strip()
 
     if not data_sel:
-        data_sel = (hoje_br() - timedelta(days=1)).isoformat()
+        data_sel = hoje_br().isoformat()
 
     data_base = date.fromisoformat(data_sel)
     data_anterior = data_base - timedelta(days=1)
@@ -2380,17 +2380,43 @@ def consultar_estoques():
 
             emprestimos AS (
                 SELECT
-                    cc.cod_filial,
-                    d.cod_produto,
-                    SUM(COALESCE(d.quantidade_descarregada, 0)) * -1 AS emprestimos
-                FROM descarregos_combustiveis d
-                JOIN compras_combustiveis cc
-                  ON cc.cod_empresa = d.cod_empresa
-                 AND cc.id_compra = d.id_compra
-                WHERE d.cod_empresa = %s
-                  AND d.data_descarrego = %s
-                  AND cc.cod_filial <> d.cod_filial_descarga
-                GROUP BY cc.cod_filial, d.cod_produto
+                    x.cod_filial,
+                    x.cod_produto,
+                    SUM(x.emprestimos) AS emprestimos
+                FROM (
+
+                    -- Filial que comprou, mas descarregou em outra
+                    SELECT
+                        cc.cod_filial,
+                        d.cod_produto,
+                        SUM(COALESCE(d.quantidade_descarregada, 0)) * -1 AS emprestimos
+                    FROM descarregos_combustiveis d
+                    JOIN compras_combustiveis cc
+                    ON cc.cod_empresa = d.cod_empresa
+                    AND cc.id_compra = d.id_compra
+                    WHERE d.cod_empresa = %s
+                    AND d.data_descarrego = %s
+                    AND cc.cod_filial <> d.cod_filial_descarga
+                    GROUP BY cc.cod_filial, d.cod_produto
+
+                    UNION ALL
+
+                    -- Filial que recebeu descarga comprada por outra
+                    SELECT
+                        d.cod_filial_descarga AS cod_filial,
+                        d.cod_produto,
+                        SUM(COALESCE(d.quantidade_descarregada, 0)) AS emprestimos
+                    FROM descarregos_combustiveis d
+                    JOIN compras_combustiveis cc
+                    ON cc.cod_empresa = d.cod_empresa
+                    AND cc.id_compra = d.id_compra
+                    WHERE d.cod_empresa = %s
+                    AND d.data_descarrego = %s
+                    AND cc.cod_filial <> d.cod_filial_descarga
+                    GROUP BY d.cod_filial_descarga, d.cod_produto
+
+                ) x
+                GROUP BY x.cod_filial, x.cod_produto
             ),
 
             medicao_atual AS (
@@ -2459,14 +2485,17 @@ def consultar_estoques():
             [cod_empresa]
             + params_filiais
             + [
-                cod_empresa, data_anterior,
-                cod_empresa, data_anterior,
-                cod_empresa, data_sel,
-                cod_empresa,
-                cod_empresa, data_sel,
-                cod_empresa, data_sel,
-                cod_empresa, data_sel,
-                cod_empresa, data_sel,
+                cod_empresa, data_anterior,  # medicao_anterior
+                cod_empresa, data_anterior,       # vendas
+                cod_empresa, data_anterior,       # compras_dia
+                cod_empresa,                       # transito subquery
+                cod_empresa, data_anterior,       # transito
+                cod_empresa, data_anterior,       # descarregos
+
+                cod_empresa, data_anterior,       # emprestimos - lado negativo
+                cod_empresa, data_anterior,       # emprestimos - lado positivo
+
+                cod_empresa, data_sel,       # medicao_atual
             ]
         )
 
