@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 10px; }
+  .empresa { font-size: 22px; margin-bottom: 24px; }
+
+  .painel {
+    max-width: 1500px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+  }
+
+  .linha-filtro { display: flex; gap: 14px; align-items: end; margin-bottom: 20px; }
+  label { font-weight: 700; margin-bottom: 6px; display: block; }
+
+  input, select {
+    padding: 8px;
+    border: 1px solid #cfcfcf;
+    border-radius: 6px;
+  }
+
+  .btn {
+    padding: 8px 12px;
+    background: #1565c0;
+    color: #fff;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-weight: 700;
+  }
+
+  .btn-limpar {
+    background: #f7f7f7;
+    color: #1f3c88;
+    border: 1px solid #c7c7c7;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { border: 1px solid #dcdcdc; padding: 8px; }
+  th { background: #f1f1f1; }
+
+  .num { text-align: right; }
+  .sem-dados { font-weight: 700; color: #666; margin-top: 12px; }
+</style>
+
+<div class="pagina-titulo">Consultar Empréstimos</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="painel">
+
+  <form method="get">
+    <div class="linha-filtro">
+
+      <div>
+        <label>Mês</label>
+        <select name="mes">
+          {% for m in range(1, 13) %}
+            <option value="{{ m }}" {% if mes_sel == m %}selected{% endif %}>
+              {{ "%02d"|format(m) }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label>Ano</label>
+        <input type="number" name="ano" value="{{ ano_sel }}" style="width: 100px;">
+      </div>
+
+      <div>
+        <label>Filial</label>
+        <select name="cod_filial">
+          <option value="">Todas</option>
+          {% for f in filiais %}
+            <option value="{{ f.cod_filial }}" {% if filial_sel|string == f.cod_filial|string %}selected{% endif %}>
+              {{ f.cod_filial }} - {{ f.nome_filial }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <button type="submit" class="btn">Filtrar</button>
+
+      <a href="{{ url_for('operacoes.consultar_emprestimos') }}" class="btn btn-limpar">
+        Limpar
+      </a>
+
+    </div>
+  </form>
+
+  {% if linhas %}
+
+  <table>
+    <thead>
+      <tr>
+        <th>Data</th>
+        <th>Filial que Comprou</th>
+        <th>Filial que Recebeu</th>
+        <th>Produto</th>
+        <th class="num">Quantidade</th>
+        <th class="num">Preço</th>
+        <th class="num">Valor</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% set ns = namespace(total_qtd=0, total_valor=0) %}
+
+      {% for l in linhas %}
+        {% set ns.total_qtd = ns.total_qtd + (l.quantidade or 0) %}
+        {% set ns.total_valor = ns.total_valor + (l.valor or 0) %}
+
+        <tr>
+          <td>{{ l.data_descarrego.strftime("%d/%m/%Y") if l.data_descarrego else "" }}</td>
+          <td>{{ l.cod_filial_emprestou }} - {{ l.nome_filial_emprestou }}</td>
+          <td>{{ l.cod_filial_recebeu }} - {{ l.nome_filial_recebeu }}</td>
+          <td>{{ l.cod_produto }} - {{ l.produto }}</td>
+          <td class="num">{{ l.quantidade | br }}</td>
+          <td class="num">{{ l.preco_unitario | br }}</td>
+          <td class="num">{{ l.valor | br }}</td>
+        </tr>
+      {% endfor %}
+
+      <tr style="font-weight: 900; background: #f3f3f3;">
+        <td colspan="4">TOTAL</td>
+        <td class="num">{{ ns.total_qtd | br }}</td>
+        <td></td>
+        <td class="num">{{ ns.total_valor | br }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  {% else %}
+    <div class="sem-dados">
+      Nenhum empréstimo encontrado para os filtros informados.
+    </div>
+  {% endif %}
+
+</div>
+
+{% endblock %}

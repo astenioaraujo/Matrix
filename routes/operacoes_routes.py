@@ -65,6 +65,8 @@ def menu_operacoes():
             "pode_consultar_resumo_descarregos": True,
             "pode_consultar_estoques": True,
             "pode_consultar_vendas": True,
+            "pode_consultar_emprestimos": True,
+            "pode_consultar_saldo_emprestimos": True,
             "pode_configuracoes": True,
         }
     else:
@@ -108,6 +110,12 @@ def menu_operacoes():
             ),
             "pode_consultar_vendas": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_VENDAS"
+            ),
+            "pode_consultar_emprestimos": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_EMPRESTIMOS"
+            ),
+            "pode_consultar_saldo_emprestimos": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_SALDO_EMPRESTIMOS"
             ),
             "pode_configuracoes": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "CONFIGURACOES"
@@ -2301,7 +2309,6 @@ def consultar_estoques():
             vendas AS (
                 SELECT
                     cod_filial,
-
                     CASE
                         WHEN codigo_produto::text IN ('1', '9', '543') THEN 'C1'
                         WHEN codigo_produto::text = '2' THEN 'C2'
@@ -2310,12 +2317,10 @@ def consultar_estoques():
                         WHEN codigo_produto::text IN ('4', '8', '10') THEN 'C5'
                         ELSE NULL
                     END AS cod_produto,
-
                     SUM(COALESCE(quantidade, 0)) AS vendas
-
                 FROM vendas_diarias
                 WHERE cod_empresa = %s
-                AND data = %s
+                  AND data = %s
                 GROUP BY
                     cod_filial,
                     CASE
@@ -2328,13 +2333,12 @@ def consultar_estoques():
                     END
             ),
 
-
-
             compras_dia AS (
                 SELECT
                     cod_filial,
                     cod_produto,
-                    SUM(COALESCE(quantidade_comprada, 0)) AS compras
+                    SUM(COALESCE(quantidade_comprada, 0)) AS compras,
+                    SUM(COALESCE(valor_comprado, 0)) AS compras_rs
                 FROM compras_combustiveis
                 WHERE cod_empresa = %s
                   AND data_compra = %s
@@ -2378,47 +2382,6 @@ def consultar_estoques():
                 GROUP BY cod_filial_descarga, cod_produto
             ),
 
-            emprestimos AS (
-                SELECT
-                    x.cod_filial,
-                    x.cod_produto,
-                    SUM(x.emprestimos) AS emprestimos
-                FROM (
-
-                    -- Filial que comprou, mas descarregou em outra
-                    SELECT
-                        cc.cod_filial,
-                        d.cod_produto,
-                        SUM(COALESCE(d.quantidade_descarregada, 0)) * -1 AS emprestimos
-                    FROM descarregos_combustiveis d
-                    JOIN compras_combustiveis cc
-                    ON cc.cod_empresa = d.cod_empresa
-                    AND cc.id_compra = d.id_compra
-                    WHERE d.cod_empresa = %s
-                    AND d.data_descarrego = %s
-                    AND cc.cod_filial <> d.cod_filial_descarga
-                    GROUP BY cc.cod_filial, d.cod_produto
-
-                    UNION ALL
-
-                    -- Filial que recebeu descarga comprada por outra
-                    SELECT
-                        d.cod_filial_descarga AS cod_filial,
-                        d.cod_produto,
-                        SUM(COALESCE(d.quantidade_descarregada, 0)) AS emprestimos
-                    FROM descarregos_combustiveis d
-                    JOIN compras_combustiveis cc
-                    ON cc.cod_empresa = d.cod_empresa
-                    AND cc.id_compra = d.id_compra
-                    WHERE d.cod_empresa = %s
-                    AND d.data_descarrego = %s
-                    AND cc.cod_filial <> d.cod_filial_descarga
-                    GROUP BY d.cod_filial_descarga, d.cod_produto
-
-                ) x
-                GROUP BY x.cod_filial, x.cod_produto
-            ),
-
             medicao_atual AS (
                 SELECT
                     cod_filial,
@@ -2428,6 +2391,17 @@ def consultar_estoques():
                 WHERE cod_empresa = %s
                   AND data_medicao = %s
                 GROUP BY cod_filial, cod_produto
+            ),
+
+            ultima_compra AS (
+                SELECT DISTINCT ON (cod_filial, cod_produto)
+                    cod_filial,
+                    cod_produto,
+                    COALESCE(preco_unitario, 0) AS preco_ultima_compra
+                FROM compras_combustiveis
+                WHERE cod_empresa = %s
+                  AND data_compra <= %s
+                ORDER BY cod_filial, cod_produto, data_compra DESC, id_compra DESC
             )
 
             SELECT
@@ -2442,7 +2416,6 @@ def consultar_estoques():
                 COALESCE(cd.compras, 0) AS compras,
                 COALESCE(t.estoque_transito, 0) AS estoque_transito,
                 COALESCE(ds.descarregos, 0) AS descarregos,
-                COALESCE(e.emprestimos, 0) AS emprestimos,
 
                 (
                     COALESCE(ma.medicao_anterior, 0)
@@ -2450,10 +2423,17 @@ def consultar_estoques():
                     + COALESCE(cd.compras, 0)
                     + COALESCE(t.estoque_transito, 0)
                     + COALESCE(ds.descarregos, 0)
-                    + COALESCE(e.emprestimos, 0)
                 ) AS estoque_calculado,
 
-                COALESCE(mat.medicao_atual, 0) AS medicao_atual
+                COALESCE(mat.medicao_atual, 0) AS medicao_atual,
+
+                COALESCE(uc.preco_ultima_compra, 0) AS preco_ultima_compra,
+
+                COALESCE(mat.medicao_atual, 0) * COALESCE(uc.preco_ultima_compra, 0) AS estoque_atual_rs,
+
+                COALESCE(cd.compras_rs, 0) AS compras_rs,
+
+                COALESCE(t.estoque_transito, 0) * COALESCE(uc.preco_ultima_compra, 0) AS transito_rs
 
             FROM base b
             LEFT JOIN medicao_anterior ma
@@ -2471,12 +2451,12 @@ def consultar_estoques():
             LEFT JOIN descarregos ds
               ON ds.cod_filial = b.cod_filial
              AND ds.cod_produto = b.cod_produto
-            LEFT JOIN emprestimos e
-              ON e.cod_filial = b.cod_filial
-             AND e.cod_produto = b.cod_produto
             LEFT JOIN medicao_atual mat
               ON mat.cod_filial = b.cod_filial
              AND mat.cod_produto = b.cod_produto
+            LEFT JOIN ultima_compra uc
+              ON uc.cod_filial = b.cod_filial
+             AND uc.cod_produto = b.cod_produto
 
             ORDER BY b.cod_filial, b.cod_produto
         """
@@ -2486,16 +2466,13 @@ def consultar_estoques():
             + params_filiais
             + [
                 cod_empresa, data_anterior,  # medicao_anterior
-                cod_empresa, data_anterior,       # vendas
-                cod_empresa, data_anterior,       # compras_dia
-                cod_empresa,                       # transito subquery
-                cod_empresa, data_anterior,       # transito
-                cod_empresa, data_anterior,       # descarregos
-
-                cod_empresa, data_anterior,       # emprestimos - lado negativo
-                cod_empresa, data_anterior,       # emprestimos - lado positivo
-
+                cod_empresa, data_anterior,  # vendas
+                cod_empresa, data_anterior,  # compras_dia
+                cod_empresa,                 # transito subquery
+                cod_empresa, data_anterior,  # transito
+                cod_empresa, data_anterior,  # descarregos
                 cod_empresa, data_sel,       # medicao_atual
+                cod_empresa, data_anterior,  # ultima_compra
             ]
         )
 
@@ -2689,6 +2666,387 @@ def consultar_vendas():
         url_voltar=url_for("operacoes.menu_operacoes"),
         texto_voltar="← Voltar",
     )
+
+# ---------------------------------------
+# CONSULTAR EMPRÉSTIMOS
+# ---------------------------------------
+
+@operacoes_bp.route("/emprestimos/consultar")
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONSULTAR_EMPRESTIMOS",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def consultar_emprestimos():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    hoje = hoje_br()
+
+    ano_sel_txt = (request.args.get("ano") or "").strip()
+    mes_sel_txt = (request.args.get("mes") or "").strip()
+
+    ano_sel = int(ano_sel_txt) if ano_sel_txt.isdigit() else hoje.year
+    mes_sel = int(mes_sel_txt) if mes_sel_txt.isdigit() else hoje.month
+
+    if mes_sel < 1 or mes_sel > 12:
+        mes_sel = hoje.month
+
+    data_ini = date(ano_sel, mes_sel, 1)
+
+    if mes_sel == 12:
+        data_fim = date(ano_sel + 1, 1, 1)
+    else:
+        data_fim = date(ano_sel, mes_sel + 1, 1)
+
+    filial_sel_txt = (request.args.get("cod_filial") or "").strip()
+    filial_sel = int(filial_sel_txt) if filial_sel_txt.isdigit() else None
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    linhas = []
+    filiais = []
+
+    try:
+        if tipo_global == "superusuario":
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s
+                  AND ativo = TRUE
+                ORDER BY cod_filial
+            """, (cod_empresa,))
+            filiais = cur.fetchall() or []
+        else:
+            filiais_permitidas = [
+                int(x) for x in usuario_filiais_ativas(id_usuario, cod_empresa)
+            ]
+
+            if not filiais_permitidas:
+                flash("Você não possui filiais habilitadas.", "error")
+                return redirect(url_for("operacoes.menu_operacoes"))
+
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s
+                  AND ativo = TRUE
+                  AND cod_filial = ANY(%s)
+                ORDER BY cod_filial
+            """, (cod_empresa, filiais_permitidas))
+            filiais = cur.fetchall() or []
+
+        codigos_filiais = [int(f["cod_filial"]) for f in filiais]
+
+        if filial_sel is not None and tipo_global != "superusuario" and filial_sel not in codigos_filiais:
+            flash("Filial não permitida para este usuário.", "error")
+            return redirect(url_for("operacoes.consultar_emprestimos"))
+
+        filtros = [
+            "d.cod_empresa = %s",
+            "d.data_descarrego >= %s",
+            "d.data_descarrego < %s",
+            "cc.cod_filial <> d.cod_filial_descarga",
+        ]
+
+        params = [cod_empresa, data_ini, data_fim]
+
+        if filial_sel is not None:
+            filtros.append("(cc.cod_filial = %s OR d.cod_filial_descarga = %s)")
+            params.extend([filial_sel, filial_sel])
+        elif tipo_global != "superusuario":
+            filtros.append("(cc.cod_filial = ANY(%s) OR d.cod_filial_descarga = ANY(%s))")
+            params.extend([codigos_filiais, codigos_filiais])
+
+        where_sql = " AND ".join(filtros)
+
+        cur.execute(f"""
+            SELECT
+                d.id_descarrego,
+                d.data_descarrego,
+                d.cod_produto,
+                c.descricao AS produto,
+
+                cc.cod_filial AS cod_filial_emprestou,
+                fe.nome_filial AS nome_filial_emprestou,
+
+                d.cod_filial_descarga AS cod_filial_recebeu,
+                fr.nome_filial AS nome_filial_recebeu,
+
+                d.quantidade_descarregada AS quantidade,
+
+                COALESCE(cc.preco_unitario, 0) AS preco_unitario,
+
+                COALESCE(d.quantidade_descarregada, 0) * COALESCE(cc.preco_unitario, 0) AS valor
+
+            FROM descarregos_combustiveis d
+
+            JOIN compras_combustiveis cc
+              ON cc.cod_empresa = d.cod_empresa
+             AND cc.id_compra = d.id_compra
+
+            LEFT JOIN filiais fe
+              ON fe.cod_empresa = cc.cod_empresa
+             AND fe.cod_filial = cc.cod_filial
+
+            LEFT JOIN filiais fr
+              ON fr.cod_empresa = d.cod_empresa
+             AND fr.cod_filial = d.cod_filial_descarga
+
+            LEFT JOIN combustiveis c
+              ON c.cod_empresa = d.cod_empresa
+             AND c.cod_produto = d.cod_produto
+
+            WHERE {where_sql}
+
+            ORDER BY
+                d.data_descarrego,
+                cc.cod_filial,
+                d.cod_filial_descarga,
+                d.cod_produto
+        """, params)
+
+        linhas = cur.fetchall() or []
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao consultar empréstimos: {e}", "error")
+        linhas = []
+        filiais = []
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "consultar_emprestimos.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        ano_sel=ano_sel,
+        mes_sel=mes_sel,
+        filial_sel=filial_sel,
+        filiais=filiais,
+        linhas=linhas,
+        url_voltar=url_for("operacoes.menu_operacoes"),
+        texto_voltar="← Voltar",
+    )
+
+# ---------------------------------------
+# CONSULTAR SALDO DE EMPRÉSTIMOS
+# ---------------------------------------
+
+@operacoes_bp.route("/emprestimos/saldo")
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONSULTAR_SALDO_EMPRESTIMOS",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def consultar_saldo_emprestimos():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    filial_sel_txt = (request.args.get("cod_filial") or "").strip()
+    filial_sel = int(filial_sel_txt) if filial_sel_txt.isdigit() else None
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    linhas = []
+    filiais = []
+
+    try:
+        if tipo_global == "superusuario":
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s
+                  AND ativo = TRUE
+                ORDER BY cod_filial
+            """, (cod_empresa,))
+            filiais = cur.fetchall() or []
+        else:
+            filiais_permitidas = [
+                int(x) for x in usuario_filiais_ativas(id_usuario, cod_empresa)
+            ]
+
+            if not filiais_permitidas:
+                flash("Você não possui filiais habilitadas.", "error")
+                return redirect(url_for("operacoes.menu_operacoes"))
+
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s
+                  AND ativo = TRUE
+                  AND cod_filial = ANY(%s)
+                ORDER BY cod_filial
+            """, (cod_empresa, filiais_permitidas))
+            filiais = cur.fetchall() or []
+
+        codigos_filiais = [int(f["cod_filial"]) for f in filiais]
+
+        if filial_sel is not None and tipo_global != "superusuario" and filial_sel not in codigos_filiais:
+            flash("Filial não permitida para este usuário.", "error")
+            return redirect(url_for("operacoes.consultar_saldo_emprestimos"))
+
+        filtros = [
+            "d.cod_empresa = %s",
+            "cc.cod_filial <> d.cod_filial_descarga",
+        ]
+
+        params = [cod_empresa]
+
+        if filial_sel is not None:
+            filtros.append("(cc.cod_filial = %s OR d.cod_filial_descarga = %s)")
+            params.extend([filial_sel, filial_sel])
+        elif tipo_global != "superusuario":
+            filtros.append("(cc.cod_filial = ANY(%s) OR d.cod_filial_descarga = ANY(%s))")
+            params.extend([codigos_filiais, codigos_filiais])
+
+        where_sql = " AND ".join(filtros)
+
+        cur.execute(f"""
+            WITH movimentos AS (
+                SELECT
+                    LEAST(cc.cod_filial, d.cod_filial_descarga) AS filial_a,
+                    GREATEST(cc.cod_filial, d.cod_filial_descarga) AS filial_b,
+                    cc.cod_filial AS filial_credora,
+                    d.cod_filial_descarga AS filial_devedora,
+                    d.cod_produto,
+                    c.descricao AS produto,
+                    COALESCE(d.quantidade_descarregada, 0) AS quantidade,
+                    COALESCE(cc.preco_unitario, 0) AS preco_unitario,
+                    COALESCE(d.quantidade_descarregada, 0) * COALESCE(cc.preco_unitario, 0) AS valor
+                FROM descarregos_combustiveis d
+                JOIN compras_combustiveis cc
+                  ON cc.cod_empresa = d.cod_empresa
+                 AND cc.id_compra = d.id_compra
+                LEFT JOIN combustiveis c
+                  ON c.cod_empresa = d.cod_empresa
+                 AND c.cod_produto = d.cod_produto
+                WHERE {where_sql}
+            ),
+
+            saldos AS (
+                SELECT
+                    filial_a,
+                    filial_b,
+                    cod_produto,
+                    produto,
+
+                    SUM(
+                        CASE
+                            WHEN filial_devedora = filial_a AND filial_credora = filial_b
+                                THEN quantidade
+                            WHEN filial_devedora = filial_b AND filial_credora = filial_a
+                                THEN quantidade * -1
+                            ELSE 0
+                        END
+                    ) AS saldo_quantidade,
+
+                    SUM(
+                        CASE
+                            WHEN filial_devedora = filial_a AND filial_credora = filial_b
+                                THEN valor
+                            WHEN filial_devedora = filial_b AND filial_credora = filial_a
+                                THEN valor * -1
+                            ELSE 0
+                        END
+                    ) AS saldo_valor
+
+                FROM movimentos
+                GROUP BY filial_a, filial_b, cod_produto, produto
+            )
+
+            SELECT
+                CASE
+                    WHEN s.saldo_quantidade > 0 THEN s.filial_a
+                    ELSE s.filial_b
+                END AS cod_filial_devedora,
+
+                CASE
+                    WHEN s.saldo_quantidade > 0 THEN fd_a.nome_filial
+                    ELSE fd_b.nome_filial
+                END AS nome_filial_devedora,
+
+                CASE
+                    WHEN s.saldo_quantidade > 0 THEN s.filial_b
+                    ELSE s.filial_a
+                END AS cod_filial_credora,
+
+                CASE
+                    WHEN s.saldo_quantidade > 0 THEN fd_b.nome_filial
+                    ELSE fd_a.nome_filial
+                END AS nome_filial_credora,
+
+                s.cod_produto,
+                s.produto,
+                ABS(s.saldo_quantidade) AS quantidade,
+                CASE
+                    WHEN ABS(s.saldo_quantidade) > 0
+                    THEN ABS(s.saldo_valor) / ABS(s.saldo_quantidade)
+                    ELSE 0
+                END AS preco_medio,
+                ABS(s.saldo_valor) AS valor
+
+            FROM saldos s
+
+            LEFT JOIN filiais fd_a
+              ON fd_a.cod_empresa = %s
+             AND fd_a.cod_filial = s.filial_a
+
+            LEFT JOIN filiais fd_b
+              ON fd_b.cod_empresa = %s
+             AND fd_b.cod_filial = s.filial_b
+
+            WHERE ABS(s.saldo_quantidade) > 0.0001
+
+            ORDER BY
+                cod_filial_devedora,
+                cod_filial_credora,
+                s.cod_produto
+        """, params + [cod_empresa, cod_empresa])
+
+        linhas = cur.fetchall() or []
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao consultar saldo de empréstimos: {e}", "error")
+        linhas = []
+        filiais = []
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "consultar_saldo_emprestimos.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        filial_sel=filial_sel,
+        filiais=filiais,
+        linhas=linhas,
+        url_voltar=url_for("operacoes.menu_operacoes"),
+        texto_voltar="← Voltar",
+    )
+
 # --------------------------------
 # AJAX - SALVAR PRECOS
 # --------------------------------

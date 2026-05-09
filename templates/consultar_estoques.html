@@ -22,7 +22,7 @@
 
   table {
     width: max-content;
-    min-width: 2100px;
+    min-width: 1750px;
     border-collapse: collapse;
     font-size: 14px;
     table-layout: fixed;
@@ -30,7 +30,7 @@
 
   th, td {
     border: 1px solid #dcdcdc;
-    padding: 8px;
+    padding: 6px;
     white-space: nowrap;
   }
 
@@ -65,9 +65,9 @@
     cursor: pointer;
   }
 
-  .col-filial { width: 170px; font-weight: 800; }
-  .col-produto { width: 220px; font-weight: 700; }
-  .col-num { width: 135px; text-align: right; }
+  .col-filial { width: 150px; font-weight: 800; }
+  .col-produto { width: 190px; font-weight: 700; }
+  .col-num { width: 115px; text-align: right; }
 
   .divisor-direita {
     border-right: 3px solid #666 !important;
@@ -149,8 +149,11 @@
         <th class="col-num">Medição Atual<br>{{ data_sel[8:10] }}/{{ data_sel[5:7] }}/{{ data_sel[0:4] }}</th>
         <th class="col-num divisor-direita">Perdas/Sobras</th>
         <th class="col-num">Compras</th>
-        <th class="col-num">Estoque em Trânsito</th>
-        <th class="col-num">Empréstimos</th>
+        <th class="col-num divisor-direita">Estoque em Trânsito</th>
+        <th class="col-num">Estoque Atual R$</th>
+        <th class="col-num">Compras R$</th>
+        <th class="col-num">Trânsito R$</th>
+        <th class="col-num">Total R$</th>
       </tr>
     </thead>
 
@@ -163,22 +166,28 @@
         f_compras=0,
         f_transito=0,
         f_descarregos=0,
-        f_emprestimos=0,
         f_vendas=0,
         f_calculado=0,
         f_atual=0,
         f_perda=0,
+        f_estoque_atual_rs=0,
+        f_compras_rs=0,
+        f_transito_rs=0,
+        f_total_rs=0,
 
         g_capacidade=0,
         g_anterior=0,
         g_compras=0,
         g_transito=0,
         g_descarregos=0,
-        g_emprestimos=0,
         g_vendas=0,
         g_calculado=0,
         g_atual=0,
-        g_perda=0
+        g_perda=0,
+        g_estoque_atual_rs=0,
+        g_compras_rs=0,
+        g_transito_rs=0,
+        g_total_rs=0
       ) %}
 
       {% for l in linhas %}
@@ -198,11 +207,29 @@
               {{ ns.f_perda | br }}
             </td>
             <td class="col-num">{{ ns.f_compras | br }}</td>
-            <td class="col-num">{{ ns.f_transito | br }}</td>
-            <td class="col-num">{{ ns.f_emprestimos | br }}</td>
+            
+            <td class="col-num divisor-direita">
+              {{ ns.f_transito | br }}
+            </td>
+
+            <td class="col-num">
+              {{ ns.f_estoque_atual_rs | br }}
+            </td>
+
+            <td class="col-num">
+              {{ ns.f_compras_rs | br }}
+            </td>
+
+            <td class="col-num">
+              {{ ns.f_transito_rs | br }}
+            </td>
+
+            <td class="col-num">
+              {{ ns.f_total_rs | br }}
+            </td>
           </tr>
 
-            <tr class="linha-espaco"><td colspan="13"></td></tr>
+            <tr class="linha-espaco"><td colspan="15"></td></tr>
           {% endif %}
 
           {% set ns.filial_atual = l.cod_filial %}
@@ -212,14 +239,17 @@
           {% set ns.f_compras = 0 %}
           {% set ns.f_transito = 0 %}
           {% set ns.f_descarregos = 0 %}
-          {% set ns.f_emprestimos = 0 %}
           {% set ns.f_vendas = 0 %}
           {% set ns.f_calculado = 0 %}
           {% set ns.f_atual = 0 %}
           {% set ns.f_perda = 0 %}
+          {% set ns.f_estoque_atual_rs = 0 %}
+          {% set ns.f_compras_rs = 0 %}
+          {% set ns.f_transito_rs = 0 %}
+          {% set ns.f_total_rs = 0 %}
 
           <tr class="linha-filial">
-            <td colspan="13">{{ l.cod_filial }} - {{ l.nome_filial }}</td>
+            <td colspan="15">{{ l.cod_filial }} - {{ l.nome_filial }}</td>
           </tr>
 
         {% endif %}
@@ -227,28 +257,39 @@
         {% set med = l.medicao_atual or 0 %}
         {% set calc = (l.medicao_anterior or 0) + (l.descarregos or 0) - (l.vendas or 0) %}
         {% set perda_sobra = med - calc %}
+        {% set estoque_atual_rs = l.estoque_atual_rs or 0 %}
+        {% set compras_rs = l.compras_rs or 0 %}
+        {% set transito_rs = l.transito_rs or 0 %}
+        {% set total_rs = estoque_atual_rs + compras_rs + transito_rs %}
 
         {% set ns.f_capacidade = ns.f_capacidade + (l.capacidade_tanque or 0) %}
         {% set ns.f_anterior = ns.f_anterior + (l.medicao_anterior or 0) %}
         {% set ns.f_compras = ns.f_compras + (l.compras or 0) %}
         {% set ns.f_transito = ns.f_transito + (l.estoque_transito or 0) %}
         {% set ns.f_descarregos = ns.f_descarregos + (l.descarregos or 0) %}
-        {% set ns.f_emprestimos = ns.f_emprestimos + (l.emprestimos or 0) %}
         {% set ns.f_vendas = ns.f_vendas + (l.vendas or 0) %}
         {% set ns.f_calculado = ns.f_calculado + calc %}
         {% set ns.f_atual = ns.f_atual + (l.medicao_atual or 0) %}
         {% set ns.f_perda = ns.f_perda + perda_sobra %}
+        {% set ns.f_compras_rs = ns.f_compras_rs + compras_rs %}
+        {% set ns.f_transito_rs = ns.f_transito_rs + transito_rs %}
+        {% set ns.f_total_rs = ns.f_total_rs + total_rs %}
 
         {% set ns.g_capacidade = ns.g_capacidade + (l.capacidade_tanque or 0) %}
         {% set ns.g_anterior = ns.g_anterior + (l.medicao_anterior or 0) %}
         {% set ns.g_compras = ns.g_compras + (l.compras or 0) %}
         {% set ns.g_transito = ns.g_transito + (l.estoque_transito or 0) %}
         {% set ns.g_descarregos = ns.g_descarregos + (l.descarregos or 0) %}
-        {% set ns.g_emprestimos = ns.g_emprestimos + (l.emprestimos or 0) %}
         {% set ns.g_vendas = ns.g_vendas + (l.vendas or 0) %}
         {% set ns.g_calculado = ns.g_calculado + calc %}
         {% set ns.g_atual = ns.g_atual + (l.medicao_atual or 0) %}
         {% set ns.g_perda = ns.g_perda + perda_sobra %}
+        {% set ns.f_estoque_atual_rs = ns.f_estoque_atual_rs + estoque_atual_rs %}
+        {% set ns.g_estoque_atual_rs = ns.g_estoque_atual_rs + estoque_atual_rs %}
+        {% set ns.g_compras_rs = ns.g_compras_rs + compras_rs %}
+        {% set ns.g_transito_rs = ns.g_transito_rs + transito_rs %}
+        {% set ns.g_total_rs = ns.g_total_rs + total_rs %}
+
 
         <tr>
           <td class="col-filial"></td>
@@ -263,8 +304,11 @@
             {{ perda_sobra | br }}
           </td>
           <td class="col-num">{{ l.compras | br }}</td>
-          <td class="col-num">{{ l.estoque_transito | br }}</td>
-          <td class="col-num">{{ l.emprestimos | br }}</td>
+          <td class="col-num divisor-direita">{{ l.estoque_transito | br }}</td>
+          <td class="col-num">{{ estoque_atual_rs | br }}</td>
+          <td class="col-num">{{ compras_rs | br }}</td>
+          <td class="col-num">{{ transito_rs | br }}</td>
+          <td class="col-num">{{ total_rs | br }}</td>
         </tr>
 
       {% endfor %}
@@ -282,11 +326,14 @@
             {{ ns.f_perda | br }}
           </td>
           <td class="col-num">{{ ns.f_compras | br }}</td>
-          <td class="col-num">{{ ns.f_transito | br }}</td>
-          <td class="col-num">{{ ns.f_emprestimos | br }}</td>
+          <td class="col-num divisor-direita">{{ ns.f_transito | br }}</td>
+          <td class="col-num">{{ ns.f_estoque_atual_rs | br }}</td>
+          <td class="col-num">{{ ns.f_compras_rs | br }}</td>
+          <td class="col-num">{{ ns.f_transito_rs | br }}</td>
+          <td class="col-num">{{ ns.f_total_rs | br }}</td>
         </tr>
 
-        <tr class="linha-espaco"><td colspan="13"></td></tr>
+        <tr class="linha-espaco"><td colspan="15"></td></tr>
 
         <tr class="linha-total-geral">
           <td colspan="2">TOTAL GERAL</td>
@@ -300,8 +347,11 @@
             {{ ns.g_perda | br }}
           </td>
           <td class="col-num">{{ ns.g_compras | br }}</td>
-          <td class="col-num">{{ ns.g_transito | br }}</td>
-          <td class="col-num">{{ ns.g_emprestimos | br }}</td>
+          <td class="col-num divisor-direita">{{ ns.g_transito | br }}</td>
+          <td class="col-num">{{ ns.g_estoque_atual_rs | br }}</td>
+          <td class="col-num">{{ ns.g_compras_rs | br }}</td>
+          <td class="col-num">{{ ns.g_transito_rs | br }}</td>
+          <td class="col-num">{{ ns.g_total_rs | br }}</td>
         </tr>
       {% endif %}
 

@@ -146,7 +146,6 @@
   </a>
   {% endif %}
   
-
   
   {% if pode_consultar_vendas %}
   <a href="{{ url_for('operacoes.consultar_vendas') }}" class="btn-consultar">
@@ -154,6 +153,20 @@
   </a>
   {% endif %}
 
+  {% if pode_consultar_emprestimos %}
+  <a href="{{ url_for('operacoes.consultar_emprestimos') }}" class="btn-consultar">
+    Consultar Empréstimos
+  </a>
+  {% endif %}
+
+  
+  {% if pode_consultar_saldo_emprestimos %}
+  <a href="{{ url_for('operacoes.consultar_saldo_emprestimos') }}" class="btn-consultar">
+    Consultar Saldo de Empréstimos
+  </a>
+  {% endif %}
+
+  
   {% if pode_configuracoes %}
     <a href="{{ url_for('operacoes.menu_configuracoes') }}" class="btn-config">
       Configurações de Operações
