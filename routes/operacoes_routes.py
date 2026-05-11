@@ -154,6 +154,24 @@ def informar_medicoes():
 
     hoje = hoje_br()
 
+    datas_permitidas = [hoje]
+
+    # Segunda-feira: permite hoje, domingo e sábado
+    if hoje.weekday() == 0:
+        datas_permitidas.append(hoje - timedelta(days=1))  # domingo
+        datas_permitidas.append(hoje - timedelta(days=2))  # sábado
+
+    data_medicao_txt = (request.values.get("data_medicao") or hoje.isoformat()).strip()
+
+    try:
+        data_medicao = date.fromisoformat(data_medicao_txt)
+    except ValueError:
+        data_medicao = hoje
+
+    if data_medicao not in datas_permitidas:
+        flash("Data de medição não permitida.", "error")
+        data_medicao = hoje
+
     # BLOQUEIO REMOVIDO
     bloqueado_horario = False
 
@@ -240,7 +258,7 @@ def informar_medicoes():
                   AND cod_filial = %s
                   AND data_medicao = %s
                 """,
-                (cod_empresa, filial_sel, hoje),
+                (cod_empresa, filial_sel, data_medicao),
             )
             rows = cur.fetchall() or []
 
@@ -311,12 +329,16 @@ def informar_medicoes():
                         quantidade_medida = EXCLUDED.quantidade_medida,
                         atualizado_em = NOW()
                     """,
-                    (cod_empresa, cod_filial, hoje, cod_produto, quantidade),
+                    (cod_empresa, cod_filial, data_medicao, cod_produto, quantidade),
                 )
 
             conn.commit()
             flash("Medições salvas com sucesso.", "success")
-            return redirect(url_for("operacoes.informar_medicoes", cod_filial=cod_filial))
+            return redirect(url_for(
+                "operacoes.informar_medicoes",
+                cod_filial=cod_filial,
+                data_medicao=data_medicao.isoformat()
+            ))
 
     except Exception as e:
         conn.rollback()
@@ -332,6 +354,9 @@ def informar_medicoes():
         nome_empresa=nome_empresa,
         hoje=hoje.strftime("%d/%m/%Y"),
         hoje_iso=hoje.isoformat(),
+        data_medicao=data_medicao.strftime("%d/%m/%Y"),
+        data_medicao_iso=data_medicao.isoformat(),
+        datas_permitidas=datas_permitidas,
         bloqueado_horario=bloqueado_horario,
         filiais=filiais,
         filial_sel=filial_sel,
@@ -3164,6 +3189,23 @@ def ajax_salvar_medicao():
 
     hoje = hoje_br()
 
+    datas_permitidas = [hoje]
+
+    # Segunda-feira: permite hoje, domingo e sábado
+    if hoje.weekday() == 0:
+        datas_permitidas.append(hoje - timedelta(days=1))  # domingo
+        datas_permitidas.append(hoje - timedelta(days=2))  # sábado
+
+    data_medicao_txt = (request.form.get("data_medicao") or hoje.isoformat()).strip()
+
+    try:
+        data_medicao = date.fromisoformat(data_medicao_txt)
+    except ValueError:
+        data_medicao = hoje
+
+    if data_medicao not in datas_permitidas:
+        return {"ok": False, "erro": "Data de medição não permitida."}, 400
+
     conn = get_connection()
     cur = conn.cursor()
 
@@ -3205,7 +3247,7 @@ def ajax_salvar_medicao():
                 atualizado_em = NOW()
             """,
             (
-                cod_empresa, cod_filial, hoje, cod_produto,
+                cod_empresa, cod_filial, data_medicao, cod_produto,
                 campo, quantidade,
                 campo, quantidade,
                 campo, quantidade,

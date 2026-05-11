@@ -148,12 +148,26 @@
     <div class="linha-topo">
       <div class="campo">
         <label>Data</label>
-        <input type="text" value="{{ hoje }}" readonly>
+        <select
+          name="data_medicao"
+          id="data_medicao"
+          onchange="window.location='{{ url_for('operacoes.informar_medicoes') }}?cod_filial={{ filial_sel or '' }}&data_medicao=' + this.value"
+        >
+          {% for d in datas_permitidas %}
+            <option value="{{ d.isoformat() }}" {% if data_medicao_iso == d.isoformat() %}selected{% endif %}>
+              {{ d.strftime("%d/%m/%Y") }}
+            </option>
+          {% endfor %}
+        </select>
       </div>
 
       <div class="campo">
         <label for="cod_filial">Filial</label>
-        <select name="cod_filial" id="cod_filial" onchange="window.location='{{ url_for('operacoes.informar_medicoes') }}?cod_filial=' + this.value">
+        <select
+          name="cod_filial"
+          id="cod_filial"
+          onchange="trocarFilial(this.value)"
+        >
           <option value="">Selecione</option>
           {% for f in filiais %}
             <option value="{{ f.cod_filial }}" {% if filial_sel|string == f.cod_filial|string %}selected{% endif %}>
@@ -260,6 +274,25 @@
 </div>
 
 <script>
+  
+  function trocarData(data) {
+    const filial = document.getElementById("cod_filial").value;
+
+    window.location =
+      "{{ url_for('operacoes.informar_medicoes') }}" +
+      "?cod_filial=" + filial +
+      "&data_medicao=" + data;
+  }
+
+  function trocarFilial(filial) {
+    const data = document.getElementById("data_medicao").value;
+
+    window.location =
+      "{{ url_for('operacoes.informar_medicoes') }}" +
+      "?cod_filial=" + filial +
+      "&data_medicao=" + data;
+  }
+  
   function formatarNumeroBR(valor) {
     if (!valor) return "";
 
@@ -298,6 +331,7 @@
 
     const formData = new URLSearchParams();
     formData.append("cod_filial", codFilial);
+    formData.append("data_medicao", "{{ data_medicao_iso }}");
     formData.append("cod_produto", codProduto);
     formData.append("campo", campo);
     formData.append("valor", input.value);

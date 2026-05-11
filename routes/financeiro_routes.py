@@ -1643,19 +1643,24 @@ def exclusoes():
         # EXCLUSÃO (POST)
         # =========================
         if request.method == "POST":
-            ids = request.form.getlist("ids_marcados")
+            ids_raw = request.form.getlist("ids_marcados")
+
+            try:
+                ids = [int(x) for x in ids_raw if str(x).strip().isdigit()]
+            except Exception:
+                ids = []
 
             if ids:
-                cur.execute(f"""
+                cur.execute("""
                     DELETE FROM lancamentos
-                    WHERE id_lancamento = ANY(%s)
+                    WHERE id_lancamento = ANY(%s::int[])
                       AND cod_empresa = %s
                 """, (ids, cod_empresa))
 
                 conn.commit()
                 mensagem = f"{len(ids)} lançamento(s) excluído(s) com sucesso."
             else:
-                erro = "Nenhum registro selecionado."
+                erro = "Nenhum registro válido selecionado."
 
         # =========================
         # FILTROS DINÂMICOS
