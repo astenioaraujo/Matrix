@@ -2427,6 +2427,16 @@ def consultar_estoques():
                 WHERE cod_empresa = %s
                   AND data_compra <= %s
                 ORDER BY cod_filial, cod_produto, data_compra DESC, id_compra DESC
+            ),
+
+            preco_data AS (
+                SELECT DISTINCT ON (cod_produto)
+                    cod_produto,
+                    COALESCE(preco_compra, 0) AS preco_tabela
+                FROM precos_compra
+                WHERE cod_empresa = %s
+                AND data_preco <= %s
+                ORDER BY cod_produto, data_preco DESC
             )
 
             SELECT
@@ -2452,13 +2462,15 @@ def consultar_estoques():
 
                 COALESCE(mat.medicao_atual, 0) AS medicao_atual,
 
-                COALESCE(uc.preco_ultima_compra, 0) AS preco_ultima_compra,
+                COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, 0) AS preco_ultima_compra,
 
-                COALESCE(mat.medicao_atual, 0) * COALESCE(uc.preco_ultima_compra, 0) AS estoque_atual_rs,
+                COALESCE(mat.medicao_atual, 0) 
+                * COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, 0) AS estoque_atual_rs,
 
                 COALESCE(cd.compras_rs, 0) AS compras_rs,
 
-                COALESCE(t.estoque_transito, 0) * COALESCE(uc.preco_ultima_compra, 0) AS transito_rs
+                COALESCE(t.estoque_transito, 0)
+                * COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, 0) AS transito_rs
 
             FROM base b
             LEFT JOIN medicao_anterior ma
@@ -2482,8 +2494,10 @@ def consultar_estoques():
             LEFT JOIN ultima_compra uc
               ON uc.cod_filial = b.cod_filial
              AND uc.cod_produto = b.cod_produto
+            LEFT JOIN preco_data pd
+              ON pd.cod_produto = b.cod_produto
 
-            ORDER BY b.cod_filial, b.cod_produto
+                ORDER BY b.cod_filial, b.cod_produto
         """
 
         params = (
@@ -2498,6 +2512,7 @@ def consultar_estoques():
                 cod_empresa, data_anterior,  # descarregos
                 cod_empresa, data_sel,       # medicao_atual
                 cod_empresa, data_anterior,  # ultima_compra
+                cod_empresa, data_sel,       # preco_data
             ]
         )
 
