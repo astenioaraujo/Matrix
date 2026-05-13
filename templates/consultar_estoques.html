@@ -22,7 +22,7 @@
 
   table {
     width: max-content;
-    min-width: 1750px;
+    min-width: 1870px;
     border-collapse: collapse;
     font-size: 14px;
     table-layout: fixed;
@@ -55,6 +55,32 @@
     border-radius: 6px;
   }
 
+  .data-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .data-nav input {
+    flex: 1;
+  }
+
+  .btn-data-nav {
+    width: 38px;
+    height: 38px;
+    border: 1px solid #c7c7c7;
+    border-radius: 9px;
+    background: #c8e6c9;
+    color: #111;
+    font-size: 18px;
+    font-weight: 900;
+    cursor: pointer;
+  }
+
+  .btn-data-nav:hover {
+    background: #a5d6a7;
+  }
+
   .btn {
     padding: 9px 14px;
     border-radius: 8px;
@@ -72,6 +98,7 @@
   .divisor-direita {
     border-right: 3px solid #666 !important;
   }
+
   .linha-filial td {
     background: #eef4ff;
     font-weight: 900;
@@ -95,7 +122,8 @@
     background: #fff;
   }
 
-  .total-calculado {
+  .total-calculado,
+  .total-litros {
     background: #fffbe6;
     font-weight: 900;
   }
@@ -128,8 +156,14 @@
   <form method="get">
     <div class="linha-filtro">
       <div>
-        <label>Data do Estoque</label>
-        <input type="date" name="data" value="{{ data_sel }}">
+        <label for="data">Data do Estoque</label>
+        <div class="data-nav">
+          <button type="button" class="btn-data-nav" onclick="mudarData(-1)">←</button>
+
+          <input type="date" id="data" name="data" value="{{ data_sel }}">
+
+          <button type="button" class="btn-data-nav" onclick="mudarData(1)">→</button>
+        </div>
       </div>
 
       <button type="submit" class="btn">Filtrar</button>
@@ -149,7 +183,8 @@
         <th class="col-num">Medição Atual<br>{{ data_sel[8:10] }}/{{ data_sel[5:7] }}/{{ data_sel[0:4] }}</th>
         <th class="col-num divisor-direita">Perdas/Sobras</th>
         <th class="col-num">Compras</th>
-        <th class="col-num divisor-direita">Estoque em Trânsito</th>
+        <th class="col-num">Estoque em Trânsito</th>
+        <th class="col-num divisor-direita total-litros">TOTAL em litros</th>
         <th class="col-num">Estoque Atual R$</th>
         <th class="col-num">Compras R$</th>
         <th class="col-num">Trânsito R$</th>
@@ -165,6 +200,7 @@
         f_anterior=0,
         f_compras=0,
         f_transito=0,
+        f_total_litros=0,
         f_descarregos=0,
         f_vendas=0,
         f_calculado=0,
@@ -179,6 +215,7 @@
         g_anterior=0,
         g_compras=0,
         g_transito=0,
+        g_total_litros=0,
         g_descarregos=0,
         g_vendas=0,
         g_calculado=0,
@@ -207,29 +244,15 @@
               {{ ns.f_perda | br }}
             </td>
             <td class="col-num">{{ ns.f_compras | br }}</td>
-            
-            <td class="col-num divisor-direita">
-              {{ ns.f_transito | br }}
-            </td>
-
-            <td class="col-num">
-              {{ ns.f_estoque_atual_rs | br }}
-            </td>
-
-            <td class="col-num">
-              {{ ns.f_compras_rs | br }}
-            </td>
-
-            <td class="col-num">
-              {{ ns.f_transito_rs | br }}
-            </td>
-
-            <td class="col-num">
-              {{ ns.f_total_rs | br }}
-            </td>
+            <td class="col-num">{{ ns.f_transito | br }}</td>
+            <td class="col-num divisor-direita total-litros">{{ ns.f_total_litros | br }}</td>
+            <td class="col-num">{{ ns.f_estoque_atual_rs | br }}</td>
+            <td class="col-num">{{ ns.f_compras_rs | br }}</td>
+            <td class="col-num">{{ ns.f_transito_rs | br }}</td>
+            <td class="col-num">{{ ns.f_total_rs | br }}</td>
           </tr>
 
-            <tr class="linha-espaco"><td colspan="15"></td></tr>
+          <tr class="linha-espaco"><td colspan="16"></td></tr>
           {% endif %}
 
           {% set ns.filial_atual = l.cod_filial %}
@@ -238,6 +261,7 @@
           {% set ns.f_anterior = 0 %}
           {% set ns.f_compras = 0 %}
           {% set ns.f_transito = 0 %}
+          {% set ns.f_total_litros = 0 %}
           {% set ns.f_descarregos = 0 %}
           {% set ns.f_vendas = 0 %}
           {% set ns.f_calculado = 0 %}
@@ -249,7 +273,7 @@
           {% set ns.f_total_rs = 0 %}
 
           <tr class="linha-filial">
-            <td colspan="15">{{ l.cod_filial }} - {{ l.nome_filial }}</td>
+            <td colspan="16">{{ l.cod_filial }} - {{ l.nome_filial }}</td>
           </tr>
 
         {% endif %}
@@ -257,6 +281,7 @@
         {% set med = l.medicao_atual or 0 %}
         {% set calc = (l.medicao_anterior or 0) + (l.descarregos or 0) - (l.vendas or 0) %}
         {% set perda_sobra = med - calc %}
+        {% set total_litros = med + (l.compras or 0) + (l.estoque_transito or 0) %}
         {% set estoque_atual_rs = l.estoque_atual_rs or 0 %}
         {% set compras_rs = l.compras_rs or 0 %}
         {% set transito_rs = l.transito_rs or 0 %}
@@ -266,6 +291,7 @@
         {% set ns.f_anterior = ns.f_anterior + (l.medicao_anterior or 0) %}
         {% set ns.f_compras = ns.f_compras + (l.compras or 0) %}
         {% set ns.f_transito = ns.f_transito + (l.estoque_transito or 0) %}
+        {% set ns.f_total_litros = ns.f_total_litros + total_litros %}
         {% set ns.f_descarregos = ns.f_descarregos + (l.descarregos or 0) %}
         {% set ns.f_vendas = ns.f_vendas + (l.vendas or 0) %}
         {% set ns.f_calculado = ns.f_calculado + calc %}
@@ -279,6 +305,7 @@
         {% set ns.g_anterior = ns.g_anterior + (l.medicao_anterior or 0) %}
         {% set ns.g_compras = ns.g_compras + (l.compras or 0) %}
         {% set ns.g_transito = ns.g_transito + (l.estoque_transito or 0) %}
+        {% set ns.g_total_litros = ns.g_total_litros + total_litros %}
         {% set ns.g_descarregos = ns.g_descarregos + (l.descarregos or 0) %}
         {% set ns.g_vendas = ns.g_vendas + (l.vendas or 0) %}
         {% set ns.g_calculado = ns.g_calculado + calc %}
@@ -289,7 +316,6 @@
         {% set ns.g_compras_rs = ns.g_compras_rs + compras_rs %}
         {% set ns.g_transito_rs = ns.g_transito_rs + transito_rs %}
         {% set ns.g_total_rs = ns.g_total_rs + total_rs %}
-
 
         <tr>
           <td class="col-filial"></td>
@@ -304,7 +330,8 @@
             {{ perda_sobra | br }}
           </td>
           <td class="col-num">{{ l.compras | br }}</td>
-          <td class="col-num divisor-direita">{{ l.estoque_transito | br }}</td>
+          <td class="col-num">{{ l.estoque_transito | br }}</td>
+          <td class="col-num divisor-direita total-litros">{{ total_litros | br }}</td>
           <td class="col-num">{{ estoque_atual_rs | br }}</td>
           <td class="col-num">{{ compras_rs | br }}</td>
           <td class="col-num">{{ transito_rs | br }}</td>
@@ -326,14 +353,15 @@
             {{ ns.f_perda | br }}
           </td>
           <td class="col-num">{{ ns.f_compras | br }}</td>
-          <td class="col-num divisor-direita">{{ ns.f_transito | br }}</td>
+          <td class="col-num">{{ ns.f_transito | br }}</td>
+          <td class="col-num divisor-direita total-litros">{{ ns.f_total_litros | br }}</td>
           <td class="col-num">{{ ns.f_estoque_atual_rs | br }}</td>
           <td class="col-num">{{ ns.f_compras_rs | br }}</td>
           <td class="col-num">{{ ns.f_transito_rs | br }}</td>
           <td class="col-num">{{ ns.f_total_rs | br }}</td>
         </tr>
 
-        <tr class="linha-espaco"><td colspan="15"></td></tr>
+        <tr class="linha-espaco"><td colspan="16"></td></tr>
 
         <tr class="linha-total-geral">
           <td colspan="2">TOTAL GERAL</td>
@@ -347,7 +375,8 @@
             {{ ns.g_perda | br }}
           </td>
           <td class="col-num">{{ ns.g_compras | br }}</td>
-          <td class="col-num divisor-direita">{{ ns.g_transito | br }}</td>
+          <td class="col-num">{{ ns.g_transito | br }}</td>
+          <td class="col-num divisor-direita total-litros">{{ ns.g_total_litros | br }}</td>
           <td class="col-num">{{ ns.g_estoque_atual_rs | br }}</td>
           <td class="col-num">{{ ns.g_compras_rs | br }}</td>
           <td class="col-num">{{ ns.g_transito_rs | br }}</td>
@@ -358,5 +387,31 @@
     </tbody>
   </table>
 </div>
+
+<script>
+  function mudarData(dias) {
+    const inputData = document.getElementById("data");
+
+    if (!inputData || !inputData.value) {
+      return;
+    }
+
+    const partes = inputData.value.split("-");
+    const ano = parseInt(partes[0], 10);
+    const mes = parseInt(partes[1], 10) - 1;
+    const dia = parseInt(partes[2], 10);
+
+    const data = new Date(ano, mes, dia);
+    data.setDate(data.getDate() + dias);
+
+    const novoAno = data.getFullYear();
+    const novoMes = String(data.getMonth() + 1).padStart(2, "0");
+    const novoDia = String(data.getDate()).padStart(2, "0");
+
+    inputData.value = `${novoAno}-${novoMes}-${novoDia}`;
+
+    inputData.form.submit();
+  }
+</script>
 
 {% endblock %}
