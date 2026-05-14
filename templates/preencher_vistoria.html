@@ -162,14 +162,18 @@
               <input
                 type="checkbox"
                 class="check-atendido"
+                data-id="{{ i.id_execucao_item }}"
                 name="atendido_{{ i.id_execucao_item }}"
                 value="SIM"
                 {% if i.atendido == 'SIM' %}checked{% endif %}>
             </td>
 
             <td>
-              <textarea name="observacao_{{ i.id_execucao_item }}">{{ i.observacao or "" }}</textarea>
-            </td>
+              <textarea
+                class="observacao-item"
+                data-id="{{ i.id_execucao_item }}"
+                name="observacao_{{ i.id_execucao_item }}">{{ i.observacao or "" }}</textarea>
+              </td>
 
             <td class="num pontuacao-item" data-pontos="{{ i.pontos_possiveis }}">
               {{ "%.2f"|format(i.pontuacao or 0) }}
@@ -193,7 +197,6 @@
       const pontos = parseFloat(pontuacaoEl.dataset.pontos || "0");
 
       linha.classList.remove("linha-atendida", "linha-nao-atendida");
-
       totalPossivel += pontos;
 
       if (check.checked) {
@@ -206,26 +209,76 @@
       }
     });
 
-    let nota = 0;
-    if (totalPossivel > 0) {
-      nota = (totalObtido / totalPossivel) * 10;
-    }
+    const nota = totalPossivel > 0 ? (totalObtido / totalPossivel) * 10 : 0;
 
     document.getElementById("nota-atual").textContent = nota.toFixed(2);
 
-    const percentual = Math.max(0, Math.min(100, nota * 10));
     const barra = document.getElementById("barra-nota");
-
     if (barra) {
-      barra.style.width = percentual + "%";
+      barra.style.width = Math.max(0, Math.min(100, nota * 10)) + "%";
+    }
+
+    return nota;
+  }
+
+  async function salvarItemAjax(idExecucaoItem) {
+    const check = document.querySelector('.check-atendido[data-id="' + idExecucaoItem + '"]');
+    const obs = document.querySelector('.observacao-item[data-id="' + idExecucaoItem + '"]');
+
+    const payload = {
+      id_execucao_item: idExecucaoItem,
+      atendido: check && check.checked ? "SIM" : "NAO",
+      observacao: obs ? obs.value : ""
+    };
+
+    try {
+      const resposta = await fetch("{{ url_for('vistorias.salvar_item_vistoria_ajax') }}", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const retorno = await resposta.json();
+
+      if (!resposta.ok || !retorno.ok) {
+        alert("Erro ao salvar automaticamente: " + (retorno.erro || "erro desconhecido"));
+        console.error(retorno);
+        return;
+      }
+
+      console.log("Salvo automaticamente:", retorno);
+
+    } catch (erro) {
+      alert("Erro de conexão ao salvar automaticamente.");
+      console.error("Erro no Ajax:", erro);
     }
   }
 
   document.querySelectorAll(".check-atendido").forEach(function(check) {
-    check.addEventListener("change", recalcularNota);
+    check.addEventListener("change", function() {
+      recalcularNota();
+      salvarItemAjax(check.dataset.id);
+    });
+  });
+
+  let timersObservacao = {};
+
+  document.querySelectorAll(".observacao-item").forEach(function(textarea) {
+    textarea.addEventListener("input", function() {
+      const id = textarea.dataset.id;
+
+      clearTimeout(timersObservacao[id]);
+
+      timersObservacao[id] = setTimeout(function() {
+        salvarItemAjax(id);
+      }, 700);
+    });
   });
 
   recalcularNota();
 </script>
-
 {% endblock %}

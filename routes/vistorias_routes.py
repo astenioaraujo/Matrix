@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, session, redirect, url_for, request, flash
+from flask import Blueprint, render_template, session, redirect, url_for, request, flash, jsonify
 from psycopg2.extras import RealDictCursor, execute_batch
 from datetime import date
 
@@ -950,3 +950,105 @@ def visualizar_vistoria(id_execucao):
         url_voltar=url_for("vistorias.consultar_vistorias"),
         texto_voltar="← Voltar",
     )
+
+@vistorias_bp.route("/execucao/item/salvar-ajax", methods=["POST"])
+def salvar_item_vistoria_ajax():
+    if "id_usuario" not in session:
+        return jsonify({"ok": False, "erro": "Sessão expirada"}), 401
+
+    if "cod_empresa" not in session:
+        return jsonify({"ok": False, "erro": "Empresa não selecionada"}), 401
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global != "superusuario":
+        if not usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "EXECUTAR_VISTORIAS"):
+            return jsonify({"ok": False, "erro": "Sem permissão para executar vistorias"}), 403
+
+    dados = request.get_json(silent=True) or {}
+
+    id_execucao_item = dados.get("id_execucao_item")
+    atendido = dados.get("atendido") or "NAO"
+    observacao = dados.get("observacao") or ""
+
+    if not id_execucao_item:
+        return jsonify({"ok": False, "erro": "Item não informado"}), 400
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT
+                i.id_execucao_item,
+                i.id_execucao,
+                i.tipo_linha,
+                i.pontos_possiveis,
+                e.data_vistoria,
+                e.status
+            FROM vistorias_execucao_itens i
+            JOIN vistorias_execucoes e
+              ON e.id_execucao = i.id_execucao
+            WHERE i.id_execucao_item = %s
+              AND e.cod_empresa = %s
+        """, (id_execucao_item, cod_empresa))
+
+        item = cur.fetchone()
+
+        if not item:
+            return jsonify({"ok": False, "erro": "Item não encontrado"}), 404
+
+        if item["status"] == "FINALIZADA":
+            return jsonify({"ok": False, "erro": "Vistoria finalizada"}), 403
+
+        id_execucao = item["id_execucao"]
+        pontos = float(item["pontos_possiveis"] or 0)
+        pontuacao = pontos if atendido == "SIM" else 0
+
+        cur.execute("""
+            UPDATE vistorias_execucao_itens
+               SET atendido = %s,
+                   observacao = %s,
+                   pontuacao = %s,
+                   atualizado_em = NOW()
+             WHERE id_execucao_item = %s
+        """, (atendido, observacao, pontuacao, id_execucao_item))
+
+        cur.execute("""
+            SELECT
+                COALESCE(SUM(pontos_possiveis), 0) AS total_possivel,
+                COALESCE(SUM(pontuacao), 0) AS total_obtido
+            FROM vistorias_execucao_itens
+            WHERE id_execucao = %s
+              AND tipo_linha = 'ITEM'
+        """, (id_execucao,))
+
+        totais = cur.fetchone()
+
+        total_possivel = float(totais["total_possivel"] or 0)
+        total_obtido = float(totais["total_obtido"] or 0)
+        nota = (total_obtido / total_possivel) * 10 if total_possivel > 0 else 0
+
+        cur.execute("""
+            UPDATE vistorias_execucoes
+               SET pontuacao_possivel = %s,
+                   pontuacao_obtida = %s,
+                   nota = %s,
+                   atualizado_em = NOW()
+             WHERE id_execucao = %s
+               AND cod_empresa = %s
+        """, (total_possivel, total_obtido, nota, id_execucao, cod_empresa))
+
+        conn.commit()
+
+        return jsonify({"ok": True, "nota": nota, "pontuacao": pontuacao})
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+    finally:
+        cur.close()
+        conn.close()
