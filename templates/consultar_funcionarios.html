@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .painel {
+    max-width: 1200px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 22px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 24px;
+  }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: 360px 220px auto;
+    gap: 14px;
+    align-items: end;
+  }
+
+  label {
+    font-weight: 700;
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #cfcfcf;
+    border-radius: 10px;
+    font-size: 15px;
+    box-sizing: border-box;
+  }
+
+  .btn {
+    height: 42px;
+    padding: 0 18px;
+    border-radius: 10px;
+    border: none;
+    background: #876A50;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn:hover {
+    background: #755840;
+  }
+
+  .tabela-wrap {
+    max-width: 1300px;
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    font-size: 14px;
+  }
+
+  th {
+    background: #4E3322;
+    color: #fff;
+    padding: 10px;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  td {
+    border-bottom: 1px solid #e3e3e3;
+    padding: 8px 10px;
+    vertical-align: middle;
+  }
+
+  tr:hover td {
+    background: #faf7f3;
+  }
+
+  .grupo-filial td {
+    background: #e9dfd2 !important;
+    font-weight: 800;
+    font-size: 15px;
+    color: #2f2118;
+    border-top: 2px solid #4E3322;
+  }
+
+  .resumo-filial td {
+    background: #faf4ec !important;
+    font-weight: 700;
+    color: #4E3322;
+    border-bottom: 2px solid #4E3322;
+  }
+
+  .col-id {
+    width: 70px;
+    text-align: right;
+  }
+
+  .col-matricula {
+    width: 130px;
+  }
+
+  .col-email {
+    width: 260px;
+  }
+
+  .col-status {
+    width: 100px;
+    text-align: center;
+  }
+
+  .status-ativo {
+    color: #18703b;
+    font-weight: 800;
+  }
+
+  .status-inativo {
+    color: #9b1c1c;
+    font-weight: 800;
+  }
+
+  .vazio {
+    padding: 18px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    color: #666;
+  }
+</style>
+
+<div class="pagina-titulo">Consultar Funcionários</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="painel">
+  <form method="GET" action="{{ url_for('rh.consultar_funcionarios') }}">
+    <div class="form-grid">
+      <div>
+        <label>Filial</label>
+        <select name="cod_filial">
+          <option value="">Todas as filiais</option>
+          {% for filial in filiais %}
+            <option value="{{ filial.cod_filial }}"
+              {% if filial_sel|string == filial.cod_filial|string %}selected{% endif %}>
+              {{ filial.cod_filial }} - {{ filial.nome_filial }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label>Situação</label>
+        <select name="somente_ativos">
+          <option value="S" {% if somente_ativos == 'S' %}selected{% endif %}>
+            Apenas ativos
+          </option>
+          <option value="N" {% if somente_ativos == 'N' %}selected{% endif %}>
+            Todos
+          </option>
+        </select>
+      </div>
+
+      <div>
+        <button type="submit" class="btn">Consultar</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+{% if funcionarios %}
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="col-id">ID</th>
+          <th class="col-matricula">Matrícula</th>
+          <th>Nome</th>
+          <th class="col-email">E-mail</th>
+          <th>Cargo atual</th>
+          <th>Admissão</th>
+          <th>Demissão</th>
+          <th class="col-status">Status</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {% set ns = namespace(filial_atual='', filial_codigo_anterior=none) %}
+      
+        {% for f in funcionarios %}
+          {% set codigo_filial_atual = f.cod_filial if f.cod_filial is not none else 0 %}
+          {% set chave_filial = (codigo_filial_atual|string) ~ ' - ' ~ (f.nome_filial or 'Sem filial informada') %}
+      
+          {% if ns.filial_atual != chave_filial %}
+            {% if not loop.first %}
+              {% set resumo = totais_filial.get(ns.filial_codigo_anterior, {}) %}
+              <tr class="resumo-filial">
+                <td colspan="8">
+                  Total da filial: {{ resumo.get('total', 0) }}
+                  {% if resumo.get('cargos') %}
+                    —
+                    {% for cargo, qtd in resumo.get('cargos').items() %}
+                      {{ cargo }}: {{ qtd }}{% if not loop.last %} | {% endif %}
+                    {% endfor %}
+                  {% endif %}
+                </td>
+              </tr>
+            {% endif %}
+      
+            {% set ns.filial_atual = chave_filial %}
+            {% set ns.filial_codigo_anterior = codigo_filial_atual %}
+      
+            <tr class="grupo-filial">
+              <td colspan="8">
+                Filial: {{ f.cod_filial or '-' }} - {{ f.nome_filial or 'Sem filial informada' }}
+              </td>
+            </tr>
+          {% endif %}
+      
+          <tr>
+            <td class="col-id">{{ f.id }}</td>
+            <td>{{ f.matricula or '-' }}</td>
+            <td>{{ f.nome }}</td>
+            <td>{{ f.email or '-' }}</td>
+            <td>{{ f.cargo or '-' }}</td>
+      
+            <td>
+              {% if f.data_admissao %}
+                {{ f.data_admissao.strftime('%d/%m/%Y') }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+      
+            <td>
+              {% if f.data_demissao %}
+                {{ f.data_demissao.strftime('%d/%m/%Y') }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+      
+            <td class="col-status">
+              {% if f.ativo %}
+                <span class="status-ativo">Ativo</span>
+              {% else %}
+                <span class="status-inativo">Inativo</span>
+              {% endif %}
+            </td>
+          </tr>
+      
+          {% if loop.last %}
+            {% set resumo = totais_filial.get(ns.filial_codigo_anterior, {}) %}
+            <tr class="resumo-filial">
+              <td colspan="8">
+                Total da filial: {{ resumo.get('total', 0) }}
+                {% if resumo.get('cargos') %}
+                  —
+                  {% for cargo, qtd in resumo.get('cargos').items() %}
+                    {{ cargo }}: {{ qtd }}{% if not loop.last %} | {% endif %}
+                  {% endfor %}
+                {% endif %}
+              </td>
+            </tr>
+          {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="vazio">
+    Nenhum funcionário encontrado para os filtros selecionados.
+  </div>
+{% endif %}
+
+{% endblock %}

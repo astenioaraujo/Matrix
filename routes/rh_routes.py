@@ -31,6 +31,9 @@ def menu_rh():
             "pode_importar_abastecimentos": True,
             "pode_consultar_abastecimentos": True,
             "pode_configuracoes_rh": True,
+            "pode_funcionarios": True,
+            "pode_consultar_funcionarios": True,
+            "pode_movimentacoes_funcionarios": True,
         }
     else:
         permissoes = {
@@ -45,6 +48,15 @@ def menu_rh():
             ),
             "pode_configuracoes_rh": usuario_tem_permissao(
                 id_usuario, cod_empresa, "RH", "CONFIGURACOES_RH"
+            ),
+            "pode_funcionarios": usuario_tem_permissao(
+                id_usuario, cod_empresa, "RH", "FUNCIONARIOS"
+            ),
+            "pode_consultar_funcionarios": usuario_tem_permissao(
+                id_usuario, cod_empresa, "RH", "CONSULTAR_FUNCIONARIOS"
+            ),
+            "pode_movimentacoes_funcionarios": usuario_tem_permissao(
+                id_usuario, cod_empresa, "RH", "MOVIMENTACOES_FUNCIONARIOS"
             ),
         }
 
@@ -643,6 +655,639 @@ def configuracoes_rh():
         "menu_configuracoes_rh.html",
         cod_empresa=session.get("cod_empresa", ""),
         nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("rh.menu_rh"),
+        texto_voltar="← Voltar",
+    )
+
+# ------------------------------------------
+# FUNCIONÁRIOS
+# ------------------------------------------
+@rh_bp.route("/funcionarios", methods=["GET", "POST"])
+@permissao_obrigatoria(
+    "RH",
+    "FUNCIONARIOS",
+    redirecionar_para="rh.menu_rh",
+)
+def funcionarios():
+    from psycopg2.extras import RealDictCursor
+
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        if request.method == "POST":
+            matricula = (request.form.get("matricula") or "").strip()
+            nome = (request.form.get("nome") or "").strip()
+            email = (request.form.get("email") or "").strip()
+
+            if not nome:
+                flash("Informe o nome do funcionário.", "error")
+                return redirect(url_for("rh.funcionarios"))
+
+            cur.execute("""
+                INSERT INTO funcionarios (
+                    cod_empresa,
+                    matricula,
+                    nome,
+                    email,
+                    ativo
+                )
+                VALUES (%s, NULLIF(%s, ''), %s, NULLIF(%s, ''), TRUE)
+            """, (
+                cod_empresa,
+                matricula,
+                nome,
+                email,
+            ))
+
+            conn.commit()
+            flash("Funcionário cadastrado com sucesso.", "success")
+            return redirect(url_for("rh.funcionarios"))
+
+        cur.execute("""
+            SELECT
+                f.id,
+                f.matricula,
+                f.nome,
+                f.email,
+                f.cod_filial,
+                fi.nome_filial,
+                f.id_cargo,
+                c.descricao AS cargo,
+                f.data_admissao,
+                f.data_demissao,
+                f.ativo
+            FROM funcionarios f
+            LEFT JOIN filiais fi
+              ON fi.cod_empresa = f.cod_empresa
+             AND fi.cod_filial = f.cod_filial
+            LEFT JOIN cargos c
+              ON c.id = f.id_cargo
+             AND c.cod_empresa = f.cod_empresa
+            WHERE f.cod_empresa = %s
+            ORDER BY
+                f.ativo DESC,
+                f.nome
+        """, (cod_empresa,))
+
+        funcionarios_lista = cur.fetchall() or []
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao processar funcionários: {e}", "error")
+        funcionarios_lista = []
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "funcionarios.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        funcionarios=funcionarios_lista,
+        url_voltar=url_for("rh.menu_rh"),
+        texto_voltar="← Voltar",
+    )
+
+
+# ------------------------------------------
+# EDITAR FUNCIONÁRIO
+# Somente dados cadastrais.
+# Filial, cargo, admissão, demissão e ativo
+# são controlados pela tela de movimentações.
+# ------------------------------------------
+@rh_bp.route("/funcionarios/<int:id_funcionario>/editar", methods=["POST"])
+@permissao_obrigatoria(
+    "RH",
+    "FUNCIONARIOS",
+    redirecionar_para="rh.menu_rh",
+)
+def editar_funcionario(id_funcionario):
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    matricula = (request.form.get("matricula") or "").strip()
+    nome = (request.form.get("nome") or "").strip()
+    email = (request.form.get("email") or "").strip()
+
+    if not nome:
+        flash("Informe o nome do funcionário.", "error")
+        return redirect(url_for("rh.funcionarios"))
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            UPDATE funcionarios
+               SET matricula = NULLIF(%s, ''),
+                   nome = %s,
+                   email = NULLIF(%s, ''),
+                   atualizado_em = NOW()
+             WHERE id = %s
+               AND cod_empresa = %s
+        """, (
+            matricula,
+            nome,
+            email,
+            id_funcionario,
+            cod_empresa,
+        ))
+
+        conn.commit()
+        flash("Funcionário atualizado com sucesso.", "success")
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao atualizar funcionário: {e}", "error")
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return redirect(url_for("rh.funcionarios"))
+
+
+# ------------------------------------------
+# MOVIMENTAÇÕES DE FUNCIONÁRIOS
+# ------------------------------------------
+@rh_bp.route("/funcionarios/movimentacoes", methods=["GET", "POST"])
+@permissao_obrigatoria(
+    "RH",
+    "MOVIMENTACOES_FUNCIONARIOS",
+    redirecionar_para="rh.menu_rh",
+)
+def movimentacoes_funcionarios():
+    from psycopg2.extras import RealDictCursor
+
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        if request.method == "POST":
+            id_funcionario = request.form.get("id_funcionario")
+            tipo_movimento = (request.form.get("tipo_movimento") or "").strip().upper()
+            data_movimento = request.form.get("data_movimento")
+            cod_filial_destino = request.form.get("cod_filial_destino") or None
+            id_cargo_novo = request.form.get("id_cargo_novo") or None
+            observacao = (request.form.get("observacao") or "").strip()
+
+            if not id_funcionario or not tipo_movimento or not data_movimento:
+                flash("Informe funcionário, tipo de movimento e data.", "error")
+                return redirect(url_for("rh.movimentacoes_funcionarios"))
+
+            cur.execute("""
+                SELECT
+                    id,
+                    cod_filial,
+                    id_cargo,
+                    data_admissao,
+                    data_demissao,
+                    ativo
+                FROM funcionarios
+                WHERE id = %s
+                  AND cod_empresa = %s
+            """, (id_funcionario, cod_empresa))
+
+            funcionario = cur.fetchone()
+
+            if not funcionario:
+                flash("Funcionário não encontrado.", "error")
+                return redirect(url_for("rh.movimentacoes_funcionarios"))
+
+            cod_filial_origem = funcionario["cod_filial"]
+            id_cargo_anterior = funcionario["id_cargo"]
+
+            if tipo_movimento == "ADMISSAO":
+                if not cod_filial_destino or not id_cargo_novo:
+                    flash("Na admissão, informe filial e cargo.", "error")
+                    return redirect(url_for("rh.movimentacoes_funcionarios"))
+
+                cur.execute("""
+                    INSERT INTO funcionarios_movimentacoes (
+                        cod_empresa,
+                        id_funcionario,
+                        tipo_movimento,
+                        data_movimento,
+                        cod_filial_origem,
+                        cod_filial_destino,
+                        id_cargo_anterior,
+                        id_cargo_novo,
+                        observacao
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    cod_empresa,
+                    id_funcionario,
+                    tipo_movimento,
+                    data_movimento,
+                    cod_filial_origem,
+                    cod_filial_destino,
+                    id_cargo_anterior,
+                    id_cargo_novo,
+                    observacao,
+                ))
+
+                cur.execute("""
+                    UPDATE funcionarios
+                       SET cod_filial = %s,
+                           id_cargo = %s,
+                           data_admissao = %s,
+                           data_demissao = NULL,
+                           ativo = TRUE,
+                           atualizado_em = NOW()
+                     WHERE id = %s
+                       AND cod_empresa = %s
+                """, (
+                    cod_filial_destino,
+                    id_cargo_novo,
+                    data_movimento,
+                    id_funcionario,
+                    cod_empresa,
+                ))
+
+            elif tipo_movimento == "TRANSFERENCIA":
+                if not cod_filial_destino:
+                    flash("Na transferência, informe a filial de destino.", "error")
+                    return redirect(url_for("rh.movimentacoes_funcionarios"))
+
+                cargo_final = id_cargo_novo or id_cargo_anterior
+
+                cur.execute("""
+                    INSERT INTO funcionarios_movimentacoes (
+                        cod_empresa,
+                        id_funcionario,
+                        tipo_movimento,
+                        data_movimento,
+                        cod_filial_origem,
+                        cod_filial_destino,
+                        id_cargo_anterior,
+                        id_cargo_novo,
+                        observacao
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    cod_empresa,
+                    id_funcionario,
+                    tipo_movimento,
+                    data_movimento,
+                    cod_filial_origem,
+                    cod_filial_destino,
+                    id_cargo_anterior,
+                    cargo_final,
+                    observacao,
+                ))
+
+                cur.execute("""
+                    UPDATE funcionarios
+                       SET cod_filial = %s,
+                           id_cargo = %s,
+                           ativo = TRUE,
+                           atualizado_em = NOW()
+                     WHERE id = %s
+                       AND cod_empresa = %s
+                """, (
+                    cod_filial_destino,
+                    cargo_final,
+                    id_funcionario,
+                    cod_empresa,
+                ))
+
+            elif tipo_movimento == "ALTERACAO_CARGO":
+                if not id_cargo_novo:
+                    flash("Na alteração de cargo, informe o novo cargo.", "error")
+                    return redirect(url_for("rh.movimentacoes_funcionarios"))
+
+                cur.execute("""
+                    INSERT INTO funcionarios_movimentacoes (
+                        cod_empresa,
+                        id_funcionario,
+                        tipo_movimento,
+                        data_movimento,
+                        cod_filial_origem,
+                        cod_filial_destino,
+                        id_cargo_anterior,
+                        id_cargo_novo,
+                        observacao
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    cod_empresa,
+                    id_funcionario,
+                    tipo_movimento,
+                    data_movimento,
+                    cod_filial_origem,
+                    cod_filial_origem,
+                    id_cargo_anterior,
+                    id_cargo_novo,
+                    observacao,
+                ))
+
+                cur.execute("""
+                    UPDATE funcionarios
+                       SET id_cargo = %s,
+                           atualizado_em = NOW()
+                     WHERE id = %s
+                       AND cod_empresa = %s
+                """, (
+                    id_cargo_novo,
+                    id_funcionario,
+                    cod_empresa,
+                ))
+
+            elif tipo_movimento == "DEMISSAO":
+                cur.execute("""
+                    INSERT INTO funcionarios_movimentacoes (
+                        cod_empresa,
+                        id_funcionario,
+                        tipo_movimento,
+                        data_movimento,
+                        cod_filial_origem,
+                        cod_filial_destino,
+                        id_cargo_anterior,
+                        id_cargo_novo,
+                        observacao
+                    )
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    cod_empresa,
+                    id_funcionario,
+                    tipo_movimento,
+                    data_movimento,
+                    cod_filial_origem,
+                    None,
+                    id_cargo_anterior,
+                    None,
+                    observacao,
+                ))
+
+                cur.execute("""
+                    UPDATE funcionarios
+                       SET data_demissao = %s,
+                           ativo = FALSE,
+                           atualizado_em = NOW()
+                     WHERE id = %s
+                       AND cod_empresa = %s
+                """, (
+                    data_movimento,
+                    id_funcionario,
+                    cod_empresa,
+                ))
+
+            else:
+                flash("Tipo de movimento inválido.", "error")
+                return redirect(url_for("rh.movimentacoes_funcionarios"))
+
+            conn.commit()
+            flash("Movimentação registrada com sucesso.", "success")
+            return redirect(url_for("rh.movimentacoes_funcionarios"))
+
+        cur.execute("""
+            SELECT
+                f.id,
+                f.matricula,
+                f.nome,
+                f.email,
+                f.cod_filial,
+                fi.nome_filial,
+                f.id_cargo,
+                c.descricao AS cargo,
+                f.data_admissao,
+                f.data_demissao,
+                f.ativo
+            FROM funcionarios f
+            LEFT JOIN filiais fi
+              ON fi.cod_empresa = f.cod_empresa
+             AND fi.cod_filial = f.cod_filial
+            LEFT JOIN cargos c
+              ON c.id = f.id_cargo
+             AND c.cod_empresa = f.cod_empresa
+            WHERE f.cod_empresa = %s
+            ORDER BY f.nome
+        """, (cod_empresa,))
+        funcionarios_lista = cur.fetchall() or []
+
+        cur.execute("""
+            SELECT
+                cod_filial,
+                nome_filial
+            FROM filiais
+            WHERE cod_empresa = %s
+              AND ativo = TRUE
+            ORDER BY nome_filial
+        """, (cod_empresa,))
+        filiais = cur.fetchall() or []
+
+        cur.execute("""
+            SELECT
+                id,
+                codigo,
+                descricao
+            FROM cargos
+            WHERE cod_empresa = %s
+              AND ativo = TRUE
+            ORDER BY descricao
+        """, (cod_empresa,))
+        cargos = cur.fetchall() or []
+
+        cur.execute("""
+            SELECT
+                m.id,
+                m.tipo_movimento,
+                m.data_movimento,
+                m.observacao,
+                f.nome AS funcionario,
+                fo.nome_filial AS filial_origem,
+                fd.nome_filial AS filial_destino,
+                ca.descricao AS cargo_anterior,
+                cn.descricao AS cargo_novo
+            FROM funcionarios_movimentacoes m
+            INNER JOIN funcionarios f
+               ON f.id = m.id_funcionario
+              AND f.cod_empresa = m.cod_empresa
+            LEFT JOIN filiais fo
+              ON fo.cod_empresa = m.cod_empresa
+             AND fo.cod_filial = m.cod_filial_origem
+            LEFT JOIN filiais fd
+              ON fd.cod_empresa = m.cod_empresa
+             AND fd.cod_filial = m.cod_filial_destino
+            LEFT JOIN cargos ca
+              ON ca.id = m.id_cargo_anterior
+             AND ca.cod_empresa = m.cod_empresa
+            LEFT JOIN cargos cn
+              ON cn.id = m.id_cargo_novo
+             AND cn.cod_empresa = m.cod_empresa
+            WHERE m.cod_empresa = %s
+            ORDER BY
+                m.data_movimento DESC,
+                m.id DESC
+            LIMIT 100
+        """, (cod_empresa,))
+        movimentacoes = cur.fetchall() or []
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao processar movimentações: {e}", "error")
+        funcionarios_lista = []
+        filiais = []
+        cargos = []
+        movimentacoes = []
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "movimentacoes_funcionarios.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        funcionarios=funcionarios_lista,
+        filiais=filiais,
+        cargos=cargos,
+        movimentacoes=movimentacoes,
+        url_voltar=url_for("rh.menu_rh"),
+        texto_voltar="← Voltar",
+    )
+
+# ------------------------------------------
+# CONSULTAR FUNCIONÁRIOS
+# ------------------------------------------
+@rh_bp.route("/funcionarios/consultar")
+@permissao_obrigatoria(
+    "RH",
+    "CONSULTAR_FUNCIONARIOS",
+    redirecionar_para="rh.menu_rh",
+)
+def consultar_funcionarios():
+    from psycopg2.extras import RealDictCursor
+
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+
+    filial_sel = (request.args.get("cod_filial") or "").strip()
+    somente_ativos = (request.args.get("somente_ativos") or "S").strip().upper()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT
+                cod_filial,
+                nome_filial
+            FROM filiais
+            WHERE cod_empresa = %s
+              AND ativo = TRUE
+            ORDER BY cod_filial
+        """, (cod_empresa,))
+        filiais = cur.fetchall() or []
+
+        filtros = ["f.cod_empresa = %s"]
+        params = [cod_empresa]
+
+        if filial_sel:
+            filtros.append("f.cod_filial = %s")
+            params.append(int(filial_sel))
+
+        if somente_ativos == "S":
+            filtros.append("f.ativo = TRUE")
+
+        where_sql = " AND ".join(filtros)
+
+        cur.execute(f"""
+            SELECT
+                f.id,
+                f.matricula,
+                f.nome,
+                f.email,
+                f.cod_filial,
+                COALESCE(fi.nome_filial, 'Sem filial informada') AS nome_filial,
+                f.id_cargo,
+                COALESCE(c.descricao, 'Sem cargo informado') AS cargo,
+                f.data_admissao,
+                f.data_demissao,
+                f.ativo
+            FROM funcionarios f
+            LEFT JOIN filiais fi
+              ON fi.cod_empresa = f.cod_empresa
+             AND fi.cod_filial = f.cod_filial
+            LEFT JOIN cargos c
+              ON c.id = f.id_cargo
+             AND c.cod_empresa = f.cod_empresa
+            WHERE {where_sql}
+            ORDER BY
+                COALESCE(f.cod_filial, 999999),
+                COALESCE(f.id_cargo, 999999),
+                f.nome
+        """, params)
+
+        funcionarios = cur.fetchall() or []
+
+        totais_filial = {}
+
+        for f in funcionarios:
+            cod_filial = f["cod_filial"] if f["cod_filial"] is not None else 0
+            nome_filial = f["nome_filial"] or "Sem filial informada"
+            cargo = f["cargo"] or "Sem cargo informado"
+
+            if cod_filial not in totais_filial:
+                totais_filial[cod_filial] = {
+                    "nome_filial": nome_filial,
+                    "total": 0,
+                    "cargos": {}
+                }
+
+            totais_filial[cod_filial]["total"] += 1
+            totais_filial[cod_filial]["cargos"][cargo] = (
+                totais_filial[cod_filial]["cargos"].get(cargo, 0) + 1
+            )
+
+    except Exception as e:
+        flash(f"Erro ao consultar funcionários: {e}", "error")
+        filiais = []
+        funcionarios = []
+        totais_filial = {}
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "consultar_funcionarios.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        filiais=filiais,
+        funcionarios=funcionarios,
+        totais_filial=totais_filial,
+        filial_sel=filial_sel,
+        somente_ativos=somente_ativos,
         url_voltar=url_for("rh.menu_rh"),
         texto_voltar="← Voltar",
     )

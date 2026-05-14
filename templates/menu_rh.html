@@ -78,6 +78,24 @@
 
 <div class="menu-botoes">
 
+  {% if pode_funcionarios %}
+    <a href="{{ url_for('rh.funcionarios') }}" class="btn-informar">
+      Cadastrar Funcionários
+    </a>
+  {% endif %}
+
+  {% if pode_consultar_funcionarios %}
+  <a href="{{ url_for('rh.consultar_funcionarios') }}" class="btn-consultar">
+    Consultar Funcionários
+  </a>
+  {% endif %}
+
+  {% if pode_movimentacoes_funcionarios %}
+    <a href="{{ url_for('rh.movimentacoes_funcionarios') }}" class="btn-consultar">
+      Cadastrar Movimentações
+    </a>
+  {% endif %}
+
   {% if pode_avaliacoes %}
     <a href="#" class="btn-consultar">
       Avaliações
@@ -90,11 +108,11 @@
     </a>
    {% endif %}
 
-    {% if pode_consultar_abastecimentos %}
+  {% if pode_consultar_abastecimentos %}
     <a href="{{ url_for('rh.consultar_abastecimentos') }}" class="btn-consultar">
         Consultar Abastecimentos
     </a>
-    {% endif %}
+  {% endif %}
 
   {% if pode_configuracoes_rh %}
     <a href="#" class="btn-config">

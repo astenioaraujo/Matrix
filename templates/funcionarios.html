@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .painel {
+    max-width: 1200px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 22px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 24px;
+  }
+
+  .painel h3 {
+    margin-top: 0;
+    margin-bottom: 16px;
+    font-size: 22px;
+  }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: 180px 1fr 280px auto;
+    gap: 14px;
+    align-items: end;
+  }
+
+  label {
+    font-weight: 700;
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #cfcfcf;
+    border-radius: 10px;
+    font-size: 15px;
+    box-sizing: border-box;
+  }
+
+  .btn {
+    height: 42px;
+    padding: 0 18px;
+    border-radius: 10px;
+    border: none;
+    background: #876A50;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn:hover {
+    background: #755840;
+  }
+
+  .tabela-wrap {
+    max-width: 1300px;
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    font-size: 14px;
+  }
+
+  th {
+    background: #4E3322;
+    color: #fff;
+    padding: 10px;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  td {
+    border-bottom: 1px solid #e3e3e3;
+    padding: 8px 10px;
+    vertical-align: middle;
+  }
+
+  tr:hover td {
+    background: #faf7f3;
+  }
+
+  .col-id {
+    width: 70px;
+    text-align: right;
+  }
+
+  .col-matricula {
+    width: 130px;
+  }
+
+  .col-email {
+    width: 260px;
+  }
+
+  .col-status {
+    width: 100px;
+    text-align: center;
+  }
+
+  .col-acoes {
+    width: 90px;
+    text-align: center;
+  }
+
+  .status-ativo {
+    color: #18703b;
+    font-weight: 800;
+  }
+
+  .status-inativo {
+    color: #9b1c1c;
+    font-weight: 800;
+  }
+
+  .input-tabela {
+    padding: 7px 9px;
+    font-size: 14px;
+    border-radius: 8px;
+  }
+
+  .btn-salvar {
+    padding: 7px 12px;
+    border-radius: 8px;
+    border: none;
+    background: #7D4820;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn-salvar:hover {
+    background: #693d1a;
+  }
+
+  .texto-pequeno {
+    font-size: 13px;
+    color: #666;
+    margin-top: 8px;
+  }
+
+  .vazio {
+    padding: 18px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    color: #666;
+  }
+</style>
+
+<div class="pagina-titulo">Funcionários</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="painel">
+  <h3>Novo funcionário</h3>
+
+  <form method="POST" action="{{ url_for('rh.funcionarios') }}">
+    <div class="form-grid">
+      <div>
+        <label>Matrícula</label>
+        <input type="text" name="matricula" placeholder="Opcional">
+      </div>
+
+      <div>
+        <label>Nome</label>
+        <input type="text" name="nome" required>
+      </div>
+
+      <div>
+        <label>E-mail</label>
+        <input type="email" name="email">
+      </div>
+
+      <div>
+        <button type="submit" class="btn">Cadastrar</button>
+      </div>
+    </div>
+
+    <div class="texto-pequeno">
+      Filial, cargo, admissão, demissão e status serão controlados pela tela de movimentações.
+    </div>
+  </form>
+</div>
+
+{% if funcionarios %}
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="col-id">ID</th>
+          <th class="col-matricula">Matrícula</th>
+          <th>Nome</th>
+          <th class="col-email">E-mail</th>
+          <th>Filial atual</th>
+          <th>Cargo atual</th>
+          <th>Admissão</th>
+          <th>Demissão</th>
+          <th class="col-status">Status</th>
+          <th class="col-acoes">Ações</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {% for f in funcionarios %}
+          <tr>
+            <form method="POST" action="{{ url_for('rh.editar_funcionario', id_funcionario=f.id) }}">
+              <td class="col-id">{{ f.id }}</td>
+
+              <td>
+                <input
+                  class="input-tabela"
+                  type="text"
+                  name="matricula"
+                  value="{{ f.matricula or '' }}"
+                  placeholder="Opcional">
+              </td>
+
+              <td>
+                <input
+                  class="input-tabela"
+                  type="text"
+                  name="nome"
+                  value="{{ f.nome or '' }}"
+                  required>
+              </td>
+
+              <td>
+                <input
+                  class="input-tabela"
+                  type="email"
+                  name="email"
+                  value="{{ f.email or '' }}">
+              </td>
+
+              <td>
+                {{ f.nome_filial or '-' }}
+              </td>
+
+              <td>
+                {{ f.cargo or '-' }}
+              </td>
+
+              <td>
+                {% if f.data_admissao %}
+                  {{ f.data_admissao.strftime('%d/%m/%Y') }}
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+
+              <td>
+                {% if f.data_demissao %}
+                  {{ f.data_demissao.strftime('%d/%m/%Y') }}
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+
+              <td class="col-status">
+                {% if f.ativo %}
+                  <span class="status-ativo">Ativo</span>
+                {% else %}
+                  <span class="status-inativo">Inativo</span>
+                {% endif %}
+              </td>
+
+              <td class="col-acoes">
+                <button type="submit" class="btn-salvar">Salvar</button>
+              </td>
+            </form>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="vazio">
+    Nenhum funcionário cadastrado ainda.
+  </div>
+{% endif %}
+
+{% endblock %}

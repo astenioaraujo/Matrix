@@ -148,7 +148,10 @@
   .zebra:nth-child(even) {
     background: #fafafa;
   }
-
+  .cabecalho-quebra th {
+    background: #e3e3e3;
+    color: #939393;
+  }
   .linha-separadora td {
     border: none;
     height: 24px;
@@ -259,18 +262,6 @@
 
       <div class="tabela-wrap">
         <table>
-          <thead>
-            <tr>
-              <th class="th-left">Ano</th>
-              <th class="th-left">Mês</th>
-              <th class="th-left">Grupo</th>
-              <th class="th-left">Histórico</th>
-              <th>Total</th>
-              {% for f in filiais %}
-                <th>{{ mapa_filiais[f] }}</th>
-              {% endfor %}
-            </tr>
-          </thead>
 
           <tbody>
             <tr class="linha-separadora">
@@ -282,6 +273,17 @@
                 <td colspan="{{ 5 + filiais|length }}">
                   Conta: {{ conta }} - {{ info.nome }}
                 </td>
+              </tr>
+              <tr class="cabecalho-quebra">
+                <th class="th-left">Ano</th>
+                <th class="th-left">Mês</th>
+                <th class="th-left">Grupo</th>
+                <th class="th-left">Histórico</th>
+                <th>Total</th>
+              
+                {% for f in filiais %}
+                  <th>{{ f }} - {{ mapa_filiais[f] }}</th>
+                {% endfor %}
               </tr>
 
               {% for hist, linha in info.linhas.items() %}

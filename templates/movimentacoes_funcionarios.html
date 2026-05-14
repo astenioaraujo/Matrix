@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .painel {
+    max-width: 1250px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 22px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 24px;
+  }
+
+  .painel h3 {
+    margin-top: 0;
+    margin-bottom: 16px;
+    font-size: 22px;
+  }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: 2fr 180px 170px 1fr 1fr;
+    gap: 14px;
+    align-items: end;
+  }
+
+  .form-grid-obs {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 14px;
+    align-items: end;
+    margin-top: 14px;
+  }
+
+  label {
+    font-weight: 700;
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  input,
+  select,
+  textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #cfcfcf;
+    border-radius: 10px;
+    font-size: 15px;
+    box-sizing: border-box;
+  }
+
+  textarea {
+    min-height: 42px;
+    resize: vertical;
+  }
+
+  .btn {
+    height: 42px;
+    padding: 0 18px;
+    border-radius: 10px;
+    border: none;
+    background: #876A50;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .btn:hover {
+    background: #755840;
+  }
+
+  .ajuda {
+    font-size: 13px;
+    color: #666;
+    margin-top: 8px;
+    line-height: 1.4;
+  }
+
+  .tabela-wrap {
+    max-width: 1300px;
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    font-size: 14px;
+  }
+
+  th {
+    background: #4E3322;
+    color: #fff;
+    padding: 10px;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  td {
+    border-bottom: 1px solid #e3e3e3;
+    padding: 8px 10px;
+    vertical-align: middle;
+  }
+
+  tr:hover td {
+    background: #faf7f3;
+  }
+
+  .col-data {
+    width: 120px;
+    white-space: nowrap;
+  }
+
+  .col-tipo {
+    width: 160px;
+    font-weight: 800;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 5px 9px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+    color: #fff;
+    white-space: nowrap;
+  }
+
+  .badge-admissao {
+    background: #18703b;
+  }
+
+  .badge-transferencia {
+    background: #7D4820;
+  }
+
+  .badge-alteracao {
+    background: #876A50;
+  }
+
+  .badge-demissao {
+    background: #9b1c1c;
+  }
+
+  .vazio {
+    padding: 18px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    color: #666;
+  }
+
+  @media (max-width: 1000px) {
+    .form-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .form-grid-obs {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="pagina-titulo">Movimentações de Funcionários</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="painel">
+  <h3>Nova movimentação</h3>
+
+  <form method="POST" action="{{ url_for('rh.movimentacoes_funcionarios') }}">
+    <div class="form-grid">
+
+      <div>
+        <label>Funcionário</label>
+        <select name="id_funcionario" required>
+          <option value="">Selecione...</option>
+          {% for f in funcionarios %}
+            <option value="{{ f.id }}">
+              {{ f.nome }}
+              {% if f.matricula %} - Mat.: {{ f.matricula }}{% endif %}
+              {% if f.nome_filial %} - {{ f.nome_filial }}{% endif %}
+              {% if f.cargo %} - {{ f.cargo }}{% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label>Movimento</label>
+        <select name="tipo_movimento" required>
+          <option value="">Selecione...</option>
+          <option value="ADMISSAO">Admissão</option>
+          <option value="TRANSFERENCIA">Transferência</option>
+          <option value="ALTERACAO_CARGO">Alteração de cargo</option>
+          <option value="DEMISSAO">Demissão</option>
+        </select>
+      </div>
+
+      <div>
+        <label>Data</label>
+        <input type="date" name="data_movimento" required>
+      </div>
+
+      <div>
+        <label>Filial destino</label>
+        <select name="cod_filial_destino">
+          <option value="">Não se aplica</option>
+          {% for filial in filiais %}
+            <option value="{{ filial.cod_filial }}">
+              {{ filial.cod_filial }} - {{ filial.nome_filial }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label>Novo cargo</label>
+        <select name="id_cargo_novo">
+          <option value="">Não se aplica</option>
+          {% for cargo in cargos %}
+            <option value="{{ cargo.id }}">
+              {{ cargo.codigo }} - {{ cargo.descricao }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+    </div>
+
+    <div class="form-grid-obs">
+      <div>
+        <label>Observação</label>
+        <textarea name="observacao" placeholder="Opcional"></textarea>
+      </div>
+
+      <div>
+        <button type="submit" class="btn">Registrar movimentação</button>
+      </div>
+    </div>
+
+    <div class="ajuda">
+      Use <strong>Admissão</strong> para informar a data inicial, filial e cargo.
+      Use <strong>Transferência</strong> para mudar a filial a partir de uma data.
+      Use <strong>Alteração de cargo</strong> para trocar apenas o cargo.
+      Use <strong>Demissão</strong> para encerrar o vínculo na data informada.
+    </div>
+  </form>
+</div>
+
+{% if movimentacoes %}
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="col-data">Data</th>
+          <th class="col-tipo">Movimento</th>
+          <th>Funcionário</th>
+          <th>Filial origem</th>
+          <th>Filial destino</th>
+          <th>Cargo anterior</th>
+          <th>Cargo novo</th>
+          <th>Observação</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {% for m in movimentacoes %}
+          <tr>
+            <td class="col-data">
+              {% if m.data_movimento %}
+                {{ m.data_movimento.strftime('%d/%m/%Y') }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+
+            <td class="col-tipo">
+              {% if m.tipo_movimento == 'ADMISSAO' %}
+                <span class="badge badge-admissao">Admissão</span>
+              {% elif m.tipo_movimento == 'TRANSFERENCIA' %}
+                <span class="badge badge-transferencia">Transferência</span>
+              {% elif m.tipo_movimento == 'ALTERACAO_CARGO' %}
+                <span class="badge badge-alteracao">Alteração de cargo</span>
+              {% elif m.tipo_movimento == 'DEMISSAO' %}
+                <span class="badge badge-demissao">Demissão</span>
+              {% else %}
+                {{ m.tipo_movimento }}
+              {% endif %}
+            </td>
+
+            <td>{{ m.funcionario }}</td>
+            <td>{{ m.filial_origem or '-' }}</td>
+            <td>{{ m.filial_destino or '-' }}</td>
+            <td>{{ m.cargo_anterior or '-' }}</td>
+            <td>{{ m.cargo_novo or '-' }}</td>
+            <td>{{ m.observacao or '-' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="vazio">
+    Nenhuma movimentação registrada ainda.
+  </div>
+{% endif %}
+
+{% endblock %}
