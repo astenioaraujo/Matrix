@@ -1,0 +1,395 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+
+  .empresa {
+    font-size: 18px;
+    margin-bottom: 22px;
+  }
+
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 22px;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.05);
+    margin-bottom: 22px;
+  }
+
+  .card-filtro,
+  .card-nova {
+    max-width: 920px;
+  }
+
+  .titulo-bloco {
+    font-size: 21px;
+    font-weight: 800;
+    margin-bottom: 16px;
+  }
+
+  .grid-filtro {
+    display: grid;
+    grid-template-columns: 120px 120px 260px auto;
+    gap: 14px;
+    align-items: end;
+  }
+
+  .grid-nova {
+    display: grid;
+    grid-template-columns: 1fr 220px 260px 190px auto;
+    gap: 14px;
+    align-items: end;
+  }
+
+  label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  input,
+  select {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #cfcfcf;
+    font-size: 15px;
+  }
+
+  .btn-primary {
+    background: #c2410c;
+    color: #fff;
+    border: none;
+    padding: 11px 18px;
+    border-radius: 11px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th,
+  td {
+    padding: 10px 9px;
+    border-bottom: 1px solid #eee;
+  }
+
+  th {
+    background: #eef3fb;
+    font-weight: 800;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 5px 11px;
+    border-radius: 999px;
+    font-weight: 800;
+    font-size: 12px;
+  }
+
+  .badge-aberta {
+    background: #fff3cd;
+    color: #9a6a00;
+  }
+
+  .badge-finalizada {
+    background: #d1e7dd;
+    color: #146c43;
+  }
+
+  .nota {
+    font-weight: 900;
+    font-size: 16px;
+  }
+
+  .nota-baixa {
+    color: #dc3545;
+  }
+
+  .nota-media {
+    color: #b58900;
+  }
+
+  .nota-alta {
+    color: #198754;
+  }
+
+  .acao-editar {
+    color: #1f4ed8;
+    font-weight: 800;
+    text-decoration: none;
+  }
+
+  .bloqueado {
+    color: #777;
+    font-weight: 700;
+  }
+
+  @media (max-width: 1000px) {
+    .grid-nova,
+    .grid-filtro {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="pagina-titulo">
+  Executar Avaliação
+</div>
+
+<div class="empresa">
+  Empresa: <strong>{{ nome_empresa }}</strong>
+</div>
+
+<div class="card card-filtro">
+
+  <div class="titulo-bloco">
+    Filtrar avaliações
+  </div>
+
+  <form method="get" class="grid-filtro">
+
+    <div>
+      <label>Ano</label>
+
+      <input
+        type="number"
+        name="ano"
+        value="{{ ano_sel }}"
+      >
+    </div>
+
+    <div>
+      <label>Mês</label>
+
+      <input
+        type="number"
+        name="mes"
+        value="{{ mes_sel }}"
+      >
+    </div>
+
+    <div>
+      <label>Filial</label>
+
+      <select name="filial" id="filial_filtro">
+
+        <option value="">
+          Selecione
+        </option>
+
+        {% for f in filiais %}
+          <option
+            value="{{ f.cod_filial }}"
+            {% if filial_sel == (f.cod_filial|string) %}selected{% endif %}
+          >
+            {{ f.cod_filial }} - {{ f.nome_filial }}
+          </option>
+        {% endfor %}
+
+      </select>
+    </div>
+
+    <div>
+      <button type="submit" class="btn-primary">
+        Filtrar
+      </button>
+    </div>
+
+  </form>
+
+</div>
+
+<div class="card">
+
+  <div class="titulo-bloco">
+    Avaliações do período
+  </div>
+
+  <table>
+
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Data</th>
+        <th>Filial</th>
+        <th>Avaliação</th>
+        <th>Avaliado</th>
+        <th>Executor</th>
+        <th>Status</th>
+        <th>Nota</th>
+        <th>Ação</th>
+      </tr>
+    </thead>
+
+    <tbody>
+
+      {% for a in avaliacoes_mes %}
+      <tr>
+
+        <td>{{ a.id_execucao }}</td>
+
+        <td>{{ a.data_avaliacao }}</td>
+
+        <td>
+          {{ a.cod_filial }} - {{ a.nome_filial }}
+        </td>
+
+        <td>
+          {{ a.codigo_avaliacao }}
+        </td>
+
+        <td>
+          {{ a.nome_avaliado or "-" }}
+        </td>
+
+        <td>
+          {{ a.nome_executor or "-" }}
+        </td>
+
+        <td>
+          {% if a.status == 'FINALIZADA' %}
+            <span class="badge badge-finalizada">
+              FINALIZADA
+            </span>
+          {% else %}
+            <span class="badge badge-aberta">
+              ABERTA
+            </span>
+          {% endif %}
+        </td>
+
+        <td>
+          <span class="nota
+            {% if (a.nota or 0) < 5 %}nota-baixa
+            {% elif (a.nota or 0) < 8 %}nota-media
+            {% else %}nota-alta{% endif %}
+          ">
+            {{ "%.2f"|format(a.nota or 0) }}
+          </span>
+        </td>
+
+        <td>
+          {% if a.status != 'FINALIZADA' %}
+
+            <a
+              class="acao-editar"
+              href="{{ url_for('performances.preencher_avaliacao', id_execucao=a.id_execucao) }}"
+            >
+              ✏️ Editar
+            </a>
+
+          {% else %}
+
+            <span class="bloqueado">
+              🔒 Bloqueada
+            </span>
+
+          {% endif %}
+        </td>
+
+      </tr>
+
+      {% else %}
+
+      <tr>
+        <td colspan="9">
+          Nenhuma avaliação encontrada no período.
+        </td>
+      </tr>
+
+      {% endfor %}
+
+    </tbody>
+
+  </table>
+
+</div>
+
+<div class="card card-nova">
+
+  <div class="titulo-bloco">
+    Nova Avaliação
+  </div>
+
+  <form method="post" class="grid-nova">
+
+    <div>
+      <label>Questionário</label>
+
+      <select name="id_avaliacao" id="id_avaliacao_nova" required>
+        <option value="">Selecione</option>
+
+        {% for a in avaliacoes %}
+          <option value="{{ a.id_avaliacao }}">
+            {{ a.codigo_avaliacao }} - {{ a.descricao }} - v{{ a.versao }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label>Cargo em bloco</label>
+
+      <select name="id_cargo" id="id_cargo_bloco">
+        <option value="">Não usar</option>
+
+        {% for c in cargos %}
+          <option value="{{ c.id }}">
+            {{ c.codigo }} - {{ c.descricao }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label>Avaliado individual</label>
+
+      <select name="id_funcionario" id="id_funcionario">
+        {% if filial_sel %}
+          <option value="">Selecione</option>
+
+          {% for func in funcionarios %}
+            <option value="{{ func.id }}">
+              {{ func.nome }}
+            </option>
+          {% endfor %}
+        {% else %}
+          <option value="">Selecione a filial no filtro</option>
+        {% endif %}
+      </select>
+    </div>
+
+    <div>
+      <label>Data da avaliação</label>
+
+      <input
+        type="date"
+        name="data_avaliacao"
+        value="{{ data_hoje }}"
+        required
+      >
+    </div>
+
+    <div>
+      <button type="submit" class="btn-primary">
+        🚀 Iniciar
+      </button>
+    </div>
+
+  </form>
+
+</div>
+
+{% endblock %}

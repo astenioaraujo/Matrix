@@ -18,6 +18,7 @@ from routes.usuarios_routes import usuarios_bp
 from routes.compliance_routes import compliance_bp
 from routes.vistorias_routes import vistorias_bp
 from routes.rh_routes import rh_bp
+from routes.performances_routes import performances_bp
 
 
 def formatar_numero_br(valor):
@@ -44,6 +45,7 @@ app.register_blueprint(usuarios_bp)
 app.register_blueprint(compliance_bp, url_prefix="/compliance")
 app.register_blueprint(vistorias_bp, url_prefix="/vistorias")
 app.register_blueprint(rh_bp, url_prefix="/rh")
+app.register_blueprint(performances_bp, url_prefix="/performances")
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)

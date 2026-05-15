@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+    .pagina-titulo {
+      font-size: 34px;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+  
+    .empresa {
+      font-size: 18px;
+      margin-bottom: 20px;
+    }
+  
+    .info {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+  
+    .form-avaliacao {
+      width: 100%;
+      overflow-x: auto;
+    }
+  
+    table {
+      border-collapse: collapse;
+      background: #fff;
+      font-size: 14px;
+      width: auto;
+      min-width: 1180px;
+    }
+  
+    th, td {
+      border: 1px solid #ccc;
+      padding: 7px;
+      vertical-align: middle;
+    }
+  
+    th {
+      background: #f3f4f6;
+      text-align: center;
+      font-weight: 800;
+    }
+  
+    .col-pergunta {
+        width: 340px;
+        min-width: 340px;
+        max-width: 340px;
+        font-weight: 800;
+        color: red;
+        white-space: normal;
+        word-break: break-word;
+        font-size: 17px;
+        line-height: 1.35;
+    }
+  
+    .col-nota {
+        width: 58px;
+        min-width: 58px;
+        max-width: 58px;
+        text-align: center;
+        padding: 4px !important;
+        font-size: 10px;
+        white-space: normal;
+    }
+  
+    .col-detalhamento {
+        width: 420px;
+        min-width: 420px;
+        max-width: 420px;
+        font-weight: 600;
+        white-space: normal;
+        word-break: break-word;
+        color: #6b7280;
+    }
+  
+    .col-observacao {
+      width: 300px;
+      min-width: 300px;
+      max-width: 300px;
+    }
+  
+    .nota-radio {
+      transform: scale(1.05);
+      cursor: pointer;
+      margin: 0;
+    }
+  
+    .head-otimo { background: #92d050; }
+    .head-bom { background: #ffff00; }
+    .head-regular { background: #bfbfbf; }
+    .head-ruim { background: #808080; color: #fff; }
+    .head-pessimo { background: #ff0000; color: #fff; }
+  
+    .nota-final {
+      text-align: center;
+      font-weight: 900;
+      font-size: 17px;
+    }
+  
+    .nota-5 { background: #00b050; color: #000; }
+    .nota-4 { background: #ffff00; color: #000; }
+    .nota-3 { background: #bfbfbf; color: #000; }
+    .nota-2 { background: #808080; color: #fff; }
+    .nota-1 { background: #ff0000; color: #fff; }
+  
+    textarea {
+      width: 100%;
+      min-height: 58px;
+      border: none;
+      resize: vertical;
+      font-size: 14px;
+      padding: 6px;
+      font-family: inherit;
+    }
+  
+    .resumo {
+      margin-top: 12px;
+      display: flex;
+      justify-content: flex-start;
+    }
+  
+    .resumo table {
+      min-width: 260px;
+      width: 260px;
+    }
+  
+    .btn-salvar {
+      margin-top: 18px;
+      background: #c2410c;
+      color: #fff;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+  </style>
+
+<div class="pagina-titulo">Preencher Avaliação</div>
+
+<div class="empresa">
+  Empresa: <strong>{{ session.get("nome_empresa") }}</strong>
+</div>
+
+<div class="info">
+  <strong>Filial:</strong> {{ execucao.cod_filial }} - {{ execucao.nome_filial }}<br>
+  <strong>Avaliado:</strong> {{ execucao.nome_avaliado }}<br>
+  <strong>Questionário:</strong> {{ execucao.codigo_avaliacao }} - {{ execucao.avaliacao_descricao }} - v{{ execucao.versao }}<br>
+  <strong>Data:</strong> {{ execucao.data_avaliacao }}<br>
+  <strong>Status:</strong> {{ execucao.status }}
+</div>
+
+<form method="POST" class="form-avaliacao">
+  <table>
+    <thead>
+      <tr>
+        <th class="col-pergunta">FATORES GERAIS</th>
+        <th class="col-nota head-otimo">ÓTIMO<br>5</th>
+        <th class="col-nota head-bom">BOM<br>4</th>
+        <th class="col-nota head-regular">REGULAR<br>3</th>
+        <th class="col-nota head-ruim">RUIM<br>2</th>
+        <th class="col-nota head-pessimo">PÉSSIMO<br>1</th>
+        <th class="col-nota">NOTA</th>
+        <th class="col-detalhamento">DETALHAMENTO</th>
+        <th class="col-observacao">OBSERVAÇÃO</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for item in itens %}
+        <tr>
+          <td class="col-pergunta">
+            {{ item.sequencia }}. {{ item.titulo }}
+          </td>
+
+          {% for valor in [5, 4, 3, 2, 1] %}
+            <td class="col-nota">
+              <input
+                type="radio"
+                class="nota-radio"
+                name="nota_item_{{ item.id_execucao_item }}"
+                value="{{ valor }}"
+                {% if (item.nota_item or 0)|int == valor %}checked{% endif %}
+              >
+            </td>
+          {% endfor %}
+
+          <td
+            id="nota_item_{{ item.id_execucao_item }}"
+            class="nota-final
+                {% if (item.nota_item or 0)|int == 5 %}nota-5
+                {% elif (item.nota_item or 0)|int == 4 %}nota-4
+                {% elif (item.nota_item or 0)|int == 3 %}nota-3
+                {% elif (item.nota_item or 0)|int == 2 %}nota-2
+                {% elif (item.nota_item or 0)|int == 1 %}nota-1
+                {% endif %}
+            "
+            >
+            {{ "%.0f"|format(item.nota_item or 0) }}
+         </td>
+
+          <td class="col-detalhamento">
+            {{ item.detalhamento or "" }}
+          </td>
+
+          <td class="col-observacao">
+            <textarea name="observacao_{{ item.id_execucao_item }}">{{ item.observacao or "" }}</textarea>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="resumo">
+    <table>
+      <tr>
+        <td><strong>PONTOS</strong></td>
+        <td id="resumo_pontos">{{ "%.0f"|format(execucao.pontuacao_obtida or 0) }}</td>
+      </tr>
+  
+      <tr>
+        <td><strong>ATENDIDO</strong></td>
+        <td id="resumo_atendido">
+          {% if (execucao.pontuacao_possivel or 0) > 0 %}
+            {{ "%.0f"|format(((execucao.pontuacao_obtida or 0) / (execucao.pontuacao_possivel or 1)) * 100) }}%
+          {% else %}
+            0%
+          {% endif %}
+        </td>
+      </tr>
+  
+      <tr>
+        <td><strong>NOTA FINAL</strong></td>
+        <td id="resumo_nota_final">{{ "%.2f"|format(execucao.nota or 0) }}</td>
+      </tr>
+    </table>
+  </div>
+
+  <button type="submit" class="btn-salvar">
+    Salvar Avaliação
+  </button>
+</form>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const radios = document.querySelectorAll(".nota-radio");
+    
+      radios.forEach(function (radio) {
+        radio.addEventListener("change", async function () {
+          const nome = this.name;
+          const idExecucaoItem = nome.replace("nota_item_", "");
+          const nota = this.value;
+    
+          const celulaNota = document.getElementById("nota_item_" + idExecucaoItem);
+    
+          if (celulaNota) {
+            celulaNota.textContent = nota;
+    
+            celulaNota.classList.remove(
+              "nota-1",
+              "nota-2",
+              "nota-3",
+              "nota-4",
+              "nota-5"
+            );
+    
+            celulaNota.classList.add("nota-" + nota);
+          }
+    
+          try {
+            const resposta = await fetch("{{ url_for('performances.salvar_item_avaliacao_ajax') }}", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                id_execucao_item: idExecucaoItem,
+                nota_item: nota
+              })
+            });
+    
+            const dados = await resposta.json();
+    
+            if (!dados.ok) {
+              alert("Erro ao salvar nota: " + (dados.erro || ""));
+              return;
+            }
+    
+            document.getElementById("resumo_pontos").textContent =
+              Number(dados.pontos || 0).toFixed(0);
+    
+            document.getElementById("resumo_atendido").textContent =
+              Number(dados.atendido || 0).toFixed(0) + "%";
+    
+            document.getElementById("resumo_nota_final").textContent =
+              Number(dados.nota_final || 0).toFixed(2);
+    
+          } catch (erro) {
+            alert("Erro de comunicação ao salvar a nota.");
+          }
+        });
+      });
+    });
+    </script>
+
+{% endblock %}

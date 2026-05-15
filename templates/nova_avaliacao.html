@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+
+  .empresa {
+    font-size: 20px;
+    margin-bottom: 24px;
+  }
+
+  .card {
+    max-width: 760px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+
+  label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  input {
+    width: 100%;
+    padding: 11px 12px;
+    border: 1px solid #ccc;
+    border-radius: 10px;
+    font-size: 16px;
+    margin-bottom: 18px;
+  }
+
+  .btn-salvar {
+    padding: 11px 18px;
+    border: none;
+    border-radius: 10px;
+    background: #c2410c;
+    color: #fff;
+    font-weight: 800;
+    cursor: pointer;
+  }
+</style>
+
+<div class="pagina-titulo">Nova Avaliação</div>
+
+<div class="empresa">
+  Empresa: <strong>{{ nome_empresa }}</strong>
+</div>
+
+<div class="card">
+  <form method="POST">
+    <label for="codigo_avaliacao">Código da Avaliação</label>
+    <input
+      type="text"
+      id="codigo_avaliacao"
+      name="codigo_avaliacao"
+      placeholder="Ex: AVAL001"
+      required
+    >
+
+    <label for="descricao">Descrição</label>
+    <input
+      type="text"
+      id="descricao"
+      name="descricao"
+      placeholder="Ex: Avaliação Mensal de Performance"
+      required
+    >
+
+    <button type="submit" class="btn-salvar">
+      Salvar Avaliação
+    </button>
+  </form>
+</div>
+
+{% endblock %}

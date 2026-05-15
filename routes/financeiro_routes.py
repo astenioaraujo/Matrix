@@ -3,6 +3,7 @@ from datetime import datetime
 import math
 from psycopg2.extras import RealDictCursor
 from db import get_connection
+from security_helpers import usuario_tem_permissao
 from services.dashboard_service import montar_dashboard
 from utils.formatters import formatar_numero_br, formatar_int
 
@@ -237,21 +238,59 @@ def obter_dados_matricial(cod_empresa, ano_sel="", mes_sel="", filial_sel=""):
 # =========================
 @financeiro_bp.route("/menu")
 def menu_empresa():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
     if "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
 
-    linhas, totais = montar_dashboard(session["cod_empresa"])
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global == "superusuario":
+        pode_resultado_mb = True
+        pode_lancamentos = True
+        pode_importacoes = True
+        pode_cadastros = True
+        pode_matricial = True
+        pode_matricial_detalhado = True
+        pode_variacoes = True
+        pode_margem_bruta = True
+        pode_exclusoes = True
+    else:
+        pode_resultado_mb = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "RESULTADO_MB")
+        pode_lancamentos = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "LANCAMENTOS")
+        pode_importacoes = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "IMPORTACOES")
+        pode_cadastros = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CADASTROS")
+        pode_matricial = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "MATRICIAL")
+        pode_matricial_detalhado = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "MATRICIAL_DETALHADO")
+        pode_variacoes = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "VARIACOES")
+        pode_margem_bruta = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "MARGEM_BRUTA")
+        pode_exclusoes = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "EXCLUSOES")
+
+    linhas, totais = montar_dashboard(cod_empresa)
 
     return render_template(
         "menu_financeiro.html",
-        empresa_ativa=session["cod_empresa"],
+        empresa_ativa=cod_empresa,
         nome_empresa_ativa=session["nome_empresa"],
         linhas_dashboard=linhas,
         totais_dashboard=totais,
         formatar_numero_br=formatar_numero_br,
         formatar_int=formatar_int,
         ano_atual=datetime.now().year,
-        url_voltar=url_for("sistema.selecionar_sistema")   # 👈 ESSENCIAL
+        url_voltar=url_for("sistema.selecionar_sistema"),
+
+        pode_resultado_mb=pode_resultado_mb,
+        pode_lancamentos=pode_lancamentos,
+        pode_importacoes=pode_importacoes,
+        pode_cadastros=pode_cadastros,
+        pode_matricial=pode_matricial,
+        pode_matricial_detalhado=pode_matricial_detalhado,
+        pode_variacoes=pode_variacoes,
+        pode_margem_bruta=pode_margem_bruta,
+        pode_exclusoes=pode_exclusoes,
     )
 
 # =========================
@@ -1357,10 +1396,23 @@ def dados_detalhados():
     grupo = request.args.get("grupo", default=4, type=int)
 
     hoje = datetime.now()
-    if not ano:
+
+    if not ano and not mes:
+        if hoje.month == 1:
+            ano = hoje.year - 1
+            mes = 12
+        else:
+            ano = hoje.year
+            mes = hoje.month - 1
+
+    elif ano and not mes:
+        if hoje.month == 1:
+            mes = 12
+        else:
+            mes = hoje.month - 1
+
+    elif mes and not ano:
         ano = hoje.year
-    if not mes:
-        mes = hoje.month
 
     conn = get_connection()
     cur = conn.cursor()

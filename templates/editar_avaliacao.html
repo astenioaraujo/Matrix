@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+
+  .empresa {
+    font-size: 20px;
+    margin-bottom: 20px;
+  }
+
+  .card {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 16px;
+    padding: 22px;
+    margin-bottom: 24px;
+    max-width: 1200px;
+  }
+
+  .form-add {
+    display: grid;
+    grid-template-columns: 90px 1fr 2fr 120px;
+    gap: 10px;
+    align-items: end;
+  }
+
+  label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 5px;
+  }
+
+  input, textarea {
+    width: 100%;
+    padding: 9px 10px;
+    border: 1px solid #ccc;
+    border-radius: 9px;
+    font-size: 14px;
+  }
+
+  textarea {
+    min-height: 70px;
+    resize: vertical;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    background: #fff;
+  }
+
+  th, td {
+    border: 1px solid #ddd;
+    padding: 8px 9px;
+    vertical-align: top;
+  }
+
+  th {
+    background: #dbe8f4;
+    text-align: left;
+  }
+
+  .col-seq {
+    width: 80px;
+  }
+
+  .col-acoes {
+    width: 150px;
+    text-align: center;
+  }
+
+  .btn {
+    border: none;
+    border-radius: 9px;
+    padding: 9px 12px;
+    font-weight: 800;
+    cursor: pointer;
+    color: #fff;
+  }
+
+  .btn-add {
+    background: #c2410c;
+  }
+
+  .btn-salvar {
+    background: #166534;
+  }
+
+  .btn-excluir {
+    background: #b02a37;
+  }
+
+  .acoes {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+  }
+
+  @media (max-width: 900px) {
+    .form-add {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="pagina-titulo">Editar Avaliação</div>
+
+<div class="empresa">
+  Empresa: <strong>{{ nome_empresa }}</strong>
+</div>
+
+<div class="card">
+  <strong>Código:</strong> {{ avaliacao.codigo_avaliacao }}<br>
+  <strong>Descrição:</strong> {{ avaliacao.descricao }}<br>
+  <strong>Versão:</strong> {{ avaliacao.versao }}<br>
+  <strong>Status:</strong> {{ avaliacao.status }}
+</div>
+
+<div class="card">
+  <h3>Adicionar Pergunta</h3>
+
+  <form method="POST" action="{{ url_for('performances.adicionar_item_avaliacao', id_avaliacao=avaliacao.id_avaliacao) }}">
+    <div class="form-add">
+      <div>
+        <label>Seq.</label>
+        <input type="number" name="sequencia" value="{{ (itens|length) + 1 }}" required>
+      </div>
+
+      <div>
+        <label>Pergunta</label>
+        <input type="text" name="titulo" required>
+      </div>
+
+      <div>
+        <label>Detalhamento</label>
+        <textarea name="detalhamento"></textarea>
+      </div>
+
+      <div>
+        <button type="submit" class="btn btn-add">Adicionar</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<form method="POST" action="{{ url_for('performances.salvar_itens_avaliacao', id_avaliacao=avaliacao.id_avaliacao) }}">
+  <table>
+    <thead>
+      <tr>
+        <th class="col-seq">Seq.</th>
+        <th>Pergunta</th>
+        <th>Detalhamento</th>
+        <th class="col-acoes">Ações</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for item in itens %}
+        <tr>
+          <td>
+            <input type="number" name="sequencia_{{ item.id_item }}" value="{{ item.sequencia }}">
+          </td>
+
+          <td>
+            <input type="text" name="titulo_{{ item.id_item }}" value="{{ item.titulo }}">
+          </td>
+
+          <td>
+            <textarea name="detalhamento_{{ item.id_item }}">{{ item.detalhamento or "" }}</textarea>
+          </td>
+
+          <td class="col-acoes">
+            <div class="acoes">
+              <button type="submit" class="btn btn-salvar">Salvar</button>
+            </div>
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="4">Nenhuma pergunta cadastrada para esta avaliação.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</form>
+
+<br>
+
+{% for item in itens %}
+  <form
+    method="POST"
+    action="{{ url_for('performances.excluir_item_avaliacao', id_avaliacao=avaliacao.id_avaliacao, id_item=item.id_item) }}"
+    style="display:none;"
+    id="form-excluir-{{ item.id_item }}">
+  </form>
+{% endfor %}
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const linhas = document.querySelectorAll("tbody tr");
+
+    linhas.forEach(function (linha, index) {
+      const celulaAcoes = linha.querySelector(".col-acoes .acoes");
+      const itemIdInput = linha.querySelector("input[name^='sequencia_']");
+
+      if (!celulaAcoes || !itemIdInput) return;
+
+      const nome = itemIdInput.getAttribute("name");
+      const idItem = nome.replace("sequencia_", "");
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-excluir";
+      btn.textContent = "Excluir";
+
+      btn.onclick = function () {
+        if (confirm("Confirma excluir esta pergunta?")) {
+          document.getElementById("form-excluir-" + idItem).submit();
+        }
+      };
+
+      celulaAcoes.appendChild(btn);
+    });
+  });
+</script>
+
+{% endblock %}

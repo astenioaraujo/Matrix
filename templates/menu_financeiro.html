@@ -75,28 +75,40 @@
   }
 
   .tabela-container {
-    margin-top: 55px;
-    overflow: auto;
-    max-height: 65vh;
-    border: 1px solid #d0d0d0;
-    border-radius: 6px;
-    background: #fff;
-  }
+  margin-top: 20px;
+  display: inline-block;
+  overflow: visible;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  max-height: none;
+}
 
   table {
-    border-collapse: collapse;
-    width: max-content;
-    min-width: 100%;
-    font-size: 15px;
-  }
+  border-collapse: collapse;
+  width: auto;
+  min-width: auto;
+  font-size: 15px;
+}
 
-  th, td {
-    border: 1px solid #dcdcdc;
-    padding: 8px 10px;
-    white-space: nowrap;
-    text-align: right;
-  }
+th, td {
+  border: 1px solid #dcdcdc;
+  padding: 3px 5px;
+  white-space: nowrap;
+  text-align: center;
+  font-size: 12px;
+}
 
+th:nth-child(1),
+td:nth-child(1),
+th:nth-child(2),
+td:nth-child(2),
+th:nth-child(3),
+td:nth-child(3) {
+  width: 120px;
+  min-width: 120px;
+  max-width: 120px;
+}
   thead th {
     position: sticky;
     top: 0;
@@ -108,7 +120,7 @@
 
   th:first-child, td:first-child,
   th:nth-child(2), td:nth-child(2) {
-    text-align: left;
+    text-align: center;
   }
 
   tbody tr:nth-child(even) {
@@ -130,45 +142,59 @@
 
 <div class="menu-botoes">
 
-  <!-- VOLTAR PRIMEIRO -->
+  {% if pode_resultado_mb %}
+    <a class="btn-resultado" href="{{ url_for('financeiro.resultado_mb', ano=ano_atual) }}">
+      Resultado MB
+    </a>
+  {% endif %}
 
+  {% if pode_lancamentos %}
+    <a class="btn-lanc" href="{{ url_for('financeiro.listar_lancamentos') }}">
+      Lançamentos
+    </a>
+  {% endif %}
 
-  <!-- MÓDULOS -->
-  <a class="btn-resultado" href="{{ url_for('financeiro.resultado_mb', ano=ano_atual) }}">
-    Resultado MB
-  </a>
+  {% if pode_importacoes %}
+    <a class="btn-import" href="{{ url_for('importacoes.listar_importacoes') }}">
+      Importações
+    </a>
+  {% endif %}
 
-  <a class="btn-lanc" href="{{ url_for('financeiro.listar_lancamentos') }}">
-    Lançamentos
-  </a>
+  {% if pode_cadastros %}
+    <a class="btn-cad" href="{{ url_for('financeiro.menu_cadastros') }}">
+      Cadastros
+    </a>
+  {% endif %}
 
-  <a class="btn-import" href="{{ url_for('importacoes.listar_importacoes') }}">
-    Importações
-  </a>
+  {% if pode_matricial %}
+    <a class="btn-matricial" href="{{ url_for('financeiro.matricial') }}">
+      Matricial
+    </a>
+  {% endif %}
 
-  <a class="btn-cad" href="{{ url_for('financeiro.menu_cadastros') }}">
-    Cadastros
-  </a>
+  {% if pode_matricial_detalhado %}
+    <a class="btn-matricial" href="{{ url_for('financeiro.dados_detalhados') }}">
+      Matricial Detalhado
+    </a>
+  {% endif %}
 
-  <a class="btn-matricial" href="{{ url_for('financeiro.matricial') }}">
-    Matricial
-  </a>
+  {% if pode_variacoes %}
+    <a class="btn-matricial" href="{{ url_for('financeiro.variacoes') }}">
+      Variações
+    </a>
+  {% endif %}
 
-  <a class="btn-matricial" href="{{ url_for('financeiro.dados_detalhados') }}">
-    Matricial Detalhado
-  </a>
+  {% if pode_margem_bruta %}
+    <a class="btn-mb" href="{{ url_for('financeiro.margem_bruta') }}">
+      Margem Bruta
+    </a>
+  {% endif %}
 
-  <a class="btn-matricial" href="{{ url_for('financeiro.variacoes') }}">
-    Variações
-  </a>
-
-  <a class="btn-mb" href="{{ url_for('financeiro.margem_bruta') }}">
-    Margem Bruta
-  </a>
-
-  <a class="btn-exclusoes" href="{{ url_for('financeiro.exclusoes') }}">
-    Exclusões
-  </a>
+  {% if pode_exclusoes %}
+    <a class="btn-exclusoes" href="{{ url_for('financeiro.exclusoes') }}">
+      Exclusões
+    </a>
+  {% endif %}
 
 </div>
 
@@ -182,14 +208,6 @@
         <th>Ano</th>
         <th>Mês</th>
         <th>Lanç.</th>
-        <th>OP</th>
-        <th>ENOP</th>
-        <th>PROD</th>
-        <th>DESP</th>
-        <th>SNOP</th>
-        <th>DIVI</th>
-        <th>TRANSF</th>
-        <th>Total</th>
       </tr>
     </thead>
 
@@ -199,32 +217,10 @@
         <td>{{ l.ano }}</td>
         <td>{{ l.mes }}</td>
         <td>{{ formatar_int(l.lanc) }}</td>
-        <td>{{ formatar_numero_br(l.op) }}</td>
-        <td>{{ formatar_numero_br(l.enop) }}</td>
-        <td>{{ formatar_numero_br(l.prod) }}</td>
-        <td style="{{ l.estilo_desp }}">{{ formatar_numero_br(l.desp) }}</td>
-        <td style="{{ l.estilo_snop }}">{{ formatar_numero_br(l.snop) }}</td>
-        <td>{{ formatar_numero_br(l.divi) }}</td>
-        <td>{{ formatar_numero_br(l.transfe) }}</td>
-        <td>{{ formatar_numero_br(l.total) }}</td>
       </tr>
       {% endfor %}
     </tbody>
 
-    <tfoot>
-      <tr>
-        <td colspan="2">Totais</td>
-        <td>{{ formatar_int(totais_dashboard.lanc) }}</td>
-        <td>{{ formatar_numero_br(totais_dashboard.op) }}</td>
-        <td>{{ formatar_numero_br(totais_dashboard.enop) }}</td>
-        <td>{{ formatar_numero_br(totais_dashboard.prod) }}</td>
-        <td>{{ formatar_numero_br(totais_dashboard.desp) }}</td>
-        <td>{{ formatar_numero_br(totais_dashboard.snop) }}</td>
-        <td>{{ formatar_numero_br(totais_dashboard.divi) }}</td>
-        <td>{{ formatar_numero_br(totais_dashboard.transfe) }}</td>
-        <td>{{ formatar_numero_br(totais_dashboard.total) }}</td>
-      </tr>
-    </tfoot>
   </table>
 </div>
 
