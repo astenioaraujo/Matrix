@@ -2254,6 +2254,8 @@ def excluir_descarrego_combustivel(id_descarrego):
 # CONSULTAR ESTOQUES
 # ---------------------------------------
 
+import math
+
 @operacoes_bp.route("/estoques/consultar")
 @permissao_obrigatoria(
     "OPERACOES",
@@ -2279,6 +2281,8 @@ def consultar_estoques():
 
     data_base = date.fromisoformat(data_sel)
     data_anterior = data_base - timedelta(days=1)
+
+    mostrar_indicadores_compra = data_base == hoje_br()
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -2335,25 +2339,80 @@ def consultar_estoques():
                 SELECT
                     cod_filial,
                     CASE
-                        WHEN codigo_produto::text IN ('1', '9', '543') THEN 'C1'
-                        WHEN codigo_produto::text = '2' THEN 'C2'
-                        WHEN codigo_produto::text IN ('3', '7') THEN 'C3'
-                        WHEN codigo_produto::text = '5' THEN 'C4'
-                        WHEN codigo_produto::text IN ('4', '8', '10') THEN 'C5'
+                        WHEN POSITION('S10' IN txt) > 0 THEN 'C5'
+                        WHEN POSITION('S500' IN txt) > 0 THEN 'C4'
+                        WHEN POSITION('ADIT' IN txt) > 0 THEN 'C2'
+                        WHEN POSITION('ETAN' IN txt) > 0 THEN 'C3'
+                        WHEN POSITION('GASOL' IN txt) > 0 THEN 'C1'
                         ELSE NULL
                     END AS cod_produto,
                     SUM(COALESCE(quantidade, 0)) AS vendas
-                FROM vendas_diarias
-                WHERE cod_empresa = %s
-                  AND data = %s
+                FROM (
+                    SELECT
+                        cod_filial,
+                        quantidade,
+                        REGEXP_REPLACE(
+                            UPPER(COALESCE(descricao, '')),
+                            '[^A-Z0-9]',
+                            '',
+                            'g'
+                        ) AS txt
+                    FROM vendas_diarias
+                    WHERE cod_empresa = %s
+                    AND data = %s
+                ) vd
                 GROUP BY
                     cod_filial,
                     CASE
-                        WHEN codigo_produto::text IN ('1', '9', '543') THEN 'C1'
-                        WHEN codigo_produto::text = '2' THEN 'C2'
-                        WHEN codigo_produto::text IN ('3', '7') THEN 'C3'
-                        WHEN codigo_produto::text = '5' THEN 'C4'
-                        WHEN codigo_produto::text IN ('4', '8', '10') THEN 'C5'
+                        WHEN POSITION('S10' IN txt) > 0 THEN 'C5'
+                        WHEN POSITION('S500' IN txt) > 0 THEN 'C4'
+                        WHEN POSITION('ADIT' IN txt) > 0 THEN 'C2'
+                        WHEN POSITION('ETAN' IN txt) > 0 THEN 'C3'
+                        WHEN POSITION('GASOL' IN txt) > 0 THEN 'C1'
+                        ELSE NULL
+                    END
+            ),
+
+            media_vendas AS (
+                SELECT
+                    cod_filial,
+                    CASE
+                        WHEN POSITION('S10' IN txt) > 0 THEN 'C5'
+                        WHEN POSITION('S500' IN txt) > 0 THEN 'C4'
+                        WHEN POSITION('ADIT' IN txt) > 0 THEN 'C2'
+                        WHEN POSITION('ETAN' IN txt) > 0 THEN 'C3'
+                        WHEN POSITION('GASOL' IN txt) > 0 THEN 'C1'
+                        ELSE NULL
+                    END AS cod_produto,
+
+                    SUM(COALESCE(quantidade, 0))
+                    / NULLIF(COUNT(DISTINCT data), 0) AS media_vendas_dia
+
+                FROM (
+                    SELECT
+                        cod_filial,
+                        quantidade,
+                        data,
+                        REGEXP_REPLACE(
+                            UPPER(COALESCE(descricao, '')),
+                            '[^A-Z0-9]',
+                            '',
+                            'g'
+                        ) AS txt
+                    FROM vendas_diarias
+                    WHERE cod_empresa = %s
+                    AND data >= %s
+                    AND data <= %s
+                ) vd
+
+                GROUP BY
+                    cod_filial,
+                    CASE
+                        WHEN POSITION('S10' IN txt) > 0 THEN 'C5'
+                        WHEN POSITION('S500' IN txt) > 0 THEN 'C4'
+                        WHEN POSITION('ADIT' IN txt) > 0 THEN 'C2'
+                        WHEN POSITION('ETAN' IN txt) > 0 THEN 'C3'
+                        WHEN POSITION('GASOL' IN txt) > 0 THEN 'C1'
                         ELSE NULL
                     END
             ),
@@ -2448,6 +2507,7 @@ def consultar_estoques():
 
                 COALESCE(ma.medicao_anterior, 0) AS medicao_anterior,
                 COALESCE(v.vendas, 0) AS vendas,
+                COALESCE(mv.media_vendas_dia, 0) AS media_vendas_dia,
                 COALESCE(cd.compras, 0) AS compras,
                 COALESCE(t.estoque_transito, 0) AS estoque_transito,
                 COALESCE(ds.descarregos, 0) AS descarregos,
@@ -2464,7 +2524,7 @@ def consultar_estoques():
 
                 COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, 0) AS preco_ultima_compra,
 
-                COALESCE(mat.medicao_atual, 0) 
+                COALESCE(mat.medicao_atual, 0)
                 * COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, 0) AS estoque_atual_rs,
 
                 COALESCE(cd.compras_rs, 0) AS compras_rs,
@@ -2473,31 +2533,43 @@ def consultar_estoques():
                 * COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, 0) AS transito_rs
 
             FROM base b
+
             LEFT JOIN medicao_anterior ma
               ON ma.cod_filial = b.cod_filial
              AND ma.cod_produto = b.cod_produto
+
             LEFT JOIN vendas v
               ON v.cod_filial = b.cod_filial
              AND v.cod_produto = b.cod_produto
+
+            LEFT JOIN media_vendas mv
+              ON mv.cod_filial = b.cod_filial
+             AND mv.cod_produto = b.cod_produto
+
             LEFT JOIN compras_dia cd
               ON cd.cod_filial = b.cod_filial
              AND cd.cod_produto = b.cod_produto
+
             LEFT JOIN transito t
               ON t.cod_filial = b.cod_filial
              AND t.cod_produto = b.cod_produto
+
             LEFT JOIN descarregos ds
               ON ds.cod_filial = b.cod_filial
              AND ds.cod_produto = b.cod_produto
+
             LEFT JOIN medicao_atual mat
               ON mat.cod_filial = b.cod_filial
              AND mat.cod_produto = b.cod_produto
+
             LEFT JOIN ultima_compra uc
               ON uc.cod_filial = b.cod_filial
              AND uc.cod_produto = b.cod_produto
+
             LEFT JOIN preco_data pd
               ON pd.cod_produto = b.cod_produto
 
-                ORDER BY b.cod_filial, b.cod_produto
+            ORDER BY b.cod_filial, b.cod_produto
         """
 
         params = (
@@ -2505,19 +2577,67 @@ def consultar_estoques():
             + params_filiais
             + [
                 cod_empresa, data_anterior,  # medicao_anterior
+
                 cod_empresa, data_anterior,  # vendas
+
+                cod_empresa,
+                data_base - timedelta(days=7),
+                data_anterior,               # media_vendas
+
                 cod_empresa, data_anterior,  # compras_dia
+
                 cod_empresa,                 # transito subquery
                 cod_empresa, data_anterior,  # transito
+
                 cod_empresa, data_anterior,  # descarregos
+
                 cod_empresa, data_sel,       # medicao_atual
+
                 cod_empresa, data_anterior,  # ultima_compra
+
                 cod_empresa, data_sel,       # preco_data
             ]
         )
 
         cur.execute(sql, params)
         linhas = cur.fetchall() or []
+
+        for l in linhas:
+            medicao_atual = float(l.get("medicao_atual") or 0)
+            compras = float(l.get("compras") or 0)
+            estoque_transito = float(l.get("estoque_transito") or 0)
+            capacidade_tanque = float(l.get("capacidade_tanque") or 0)
+            media_vendas_dia = float(l.get("media_vendas_dia") or 0)
+
+            total_litros = medicao_atual + compras + estoque_transito
+
+            dias_estoque = None
+            sugestao_compra = None
+
+            if mostrar_indicadores_compra and media_vendas_dia > 0:
+
+                dias_estoque = total_litros / media_vendas_dia
+
+                if dias_estoque < 5:
+
+                    necessidade = (media_vendas_dia * 5) - total_litros
+                    espaco_disponivel = capacidade_tanque - total_litros
+
+                    if necessidade > 0 and espaco_disponivel >= 5000:
+
+                        sugestao_base = math.ceil(necessidade / 5000) * 5000
+
+                        sugestao_maxima = (
+                            math.floor(espaco_disponivel / 5000) * 5000
+                        )
+
+                        sugestao_compra = min(
+                            sugestao_base,
+                            sugestao_maxima
+                        )
+
+            l["dias_estoque"] = dias_estoque
+            l["sugestao_compra"] = sugestao_compra
 
     except Exception as e:
         conn.rollback()
@@ -2535,9 +2655,11 @@ def consultar_estoques():
         data_sel=data_sel,
         data_anterior=data_anterior,
         linhas=linhas,
+        mostrar_indicadores_compra=mostrar_indicadores_compra,
         url_voltar=url_for("operacoes.menu_operacoes"),
         texto_voltar="← Voltar",
     )
+
 # ---------------------------------------
 # CONSULTAR VENDAS
 # ---------------------------------------

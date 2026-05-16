@@ -22,7 +22,7 @@
 
   table {
     width: max-content;
-    min-width: 1870px;
+    min-width: 2215px;
     border-collapse: collapse;
     font-size: 14px;
     table-layout: fixed;
@@ -185,6 +185,9 @@
         <th class="col-num">Compras</th>
         <th class="col-num">Estoque em Trânsito</th>
         <th class="col-num divisor-direita total-litros">TOTAL em litros</th>
+        <th class="col-num">Média<br>Vendas Dia</th>
+        <th class="col-num">Dias de<br>Estoque</th>
+        <th class="col-num divisor-direita">Sugestão<br>Compra</th>
         <th class="col-num">Estoque Atual R$</th>
         <th class="col-num">Compras R$</th>
         <th class="col-num">Trânsito R$</th>
@@ -201,6 +204,7 @@
         f_compras=0,
         f_transito=0,
         f_total_litros=0,
+        f_media_vendas=0,
         f_descarregos=0,
         f_vendas=0,
         f_calculado=0,
@@ -216,6 +220,7 @@
         g_compras=0,
         g_transito=0,
         g_total_litros=0,
+        g_media_vendas=0,
         g_descarregos=0,
         g_vendas=0,
         g_calculado=0,
@@ -246,13 +251,20 @@
             <td class="col-num">{{ ns.f_compras | br }}</td>
             <td class="col-num">{{ ns.f_transito | br }}</td>
             <td class="col-num divisor-direita total-litros">{{ ns.f_total_litros | br }}</td>
+            <td class="col-num">
+              {% if mostrar_indicadores_compra %}
+                {{ ns.g_media_vendas | br }}
+              {% endif %}
+            </td>
+            <td class="col-num"></td>
+            <td class="col-num divisor-direita"></td>
             <td class="col-num">{{ ns.f_estoque_atual_rs | br }}</td>
             <td class="col-num">{{ ns.f_compras_rs | br }}</td>
             <td class="col-num">{{ ns.f_transito_rs | br }}</td>
             <td class="col-num">{{ ns.f_total_rs | br }}</td>
           </tr>
 
-          <tr class="linha-espaco"><td colspan="16"></td></tr>
+          <tr class="linha-espaco"><td colspan="19"></td></tr>
           {% endif %}
 
           {% set ns.filial_atual = l.cod_filial %}
@@ -262,6 +274,7 @@
           {% set ns.f_compras = 0 %}
           {% set ns.f_transito = 0 %}
           {% set ns.f_total_litros = 0 %}
+          {% set ns.f_media_vendas = 0 %}
           {% set ns.f_descarregos = 0 %}
           {% set ns.f_vendas = 0 %}
           {% set ns.f_calculado = 0 %}
@@ -273,7 +286,7 @@
           {% set ns.f_total_rs = 0 %}
 
           <tr class="linha-filial">
-            <td colspan="16">{{ l.cod_filial }} - {{ l.nome_filial }}</td>
+            <td colspan="19">{{ l.cod_filial }} - {{ l.nome_filial }}</td>
           </tr>
 
         {% endif %}
@@ -292,6 +305,7 @@
         {% set ns.f_compras = ns.f_compras + (l.compras or 0) %}
         {% set ns.f_transito = ns.f_transito + (l.estoque_transito or 0) %}
         {% set ns.f_total_litros = ns.f_total_litros + total_litros %}
+        {% set ns.f_media_vendas = ns.f_media_vendas + (l.media_vendas_dia or 0) %}
         {% set ns.f_descarregos = ns.f_descarregos + (l.descarregos or 0) %}
         {% set ns.f_vendas = ns.f_vendas + (l.vendas or 0) %}
         {% set ns.f_calculado = ns.f_calculado + calc %}
@@ -306,6 +320,7 @@
         {% set ns.g_compras = ns.g_compras + (l.compras or 0) %}
         {% set ns.g_transito = ns.g_transito + (l.estoque_transito or 0) %}
         {% set ns.g_total_litros = ns.g_total_litros + total_litros %}
+        {% set ns.g_media_vendas = ns.g_media_vendas + (l.media_vendas_dia or 0) %}
         {% set ns.g_descarregos = ns.g_descarregos + (l.descarregos or 0) %}
         {% set ns.g_vendas = ns.g_vendas + (l.vendas or 0) %}
         {% set ns.g_calculado = ns.g_calculado + calc %}
@@ -332,6 +347,23 @@
           <td class="col-num">{{ l.compras | br }}</td>
           <td class="col-num">{{ l.estoque_transito | br }}</td>
           <td class="col-num divisor-direita total-litros">{{ total_litros | br }}</td>
+          <td class="col-num">
+            {% if mostrar_indicadores_compra %}
+              {{ l.media_vendas_dia | br }}
+            {% endif %}
+          </td>
+          
+          <td class="col-num">
+            {% if mostrar_indicadores_compra and l.dias_estoque is not none %}
+              {{ "%.1f"|format(l.dias_estoque)|replace(".", ",") }}
+            {% endif %}
+          </td>
+          
+          <td class="col-num divisor-direita">
+            {% if mostrar_indicadores_compra and l.sugestao_compra %}
+              {{ l.sugestao_compra | br }}
+            {% endif %}
+          </td>
           <td class="col-num">{{ estoque_atual_rs | br }}</td>
           <td class="col-num">{{ compras_rs | br }}</td>
           <td class="col-num">{{ transito_rs | br }}</td>
@@ -355,13 +387,23 @@
           <td class="col-num">{{ ns.f_compras | br }}</td>
           <td class="col-num">{{ ns.f_transito | br }}</td>
           <td class="col-num divisor-direita total-litros">{{ ns.f_total_litros | br }}</td>
+
+          <td class="col-num">
+            {% if mostrar_indicadores_compra %}
+              {{ ns.f_media_vendas | br }}
+            {% endif %}
+          </td>
+
+          <td class="col-num"></td>
+          <td class="col-num divisor-direita"></td>
+
           <td class="col-num">{{ ns.f_estoque_atual_rs | br }}</td>
           <td class="col-num">{{ ns.f_compras_rs | br }}</td>
           <td class="col-num">{{ ns.f_transito_rs | br }}</td>
           <td class="col-num">{{ ns.f_total_rs | br }}</td>
         </tr>
 
-        <tr class="linha-espaco"><td colspan="16"></td></tr>
+        <tr class="linha-espaco"><td colspan="19"></td></tr>
 
         <tr class="linha-total-geral">
           <td colspan="2">TOTAL GERAL</td>
@@ -377,6 +419,13 @@
           <td class="col-num">{{ ns.g_compras | br }}</td>
           <td class="col-num">{{ ns.g_transito | br }}</td>
           <td class="col-num divisor-direita total-litros">{{ ns.g_total_litros | br }}</td>
+          <td class="col-num">
+            {% if mostrar_indicadores_compra %}
+              {{ ns.f_media_vendas | br }}
+            {% endif %}
+          </td>
+          <td class="col-num"></td>
+          <td class="col-num divisor-direita"></td>
           <td class="col-num">{{ ns.g_estoque_atual_rs | br }}</td>
           <td class="col-num">{{ ns.g_compras_rs | br }}</td>
           <td class="col-num">{{ ns.g_transito_rs | br }}</td>
