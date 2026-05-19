@@ -5,6 +5,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from flask import Flask
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from routes.auth_routes import auth_bp
 from routes.sistema_routes import sistema_bp
@@ -19,6 +20,7 @@ from routes.compliance_routes import compliance_bp
 from routes.vistorias_routes import vistorias_bp
 from routes.rh_routes import rh_bp
 from routes.performances_routes import performances_bp
+from routes.treinamentos_routes import treinamentos_bp
 
 
 def formatar_numero_br(valor):
@@ -29,6 +31,13 @@ def formatar_numero_br(valor):
 
 app = Flask(__name__)
 app.secret_key = "matrix2026"
+# HTTPS / PROXY / COOKIES
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+if not app.debug:
+    app.config["SESSION_COOKIE_SECURE"] = True
+
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 app.jinja_env.filters['br'] = formatar_numero_br
 
@@ -46,6 +55,7 @@ app.register_blueprint(compliance_bp, url_prefix="/compliance")
 app.register_blueprint(vistorias_bp, url_prefix="/vistorias")
 app.register_blueprint(rh_bp, url_prefix="/rh")
 app.register_blueprint(performances_bp, url_prefix="/performances")
+app.register_blueprint(treinamentos_bp)
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)

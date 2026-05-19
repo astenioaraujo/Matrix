@@ -93,6 +93,7 @@
   .btn-compliance { background: #4b5563; }
   .btn-vistorias { background: #0f766e; }
   .btn-performances { background: #c2410c; }
+  .btn-treinamentos { background: #2563eb; }
 
   @media (max-width: 700px) {
     .pagina-wrap {
@@ -189,6 +190,13 @@
         <a class="btn-sistema btn-performances" href="{{ url_for('performances.menu_performances') }}">
           <div class="btn-icone">🚀</div>
           <div>Performances</div>
+        </a>
+      {% endif %}
+      
+      {% if pode_treinamentos %}
+        <a class="btn-sistema btn-treinamentos" href="{{ url_for('treinamentos.menu_treinamentos') }}">
+          <div class="btn-icone">🎓</div>
+          <div>Treinamentos</div>
         </a>
       {% endif %}
 

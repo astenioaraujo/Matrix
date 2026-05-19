@@ -1,0 +1,339 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+
+  .empresa {
+    font-size: 18px;
+    margin-bottom: 22px;
+  }
+
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 22px;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.05);
+    margin-bottom: 22px;
+  }
+
+  .card-filtro {
+    max-width: 980px;
+    }
+
+.card-nova {
+  max-width: 1400px;
+}
+
+  .titulo-bloco {
+    font-size: 21px;
+    font-weight: 800;
+    margin-bottom: 16px;
+  }
+
+  .grid-filtro {
+    display: grid;
+    grid-template-columns: 120px auto;
+    gap: 14px;
+    align-items: end;
+  }
+
+  .grid-nova {
+    display: grid;
+    grid-template-columns: 520px 170px 150px 200px 130px;
+    gap: 14px;
+    align-items: end;
+    }
+
+  .grid-texto {
+    display: grid;
+    grid-template-columns: 1fr;
+    margin-top: 14px;
+  }
+
+  label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  input,
+  textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #cfcfcf;
+    font-size: 15px;
+  }
+
+  textarea {
+    min-height: 90px;
+    resize: vertical;
+  }
+
+  .btn-primary {
+    background: #2f66e0;
+    color: #fff;
+    border: none;
+    padding: 11px 18px;
+    border-radius: 11px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .btn-primary:hover {
+    background: #1f4ed8;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th, td {
+    padding: 10px 9px;
+    border-bottom: 1px solid #eee;
+  }
+
+  th {
+    background: #eef3fb;
+    font-weight: 800;
+  }
+
+  tr:hover {
+    background: #f9fbff;
+  }
+
+  .col-descricao {
+    width: 420px;
+  }
+
+  .acao-editar {
+    color: #1f4ed8;
+    font-weight: 800;
+    text-decoration: none;
+  }
+
+  .acao-editar:hover {
+    text-decoration: underline;
+  }
+
+  .mensagem {
+    background: #dcfce7;
+    color: #166534;
+    padding: 12px;
+    border-radius: 10px;
+    margin-bottom: 16px;
+    font-weight: 700;
+  }
+
+  .erro {
+    background: #fee2e2;
+    color: #991b1b;
+    padding: 12px;
+    border-radius: 10px;
+    margin-bottom: 16px;
+    font-weight: 700;
+  }
+</style>
+
+<div class="pagina-titulo">Cadastrar Treinamentos</div>
+
+<div class="empresa">
+  Empresa: <strong>{{ nome_empresa }}</strong>
+</div>
+
+{% if mensagem %}
+  <div class="mensagem">{{ mensagem }}</div>
+{% endif %}
+
+{% if erro %}
+  <div class="erro">{{ erro }}</div>
+{% endif %}
+
+<!-- FILTRO -->
+<div class="card card-filtro">
+  <div class="titulo-bloco">Filtrar treinamentos</div>
+
+  <form method="get" class="grid-filtro">
+    <div>
+      <label>Ano</label>
+      <input type="number" name="ano" value="{{ ano_sel }}">
+    </div>
+
+    <div>
+      <button type="submit" class="btn-primary">Filtrar</button>
+    </div>
+</form>
+</div>
+
+<!-- LISTA -->
+<div class="card">
+  <div class="titulo-bloco">Treinamentos do período</div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Código</th>
+        <th class="col-descricao">Descrição</th>
+        <th>Data</th>
+        <th>Carga Horária</th>
+        <th>Instrutor</th>
+        <th>Validade</th>
+        <th>Descritivo</th>
+        <th>Ação</th>
+      </tr>
+    </thead>
+
+    <tbody>
+
+        {% for t in treinamentos_mes %}
+        <tr>
+          <form method="post"
+                action="{{ url_for('treinamentos.atualizar_treinamento', id_treinamento=t.id) }}">
+      
+            <td>{{ t.id }}</td>
+      
+            <td>{{ t.cod_treinamento }}</td>
+      
+            <td>
+              <input type="text"
+                     name="descricao"
+                     value="{{ t.descricao }}"
+                     required
+                     autocomplete="off">
+            </td>
+      
+            <td>
+              <input type="date"
+                     name="data_treinamento"
+                     value="{{ t.data_treinamento }}"
+                     required>
+            </td>
+      
+            <td>
+              <input type="number"
+                     step="0.01"
+                     name="carga_horaria"
+                     value="{{ t.carga_horaria or '' }}">
+            </td>
+      
+            <td>
+              <input type="text"
+                     name="instrutor"
+                     value="{{ t.instrutor or '' }}"
+                     autocomplete="off">
+            </td>
+      
+            <td>
+              <input type="number"
+                     name="validade_meses"
+                     value="{{ t.validade_meses or '' }}">
+            </td>
+      
+            <td style="white-space: nowrap;">
+              <a class="acao-editar"
+                 href="{{ url_for('treinamentos.descritivo_treinamento', id_treinamento=t.id) }}">
+                📝 Descritivo
+              </a>
+            </td>
+      
+            <td style="white-space: nowrap;">
+      
+              <button type="submit"
+                      style="background:#2f66e0; color:#fff; border:none; border-radius:8px; padding:5px 9px; font-weight:700;">
+                💾 Salvar
+              </button>
+      
+          </form>
+      
+              <form method="post"
+                    action="{{ url_for('treinamentos.excluir_treinamento', id_treinamento=t.id) }}"
+                    style="display:inline; margin-left:8px;">
+      
+                <button type="submit"
+                        onclick="return confirm('Excluir este treinamento?');"
+                        style="background:#b02a37; color:#fff; border:none; border-radius:8px; padding:5px 9px; font-weight:700;">
+                  🗑 Excluir
+                </button>
+              </form>
+      
+              <a class="acao-editar"
+                 style="margin-left:8px;"
+                 href="#">
+                👥 Participantes
+              </a>
+      
+            </td>
+        </tr>
+        {% endfor %}
+      
+        <!-- NOVO TREINAMENTO -->
+        <tr style="background:#f8fafc;">
+          <form method="post"
+                action="{{ url_for('treinamentos.cadastrar_treinamentos') }}"
+                autocomplete="off">
+      
+            <td>Novo</td>
+      
+            <td>Auto</td>
+      
+            <td>
+              <input type="text"
+                     name="descricao"
+                     required
+                     autocomplete="off">
+            </td>
+      
+            <td>
+              <input type="date"
+                     name="data_treinamento"
+                     value="{{ today }}"
+                     required>
+            </td>
+      
+            <td>
+              <input type="number"
+                     step="0.01"
+                     name="carga_horaria">
+            </td>
+      
+            <td>
+              <input type="text"
+                     name="instrutor"
+                     autocomplete="off">
+            </td>
+      
+            <td>
+              <input type="number"
+                     name="validade_meses">
+            </td>
+      
+            <td style="color:#777; font-weight:700;">
+              Após incluir
+            </td>
+      
+            <td>
+              <button type="submit"
+                      style="background:#198754; color:#fff; border:none; border-radius:8px; padding:5px 9px; font-weight:700;">
+                ➕ Incluir
+              </button>
+            </td>
+      
+          </form>
+        </tr>
+      
+      </tbody>
+  </table>
+</div>
+
+
+{% endblock %}

@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 20px;
+    margin-bottom: 24px;
+  }
+
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 24px;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.05);
+    max-width: 1200px;
+  }
+
+  .titulo-bloco {
+    font-size: 22px;
+    font-weight: 800;
+    margin-bottom: 18px;
+  }
+
+  label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 520px;
+    border: 1px solid #cfcfcf;
+    border-radius: 12px;
+    padding: 14px;
+    font-size: 16px;
+    line-height: 1.5;
+    resize: vertical;
+  }
+
+  .btn-salvar {
+    margin-top: 18px;
+    background: #2f66e0;
+    color: #fff;
+    border: none;
+    padding: 12px 22px;
+    border-radius: 10px;
+    font-weight: 800;
+    cursor: pointer;
+    font-size: 15px;
+  }
+
+  .btn-salvar:hover {
+    background: #1f4ed8;
+  }
+
+  .info {
+    margin-bottom: 18px;
+    padding: 14px 16px;
+    background: #f5f7fb;
+    border-radius: 12px;
+    border: 1px solid #dde5f0;
+    line-height: 1.5;
+  }
+
+  .info strong {
+    color: #111;
+  }
+</style>
+
+<div class="pagina-titulo">
+  Descritivo do Treinamento
+</div>
+
+<div class="empresa">
+  Empresa: <strong>{{ nome_empresa }}</strong>
+</div>
+
+<div class="card">
+
+  <div class="titulo-bloco">
+    📝 Conteúdo do treinamento
+  </div>
+
+  <div class="info">
+    <strong>Código:</strong> {{ treinamento.cod_treinamento }}<br>
+    <strong>Descrição:</strong> {{ treinamento.descricao }}<br>
+    <strong>Data:</strong> {{ treinamento.data_treinamento }}
+  </div>
+
+  <form method="post">
+
+    <label>Texto descritivo</label>
+
+    <textarea name="texto">{{ treinamento.texto or "" }}</textarea>
+
+    <button type="submit" class="btn-salvar">
+      💾 Salvar Descritivo
+    </button>
+
+  </form>
+
+</div>
+
+{% endblock %}
