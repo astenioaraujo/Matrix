@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 36px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 30px;
+  }
+
+  .painel {
+    background: #fff;
+    border-radius: 14px;
+    padding: 24px;
+    margin-bottom: 30px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    max-width: 900px;
+  }
+
+  .linha-form {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 14px;
+    margin-bottom: 16px;
+    align-items: center;
+  }
+
+  .linha-form label {
+    font-weight: 700;
+  }
+
+  .linha-form input[type="text"],
+  .linha-form input[type="file"] {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    font-size: 15px;
+    background: #fff;
+  }
+
+  .btn-salvar {
+    border: 0;
+    background: #2563eb;
+    color: white;
+    font-weight: 800;
+    padding: 12px 22px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 15px;
+  }
+
+  .btn-salvar:hover {
+    background: #1d4ed8;
+  }
+
+  .tabela {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+
+  .tabela th {
+    background: #e5e7eb;
+    padding: 12px;
+    text-align: left;
+    font-size: 14px;
+  }
+
+  .tabela td {
+    padding: 12px;
+    border-top: 1px solid #e5e7eb;
+    font-size: 14px;
+  }
+
+  .status-ativo {
+    color: #15803d;
+    font-weight: 800;
+  }
+
+  .status-inativo {
+    color: #b91c1c;
+    font-weight: 800;
+  }
+
+  .acoes {
+    display: flex;
+    gap: 8px;
+  }
+
+  .btn-acao {
+    padding: 8px 12px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 700;
+    color: white;
+  }
+
+  .btn-editar {
+    background: #2563eb;
+  }
+
+  .btn-ativar {
+    background: #15803d;
+  }
+
+  .btn-desativar {
+    background: #b91c1c;
+  }
+
+  @media (max-width: 700px) {
+
+    .pagina-titulo {
+      font-size: 30px;
+    }
+
+    .empresa {
+      font-size: 18px;
+    }
+
+    .linha-form {
+      grid-template-columns: 1fr;
+    }
+
+    .painel {
+      padding: 18px;
+    }
+
+    .tabela {
+      font-size: 13px;
+    }
+
+  }
+</style>
+
+<div class="pagina-titulo">
+  Modelos de Certificados
+</div>
+
+<div class="empresa">
+  {{ nome_empresa }}
+</div>
+
+<div class="painel">
+
+  <form method="POST" enctype="multipart/form-data">
+
+    <div class="linha-form">
+      <label>Nome do Modelo</label>
+
+      <input
+        type="text"
+        name="nome_modelo"
+        required
+      >
+    </div>
+
+    <div class="linha-form">
+      <label>Imagem de Fundo</label>
+
+      <input
+        type="file"
+        name="arquivo_fundo"
+        accept=".png,.jpg,.jpeg"
+        required
+      >
+    </div>
+
+    <button type="submit" class="btn-salvar">
+      Salvar Modelo
+    </button>
+
+  </form>
+
+</div>
+
+<table class="tabela">
+
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Modelo</th>
+      <th>Miniatura</th>
+      <th>Arquivo</th>
+      <th>Status</th>
+      <th style="width:180px;">Ações</th>
+    </tr>
+  </thead>
+
+  <tbody>
+
+    {% for modelo in modelos %}
+
+      <tr>
+
+        <td>
+          {{ modelo.id }}
+        </td>
+
+        <td>
+          {{ modelo.nome_modelo }}
+        </td>
+
+        <td>
+
+            {% if modelo.arquivo_fundo %}
+              <img
+                src="{{ url_for('static', filename='uploads/certificados/' ~ modelo.arquivo_fundo) }}"
+                style="
+                  width: 140px;
+                  height: auto;
+                  border-radius: 8px;
+                  border: 1px solid #ddd;
+                "
+              >
+            {% else %}
+              -
+            {% endif %}
+          
+          </td>
+          
+          <td>
+            {{ modelo.arquivo_fundo }}
+          </td>
+
+        <td>
+
+          {% if modelo.ativo %}
+            <span class="status-ativo">Ativo</span>
+          {% else %}
+            <span class="status-inativo">Inativo</span>
+          {% endif %}
+
+        </td>
+
+        <td>
+
+            <div class="acoes">
+
+                <a href="{{ url_for('treinamentos.campos_modelo_certificado', id_modelo=modelo.id) }}"
+                   class="btn-acao btn-editar">
+                  Campos
+                </a>
+              
+                <a href="#"
+                   class="btn-acao btn-editar">
+                  Editar
+                </a>
+              
+                {% if modelo.ativo %}
+              
+                  <a href="{{ url_for('treinamentos.desativar_modelo_certificado', id_modelo=modelo.id) }}"
+                     class="btn-acao btn-desativar">
+                    Desativar
+                  </a>
+              
+                {% else %}
+              
+                  <a href="{{ url_for('treinamentos.ativar_modelo_certificado', id_modelo=modelo.id) }}"
+                     class="btn-acao btn-ativar">
+                    Ativar
+                  </a>
+              
+                {% endif %}
+              
+              </div>
+
+        </td>
+
+      </tr>
+
+    {% endfor %}
+
+  </tbody>
+
+</table>
+
+{% endblock %}

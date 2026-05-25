@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+
+  .empresa {
+    font-size: 20px;
+    margin-bottom: 8px;
+  }
+
+  .modelo {
+    font-size: 16px;
+    margin-bottom: 24px;
+    color: #374151;
+  }
+
+  .tabela {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+
+  .tabela th {
+    background: #e5e7eb;
+    padding: 10px;
+    text-align: center;
+    font-size: 13px;
+  }
+
+  .tabela td {
+    padding: 8px;
+    border-top: 1px solid #e5e7eb;
+    font-size: 13px;
+    vertical-align: top;
+  }
+
+  .campo-nome {
+    font-weight: 800;
+    color: #111827;
+    white-space: nowrap;
+  }
+
+  input,
+  select,
+  textarea {
+    width: 100%;
+    padding: 7px 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 13px;
+    box-sizing: border-box;
+  }
+
+  textarea {
+    min-height: 60px;
+    resize: vertical;
+  }
+
+  .col-num {
+    width: 80px;
+  }
+
+  .col-fonte {
+    width: 130px;
+  }
+
+  .col-cor {
+    width: 95px;
+  }
+
+  .col-align {
+    width: 115px;
+  }
+
+  .col-texto {
+    min-width: 260px;
+  }
+
+  .btn-salvar {
+    margin-top: 20px;
+    border: 0;
+    background: #2563eb;
+    color: white;
+    font-weight: 800;
+    padding: 12px 22px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 15px;
+  }
+
+  .btn-salvar:hover {
+    background: #1d4ed8;
+  }
+</style>
+
+<div class="pagina-titulo">Configurar Campos do Certificado</div>
+
+<div class="empresa">
+  {{ nome_empresa }}
+</div>
+
+<div class="modelo">
+  Modelo: <strong>{{ modelo.nome_modelo }}</strong>
+</div>
+
+<form method="POST">
+
+  <table class="tabela">
+
+    <thead>
+      <tr>
+        <th>Campo</th>
+        <th class="col-num">X</th>
+        <th class="col-num">Y</th>
+        <th class="col-num">Largura</th>
+        <th class="col-num">Altura</th>
+        <th class="col-fonte">Fonte</th>
+        <th class="col-num">Tam.</th>
+        <th class="col-cor">Cor</th>
+        <th class="col-align">Alinhamento</th>
+      </tr>
+    </thead>
+
+    <tbody>
+
+      {% for campo in campos %}
+
+        <tr>
+          <td class="campo-nome">
+            {{ campo.campo }}
+          </td>
+
+          <td>
+            <input type="text" name="{{ campo.campo }}_x" value="{{ campo.x }}">
+          </td>
+
+          <td>
+            <input type="text" name="{{ campo.campo }}_y" value="{{ campo.y }}">
+          </td>
+
+          <td>
+            <input type="text" name="{{ campo.campo }}_largura" value="{{ campo.largura }}">
+          </td>
+
+          <td>
+            <input type="text" name="{{ campo.campo }}_altura" value="{{ campo.altura }}">
+          </td>
+
+          <td>
+            <input type="text" name="{{ campo.campo }}_fonte" value="{{ campo.fonte }}">
+          </td>
+
+          <td>
+            <input type="text" name="{{ campo.campo }}_tamanho_fonte" value="{{ campo.tamanho_fonte }}">
+          </td>
+
+          <td>
+            <input type="text" name="{{ campo.campo }}_cor" value="{{ campo.cor }}">
+          </td>
+
+          <td>
+            <select name="{{ campo.campo }}_alinhamento">
+              <option value="left" {% if campo.alinhamento == "left" %}selected{% endif %}>Esquerda</option>
+              <option value="center" {% if campo.alinhamento == "center" %}selected{% endif %}>Centro</option>
+              <option value="right" {% if campo.alinhamento == "right" %}selected{% endif %}>Direita</option>
+            </select>
+          </td>
+
+        </tr>
+
+      {% endfor %}
+
+    </tbody>
+
+  </table>
+
+  <button type="submit" class="btn-salvar">
+    Salvar Campos
+  </button>
+
+</form>
+
+{% endblock %}

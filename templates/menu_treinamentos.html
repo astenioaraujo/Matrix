@@ -48,6 +48,7 @@
   .btn-cadastrar { background: #8b5a2b; }
   .btn-consultar { background: #93591f; }
   .btn-certificados { background: #a06d3b; }
+  .btn-vincular { background: #7b4a18; }
   .btn-config { background: #6f4522; }
 
   @media (max-width: 700px) {
@@ -81,26 +82,29 @@
       </a>
     {% endif %}
   
-    {% if pode_incluir_participantes %}
-      <a class="menu-card btn-consultar" href="#">
-        Incluir Participantes
+    {% if pode_vincular_participantes %}
+      <a class="menu-card btn-vincular" href="{{ url_for('treinamentos.vincular_participantes') }}" >
+        Vincular Participantes
       </a>
     {% endif %}
   
     {% if pode_consultar_treinamentos %}
-      <a class="menu-card btn-consultar" href="#">
+      <a class="menu-card btn-consultar"
+        href="{{ url_for('treinamentos.consultar_treinamentos') }}">
         Consultar Treinamentos
       </a>
     {% endif %}
   
     {% if pode_emitir_certificados %}
-      <a class="menu-card btn-certificados" href="#">
+      <a class="menu-card btn-certificados"
+        href="{{ url_for('treinamentos.emitir_certificados') }}">
         Emitir Certificados
       </a>
     {% endif %}
   
     {% if pode_configuracoes_treinamentos %}
-      <a class="menu-card btn-config" href="#">
+      <a class="menu-card btn-config"
+        href="{{ url_for('treinamentos.configuracoes_treinamentos') }}">
         Configurações de Treinamentos
       </a>
     {% endif %}

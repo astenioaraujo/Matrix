@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+
+  .empresa {
+    font-size: 20px;
+    margin-bottom: 24px;
+  }
+
+  .painel {
+    background: #fff;
+    padding: 22px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    margin-bottom: 24px;
+
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  .filtros {
+    display: flex;
+    gap: 12px;
+    align-items: end;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+
+  .campo label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 5px;
+  }
+
+  .campo input,
+  .campo select {
+    padding: 8px 10px;
+    border: 1px solid #bbb;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+
+  .btn {
+    border: none;
+    padding: 9px 15px;
+    border-radius: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+  }
+
+  .btn-filtrar {
+    background: #6f4522;
+    color: white;
+  }
+
+  .btn-visualizar {
+    background: #2563eb;
+    color: white;
+    font-size: 13px;
+    padding: 7px 12px;
+  }
+
+  table {
+    width: 980px;
+    table-layout: fixed;
+    border-collapse: collapse;
+    background: #fff;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #ddd;
+    padding: 8px 10px;
+  }
+
+  th {
+    background: #dbe8f4;
+    text-align: left;
+  }
+
+  .col-id { width: 70px; text-align: center; }
+  .col-data { width: 110px; }
+  .col-carga { width: 120px; text-align: center; }
+  .col-validade { width: 110px; text-align: center; }
+  .col-qtd { width: 110px; text-align: center; }
+  .col-acoes { width: 120px; text-align: center; }
+
+  .col-treinamento {
+    width: 360px;
+    max-width: 360px;
+  }
+
+.col-treinamento-texto {
+  max-width: 360px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+  @media (max-width: 700px) {
+    .filtros {
+      flex-direction: column;
+      align-items: stretch;
+    }
+  }
+</style>
+
+<h1 class="pagina-titulo">Consultar Treinamentos</h1>
+
+<div class="empresa">
+  Empresa: <strong>{{ nome_empresa }}</strong>
+</div>
+
+<div class="painel">
+
+  <form method="GET" class="filtros">
+
+    <div class="campo">
+      <label>Ano</label>
+      <input
+        type="number"
+        name="ano"
+        value="{{ ano_sel }}"
+        min="2000"
+        max="2100"
+      >
+    </div>
+
+    <div class="campo">
+      <label>Filial</label>
+      <select name="filial">
+        <option value="">Todas</option>
+
+        {% for filial in filiais %}
+          <option value="{{ filial.cod_filial }}"
+            {% if filial_sel == filial.cod_filial|string %}selected{% endif %}>
+            {{ filial.cod_filial }} - {{ filial.nome_filial }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <button type="submit" class="btn btn-filtrar">
+      Filtrar
+    </button>
+
+  </form>
+
+  <table>
+    <thead>
+      <tr>
+        <th class="col-id">ID</th>
+        <th class="col-treinamento">Treinamento</th>
+        <th class="col-data">Data</th>
+        <th class="col-carga">Carga</th>
+        <th>Instrutor</th>
+        <th class="col-validade">Validade</th>
+        <th class="col-qtd">Participantes</th>
+        <th class="col-acoes">Visualizar</th>
+      </tr>
+    </thead>
+
+    <tbody>
+
+      {% for treinamento in treinamentos %}
+        <tr>
+
+          <td class="col-id">
+            {{ treinamento.cod_treinamento }}
+          </td>
+
+          <td class="col-treinamento-texto" title="{{ treinamento.descricao }}">
+            {{ treinamento.descricao }}
+          </td>
+
+          <td class="col-data">
+            {{ treinamento.data_treinamento.strftime('%d/%m/%Y') if treinamento.data_treinamento else '' }}
+          </td>
+
+          <td class="col-carga">
+            {{ treinamento.carga_horaria or '' }}
+          </td>
+
+          <td>
+            {{ treinamento.instrutor or '' }}
+          </td>
+
+          <td class="col-validade">
+            {{ treinamento.validade_meses or '' }}
+          </td>
+
+          <td class="col-qtd">
+            {{ treinamento.qtd_participantes }}
+          </td>
+
+          <td class="col-acoes">
+            <a
+              href="{{ url_for('treinamentos.visualizar_treinamento', id_treinamento=treinamento.id_treinamento) }}"
+              class="btn btn-visualizar">
+              Visualizar
+            </a>
+          </td>
+
+        </tr>
+
+      {% else %}
+        <tr>
+          <td colspan="8" style="text-align:center;">
+            Nenhum treinamento encontrado.
+          </td>
+        </tr>
+      {% endfor %}
+
+    </tbody>
+  </table>
+
+</div>
+
+{% endblock %}

@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+
+  .empresa {
+    font-size: 20px;
+    margin-bottom: 24px;
+  }
+  .container-visualizar {
+  max-width: 1100px;
+  width: 1100px;
+  margin-left: 0;
+  margin-right: auto;
+}
+  .painel {
+    background: #fff;
+    padding: 22px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    margin-bottom: 24px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .subtitulo {
+    font-size: 22px;
+    font-weight: 800;
+    margin-bottom: 16px;
+  }
+
+  .dados {
+    line-height: 1.8;
+    font-size: 15px;
+  }
+
+  .descritivo {
+    white-space: pre-wrap;
+    line-height: 1.7;
+    font-size: 15px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #ddd;
+    padding: 8px 10px;
+  }
+
+  th {
+    background: #dbe8f4;
+    text-align: left;
+  }
+
+  .col-cargo {
+    width: 220px;
+  }
+
+  .col-filial {
+    width: 240px;
+  }
+
+  .col-numero {
+    width: 80px;
+    text-align: center;
+  }
+</style>
+<div class="container-visualizar">
+
+<h1 class="pagina-titulo">Visualizar Treinamento</h1>
+
+<div class="empresa">
+  Empresa: <strong>{{ nome_empresa }}</strong>
+</div>
+
+<div class="painel">
+
+  <div class="subtitulo">
+    Dados do treinamento
+  </div>
+
+  <div class="dados">
+
+    <strong>ID:</strong>
+    {{ treinamento.cod_treinamento }}
+    <br>
+
+    <strong>Treinamento:</strong>
+    {{ treinamento.descricao }}
+    <br>
+
+    <strong>Data:</strong>
+    {{ treinamento.data_treinamento.strftime('%d/%m/%Y') if treinamento.data_treinamento else '' }}
+    <br>
+
+    <strong>Carga horária:</strong>
+    {{ treinamento.carga_horaria or '' }}
+    <br>
+
+    <strong>Instrutor:</strong>
+    {{ treinamento.instrutor or '' }}
+    <br>
+
+    <strong>Instituição:</strong>
+    {{ treinamento.instituicao_certificado or '' }}
+    <br>
+
+    <strong>Validade:</strong>
+    {{ treinamento.validade_meses or '' }} meses
+
+  </div>
+
+</div>
+
+<div class="painel">
+
+  <div class="subtitulo">
+    Descritivo
+  </div>
+
+  <div class="descritivo">
+    {{ treinamento.texto or 'Sem descritivo.' }}
+  </div>
+
+</div>
+
+<div class="painel">
+
+  <div class="subtitulo">
+    Participantes ({{ participantes|length }})
+  </div>
+
+  <table>
+
+    <thead>
+      <tr>
+        <th class="col-numero">#</th>
+        <th>Funcionário</th>
+        <th class="col-cargo">Cargo</th>
+        <th class="col-filial">Filial</th>
+      </tr>
+    </thead>
+
+    <tbody>
+
+      {% for participante in participantes %}
+        <tr>
+
+          <td class="col-numero">
+            {{ loop.index }}
+          </td>
+
+          <td>
+            {{ participante.nome }}
+          </td>
+
+          <td>
+            {{ participante.cargo or '' }}
+          </td>
+
+          <td>
+            {{ participante.nome_filial or '' }}
+          </td>
+
+        </tr>
+
+      {% else %}
+
+        <tr>
+          <td colspan="4" style="text-align:center;">
+            Nenhum participante vinculado.
+          </td>
+        </tr>
+
+      {% endfor %}
+
+    </tbody>
+
+  </table>
+
+</div>
+</div>
+
+{% endblock %}

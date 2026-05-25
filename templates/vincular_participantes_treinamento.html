@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 8px; }
+  .empresa { font-size: 20px; margin-bottom: 24px; }
+
+  .painel {
+    background: #fff;
+    padding: 22px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    margin-bottom: 24px;
+  }
+
+  .subtitulo { font-size: 22px; font-weight: 800; margin-bottom: 16px; }
+
+  .filtros {
+    display: flex;
+    gap: 12px;
+    align-items: end;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+
+  .campo label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 5px;
+  }
+
+  .campo input,
+  .campo select {
+    padding: 8px 10px;
+    border: 1px solid #bbb;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+
+  .campo-treinamento select { min-width: 420px; }
+
+  .btn {
+    border: none;
+    padding: 9px 15px;
+    border-radius: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+  }
+
+  .btn-filtrar { background: #6f4522; color: white; }
+  .btn-selecionar { background: #7b4a18; color: white; }
+  .btn-salvar { background: #2563eb; color: white; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #ddd;
+    padding: 8px 10px;
+  }
+
+  th { background: #dbe8f4; text-align: left; }
+
+  .treinamento-info {
+    font-size: 16px;
+    line-height: 1.6;
+  }
+
+  .col-check { width: 55px; text-align: center; }
+  .col-cargo { width: 180px; }
+  .col-filial { width: 220px; }
+
+  @media (max-width: 700px) {
+    .filtros { flex-direction: column; align-items: stretch; }
+    .campo-treinamento select { min-width: 100%; }
+  }
+</style>
+
+<h1 class="pagina-titulo">Vincular Participantes</h1>
+
+<div class="empresa">
+  Empresa: <strong>{{ nome_empresa }}</strong>
+</div>
+
+<div class="painel">
+  <div class="subtitulo">1. Escolha o treinamento</div>
+
+  <form method="GET" class="filtros" id="formTreinamento">
+    <div class="campo">
+      <label>Ano</label>
+      <select name="ano" id="anoTreinamento" onchange="trocarAnoTreinamento()">
+        {% for ano in anos %}
+          <option value="{{ ano }}" {% if ano|string == ano_sel|string %}selected{% endif %}>
+            {{ ano }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="campo campo-treinamento">
+      <label>Treinamento</label>
+      <select name="id_treinamento">
+        <option value="">Selecione...</option>
+        {% for item in treinamentos %}
+          <option value="{{ item.id }}" {% if treinamento and treinamento.id == item.id %}selected{% endif %}>
+            {{ item.data_treinamento.strftime('%d/%m/%Y') if item.data_treinamento else '' }} - {{ item.descricao }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <button type="submit" class="btn btn-selecionar">
+      Selecionar
+    </button>
+  </form>
+</div>
+
+{% if treinamento %}
+  <div class="painel">
+    <div class="subtitulo">2. Treinamento selecionado</div>
+
+    <div class="treinamento-info">
+      <strong>Treinamento:</strong> {{ treinamento.descricao }}<br>
+      <strong>Data:</strong> {{ treinamento.data_treinamento.strftime('%d/%m/%Y') if treinamento.data_treinamento else '' }}<br>
+      <strong>Instrutor:</strong> {{ treinamento.instrutor or '' }}<br>
+      <strong>Carga horária:</strong> {{ treinamento.carga_horaria or '' }}
+    </div>
+  </div>
+
+  <div class="painel">
+    <div class="subtitulo">3. Participantes</div>
+
+    <div class="filtros">
+      <div class="campo">
+        <label>Filial</label>
+        <select id="filtroFilial">
+          <option value="">Todas</option>
+          {% for filial in filiais %}
+            <option value="{{ filial.cod_filial }}">
+              {{ filial.cod_filial }} - {{ filial.nome_filial }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="campo">
+        <label>Cargo</label>
+        <select id="filtroCargo">
+          <option value="">Todos</option>
+          {% for cargo in cargos %}
+            <option value="{{ cargo.id }}">
+              {{ cargo.codigo }} - {{ cargo.descricao }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <button type="button" class="btn btn-filtrar" onclick="filtrarParticipantes()">
+        Filtrar Participantes
+      </button>
+
+      <button type="button" class="btn btn-selecionar" onclick="limparFiltroParticipantes()">
+        Limpar Filtros
+      </button>
+
+      <button type="submit" class="btn btn-salvar">
+        Salvar Participantes
+      </button>
+    </div>
+
+    <form method="POST">
+      <input type="hidden" name="ano" value="{{ ano_sel }}">
+      <input type="hidden" name="id_treinamento" value="{{ treinamento.id }}">
+    
+      <div class="subtitulo" style="font-size:18px; margin-top:8px;">
+        3.1 Participantes selecionados
+      </div>
+    
+      <table>
+        <thead>
+          <tr>
+            <th class="col-check">
+              <input type="checkbox" id="checkTodosDisponiveis" onclick="marcarTodosDisponiveis()">
+            </th>
+            <th>Funcionário</th>
+            <th class="col-cargo">Cargo</th>
+            <th class="col-filial">Filial</th>
+          </tr>
+        </thead>
+    
+        <tbody>
+          {% for funcionario in funcionarios %}
+            {% if funcionario.id in participantes_vinculados %}
+              <tr class="linha-funcionario"
+                  data-filial="{{ funcionario.cod_filial }}"
+                  data-cargo="{{ funcionario.id_cargo }}">
+                <td class="col-check">
+                  <input type="checkbox" name="funcionarios" value="{{ funcionario.id }}" checked>
+                </td>
+                <td>{{ funcionario.nome }}</td>
+                <td>{{ funcionario.cargo or '' }}</td>
+                <td>{{ funcionario.nome_filial or '' }}</td>
+              </tr>
+            {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    
+      <div class="subtitulo" style="font-size:18px; margin-top:26px;">
+        3.2 Funcionários disponíveis
+      </div>
+    
+      <table>
+        <thead>
+          <tr>
+            <th class="col-check">Sel.</th>
+            <th>Funcionário</th>
+            <th class="col-cargo">Cargo</th>
+            <th class="col-filial">Filial</th>
+          </tr>
+        </thead>
+    
+        <tbody>
+          {% for funcionario in funcionarios %}
+            {% if funcionario.id not in participantes_vinculados %}
+              <tr class="linha-funcionario"
+                  data-filial="{{ funcionario.cod_filial }}"
+                  data-cargo="{{ funcionario.id_cargo }}">
+                <td class="col-check">
+                  <input
+                    type="checkbox"
+                    class="check-disponivel"
+                    name="funcionarios"
+                    value="{{ funcionario.id }}"
+                  >
+                </td>
+                <td>{{ funcionario.nome }}</td>
+                <td>{{ funcionario.cargo or '' }}</td>
+                <td>{{ funcionario.nome_filial or '' }}</td>
+              </tr>
+            {% endif %}
+          {% else %}
+            <tr>
+              <td colspan="4" style="text-align:center;">
+                Nenhum funcionário encontrado.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    
+    </form>
+  </div>
+{% endif %}
+
+<script>
+  function trocarAnoTreinamento() {
+    const form = document.getElementById("formTreinamento");
+    const selectTreinamento = form.querySelector("select[name='id_treinamento']");
+
+    if (selectTreinamento) {
+      selectTreinamento.value = "";
+    }
+
+    form.submit();
+  }
+
+  function filtrarParticipantes() {
+    const filial = document.getElementById("filtroFilial").value;
+    const cargo = document.getElementById("filtroCargo").value;
+
+    const linhas = document.querySelectorAll(".linha-funcionario");
+
+    linhas.forEach(function(linha) {
+      const filialLinha = linha.dataset.filial || "";
+      const cargoLinha = linha.dataset.cargo || "";
+
+      const passaFilial = !filial || filialLinha === filial;
+      const passaCargo = !cargo || cargoLinha === cargo;
+
+      linha.style.display = (passaFilial && passaCargo) ? "" : "none";
+    });
+  }
+
+  function limparFiltroParticipantes() {
+    document.getElementById("filtroFilial").value = "";
+    document.getElementById("filtroCargo").value = "";
+
+    const linhas = document.querySelectorAll(".linha-funcionario");
+
+    linhas.forEach(function(linha) {
+      linha.style.display = "";
+    });
+  }
+
+  function marcarTodosDisponiveis() {
+    const master = document.getElementById("checkTodosDisponiveis");
+
+    const checks = document.querySelectorAll(".check-disponivel");
+
+    checks.forEach(function(check) {
+      if (check.closest("tr").style.display !== "none") {
+        check.checked = master.checked;
+      }
+    });
+  }
+
+</script>
+
+{% endblock %}

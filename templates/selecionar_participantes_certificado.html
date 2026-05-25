@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 8px; }
+  .empresa { font-size: 20px; margin-bottom: 24px; }
+
+  .painel {
+    background: #fff;
+    padding: 22px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    margin-bottom: 24px;
+    max-width: 1100px;
+  }
+
+  .subtitulo { font-size: 22px; font-weight: 800; margin-bottom: 16px; }
+
+  .filtros {
+    display: flex;
+    gap: 12px;
+    align-items: end;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+
+  .campo label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 5px;
+  }
+
+  .campo input,
+  .campo select {
+    padding: 8px 10px;
+    border: 1px solid #bbb;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+
+  .btn {
+    border: none;
+    padding: 9px 15px;
+    border-radius: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+  }
+
+  .btn-filtrar { background: #6f4522; color: white; }
+  .btn-emitir { background: #198754; color: white; }
+  .btn-limpar { background: #7b4a18; color: white; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #ddd;
+    padding: 8px 10px;
+  }
+
+  th { background: #dbe8f4; text-align: left; }
+
+  .treinamento-info {
+    font-size: 16px;
+    line-height: 1.6;
+  }
+
+  .col-check { width: 55px; text-align: center; }
+  .col-cargo { width: 180px; }
+  .col-filial { width: 220px; }
+</style>
+
+<h1 class="pagina-titulo">Emitir Certificados</h1>
+
+<div class="empresa">
+  Empresa: <strong>{{ nome_empresa }}</strong>
+</div>
+
+<div class="painel">
+  <div class="subtitulo">1. Treinamento selecionado</div>
+
+  <div class="treinamento-info">
+    <strong>ID:</strong> {{ treinamento.cod_treinamento }}<br>
+    <strong>Treinamento:</strong> {{ treinamento.descricao }}<br>
+    <strong>Data:</strong> {{ treinamento.data_treinamento.strftime('%d/%m/%Y') if treinamento.data_treinamento else '' }}<br>
+    <strong>Instrutor:</strong> {{ treinamento.instrutor or '' }}<br>
+    <strong>Instituição:</strong> {{ treinamento.instituicao_certificado or '' }}<br>
+    <strong>Carga horária:</strong> {{ treinamento.carga_horaria or '' }}
+  </div>
+</div>
+
+<div class="painel">
+  <div class="subtitulo">2. Participantes para emissão</div>
+
+  <form method="GET" class="filtros">
+    <div class="campo">
+      <label>Filtrar por nome</label>
+      <input type="text" id="filtroNome" placeholder="Digite parte do nome">
+    </div>
+
+    <button type="button" class="btn btn-filtrar" onclick="filtrarParticipantes()">
+      Filtrar
+    </button>
+
+    <button type="button" class="btn btn-limpar" onclick="limparFiltroParticipantes()">
+      Limpar
+    </button>
+  </form>
+
+  <form method="POST"
+        action="{{ url_for('treinamentos.gerar_certificados_pdf', id_treinamento=treinamento.id_treinamento) }}">
+
+    <div style="margin-bottom:14px;">
+      <button type="button" class="btn btn-limpar" onclick="marcarTodos()">
+        Marcar todos
+      </button>
+
+      <button type="button" class="btn btn-limpar" onclick="desmarcarTodos()">
+        Desmarcar todos
+      </button>
+
+      <button type="submit" class="btn btn-emitir">
+        Emitir Certificados
+      </button>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th class="col-check">Sel.</th>
+          <th>Funcionário</th>
+          <th class="col-cargo">Cargo</th>
+          <th class="col-filial">Filial</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {% for participante in participantes %}
+          <tr class="linha-participante"
+              data-nome="{{ participante.nome|lower }}">
+            <td class="col-check">
+              <input type="checkbox"
+                     class="check-participante"
+                     name="participantes"
+                     value="{{ participante.id_funcionario }}">
+            </td>
+
+            <td>{{ participante.nome }}</td>
+            <td>{{ participante.cargo or '' }}</td>
+            <td>{{ participante.nome_filial or '' }}</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="4" style="text-align:center;">
+              Nenhum participante vinculado a este treinamento.
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+  </form>
+</div>
+
+<script>
+  function filtrarParticipantes() {
+    const nome = document.getElementById("filtroNome").value.toLowerCase();
+    const linhas = document.querySelectorAll(".linha-participante");
+
+    linhas.forEach(function(linha) {
+      const nomeLinha = linha.dataset.nome || "";
+      linha.style.display = nomeLinha.includes(nome) ? "" : "none";
+    });
+  }
+
+  function limparFiltroParticipantes() {
+    document.getElementById("filtroNome").value = "";
+    document.querySelectorAll(".linha-participante").forEach(function(linha) {
+      linha.style.display = "";
+    });
+  }
+
+  function marcarTodos() {
+    document.querySelectorAll(".check-participante").forEach(function(check) {
+      if (check.closest("tr").style.display !== "none") {
+        check.checked = true;
+      }
+    });
+  }
+
+  function desmarcarTodos() {
+    document.querySelectorAll(".check-participante").forEach(function(check) {
+      check.checked = false;
+    });
+  }
+</script>
+
+{% endblock %}

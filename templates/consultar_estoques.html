@@ -22,7 +22,7 @@
 
   table {
     width: max-content;
-    min-width: 2215px;
+    min-width: 2330px;
     border-collapse: collapse;
     font-size: 14px;
     table-layout: fixed;
@@ -81,6 +81,9 @@
     background: #a5d6a7;
   }
 
+  .divisor-esquerda {
+    border-left: 3px solid #666 !important;
+  }
   .btn {
     padding: 9px 14px;
     border-radius: 8px;
@@ -181,7 +184,8 @@
         <th class="col-num">Vendas</th>
         <th class="col-num">Total Calculado</th>
         <th class="col-num">Medição Atual<br>{{ data_sel[8:10] }}/{{ data_sel[5:7] }}/{{ data_sel[0:4] }}</th>
-        <th class="col-num divisor-direita">Perdas/Sobras</th>
+        <th class="col-num divisor-esquerda">Perdas/Sobras<br>em lts</th>
+        <th class="col-num divisor-direita">Perdas/Sobras<br>em R$</th>
         <th class="col-num">Compras</th>
         <th class="col-num">Estoque em Trânsito</th>
         <th class="col-num divisor-direita total-litros">TOTAL em litros</th>
@@ -210,6 +214,7 @@
         f_calculado=0,
         f_atual=0,
         f_perda=0,
+        f_perda_rs=0,
         f_estoque_atual_rs=0,
         f_compras_rs=0,
         f_transito_rs=0,
@@ -226,6 +231,7 @@
         g_calculado=0,
         g_atual=0,
         g_perda=0,
+        g_perda_rs=0,
         g_estoque_atual_rs=0,
         g_compras_rs=0,
         g_transito_rs=0,
@@ -245,15 +251,20 @@
             <td class="col-num">{{ ns.f_vendas | br }}</td>
             <td class="col-num total-calculado">{{ ns.f_calculado | br }}</td>
             <td class="col-num medicao-atual">{{ ns.f_atual | br }}</td>
-            <td class="col-num divisor-direita {% if ns.f_perda < 0 %}perda-negativa{% elif ns.f_perda > 0 %}sobra-positiva{% endif %}">
+            <td class="col-num divisor-esquerda {% if ns.f_perda < 0 %}perda-negativa{% elif ns.f_perda > 0 %}sobra-positiva{% endif %}">
               {{ ns.f_perda | br }}
             </td>
+            
+            <td class="col-num divisor-direita {% if ns.f_perda_rs < 0 %}perda-negativa{% elif ns.f_perda_rs > 0 %}sobra-positiva{% endif %}">
+              {{ ns.f_perda_rs | br }}
+            </td>
+            
             <td class="col-num">{{ ns.f_compras | br }}</td>
             <td class="col-num">{{ ns.f_transito | br }}</td>
             <td class="col-num divisor-direita total-litros">{{ ns.f_total_litros | br }}</td>
             <td class="col-num">
               {% if mostrar_indicadores_compra %}
-                {{ ns.g_media_vendas | br }}
+                {{ ns.f_media_vendas | br }}
               {% endif %}
             </td>
             <td class="col-num"></td>
@@ -264,7 +275,7 @@
             <td class="col-num">{{ ns.f_total_rs | br }}</td>
           </tr>
 
-          <tr class="linha-espaco"><td colspan="19"></td></tr>
+          <tr class="linha-espaco"><td colspan="20"></td></tr>
           {% endif %}
 
           {% set ns.filial_atual = l.cod_filial %}
@@ -280,13 +291,14 @@
           {% set ns.f_calculado = 0 %}
           {% set ns.f_atual = 0 %}
           {% set ns.f_perda = 0 %}
+          {% set ns.f_perda_rs = 0 %}
           {% set ns.f_estoque_atual_rs = 0 %}
           {% set ns.f_compras_rs = 0 %}
           {% set ns.f_transito_rs = 0 %}
           {% set ns.f_total_rs = 0 %}
 
           <tr class="linha-filial">
-            <td colspan="19">{{ l.cod_filial }} - {{ l.nome_filial }}</td>
+            <td colspan="20">{{ l.cod_filial }} - {{ l.nome_filial }}</td>
           </tr>
 
         {% endif %}
@@ -294,6 +306,7 @@
         {% set med = l.medicao_atual or 0 %}
         {% set calc = (l.medicao_anterior or 0) + (l.descarregos or 0) - (l.vendas or 0) %}
         {% set perda_sobra = med - calc %}
+        {% set perda_sobra_rs = l.perda_sobra_rs or 0 %}
         {% set total_litros = med + (l.compras or 0) + (l.estoque_transito or 0) %}
         {% set estoque_atual_rs = l.estoque_atual_rs or 0 %}
         {% set compras_rs = l.compras_rs or 0 %}
@@ -311,6 +324,7 @@
         {% set ns.f_calculado = ns.f_calculado + calc %}
         {% set ns.f_atual = ns.f_atual + (l.medicao_atual or 0) %}
         {% set ns.f_perda = ns.f_perda + perda_sobra %}
+        {% set ns.f_perda_rs = ns.f_perda_rs + perda_sobra_rs %}
         {% set ns.f_compras_rs = ns.f_compras_rs + compras_rs %}
         {% set ns.f_transito_rs = ns.f_transito_rs + transito_rs %}
         {% set ns.f_total_rs = ns.f_total_rs + total_rs %}
@@ -326,6 +340,7 @@
         {% set ns.g_calculado = ns.g_calculado + calc %}
         {% set ns.g_atual = ns.g_atual + (l.medicao_atual or 0) %}
         {% set ns.g_perda = ns.g_perda + perda_sobra %}
+        {% set ns.g_perda_rs = ns.g_perda_rs + perda_sobra_rs %}
         {% set ns.f_estoque_atual_rs = ns.f_estoque_atual_rs + estoque_atual_rs %}
         {% set ns.g_estoque_atual_rs = ns.g_estoque_atual_rs + estoque_atual_rs %}
         {% set ns.g_compras_rs = ns.g_compras_rs + compras_rs %}
@@ -341,9 +356,14 @@
           <td class="col-num">{{ l.vendas | br }}</td>
           <td class="col-num total-calculado">{{ calc | br }}</td>
           <td class="col-num medicao-atual">{{ l.medicao_atual | br }}</td>
-          <td class="col-num divisor-direita {% if perda_sobra < 0 %}perda-negativa{% elif perda_sobra > 0 %}sobra-positiva{% endif %}">
+          <td class="col-num divisor-esquerda {% if perda_sobra < 0 %}perda-negativa{% elif perda_sobra > 0 %}sobra-positiva{% endif %}">
             {{ perda_sobra | br }}
           </td>
+          
+          <td class="col-num divisor-direita {% if perda_sobra_rs < 0 %}perda-negativa{% elif perda_sobra_rs > 0 %}sobra-positiva{% endif %}">
+            {{ perda_sobra_rs | br }}
+          </td>
+
           <td class="col-num">{{ l.compras | br }}</td>
           <td class="col-num">{{ l.estoque_transito | br }}</td>
           <td class="col-num divisor-direita total-litros">{{ total_litros | br }}</td>
@@ -381,9 +401,14 @@
           <td class="col-num">{{ ns.f_vendas | br }}</td>
           <td class="col-num total-calculado">{{ ns.f_calculado | br }}</td>
           <td class="col-num medicao-atual">{{ ns.f_atual | br }}</td>
-          <td class="col-num divisor-direita {% if ns.f_perda < 0 %}perda-negativa{% elif ns.f_perda > 0 %}sobra-positiva{% endif %}">
+          <td class="col-num divisor-esquerda {% if ns.f_perda < 0 %}perda-negativa{% elif ns.f_perda > 0 %}sobra-positiva{% endif %}">
             {{ ns.f_perda | br }}
           </td>
+          
+          <td class="col-num divisor-direita {% if ns.f_perda_rs < 0 %}perda-negativa{% elif ns.f_perda_rs > 0 %}sobra-positiva{% endif %}">
+            {{ ns.f_perda_rs | br }}
+          </td>
+          
           <td class="col-num">{{ ns.f_compras | br }}</td>
           <td class="col-num">{{ ns.f_transito | br }}</td>
           <td class="col-num divisor-direita total-litros">{{ ns.f_total_litros | br }}</td>
@@ -403,7 +428,7 @@
           <td class="col-num">{{ ns.f_total_rs | br }}</td>
         </tr>
 
-        <tr class="linha-espaco"><td colspan="19"></td></tr>
+        <tr class="linha-espaco"><td colspan="20"></td></tr>
 
         <tr class="linha-total-geral">
           <td colspan="2">TOTAL GERAL</td>
@@ -413,15 +438,20 @@
           <td class="col-num">{{ ns.g_vendas | br }}</td>
           <td class="col-num total-calculado">{{ ns.g_calculado | br }}</td>
           <td class="col-num medicao-atual">{{ ns.g_atual | br }}</td>
-          <td class="col-num divisor-direita {% if ns.g_perda < 0 %}perda-negativa{% elif ns.g_perda > 0 %}sobra-positiva{% endif %}">
+          <td class="col-num divisor-esquerda {% if ns.g_perda < 0 %}perda-negativa{% elif ns.g_perda > 0 %}sobra-positiva{% endif %}">
             {{ ns.g_perda | br }}
           </td>
+          
+          <td class="col-num divisor-direita {% if ns.g_perda_rs < 0 %}perda-negativa{% elif ns.g_perda_rs > 0 %}sobra-positiva{% endif %}">
+            {{ ns.g_perda_rs | br }}
+          </td>
+          
           <td class="col-num">{{ ns.g_compras | br }}</td>
           <td class="col-num">{{ ns.g_transito | br }}</td>
           <td class="col-num divisor-direita total-litros">{{ ns.g_total_litros | br }}</td>
           <td class="col-num">
             {% if mostrar_indicadores_compra %}
-              {{ ns.f_media_vendas | br }}
+              {{ ns.g_media_vendas | br }}
             {% endif %}
           </td>
           <td class="col-num"></td>

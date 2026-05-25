@@ -2526,6 +2526,15 @@ def consultar_estoques():
 
                 COALESCE(mat.medicao_atual, 0)
                 * COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, 0) AS estoque_atual_rs,
+                (
+                    COALESCE(mat.medicao_atual, 0)
+                    - (
+                        COALESCE(ma.medicao_anterior, 0)
+                        + COALESCE(ds.descarregos, 0)
+                        - COALESCE(v.vendas, 0)
+                    )
+                )
+                * COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, 0) AS perda_sobra_rs,
 
                 COALESCE(cd.compras_rs, 0) AS compras_rs,
 
@@ -2603,32 +2612,78 @@ def consultar_estoques():
         linhas = cur.fetchall() or []
 
         for l in linhas:
+
+            medicao_anterior = float(l.get("medicao_anterior") or 0)
+            descarregos = float(l.get("descarregos") or 0)
+            vendas = float(l.get("vendas") or 0)
             medicao_atual = float(l.get("medicao_atual") or 0)
+
+            preco_ultima_compra = float(
+                l.get("preco_ultima_compra") or 0
+            )
+
+            calc = (
+                medicao_anterior
+                + descarregos
+                - vendas
+            )
+
+            perda_sobra = medicao_atual - calc
+
+            perda_sobra_rs = (
+                perda_sobra
+                * preco_ultima_compra
+            )
+
+            l["perda_sobra_rs"] = perda_sobra_rs
+
             compras = float(l.get("compras") or 0)
             estoque_transito = float(l.get("estoque_transito") or 0)
             capacidade_tanque = float(l.get("capacidade_tanque") or 0)
             media_vendas_dia = float(l.get("media_vendas_dia") or 0)
 
-            total_litros = medicao_atual + compras + estoque_transito
+            total_litros = (
+                medicao_atual
+                + compras
+                + estoque_transito
+            )
 
             dias_estoque = None
             sugestao_compra = None
 
             if mostrar_indicadores_compra and media_vendas_dia > 0:
 
-                dias_estoque = total_litros / media_vendas_dia
+                dias_estoque = (
+                    total_litros / media_vendas_dia
+                )
 
                 if dias_estoque < 5:
 
-                    necessidade = (media_vendas_dia * 5) - total_litros
-                    espaco_disponivel = capacidade_tanque - total_litros
+                    necessidade = (
+                        (media_vendas_dia * 5)
+                        - total_litros
+                    )
 
-                    if necessidade > 0 and espaco_disponivel >= 5000:
+                    espaco_disponivel = (
+                        capacidade_tanque
+                        - total_litros
+                    )
 
-                        sugestao_base = math.ceil(necessidade / 5000) * 5000
+                    if (
+                        necessidade > 0
+                        and espaco_disponivel >= 5000
+                    ):
+
+                        sugestao_base = (
+                            math.ceil(
+                                necessidade / 5000
+                            ) * 5000
+                        )
 
                         sugestao_maxima = (
-                            math.floor(espaco_disponivel / 5000) * 5000
+                            math.floor(
+                                espaco_disponivel / 5000
+                            ) * 5000
                         )
 
                         sugestao_compra = min(

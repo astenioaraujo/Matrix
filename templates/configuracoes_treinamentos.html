@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 36px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 30px;
+  }
+
+  .menu-botoes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 240px);
+    gap: 14px;
+    margin-bottom: 50px;
+  }
+
+  .menu-botoes a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 74px;
+    padding: 16px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-size: 17px;
+    font-weight: 800;
+    color: white;
+    background: #2563eb;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+  }
+
+  .menu-botoes a:hover {
+    background: #1d4ed8;
+  }
+
+  .botao-desativado {
+    background: #9ca3af !important;
+    cursor: not-allowed;
+    opacity: 0.75;
+  }
+</style>
+
+<div class="pagina-titulo">Configurações de Treinamentos</div>
+
+<div class="empresa">
+  {{ nome_empresa }}
+</div>
+
+<div class="menu-botoes">
+
+  <a href="#" class="botao-desativado">
+    Tipos de Treinamento
+  </a>
+
+  <a href="#" class="botao-desativado">
+    Instrutores
+  </a>
+
+  <a href="{{ url_for('treinamentos.modelos_certificados') }}">
+    Modelos de Certificados
+  </a>
+
+</div>
+
+{% endblock %}

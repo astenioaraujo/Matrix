@@ -26,11 +26,11 @@
 
   .card-filtro {
     max-width: 980px;
-    }
+  }
 
-.card-nova {
-  max-width: 1400px;
-}
+  .card-nova {
+    max-width: 1400px;
+  }
 
   .titulo-bloco {
     font-size: 21px;
@@ -43,19 +43,6 @@
     grid-template-columns: 120px auto;
     gap: 14px;
     align-items: end;
-  }
-
-  .grid-nova {
-    display: grid;
-    grid-template-columns: 520px 170px 150px 200px 130px;
-    gap: 14px;
-    align-items: end;
-    }
-
-  .grid-texto {
-    display: grid;
-    grid-template-columns: 1fr;
-    margin-top: 14px;
   }
 
   label {
@@ -121,9 +108,26 @@
     text-decoration: none;
   }
 
+  .col-participantes {
+  width: 90px;
+  text-align: center;
+  }
+
   .acao-editar:hover {
     text-decoration: underline;
   }
+
+    .col-data {
+      width: 100px;
+    }
+
+    .col-carga {
+      width: 110px;
+    }
+
+    .col-validade {
+      width: 90px;
+    }
 
   .mensagem {
     background: #dcfce7;
@@ -158,7 +162,6 @@
   <div class="erro">{{ erro }}</div>
 {% endif %}
 
-<!-- FILTRO -->
 <div class="card card-filtro">
   <div class="titulo-bloco">Filtrar treinamentos</div>
 
@@ -171,10 +174,9 @@
     <div>
       <button type="submit" class="btn-primary">Filtrar</button>
     </div>
-</form>
+  </form>
 </div>
 
-<!-- LISTA -->
 <div class="card">
   <div class="titulo-bloco">Treinamentos do período</div>
 
@@ -184,156 +186,129 @@
         <th>ID</th>
         <th>Código</th>
         <th class="col-descricao">Descrição</th>
-        <th>Data</th>
-        <th>Carga Horária</th>
+        <th class="col-data">Data</th>
+        <th class="col-participantes">Participantes</th>
+        <th class="col-carga">Carga Horária</th>
         <th>Instrutor</th>
-        <th>Validade</th>
-        <th>Descritivo</th>
+        <th class="col-validade">Validade</th>
         <th>Ação</th>
       </tr>
     </thead>
 
     <tbody>
-
-        {% for t in treinamentos_mes %}
+      {% for t in treinamentos_mes %}
         <tr>
-          <form method="post"
-                action="{{ url_for('treinamentos.atualizar_treinamento', id_treinamento=t.id) }}">
-      
-            <td>{{ t.id }}</td>
-      
-            <td>{{ t.cod_treinamento }}</td>
-      
-            <td>
-              <input type="text"
-                     name="descricao"
-                     value="{{ t.descricao }}"
-                     required
-                     autocomplete="off">
-            </td>
-      
-            <td>
-              <input type="date"
-                     name="data_treinamento"
-                     value="{{ t.data_treinamento }}"
-                     required>
-            </td>
-      
-            <td>
-              <input type="number"
-                     step="0.01"
-                     name="carga_horaria"
-                     value="{{ t.carga_horaria or '' }}">
-            </td>
-      
-            <td>
-              <input type="text"
-                     name="instrutor"
-                     value="{{ t.instrutor or '' }}"
-                     autocomplete="off">
-            </td>
-      
-            <td>
-              <input type="number"
-                     name="validade_meses"
-                     value="{{ t.validade_meses or '' }}">
-            </td>
-      
-            <td style="white-space: nowrap;">
-              <a class="acao-editar"
-                 href="{{ url_for('treinamentos.descritivo_treinamento', id_treinamento=t.id) }}">
-                📝 Descritivo
-              </a>
-            </td>
-      
-            <td style="white-space: nowrap;">
-      
+          <td>{{ t.id }}</td>
+
+          <td>{{ t.cod_treinamento }}</td>
+
+          <td>{{ t.descricao }}</td>
+
+          <td class="col-data">
+            {{ t.data_treinamento.strftime('%d/%m/%Y') if t.data_treinamento else '' }}
+          </td>
+
+          <td style="text-align: center;">
+            {{ t.qtd_participantes or 0 }}
+          </td>
+
+          <td class="col-carga">
+            {{ t.carga_horaria or '' }}
+          </td>
+
+          <td>
+            {{ t.instrutor or '' }}
+          </td>
+
+          <td class="col-validade">
+            {{ t.validade_meses or '' }}
+          </td>
+
+          <td style="white-space: nowrap;">
+            <button
+              type="button"
+              onclick="window.location.href='{{ url_for('treinamentos.editar_treinamento', id_treinamento=t.id) }}'"
+              style="
+                background:#6b7280;
+                color:#fff;
+                border:none;
+                border-radius:8px;
+                padding:5px 9px;
+                font-weight:700;
+                cursor:pointer;
+                margin-bottom:8px;
+              ">
+              ✏️ Editar
+            </button>
+
+            <form method="post"
+                  action="{{ url_for('treinamentos.excluir_treinamento', id_treinamento=t.id) }}"
+                  style="display:inline; margin-left:8px;">
+
               <button type="submit"
-                      style="background:#2f66e0; color:#fff; border:none; border-radius:8px; padding:5px 9px; font-weight:700;">
-                💾 Salvar
+                      onclick="return confirm('Excluir este treinamento?');"
+                      style="background:#b02a37; color:#fff; border:none; border-radius:8px; padding:5px 9px; font-weight:700;">
+                🗑 Excluir
               </button>
-      
-          </form>
-      
-              <form method="post"
-                    action="{{ url_for('treinamentos.excluir_treinamento', id_treinamento=t.id) }}"
-                    style="display:inline; margin-left:8px;">
-      
-                <button type="submit"
-                        onclick="return confirm('Excluir este treinamento?');"
-                        style="background:#b02a37; color:#fff; border:none; border-radius:8px; padding:5px 9px; font-weight:700;">
-                  🗑 Excluir
-                </button>
-              </form>
-      
-              <a class="acao-editar"
-                 style="margin-left:8px;"
-                 href="#">
-                👥 Participantes
-              </a>
-      
-            </td>
+            </form>
+          </td>
         </tr>
         {% endfor %}
-      
-        <!-- NOVO TREINAMENTO -->
-        <tr style="background:#f8fafc;">
-          <form method="post"
-                action="{{ url_for('treinamentos.cadastrar_treinamentos') }}"
-                autocomplete="off">
-      
-            <td>Novo</td>
-      
-            <td>Auto</td>
-      
-            <td>
-              <input type="text"
-                     name="descricao"
-                     required
-                     autocomplete="off">
-            </td>
-      
-            <td>
-              <input type="date"
-                     name="data_treinamento"
-                     value="{{ today }}"
-                     required>
-            </td>
-      
-            <td>
-              <input type="number"
-                     step="0.01"
-                     name="carga_horaria">
-            </td>
-      
-            <td>
-              <input type="text"
-                     name="instrutor"
-                     autocomplete="off">
-            </td>
-      
-            <td>
-              <input type="number"
-                     name="validade_meses">
-            </td>
-      
-            <td style="color:#777; font-weight:700;">
-              Após incluir
-            </td>
-      
-            <td>
-              <button type="submit"
-                      style="background:#198754; color:#fff; border:none; border-radius:8px; padding:5px 9px; font-weight:700;">
-                ➕ Incluir
-              </button>
-            </td>
-      
-          </form>
-        </tr>
-      
-      </tbody>
+
+      <tr style="background:#f8fafc;">
+        <form method="post"
+              action="{{ url_for('treinamentos.cadastrar_treinamentos') }}"
+              autocomplete="off">
+
+          <td>Novo</td>
+
+          <td>Auto</td>
+
+          <td>
+            <input type="text"
+                   name="descricao"
+                   required
+                   autocomplete="off">
+          </td>
+
+          <td class="col-data">
+            <input type="date"
+                   name="data_treinamento"
+                   value="{{ today }}"
+                   required>
+          </td>
+
+          
+          <td style="text-align:center;">-</td>
+          <td class="col-carga">
+          <input type="number"
+                   step="0.01"
+                   name="carga_horaria">
+          </td>
+
+          <td>
+            <input type="text"
+                   name="instrutor"
+                   autocomplete="off">
+          </td>
+
+          <td class="col-validade">
+            <input type="number"
+                   name="validade_meses">
+          </td>
+
+          <td>
+            <button type="submit"
+                    style="background:#198754; color:#fff; border:none; border-radius:8px; padding:5px 9px; font-weight:700;">
+              ➕ Incluir
+            </button>
+          </td>
+
+        </form>
+      </tr>
+
+    </tbody>
   </table>
 </div>
-
 
 {% endblock %}
