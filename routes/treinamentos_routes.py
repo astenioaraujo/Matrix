@@ -41,7 +41,7 @@ def menu_treinamentos():
             return redirect(url_for("sistema.selecionar_sistema"))
 
         pode_cadastrar_treinamentos = usuario_tem_permissao(id_usuario, cod_empresa, "TREINAMENTOS", "CADASTRAR_TREINAMENTOS")
-        pode_vincular_participantes = usuario_tem_permissao(id_usuario, cod_empresa, "TREINAMENTOS", "INCLUIR_PARTICIPANTES")
+        pode_vincular_participantes = usuario_tem_permissao(id_usuario, cod_empresa, "TREINAMENTOS", "VINCULAR_PARTICIPANTES")
         pode_consultar_treinamentos = usuario_tem_permissao(id_usuario, cod_empresa, "TREINAMENTOS", "CONSULTAR_TREINAMENTOS")
         pode_emitir_certificados = usuario_tem_permissao(id_usuario, cod_empresa, "TREINAMENTOS", "EMITIR_CERTIFICADOS")
         pode_configuracoes_treinamentos = usuario_tem_permissao(id_usuario, cod_empresa, "TREINAMENTOS", "CONFIGURACOES_TREINAMENTOS")
@@ -588,6 +588,7 @@ def vincular_participantes():
         cur.execute("""
             SELECT
                 id_treinamento,
+                id_treinamento AS id,
                 cod_treinamento,
                 descricao,
                 data_treinamento,
@@ -595,9 +596,9 @@ def vincular_participantes():
                 instrutor
             FROM treinamentos
             WHERE cod_empresa = %s
-              AND data_treinamento >= %s
-              AND data_treinamento < %s
-            ORDER BY data_treinamento DESC, id DESC
+            AND data_treinamento >= %s
+            AND data_treinamento < %s
+            ORDER BY data_treinamento DESC, id_treinamento DESC
         """, (cod_empresa, data_ini, data_fim))
 
         treinamentos = cur.fetchall() or []
@@ -1057,7 +1058,7 @@ def ativar_modelo_certificado(id_modelo):
             UPDATE modelos_certificados
                SET ativo = TRUE,
                    atualizado_em = NOW()
-             WHERE id_treinamento = %s
+             WHERE id = %s
                AND cod_empresa = %s
         """, (
             id_modelo,
@@ -1104,7 +1105,7 @@ def desativar_modelo_certificado(id_modelo):
             UPDATE modelos_certificados
                SET ativo = FALSE,
                    atualizado_em = NOW()
-             WHERE id_treinamento = %s
+             WHERE id = %s
                AND cod_empresa = %s
         """, (
             id_modelo,
@@ -1150,7 +1151,7 @@ def campos_modelo_certificado(id_modelo):
         cur.execute("""
             SELECT id, nome_modelo, arquivo_fundo
             FROM modelos_certificados
-            WHERE id_treinamento = %s
+            WHERE id  = %s
               AND cod_empresa = %s
         """, (id_modelo, cod_empresa))
 
@@ -1439,6 +1440,7 @@ def selecionar_participantes_certificado(id_treinamento):
         cur.execute("""
             SELECT
                 id_treinamento,
+                id_treinamento AS id,
                 cod_treinamento,
                 descricao,
                 data_treinamento,
@@ -1446,10 +1448,11 @@ def selecionar_participantes_certificado(id_treinamento):
                 instrutor,
                 instituicao_certificado,
                 validade_meses,
-                texto_certificado
+                texto_certificado,
+                id_modelo_certificado
             FROM treinamentos
             WHERE id_treinamento = %s
-              AND cod_empresa = %s
+            AND cod_empresa = %s
         """, (id_treinamento, cod_empresa))
 
         treinamento = cur.fetchone()
@@ -1515,6 +1518,7 @@ def gerar_certificados_pdf(id_treinamento):
     if "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
 
+    cod_empresa = str(session["cod_empresa"]).strip()
     participantes_ids = request.form.getlist("participantes")
 
     if not participantes_ids:
@@ -1524,9 +1528,69 @@ def gerar_certificados_pdf(id_treinamento):
             id_treinamento=id_treinamento
         ))
 
-    flash(f"Foram selecionados {len(participantes_ids)} participante(s) para emissão.", "success")
+    ids_placeholders = ",".join(["%s"] * len(participantes_ids))
 
-    return redirect(url_for(
-        "treinamentos.selecionar_participantes_certificado",
-        id_treinamento=id_treinamento
-    ))
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT
+                id_treinamento,
+                descricao,
+                data_treinamento,
+                carga_horaria,
+                instrutor,
+                texto_certificado,
+                instituicao_certificado,
+                id_modelo_certificado
+            FROM treinamentos
+            WHERE id_treinamento = %s
+              AND cod_empresa = %s
+        """, (id_treinamento, cod_empresa))
+
+        treinamento = cur.fetchone()
+
+        if not treinamento:
+            flash("Treinamento não encontrado.", "error")
+            return redirect(url_for("treinamentos.emitir_certificados"))
+
+        sql = f"""
+            SELECT
+                f.id AS id_funcionario,
+                f.nome,
+                f.cod_filial,
+                c.descricao AS cargo,
+                fi.nome_filial
+            FROM funcionarios f
+            LEFT JOIN cargos c
+              ON c.cod_empresa = f.cod_empresa
+             AND c.id = f.id_cargo
+            LEFT JOIN filiais fi
+              ON fi.cod_empresa = f.cod_empresa
+             AND fi.cod_filial = f.cod_filial
+            WHERE f.cod_empresa = %s
+              AND f.id IN ({ids_placeholders})
+            ORDER BY f.nome
+        """
+
+        cur.execute(sql, [cod_empresa] + participantes_ids)
+        participantes = cur.fetchall() or []
+
+    except Exception as e:
+        flash(f"Erro ao gerar certificados: {e}", "error")
+        return redirect(url_for(
+            "treinamentos.selecionar_participantes_certificado",
+            id_treinamento=id_treinamento
+        ))
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "certificados_impressao.html",
+        nome_empresa=session.get("nome_empresa"),
+        treinamento=treinamento,
+        participantes=participantes,
+    )

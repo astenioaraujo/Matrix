@@ -99,10 +99,10 @@
     </a>
   {% endif %}
 
-  {% if pode_consultar_preco %}
-    <a href="{{ url_for('operacoes.consultar_preco_compra') }}" class="btn-consultar">
-      Consultar Preço de Compra
-    </a>
+  {% if pode_consultar_estoques %}
+  <a href="{{ url_for('operacoes.consultar_perdas_sobras') }}" class="btn-consultar">
+    Consultar Perdas e Sobras
+  </a>
   {% endif %}
 
 
@@ -145,7 +145,17 @@
     Consultar Estoques
   </a>
   {% endif %}
-  
+  {% if pode_consultar_estoques %}
+  <a href="{{ url_for('operacoes.consultar_estoques') }}" class="btn-consultar">
+    Consultar Estoques
+  </a>
+  {% endif %}
+
+  {% if pode_consultar_estoques %}
+  <a href="{{ url_for('operacoes.consultar_perdas_sobras') }}" class="btn-consultar">
+    Consultar Perdas e Sobras
+  </a>
+  {% endif %}
   
   {% if pode_consultar_vendas %}
   <a href="{{ url_for('operacoes.consultar_vendas') }}" class="btn-consultar">

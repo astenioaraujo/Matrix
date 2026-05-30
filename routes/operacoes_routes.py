@@ -3265,6 +3265,298 @@ def consultar_saldo_emprestimos():
     )
 
 # --------------------------------
+# CONSULTAR PERDAS E SOBRAS
+# --------------------------------
+
+@operacoes_bp.route("/estoques/perdas-sobras")
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONSULTAR_PERDAS_SOBRAS",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def consultar_perdas_sobras():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    hoje = hoje_br()
+
+    mes_ref = (request.args.get("mes_ref") or "").strip()
+
+    if not mes_ref:
+        mes_ref = hoje.strftime("%Y-%m")
+
+    ano, mes = map(int, mes_ref.split("-"))
+
+    data_ini = date(ano, mes, 1)
+
+    if mes == 12:
+        data_fim = date(ano + 1, 1, 1)
+    else:
+        data_fim = date(ano, mes + 1, 1)
+
+    limite_dia = hoje_br() - timedelta(days=1)
+
+    if data_ini <= limite_dia < data_fim:
+        data_fim_consulta = limite_dia + timedelta(days=1)
+    else:
+        data_fim_consulta = data_fim
+
+    ultimo_dia = (data_fim_consulta - timedelta(days=1)).day
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+
+    try:
+        if tipo_global == "superusuario":
+            filtro_filiais_sql = ""
+            params_filiais = []
+        else:
+            filiais_permitidas = [
+                int(x) for x in usuario_filiais_ativas(id_usuario, cod_empresa)
+            ]
+
+            if not filiais_permitidas:
+                flash("Você não possui filiais habilitadas.", "error")
+                return redirect(url_for("operacoes.menu_operacoes"))
+
+            filtro_filiais_sql = "AND f.cod_filial = ANY(%s)"
+            params_filiais = [filiais_permitidas]
+
+        sql = f"""
+            WITH datas AS (
+                SELECT generate_series(%s::date, %s::date, interval '1 day')::date AS data_base
+            ),
+
+            base AS (
+                SELECT
+                    f.cod_filial,
+                    f.nome_filial,
+                    c.cod_produto,
+                    c.descricao AS produto
+                FROM filiais f
+                JOIN capacidade_tanques ct
+                  ON ct.cod_empresa = f.cod_empresa
+                 AND ct.cod_filial = f.cod_filial
+                JOIN combustiveis c
+                  ON c.cod_empresa = ct.cod_empresa
+                 AND c.cod_produto = ct.cod_produto
+                WHERE f.cod_empresa = %s
+                  AND f.ativo = TRUE
+                  AND COALESCE(ct.capacidade_tanque, 0) > 0
+                  {filtro_filiais_sql}
+            ),
+
+            vendas AS (
+                SELECT
+                    cod_filial,
+                    data,
+                    CASE
+                        WHEN POSITION('S10' IN txt) > 0 THEN 'C5'
+                        WHEN POSITION('S500' IN txt) > 0 THEN 'C4'
+                        WHEN POSITION('ADIT' IN txt) > 0 THEN 'C2'
+                        WHEN POSITION('ETAN' IN txt) > 0 THEN 'C3'
+                        WHEN POSITION('GASOL' IN txt) > 0 THEN 'C1'
+                        ELSE NULL
+                    END AS cod_produto,
+                    SUM(COALESCE(quantidade, 0)) AS vendas
+                FROM (
+                    SELECT
+                        cod_filial,
+                        data,
+                        quantidade,
+                        REGEXP_REPLACE(
+                            UPPER(COALESCE(descricao, '')),
+                            '[^A-Z0-9]',
+                            '',
+                            'g'
+                        ) AS txt
+                    FROM vendas_diarias
+                    WHERE cod_empresa = %s
+                      AND data >= %s
+                      AND data < %s
+                ) vd
+                GROUP BY cod_filial, data,
+                    CASE
+                        WHEN POSITION('S10' IN txt) > 0 THEN 'C5'
+                        WHEN POSITION('S500' IN txt) > 0 THEN 'C4'
+                        WHEN POSITION('ADIT' IN txt) > 0 THEN 'C2'
+                        WHEN POSITION('ETAN' IN txt) > 0 THEN 'C3'
+                        WHEN POSITION('GASOL' IN txt) > 0 THEN 'C1'
+                        ELSE NULL
+                    END
+            ),
+
+            descarregos AS (
+                SELECT
+                    cod_filial_descarga AS cod_filial,
+                    cod_produto,
+                    data_descarrego,
+                    SUM(COALESCE(quantidade_descarregada, 0)) AS descarregos
+                FROM descarregos_combustiveis
+                WHERE cod_empresa = %s
+                  AND data_descarrego >= %s
+                  AND data_descarrego < %s
+                GROUP BY cod_filial_descarga, cod_produto, data_descarrego
+            )
+
+            SELECT
+                b.cod_filial,
+                b.nome_filial,
+                b.cod_produto,
+                b.produto,
+                EXTRACT(DAY FROM d.data_base)::int AS dia,
+
+                COALESCE(mat.quantidade_medida, 0)
+                - (
+                    COALESCE(ma.quantidade_medida, 0)
+                    + COALESCE(ds.descarregos, 0)
+                    - COALESCE(v.vendas, 0)
+                ) AS perda_sobra
+
+            FROM base b
+            CROSS JOIN datas d
+
+            LEFT JOIN medicoes ma
+              ON ma.cod_empresa = %s
+             AND ma.cod_filial = b.cod_filial
+             AND ma.cod_produto = b.cod_produto
+             AND ma.data_medicao = d.data_base - interval '1 day'
+
+            LEFT JOIN vendas v
+              ON v.cod_filial = b.cod_filial
+             AND v.cod_produto = b.cod_produto
+             AND v.data = d.data_base - interval '1 day'
+
+            LEFT JOIN descarregos ds
+              ON ds.cod_filial = b.cod_filial
+             AND ds.cod_produto = b.cod_produto
+             AND ds.data_descarrego = d.data_base - interval '1 day'
+
+            LEFT JOIN medicoes mat
+              ON mat.cod_empresa = %s
+             AND mat.cod_filial = b.cod_filial
+             AND mat.cod_produto = b.cod_produto
+             AND mat.data_medicao = d.data_base
+
+            ORDER BY b.cod_filial, b.cod_produto, dia
+        """
+
+        params = (
+            [data_ini, data_fim_consulta - timedelta(days=1), cod_empresa]
+            + params_filiais
+            + [
+                cod_empresa, data_ini - timedelta(days=1), data_fim - timedelta(days=1),
+                cod_empresa, data_ini - timedelta(days=1), data_fim - timedelta(days=1),
+                cod_empresa,
+                cod_empresa,
+            ]
+        )
+
+        cur.execute(sql, params)
+        registros = cur.fetchall() or []
+
+        linhas_dict = {}
+
+        for r in registros:
+            chave = (
+                r["cod_filial"],
+                r["nome_filial"],
+                r["cod_produto"],
+                r["produto"],
+            )
+
+            if chave not in linhas_dict:
+                linhas_dict[chave] = {
+                    "cod_filial": r["cod_filial"],
+                    "nome_filial": r["nome_filial"],
+                    "cod_produto": r["cod_produto"],
+                    "produto": r["produto"],
+                    "dias": {d: 0 for d in range(1, 32)},
+                    "total_perdas": 0,
+                    "total_sobras": 0,
+                    "saldo": 0,
+                }
+
+            valor = float(r["perda_sobra"] or 0)
+            dia = int(r["dia"])
+
+            linhas_dict[chave]["dias"][dia] = valor
+            linhas_dict[chave]["saldo"] += valor
+
+            if valor < 0:
+                linhas_dict[chave]["total_perdas"] += valor
+            elif valor > 0:
+                linhas_dict[chave]["total_sobras"] += valor
+
+        linhas = list(linhas_dict.values())
+        totais_filiais = {}
+        total_geral = {
+            "dias": {d: 0 for d in range(1, 32)},
+            "total_perdas": 0,
+            "total_sobras": 0,
+            "saldo": 0,
+        }
+
+        for l in linhas:
+            cod_filial = l["cod_filial"]
+
+            if cod_filial not in totais_filiais:
+                totais_filiais[cod_filial] = {
+                    "dias": {d: 0 for d in range(1, 32)},
+                    "total_perdas": 0,
+                    "total_sobras": 0,
+                    "saldo": 0,
+                }
+
+            for d in range(1, 32):
+                valor = l["dias"][d]
+                totais_filiais[cod_filial]["dias"][d] += valor
+                total_geral["dias"][d] += valor
+
+            totais_filiais[cod_filial]["total_perdas"] += l["total_perdas"]
+            totais_filiais[cod_filial]["total_sobras"] += l["total_sobras"]
+            totais_filiais[cod_filial]["saldo"] += l["saldo"]
+
+            total_geral["total_perdas"] += l["total_perdas"]
+            total_geral["total_sobras"] += l["total_sobras"]
+            total_geral["saldo"] += l["saldo"]
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao consultar perdas e sobras: {e}", "error")
+        linhas = []
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "consultar_perdas_sobras.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        ano=ano,
+        mes=mes,
+        mes_ref=mes_ref,
+        ultimo_dia=ultimo_dia,
+        dias=range(1, 32),
+        linhas=linhas,
+        totais_filiais=totais_filiais,
+        total_geral=total_geral,
+        url_voltar=url_for("operacoes.menu_operacoes"),
+        texto_voltar="← Voltar",
+    )
+        
+
+# --------------------------------
 # AJAX - SALVAR PRECOS
 # --------------------------------
 @operacoes_bp.route("/precos-compra/ajax-salvar", methods=["POST"])
@@ -3459,6 +3751,9 @@ def ajax_salvar_medicao():
     finally:
         cur.close()
         conn.close()
+
+
+
 
 # --------------------------------
 # AJAX - BUSCAR PREÇO DE COMPRA

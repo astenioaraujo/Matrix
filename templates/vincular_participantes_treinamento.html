@@ -172,14 +172,16 @@
         Limpar Filtros
       </button>
 
-      <button type="submit" class="btn btn-salvar">
-        Salvar Participantes
-      </button>
     </div>
 
     <form method="POST">
       <input type="hidden" name="ano" value="{{ ano_sel }}">
       <input type="hidden" name="id_treinamento" value="{{ treinamento.id }}">
+      <div style="margin-bottom: 18px;">
+        <button type="submit" class="btn btn-salvar">
+          Salvar Participantes
+        </button>
+      </div>
     
       <div class="subtitulo" style="font-size:18px; margin-top:8px;">
         3.1 Participantes selecionados
