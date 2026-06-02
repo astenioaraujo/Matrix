@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+<style>
+  @page {
+    size: A4 landscape;
+    margin: 0;
+  }
+
+  body {
+    margin: 0;
+    background: #eee;
+  }
+
+  .barra-impressao {
+    padding: 16px;
+    background: #fff;
+    border-bottom: 1px solid #ddd;
+  }
+
+  .btn-imprimir {
+    background: #2563eb;
+    color: white;
+    padding: 10px 18px;
+    border-radius: 8px;
+    border: none;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .certificado {
+    width: 297mm;
+    height: 210mm;
+    position: relative;
+    margin: 0 auto;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    overflow: hidden;
+    }
+
+    .certificado:not(:last-child) {
+    page-break-after: always;
+    break-after: page;
+    }
+
+  @media print {
+    .barra-impressao {
+      display: none;
+    }
+
+    body {
+      background: white;
+    }
+
+    .certificado {
+      margin: 0;
+    }
+  }
+</style>
+
+<div class="barra-impressao">
+    <button onclick="window.print()" class="btn-imprimir">
+      Imprimir Certificados
+    </button>
+  
+    <button onclick="exportarPdfUnico()" class="btn-imprimir">
+      Exportar PDF único
+    </button>
+  
+    <button onclick="exportarPdfsIndividuais()" class="btn-imprimir">
+      Exportar PDFs individuais
+    </button>
+  </div>
+
+{% for participante in participantes %}
+
+  {% set campo_nome = campos_certificado.get("nome_participante") %}
+  {% set campo_texto = campos_certificado.get("texto_certificado") %}
+  {% set campo_data = campos_certificado.get("data_certificado") %}
+
+  <div
+    class="certificado"
+    data-nome-pdf="{{ treinamento.descricao }} - {{ treinamento.data_treinamento.strftime('%d-%m-%Y') if treinamento.data_treinamento else '' }} - {{ participante.nome }}"
+    {% if fundo_url %}
+      style="background-image: url('{{ fundo_url }}');"
+    {% endif %}
+  >
+
+    {% if campo_nome %}
+      <div style="
+        position: absolute;
+        left: {{ campo_nome.x }}px;
+        top: {{ campo_nome.y }}px;
+        width: {{ campo_nome.largura }}px;
+        height: {{ campo_nome.altura }}px;
+        font-family: {{ campo_nome.fonte }};
+        font-size: {{ campo_nome.tamanho_fonte }}px;
+        color: {{ campo_nome.cor }};
+        text-align: {{ campo_nome.alinhamento }};
+        font-weight: 800;
+        overflow: hidden;
+      ">
+        {{ participante.nome }}
+      </div>
+    {% endif %}
+
+    {% if campo_texto %}
+      <div style="
+        position: absolute;
+        left: {{ campo_texto.x }}px;
+        top: {{ campo_texto.y }}px;
+        width: {{ campo_texto.largura }}px;
+        height: {{ campo_texto.altura }}px;
+        font-family: {{ campo_texto.fonte }};
+        font-size: {{ campo_texto.tamanho_fonte }}px;
+        color: {{ campo_texto.cor }};
+        text-align: {{ campo_texto.alinhamento }};
+        line-height: 1.45;
+        overflow: hidden;
+      ">
+        {{ texto_certificado|safe }}
+      </div>
+    {% endif %}
+
+    {% if campo_data %}
+      <div style="
+        position: absolute;
+        left: {{ campo_data.x }}px;
+        top: {{ campo_data.y }}px;
+        width: {{ campo_data.largura }}px;
+        height: {{ campo_data.altura }}px;
+        font-family: {{ campo_data.fonte }};
+        font-size: {{ campo_data.tamanho_fonte }}px;
+        color: {{ campo_data.cor }};
+        text-align: {{ campo_data.alinhamento }};
+        overflow: hidden;
+      ">
+        {{ treinamento.data_treinamento.strftime('%d/%m/%Y') if treinamento.data_treinamento else '' }}
+      </div>
+    {% endif %}
+
+  </div>
+
+{% endfor %}
+<script>
+    function limparNomeArquivo(nome) {
+      return nome
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[\/\\:*?"<>|]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+  
+    function opcoesPdf(nomeArquivo) {
+      return {
+        margin: 0,
+        filename: limparNomeArquivo(nomeArquivo) + ".pdf",
+        image: { type: "jpeg", quality: 1 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: null
+        },
+        jsPDF: {
+          unit: "mm",
+          format: "a4",
+          orientation: "landscape"
+        },
+        pagebreak: {
+          mode: ["css", "legacy"]
+        }
+      };
+    }
+  
+    function exportarPdfUnico() {
+
+        const area = document.createElement("div");
+
+        const certificados = document.querySelectorAll(".certificado");
+
+        certificados.forEach((certificado) => {
+
+        const clone = certificado.cloneNode(true);
+
+        clone.style.pageBreakAfter = "unset";
+        clone.style.breakAfter = "unset";
+
+        area.appendChild(clone);
+
+        });
+
+        const nomeArquivo =
+        "{{ treinamento.descricao }} - {{ treinamento.data_treinamento.strftime('%d-%m-%Y') if treinamento.data_treinamento else '' }} - TODOS";
+
+        html2pdf()
+        .set({
+            margin: 0,
+            filename: limparNomeArquivo(nomeArquivo) + ".pdf",
+            image: { type: "jpeg", quality: 1 },
+            html2canvas: {
+            scale: 2,
+            useCORS: true
+            },
+            jsPDF: {
+            unit: "mm",
+            format: "a4",
+            orientation: "landscape"
+            }
+        })
+        .from(area)
+        .save();
+        }
+    
+    function criarCertificadoIndividual(certificado) {
+        const wrapper = document.createElement("div");
+        const clone = certificado.cloneNode(true);
+
+        clone.style.pageBreakAfter = "auto";
+        clone.style.breakAfter = "auto";
+
+        wrapper.appendChild(clone);
+
+        return wrapper;
+        }
+
+    async function exportarPdfsIndividuais() {
+      const certificados = document.querySelectorAll(".certificado");
+      const zip = new JSZip();
+  
+      for (const certificado of certificados) {
+        const nomeBase = limparNomeArquivo(certificado.dataset.nomePdf || "certificado");
+  
+        const blob = await html2pdf()
+          .set(opcoesPdf(nomeBase))
+          .from(criarCertificadoIndividual(certificado))
+          .outputPdf("blob");
+  
+        zip.file(nomeBase + ".pdf", blob);
+      }
+  
+      const conteudoZip = await zip.generateAsync({ type: "blob" });
+  
+      saveAs(
+        conteudoZip,
+        limparNomeArquivo("{{ treinamento.descricao }} - {{ treinamento.data_treinamento.strftime('%d-%m-%Y') if treinamento.data_treinamento else '' }} - CERTIFICADOS") + ".zip"
+      );
+    }
+  </script>
+{% endblock %}

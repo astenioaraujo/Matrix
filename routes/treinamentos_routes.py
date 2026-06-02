@@ -209,7 +209,7 @@ def cadastrar_treinamentos():
         texto_voltar="← Voltar",
     )
     
- # -----------------------------------------------------------
+# -----------------------------------------------------------
 # EDITAR TREINAMENTO
 # -----------------------------------------------------------
 @treinamentos_bp.route(
@@ -543,8 +543,17 @@ def vincular_participantes():
     try:
         if request.method == "POST":
             id_treinamento = request.form.get("id_treinamento")
-            funcionarios_ids = request.form.getlist("funcionarios")
+            ano_sel = request.form.get("ano") or ano_sel
+            funcionarios_mantidos = request.form.getlist("funcionarios_mantidos")
+            funcionarios_novos = request.form.getlist("funcionarios_novos")
 
+            funcionarios_ids = list(set(funcionarios_mantidos + funcionarios_novos))
+            print("POST VINCULAR")
+            print("ID TREINAMENTO:", id_treinamento)
+            print("ANO:", ano_sel)
+            print("MANTIDOS:", funcionarios_mantidos)
+            print("NOVOS:", funcionarios_novos)
+            print("FINAL:", funcionarios_ids)
             if not id_treinamento:
                 flash("Selecione um treinamento.", "error")
                 return redirect(url_for(
@@ -577,13 +586,13 @@ def vincular_participantes():
                 ))
 
             conn.commit()
+            conn.commit()
             flash("Participantes vinculados com sucesso.", "success")
 
-            return redirect(url_for(
-                "treinamentos.vincular_participantes",
-                ano=ano_sel,
-                id_treinamento=id_treinamento
-            ))
+            return redirect(
+                url_for("treinamentos.vincular_participantes")
+                + f"?ano={ano_sel}&id_treinamento={id_treinamento}"
+            )
 
         cur.execute("""
             SELECT
@@ -1162,6 +1171,7 @@ def campos_modelo_certificado(id_modelo):
             return redirect(url_for("treinamentos.modelos_certificados"))
 
         campos_padrao = [
+            "nome_participante",
             "texto_certificado",
             "data_certificado"
         ]
@@ -1269,6 +1279,7 @@ def campos_modelo_certificado(id_modelo):
             AND id_modelo = %s
             ORDER BY
                 CASE campo
+                    WHEN 'nome_participante' THEN 1
                     WHEN 'texto_certificado' THEN 2
                     WHEN 'data_certificado' THEN 3
                     ELSE 99
@@ -1502,6 +1513,8 @@ def selecionar_participantes_certificado(id_treinamento):
         texto_voltar="← Voltar",
     )
 
+
+
 # -----------------------------------------------------------
 # GERAR CERTIFICADOS EM PDF
 # -----------------------------------------------------------
@@ -1536,17 +1549,21 @@ def gerar_certificados_pdf(id_treinamento):
     try:
         cur.execute("""
             SELECT
-                id_treinamento,
-                descricao,
-                data_treinamento,
-                carga_horaria,
-                instrutor,
-                texto_certificado,
-                instituicao_certificado,
-                id_modelo_certificado
-            FROM treinamentos
-            WHERE id_treinamento = %s
-              AND cod_empresa = %s
+                t.id_treinamento,
+                t.descricao,
+                t.data_treinamento,
+                t.carga_horaria,
+                t.instrutor,
+                t.texto_certificado,
+                t.instituicao_certificado,
+                t.id_modelo_certificado,
+                m.arquivo_fundo
+            FROM treinamentos t
+            LEFT JOIN modelos_certificados m
+                ON m.id = t.id_modelo_certificado
+               AND m.cod_empresa = t.cod_empresa
+            WHERE t.id_treinamento = %s
+              AND t.cod_empresa = %s
         """, (id_treinamento, cod_empresa))
 
         treinamento = cur.fetchone()
@@ -1554,6 +1571,29 @@ def gerar_certificados_pdf(id_treinamento):
         if not treinamento:
             flash("Treinamento não encontrado.", "error")
             return redirect(url_for("treinamentos.emitir_certificados"))
+
+        cur.execute("""
+            SELECT
+                campo,
+                x,
+                y,
+                largura,
+                altura,
+                fonte,
+                tamanho_fonte,
+                cor,
+                alinhamento
+            FROM modelos_certificados_campos
+            WHERE cod_empresa = %s
+              AND id_modelo = %s
+              AND COALESCE(ativo, true) = true
+        """, (
+            cod_empresa,
+            treinamento["id_modelo_certificado"],
+        ))
+
+        campos_lista = cur.fetchall() or []
+        campos_certificado = {linha["campo"]: linha for linha in campos_lista}
 
         sql = f"""
             SELECT
@@ -1588,9 +1628,32 @@ def gerar_certificados_pdf(id_treinamento):
         cur.close()
         conn.close()
 
+    texto_certificado = treinamento["texto_certificado"]
+
+    if not texto_certificado:
+        texto_certificado = (
+            f"participou do treinamento <strong>{treinamento['descricao']}</strong>, "
+            f"com carga horária de <strong>{treinamento['carga_horaria'] or ''}</strong> horas."
+        )
+
+    fundo_url = None
+    if treinamento.get("arquivo_fundo"):
+        fundo_url = url_for(
+            "static",
+            filename=f"uploads/certificados/{treinamento['arquivo_fundo']}"
+        )
+
     return render_template(
         "certificados_impressao.html",
         nome_empresa=session.get("nome_empresa"),
         treinamento=treinamento,
         participantes=participantes,
+        texto_certificado=texto_certificado,
+        fundo_url=fundo_url,
+        campos_certificado=campos_certificado,
+        url_voltar=url_for(
+            "treinamentos.selecionar_participantes_certificado",
+            id_treinamento=id_treinamento
+        ),
+        texto_voltar="← Voltar",
     )

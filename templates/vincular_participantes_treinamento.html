@@ -111,7 +111,7 @@
       <select name="id_treinamento">
         <option value="">Selecione...</option>
         {% for item in treinamentos %}
-          <option value="{{ item.id }}" {% if treinamento and treinamento.id == item.id %}selected{% endif %}>
+          <option value="{{ item.id }}" {% if treinamento and treinamento.id_treinamento == item.id %}selected{% endif %}>
             {{ item.data_treinamento.strftime('%d/%m/%Y') if item.data_treinamento else '' }} - {{ item.descricao }}
           </option>
         {% endfor %}
@@ -171,56 +171,25 @@
       <button type="button" class="btn btn-selecionar" onclick="limparFiltroParticipantes()">
         Limpar Filtros
       </button>
-
     </div>
 
-    <form method="POST">
+    <form
+      method="POST"
+      action="{{ url_for('treinamentos.vincular_participantes') }}"
+    >
       <input type="hidden" name="ano" value="{{ ano_sel }}">
-      <input type="hidden" name="id_treinamento" value="{{ treinamento.id }}">
+      <input type="hidden" name="id_treinamento" value="{{ treinamento.id_treinamento }}">
+
       <div style="margin-bottom: 18px;">
         <button type="submit" class="btn btn-salvar">
           Salvar Participantes
         </button>
       </div>
-    
+
       <div class="subtitulo" style="font-size:18px; margin-top:8px;">
         3.1 Participantes selecionados
       </div>
-    
-      <table>
-        <thead>
-          <tr>
-            <th class="col-check">
-              <input type="checkbox" id="checkTodosDisponiveis" onclick="marcarTodosDisponiveis()">
-            </th>
-            <th>Funcionário</th>
-            <th class="col-cargo">Cargo</th>
-            <th class="col-filial">Filial</th>
-          </tr>
-        </thead>
-    
-        <tbody>
-          {% for funcionario in funcionarios %}
-            {% if funcionario.id in participantes_vinculados %}
-              <tr class="linha-funcionario"
-                  data-filial="{{ funcionario.cod_filial }}"
-                  data-cargo="{{ funcionario.id_cargo }}">
-                <td class="col-check">
-                  <input type="checkbox" name="funcionarios" value="{{ funcionario.id }}" checked>
-                </td>
-                <td>{{ funcionario.nome }}</td>
-                <td>{{ funcionario.cargo or '' }}</td>
-                <td>{{ funcionario.nome_filial or '' }}</td>
-              </tr>
-            {% endif %}
-          {% endfor %}
-        </tbody>
-      </table>
-    
-      <div class="subtitulo" style="font-size:18px; margin-top:26px;">
-        3.2 Funcionários disponíveis
-      </div>
-    
+
       <table>
         <thead>
           <tr>
@@ -230,7 +199,44 @@
             <th class="col-filial">Filial</th>
           </tr>
         </thead>
-    
+
+        <tbody>
+          {% for funcionario in funcionarios %}
+            {% if funcionario.id in participantes_vinculados %}
+              <tr class="linha-funcionario"
+                  data-filial="{{ funcionario.cod_filial }}"
+                  data-cargo="{{ funcionario.id_cargo }}">
+                <td class="col-check">
+                  <input
+                    type="checkbox"
+                    name="funcionarios_mantidos"
+                    value="{{ funcionario.id }}"
+                    checked
+                  >
+                </td>
+                <td>{{ funcionario.nome }}</td>
+                <td>{{ funcionario.cargo or '' }}</td>
+                <td>{{ funcionario.nome_filial or '' }}</td>
+              </tr>
+            {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <div class="subtitulo" style="font-size:18px; margin-top:26px;">
+        3.2 Funcionários disponíveis
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th class="col-check">Sel.</th>
+            <th>Funcionário</th>
+            <th class="col-cargo">Cargo</th>
+            <th class="col-filial">Filial</th>
+          </tr>
+        </thead>
+
         <tbody>
           {% for funcionario in funcionarios %}
             {% if funcionario.id not in participantes_vinculados %}
@@ -241,7 +247,7 @@
                   <input
                     type="checkbox"
                     class="check-disponivel"
-                    name="funcionarios"
+                    name="funcionarios_novos"
                     value="{{ funcionario.id }}"
                   >
                 </td>
@@ -259,7 +265,7 @@
           {% endfor %}
         </tbody>
       </table>
-    
+
     </form>
   </div>
 {% endif %}
@@ -305,17 +311,14 @@
   }
 
   function marcarTodosDisponiveis() {
-    const master = document.getElementById("checkTodosDisponiveis");
-
     const checks = document.querySelectorAll(".check-disponivel");
 
     checks.forEach(function(check) {
       if (check.closest("tr").style.display !== "none") {
-        check.checked = master.checked;
+        check.checked = true;
       }
     });
   }
-
 </script>
 
 {% endblock %}
