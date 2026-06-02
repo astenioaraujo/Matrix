@@ -56,6 +56,12 @@
     border: 1px solid #7D4820;
   }
 
+  /* 🔶 CONSULTAR (marrom médio) */
+  .btn-consultar-estoques {
+    background: #1b387a;
+    border: 1px solid #7D4820;
+  }
+
   .btn-consultar:hover {
     background: #693d1a;
     border-color: #693d1a;
@@ -136,7 +142,7 @@
   {% endif %}
 
   {% if pode_consultar_estoques %}
-  <a href="{{ url_for('operacoes.consultar_estoques') }}" class="btn-consultar">
+  <a href="{{ url_for('operacoes.consultar_estoques') }}" class="btn-consultar-estoques">
     Consultar Estoques
   </a>
   {% endif %}
