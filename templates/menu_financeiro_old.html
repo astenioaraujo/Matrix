@@ -55,8 +55,8 @@
     font-size: 16px;
     color: #fff;
 
-    background: #14114f;
-    border: 1px solid #25103c;
+    background: #6b4f2a;
+    border: 1px solid #6b4f2a;
 
     box-shadow: 0 3px 8px rgba(0,0,0,0.15);
     transition: all 0.2s ease;
@@ -66,8 +66,8 @@
 
 .menu-botoes a:hover {
     transform: translateY(-2px);
-    background: #131249;
-    border-color: #2b1a58;
+    background: #5a4123;
+    border-color: #5a4123;
 }
 
   .painel {
@@ -142,15 +142,21 @@ td:nth-child(3) {
 
 <div class="menu-botoes">
 
-  {% if pode_fluxo_caixa %}
-    <a class="btn-fluxo" href="{{ url_for('financeiro.menu_fluxo_caixa') }}">
-      Fluxo de Caixa
+  {% if pode_resultado_mb %}
+    <a class="btn-resultado" href="{{ url_for('financeiro.resultado_mb', ano=ano_atual) }}">
+      Resultado MB
     </a>
   {% endif %}
 
-  {% if pode_emprestimos_financiamentos %}
-    <a class="btn-emprestimos" href="{{ url_for('financeiro.menu_emprestimos_financiamentos') }}">
-      Empréstimos<br>e Financiamentos
+  {% if pode_lancamentos %}
+    <a class="btn-lanc" href="{{ url_for('financeiro.listar_lancamentos') }}">
+      Lançamentos
+    </a>
+  {% endif %}
+
+  {% if pode_importacoes %}
+    <a class="btn-import" href="{{ url_for('importacoes.listar_importacoes') }}">
+      Importações
     </a>
   {% endif %}
 
@@ -160,8 +166,71 @@ td:nth-child(3) {
     </a>
   {% endif %}
 
+  {% if pode_matricial %}
+    <a class="btn-matricial" href="{{ url_for('financeiro.matricial') }}">
+      Matricial
+    </a>
+  {% endif %}
+
+  {% if pode_matricial_detalhado %}
+    <a class="btn-matricial" href="{{ url_for('financeiro.dados_detalhados') }}">
+      Matricial Detalhado
+    </a>
+  {% endif %}
+
+  {% if pode_variacoes %}
+    <a class="btn-matricial" href="{{ url_for('financeiro.variacoes') }}">
+      Variações
+    </a>
+  {% endif %}
+
+  {% if pode_margem_bruta %}
+    <a class="btn-mb" href="{{ url_for('financeiro.margem_bruta') }}">
+      Margem Bruta
+    </a>
+  {% endif %}
+
+  {% if pode_exclusoes %}
+    <a class="btn-exclusoes" href="{{ url_for('financeiro.exclusoes') }}">
+      Exclusões
+    </a>
+  {% endif %}
+
+  {% if pode_emprestimos_financiamentos %}
+    <a class="btn-emprestimos" href="{{ url_for('financeiro.menu_emprestimos_financiamentos') }}">
+      Empréstimos<br>e Financiamentos
+    </a>
+  {% endif %}
+
 </div>
 
+<div class="painel">
+{% if linhas_dashboard and linhas_dashboard|length > 0 %}
 
+<div class="tabela-container">
+  <table>
+    <thead>
+      <tr>
+        <th>Ano</th>
+        <th>Mês</th>
+        <th>Lanç.</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for l in linhas_dashboard %}
+      <tr>
+        <td>{{ l.ano }}</td>
+        <td>{{ l.mes }}</td>
+        <td>{{ formatar_int(l.lanc) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+
+  </table>
+</div>
+
+{% endif %}
+</div>
 
 {% endblock %}

@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+
+
+<!-- ---------------------------------->
+<!-- ESTILOS -->
+<!-- ---------------------------------->
+
+<style>
+
+  .pagina-titulo{
+    font-size:36px;
+    font-weight:800;
+    margin-bottom:10px;
+  }
+
+  .empresa{
+    font-size:20px;
+    margin-bottom:20px;
+  }
+
+  .card-resumo{
+    background:#fff;
+    border:1px solid #d9d9d9;
+    border-radius:12px;
+    padding:18px;
+    margin-bottom:20px;
+  }
+
+  .grid{
+    display:grid;
+    grid-template-columns: repeat(4,1fr);
+    gap:14px;
+  }
+
+  .campo{
+    display:flex;
+    flex-direction:column;
+  }
+
+  .campo label{
+    font-size:12px;
+    font-weight:700;
+    color:#666;
+    margin-bottom:4px;
+  }
+
+  .campo span{
+    font-size:15px;
+    font-weight:600;
+  }
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+    background:#fff;
+  }
+
+  th{
+    background:#3b6fb6;
+    color:white;
+    padding:8px;
+    font-size:13px;
+    text-align:center;
+  }
+
+  td{
+    border:1px solid #ddd;
+    padding:7px;
+    font-size:13px;
+  }
+
+  tr:nth-child(even){
+    background:#fafafa;
+  }
+
+  .centro{
+    text-align:center;
+  }
+
+  .direita{
+    text-align:right;
+  }
+
+  .situacao-aberta{
+    color:#c62828;
+    font-weight:800;
+  }
+
+  .situacao-paga{
+    color:#16833a;
+    font-weight:800;
+  }
+    .acoes-topo{
+    display:flex;
+    gap:10px;
+    align-items:center;
+    margin-bottom:18px;
+    flex-wrap:wrap;
+  }
+
+  .btn-excluir-parcelas{
+    background:#c62828;
+    color:white;
+    height:42px;
+    min-width:190px;
+    padding:0 18px;
+    border:none;
+    border-radius:10px;
+    font-size:14px;
+    font-weight:800;
+    cursor:pointer;
+  }
+
+  .btn-excluir-parcelas:hover{
+    background:#a91f1f;
+  }
+
+  .btn-desabilitado{
+    background:#c7c7c7 !important;
+    color:#666 !important;
+    cursor:not-allowed !important;
+  }
+
+
+</style>
+
+<!-- ---------------------------------->
+<!-- CLASSES -->
+<!-- ---------------------------------->
+
+
+<div class="pagina-titulo">
+  Parcelas do Contrato
+</div>
+
+    <div class="empresa">
+  <strong>Empresa:</strong>
+  {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+{% set ns = namespace(todas_abertas=true) %}
+
+{% for p in parcelas %}
+  {% if p.situacao != 'EM_ABERTO' %}
+    {% set ns.todas_abertas = false %}
+  {% endif %}
+{% endfor %}
+
+<div class="acoes-topo">
+
+    {% if parcelas and ns.todas_abertas %}
+
+        <form method="POST"
+            id="form-excluir-parcelas"
+            action="{{ url_for('financeiro.excluir_todas_parcelas_emprestimo_financiamento',
+                                id_emprestimo=contrato.id_emprestimo) }}">
+
+            <button type="button"
+                    class="btn-excluir-parcelas"
+                    onclick="mostrarConfirmacaoGlobal(
+                    'ATENÇÃO',
+                    'Todas as parcelas deste contrato serão excluídas permanentemente.<br><br>Esta ação não poderá ser desfeita.<br><br>Deseja continuar?',
+                    function(){ document.getElementById('form-excluir-parcelas').submit(); }
+                    )">
+                Excluir Parcelas
+            </button>
+
+        </form>
+
+    {% else %}
+
+        <button type="button"
+                class="btn-excluir-parcelas btn-desabilitado"
+                disabled>
+        Excluir Parcelas
+        </button>
+
+    {% endif %}
+
+</div>
+
+<div class="card-resumo">
+
+
+  <div class="grid">
+
+    <div class="campo">
+      <label>Código</label>
+      <span>{{ contrato.codigo }}</span>
+    </div>
+
+    <div class="campo">
+      <label>Instituição</label>
+      <span>{{ contrato.instituicao }}</span>
+    </div>
+
+    <div class="campo">
+      <label>Tipo</label>
+      <span>{{ contrato.tipo }}</span>
+    </div>
+
+    <div class="campo">
+      <label>Situação</label>
+      <span>{{ contrato.situacao }}</span>
+    </div>
+
+    <div class="campo">
+      <label>Valor Contratado</label>
+      <span>{{ formatar_numero_br(contrato.valor_contratado) }}</span>
+    </div>
+
+    <div class="campo">
+      <label>Valor Parcela</label>
+      <span>{{ formatar_numero_br(contrato.valor_parcela) }}</span>
+    </div>
+
+    <div class="campo">
+      <label>Quantidade Parcelas</label>
+      <span>{{ contrato.quantidade_parcelas }}</span>
+    </div>
+
+    <div class="campo">
+      <label>Saldo Devedor</label>
+      <span>{{ formatar_numero_br(contrato.saldo_devedor) }}</span>
+    </div>
+
+  </div>
+
+</div>
+
+<table>
+
+  <thead>
+    <tr>
+      <th>Parcela</th>
+      <th>Tipo</th>
+      <th>Vencimento</th>
+      <th>Valor</th>
+      <th>Valor Pago</th>
+      <th>Pagamento</th>
+      <th>Situação</th>
+      <th>Observação</th>
+    </tr>
+  </thead>
+
+  <tbody>
+
+    {% for p in parcelas %}
+    <tr>
+
+      <td class="centro">
+        {{ p.numero_parcela }}
+      </td>
+
+      <td class="centro">
+        {{ p.tipo_parcela }}
+      </td>
+
+      <td class="centro">
+        {{ p.data_vencimento.strftime('%d/%m/%Y') if p.data_vencimento else '' }}
+      </td>
+
+      <td class="direita">
+        {{ formatar_numero_br(p.valor_parcela) }}
+      </td>
+
+      <td class="direita">
+        {{ formatar_numero_br(p.valor_pago) }}
+      </td>
+
+      <td class="centro">
+        {{ p.data_pagamento.strftime('%d/%m/%Y') if p.data_pagamento else '' }}
+      </td>
+
+      <td class="centro">
+
+        {% if p.situacao == 'PAGO' %}
+          <span class="situacao-paga">
+            {{ p.situacao }}
+          </span>
+        {% else %}
+          <span class="situacao-aberta">
+            {{ p.situacao }}
+          </span>
+        {% endif %}
+
+      </td>
+
+      <td>
+        {{ p.observacao or '' }}
+      </td>
+
+    </tr>
+    {% endfor %}
+
+    {% if not parcelas %}
+    <tr>
+      <td colspan="8" class="centro">
+        Nenhuma parcela gerada.
+      </td>
+    </tr>
+    {% endif %}
+
+
+    <script>
+
+        function abrirModalExcluirParcelas() {
+            document.getElementById('modalExcluirParcelas').style.display = 'flex';
+        }
+
+        function fecharModalExcluirParcelas() {
+            document.getElementById('modalExcluirParcelas').style.display = 'none';
+        }
+
+        function confirmarExclusaoParcelas() {
+            document.getElementById('form-excluir-parcelas').submit();
+        }
+
+    </script>
+
+
+
+  </tbody>
+
+</table>
+
+
+{% endblock %}

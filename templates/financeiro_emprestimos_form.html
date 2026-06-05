@@ -1,0 +1,422 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+
+<!-- --------------------------------------------------------- -->
+<!-- STYLE -->
+<!-- --------------------------------------------------------- -->
+<style>
+
+    .pagina-titulo{
+        font-size:34px;
+        font-weight:800;
+        margin-bottom:8px;
+    }
+
+    .empresa{
+        font-size:18px;
+        margin-bottom:24px;
+    }
+
+    .campo input,
+    .campo select,
+    .campo textarea{
+        background:#ffffff;
+        padding:12px;
+        border:2px solid #c7cdd6;
+        border-radius:8px;
+        font-size:15px;
+        box-shadow: inset 0 1px 3px rgba(0,0,0,0.06);
+    }
+
+
+    .grid{
+        display:grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap:16px;
+        margin-bottom:16px;
+    }
+
+    .campo{
+        display:flex;
+        flex-direction:column;
+    }
+    .campo-percentual{
+        display:flex;
+        align-items:center;
+        gap:8px;
+    }
+
+    .campo-percentual span{
+        font-weight:700;
+        color:#555;
+    }
+    .campo label{
+        font-weight:700;
+        margin-bottom:6px;
+    }
+
+    .campo input,
+    .campo select,
+    .campo textarea{
+        padding:10px;
+        border:1px solid #d1d5db;
+        border-radius:8px;
+        font-size:14px;
+    }
+
+    textarea{
+        min-height:90px;
+    }
+
+    .linha-inteira{
+        grid-column:1 / -1;
+    }
+
+    .acoes-topo{
+        display:flex;
+        gap:10px;
+        align-items:center;
+        margin-bottom:18px;
+        flex-wrap:wrap;
+    }
+
+      .btn-salvar{
+        height:42px;
+        min-width:125px;
+        padding:0 18px;
+        border:none;
+        border-radius:10px;
+        background:#16833a;
+        color:#fff;
+        text-decoration:none;
+        font-weight:800;
+        cursor:pointer;
+        font-size:14px;
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        box-shadow:0 3px 8px rgba(0,0,0,0.12);
+        transition:background 0.15s ease, transform 0.08s ease;
+    }
+
+    .btn-salvar:hover{
+        background:#10662d;
+        transform:translateY(-1px);
+    }
+
+    .btn-salvar:hover{
+        background:#5a4123;
+    }
+
+    .btn-voltar{
+        background:#6b7280;
+        color:white;
+        text-decoration:none;
+        padding:12px 22px;
+        border-radius:10px;
+        font-weight:700;
+    }
+
+    .acoes-topo{
+        display:flex;
+        gap:10px;
+        align-items:center;
+        margin-bottom:18px;
+        flex-wrap:wrap;
+    }
+
+    .btn-excluir-parcelas{
+        background:#c62828;
+        color:white;
+        height:42px;
+        min-width:185px;
+        padding:0 18px;
+        border-radius:10px;
+        border:none;
+        font-size:14px;
+        font-weight:800;
+        cursor:pointer;
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        box-shadow:0 3px 8px rgba(0,0,0,0.12);
+    }
+
+    .btn-excluir-parcelas:hover{
+        background:#a91f1f;
+    }
+
+    .btn-desabilitado{
+        background:#c7c7c7 !important;
+        color:#666 !important;
+        cursor:not-allowed !important;
+        box-shadow:none !important;
+    }
+
+</style>
+
+<!-- --------------------------------------------------------- -->
+<!-- CLASSES -->   
+<!-- --------------------------------------------------------- -->
+
+
+<div class="pagina-titulo">
+
+    {% if modo == "editar" %}
+    Editar Contrato
+    {% else %}
+    Novo Contrato
+    {% endif %}
+
+</div>
+
+<div class="empresa">
+    <strong>Empresa:</strong>
+    {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+{% set ns = namespace(todas_abertas=true) %}
+
+{% for p in parcelas %}
+  {% if p.situacao != 'EM_ABERTO' %}
+    {% set ns.todas_abertas = false %}
+  {% endif %}
+{% endfor %}
+
+<div class="acoes-topo">
+
+  {% if parcelas and ns.todas_abertas %}
+
+    <form method="POST"
+          action="{{ url_for('financeiro.excluir_todas_parcelas_emprestimo_financiamento',
+                            id_emprestimo=contrato.id_emprestimo) }}"
+          onsubmit="return confirm('Confirma a exclusão de todas as parcelas deste contrato?');">
+
+      <button type="submit" class="btn-excluir-parcelas">
+        Excluir Parcelas
+      </button>
+
+    </form>
+
+  {% else %}
+
+    <button type="button"
+            class="btn-excluir-parcelas btn-desabilitado"
+            disabled
+            title="Só é possível excluir parcelas se todas estiverem em aberto.">
+      Excluir Parcelas
+    </button>
+
+  {% endif %}
+
+</div>
+
+<div class="card">
+
+    <!-- --------------------------------------------------------- -->
+    <!-- FORM -->
+    <!-- --------------------------------------------------------- -->
+
+    <form method="post">
+        <div class="acoes-topo">
+            <button type="submit" class="btn-salvar">
+                Salvar
+            </button>
+        </div>
+        <div class="grid">
+
+            <div class="campo">
+                <label>Código</label>
+                <input type="text"
+                    name="codigo"
+                    value="{{ contrato.codigo if contrato else 'Gerado automaticamente' }}"
+                    readonly>
+            </div>
+
+            <div class="campo">
+                <label>Descrição</label>
+                <input type="text"
+                    name="descricao"
+                    value="{{ contrato.descricao if contrato else '' }}">
+            </div>
+
+            <div class="campo">
+                <label>Instituição Financeira</label>
+                <input type="text"
+                    name="instituicao"
+                    value="{{ contrato.instituicao if contrato else '' }}">
+            </div>
+
+            <div class="campo">
+                <label>Tipo</label>
+                <select name="tipo">
+                    <option value="EMPRESTIMO">Empréstimo</option>
+                    <option value="FINANCIAMENTO">Financiamento</option>
+                </select>
+            </div>
+
+            <div class="campo">
+                <label>Data da Contratação</label>
+                <input type="date"
+                    name="data_contratacao"
+                    value="{{ contrato.data_contratacao if contrato else '' }}">
+            </div>
+
+            <div class="campo">
+                <label>Primeiro Vencimento</label>
+                <input type="date"
+                    name="data_primeiro_vencimento"
+                    value="{{ contrato.data_primeiro_vencimento if contrato else '' }}">
+            </div>
+
+            <div class="campo">
+                <label>Valor Contratado</label>
+                <input type="text"
+                    class="campo-numero-br"
+                    name="valor_contratado"
+                    value="{{ contrato.valor_contratado if contrato else '' }}">
+            </div>
+
+            <div class="campo">
+                <label>Taxa de Juros ao mês</label>
+
+                <div class="campo-percentual">
+                    <input type="text"
+                        class="campo-percentual-br"
+                        name="taxa_juros"
+                        value="{{ contrato.taxa_juros if contrato and contrato.taxa_juros is not none else '' }}">
+
+                    <span>%</span>
+                </div>
+            </div>
+
+            <div class="campo">
+                <label>Quantidade de Parcelas</label>
+                <input type="number"
+                    name="quantidade_parcelas"
+                    value="{{ contrato.quantidade_parcelas if contrato else '' }}">
+            </div>
+
+            <div class="campo">
+                <label>Meses de Carência</label>
+                <input type="number"
+                    name="meses_carencia"
+                    value="{{ contrato.meses_carencia if contrato else 0 }}">
+            </div>
+
+            <div class="campo">
+                <label>Valor da Parcela</label>
+                <input type="text"
+                    class="campo-numero-br"
+                    name="valor_parcela"
+                    value="{{ contrato.valor_parcela if contrato else '' }}">
+            </div>
+
+            <div class="campo">
+                <label>Situação</label>
+                <select name="situacao">
+                    <option value="EM_ANDAMENTO">Em Andamento</option>
+                    <option value="QUITADO">Quitado</option>
+                    <option value="CANCELADO">Cancelado</option>
+                </select>
+            </div>
+
+            <div class="campo">
+                <label>Ativo</label>
+                <select name="ativo">
+                    <option value="true">Sim</option>
+                    <option value="false">Não</option>
+                </select>
+            </div>
+
+            <div class="campo linha-inteira">
+                <label>Observações</label>
+                <textarea name="observacoes">{{ contrato.observacoes if contrato else '' }}</textarea>
+            </div>
+
+        </div>
+
+
+    </form>
+
+</div>
+
+<!-- --------------------------------------------------------- -->
+<!-- SCRIPT -->
+<!-- --------------------------------------------------------- -->
+<script>
+    function formatarNumeroBR(valor) {
+        valor = String(valor || '').replace(/\D/g, '');
+
+        if (valor === '') {
+            return '';
+        }
+
+        let numero = (parseInt(valor, 10) / 100).toFixed(2);
+        let partes = numero.split('.');
+        let inteiro = partes[0];
+        let decimal = partes[1];
+
+        inteiro = inteiro.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+
+        return inteiro + ',' + decimal;
+    }
+
+    document.querySelectorAll('.campo-numero-br').forEach(function(campo) {
+        campo.value = formatarNumeroBR(campo.value);
+
+        campo.addEventListener('keyup', function() {
+            campo.value = formatarNumeroBR(campo.value);
+        });
+    });
+
+    function formatarPercentualBR(valor) {
+        valor = String(valor || '').trim();
+
+        if (valor === '') {
+            return '';
+        }
+
+        valor = valor.replace('%', '').trim();
+
+        if (valor.includes('.') && !valor.includes(',')) {
+            let numero = parseFloat(valor);
+
+            if (isNaN(numero)) {
+                return '';
+            }
+
+            return numero.toFixed(2).replace('.', ',');
+        }
+
+        if (valor.includes(',')) {
+            let numero = parseFloat(valor.replace(/\./g, '').replace(',', '.'));
+
+            if (isNaN(numero)) {
+                return '';
+            }
+
+            return numero.toFixed(2).replace('.', ',');
+        }
+
+        let numero = parseFloat(valor);
+
+        if (isNaN(numero)) {
+            return '';
+        }
+
+        return numero.toFixed(2).replace('.', ',');
+    }
+
+    document.querySelectorAll('.campo-percentual-br').forEach(function(campo) {
+        campo.value = formatarPercentualBR(campo.value);
+
+        campo.addEventListener('blur', function() {
+            campo.value = formatarPercentualBR(campo.value);
+        });
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 36px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 30px;
+  }
+
+  .menu-botoes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 220px);
+    gap: 14px;
+    margin-bottom: 50px;
+  }
+
+  .menu-botoes a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 60px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 16px;
+    color: #fff;
+
+    background: #6b4f2a;
+    border: 1px solid #6b4f2a;
+
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+    transition: all 0.2s ease;
+    text-align: center;
+    padding: 0 10px;
+  }
+
+  .menu-botoes a:hover {
+    transform: translateY(-2px);
+    background: #5a4123;
+    border-color: #5a4123;
+  }
+</style>
+
+<div class="pagina-titulo">Menu do Fluxo de Caixa</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<div class="menu-botoes">
+
+  {% if pode_resultado_mb %}
+    <a href="{{ url_for('financeiro.resultado_mb', ano=ano_atual) }}">
+      Resultado MB
+    </a>
+  {% endif %}
+
+  {% if pode_lancamentos %}
+    <a href="{{ url_for('financeiro.listar_lancamentos') }}">
+      Lançamentos
+    </a>
+  {% endif %}
+
+  {% if pode_importacoes %}
+    <a href="{{ url_for('importacoes.listar_importacoes') }}">
+      Importações
+    </a>
+  {% endif %}
+
+  {% if pode_matricial %}
+    <a href="{{ url_for('financeiro.matricial') }}">
+      Matricial
+    </a>
+  {% endif %}
+
+  {% if pode_matricial_detalhado %}
+    <a href="{{ url_for('financeiro.dados_detalhados') }}">
+      Matricial Detalhado
+    </a>
+  {% endif %}
+
+  {% if pode_variacoes %}
+    <a href="{{ url_for('financeiro.variacoes') }}">
+      Variações
+    </a>
+  {% endif %}
+
+  {% if pode_margem_bruta %}
+    <a href="{{ url_for('financeiro.margem_bruta') }}">
+      Margem Bruta
+    </a>
+  {% endif %}
+
+  {% if pode_exclusoes %}
+    <a href="{{ url_for('financeiro.exclusoes') }}">
+      Exclusões
+    </a>
+  {% endif %}
+
+</div>
+
+{% endblock %}

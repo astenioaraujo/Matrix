@@ -1,0 +1,335 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+    .pagina-titulo {
+        font-size: 36px;
+        font-weight: 800;
+        margin-bottom: 10px;
+    }
+
+    .empresa {
+        font-size: 22px;
+        margin-bottom: 25px;
+    }
+
+    .acoes-topo {
+        margin-bottom: 20px;
+    }
+
+    .btn-novo {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: #16833a;
+        color: white;
+        height: 42px;
+        min-width: 135px;
+        padding: 0 18px;
+        border-radius: 10px;
+        text-decoration: none;
+        font-weight: 800;
+        font-size: 14px;
+        box-shadow: 0 3px 8px rgba(0,0,0,0.12);
+        transition: background 0.15s ease, transform 0.08s ease;
+    }
+
+    .btn-novo:hover {
+        background: #10662d;
+        transform: translateY(-1px);
+    }
+    .btn-parcelas {
+        background: #1f5fd1;
+        color: white;
+        height: 34px;
+        min-width: 120px;
+        padding: 0 12px;
+        border-radius: 9px;
+        border: none;
+        font-size: 13px;
+        font-weight: 800;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .btn-parcelas:hover {
+    background: #174bad;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+    }
+
+    th {
+        background: #3b6fb6;
+        color: white;
+        padding: 8px;
+        font-size: 13px;
+        text-align: center;
+    }
+
+    td {
+        border: 1px solid #ddd;
+        padding: 7px;
+        font-size: 13px;
+    }
+
+    tr:nth-child(even) {
+        background: #fafafa;
+    }
+
+    .centro {
+        text-align: center;
+    }
+
+    .direita {
+        text-align: right;
+    }
+
+    .btn-editar {
+        background: #6b7280;
+        color: white;
+        height: 34px;
+        min-width: 82px;
+        padding: 0 12px;
+        border-radius: 9px;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 800;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s ease;
+    }
+
+    .btn-editar:hover {
+        background: #555c68;
+    }
+
+    .btn-excluir {
+        background: #c62828;
+        color: white;
+        height: 34px;
+        min-width: 82px;
+        padding: 0 12px;
+        border-radius: 9px;
+        border: none;
+        font-size: 13px;
+        font-weight: 800;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s ease;
+    }
+
+    .btn-excluir:hover {
+        background: #a91f1f;
+    }
+
+    .acoes-linha {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+    .parcelas-geradas {
+        color: #16833a;
+        font-weight: 900;
+        }
+
+        .btn-desabilitado {
+        background: #c7c7c7 !important;
+        color: #666 !important;
+        cursor: not-allowed !important;
+        box-shadow: none !important;
+    }
+
+    .acoes-linha form {
+        margin: 0;
+        display: inline-flex;
+    }
+
+    .ativo {
+        color: #16833a;
+        font-weight: 800;
+    }
+
+    .inativo {
+        color: #c62828;
+        font-weight: 800;
+    }
+</style>
+
+<!-- CLASSES DE FORMULÁRIO (REUTILIZÁVEIS) -->
+
+
+
+<div class="pagina-titulo">
+      Cadastro de Empréstimos e Financiamentos
+</div>
+
+<div class="empresa">
+    <strong>Empresa:</strong>
+    {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<div class="acoes-topo">
+    <a
+        class="btn-novo"
+        href="{{ url_for('financeiro.novo_emprestimo_financiamento') }}">
+        Novo Contrato
+    </a>
+</div>
+
+<!--------------------------------------------------------- -->
+<!-- TABELA DE CONTRATOS -->
+<!-- --------------------------------------------------------- -->  
+
+<table>
+    <thead>
+        <tr>
+            <th>Código</th>
+            <th>Descrição</th>
+            <th>Instituição</th>
+            <th>Tipo</th>
+            <th>Contratado</th>
+            <th>Parcela</th>
+            <th>Parcelas</th>
+            <th>Saldo</th>
+            <th>Situação</th>
+            <th>Ativo</th>
+            <th>Ações</th>
+        </tr>
+    </thead>
+
+  <tbody>
+
+    {% for c in contratos %}
+        <tr>
+
+            <td class="centro">
+                {{ c.codigo }}
+            </td>
+
+            <td>
+                {{ c.descricao }}
+            </td>
+
+            <td>
+                {{ c.instituicao }}
+            </td>
+
+            <td class="centro">
+                {{ c.tipo }}
+            </td>
+
+            <td class="direita">
+                {{ formatar_numero_br(c.valor_contratado) }}
+            </td>
+
+            <td class="direita">
+                {{ formatar_numero_br(c.valor_parcela) }}
+            </td>
+
+            <td class="centro">
+                {% if c.qtde_parcelas_geradas > 0 %}
+                    <span class="parcelas-geradas">
+                    {{ c.quantidade_parcelas }}
+                    </span>
+                {% else %}
+                    {{ c.quantidade_parcelas }}
+                {% endif %}
+            </td>
+
+            <td class="direita">
+                {{ formatar_numero_br(c.saldo_devedor) }}
+            </td>
+
+            <td class="centro">
+                {{ c.situacao }}
+            </td>
+
+            <td class="centro">
+                {% if c.ativo %}
+                <span class="ativo">Sim</span>
+                {% else %}
+                <span class="inativo">Não</span>
+                {% endif %}
+            </td>
+
+            <td class="centro">
+
+                <div class="acoes-linha">
+
+                    <a
+                        class="btn-editar"
+                        href="{{ url_for('financeiro.editar_emprestimo_financiamento',
+                                        id_emprestimo=c.id_emprestimo) }}">
+                        Editar
+                    </a>
+
+                    <a
+                        class="btn-parcelas"
+                        href="{{ url_for('financeiro.visualizar_parcelas_emprestimo_financiamento',
+                                        id_emprestimo=c.id_emprestimo) }}">
+                        Parcelas
+                    </a>
+
+                    {% if c.qtde_parcelas_geradas > 0 %}
+                        <button type="button" class="btn-parcelas btn-desabilitado" disabled>
+                            Gerar Parcelas
+                        </button>
+                        {% else %}
+                        <form method="POST"
+                            id="form-gerar-parcelas-{{ c.id_emprestimo }}"
+                            action="{{ url_for('financeiro.gerar_parcelas_emprestimo_financiamento',
+                                                id_emprestimo=c.id_emprestimo) }}">
+
+                        <button type="button"
+                                class="btn-parcelas"
+                                onclick="mostrarConfirmacaoGlobal(
+                                    'ATENÇÃO',
+                                    'As parcelas deste contrato serão geradas com base nas informações cadastradas.<br><br>Confira valor da parcela, quantidade de parcelas e primeiro vencimento antes de continuar.<br><br>Deseja continuar?',
+                                    function(){ document.getElementById('form-gerar-parcelas-{{ c.id_emprestimo }}').submit(); }
+                                )">
+                            Gerar Parcelas
+                        </button>
+
+                        </form>
+                    {% endif %}
+
+                    {% if c.qtde_parcelas_geradas > 0 %}
+                        <button type="button" class="btn-excluir btn-desabilitado" disabled>
+                            Excluir
+                        </button>
+                        {% else %}
+                        <form method="POST"
+                                action="{{ url_for('financeiro.excluir_emprestimo_financiamento',
+                                                id_emprestimo=c.id_emprestimo) }}"
+                                onsubmit="return confirm('Confirma a exclusão deste contrato?');">
+
+                            <button type="submit" class="btn-excluir">
+                            Excluir
+                            </button>
+                        </form>
+                    {% endif %}
+
+                </div>
+            </td>
+
+        </tr>
+    {% endfor %}
+
+  </tbody>
+</table>
+
+{% endblock %}
