@@ -155,6 +155,12 @@
         cursor:not-allowed !important;
         box-shadow:none !important;
     }
+    .campo input[readonly],
+    .campo select:disabled {
+        background: #f1f1f1;
+        color: #666;
+        cursor: not-allowed;
+        box-shadow: none;}
 
 </style>
 
@@ -178,41 +184,7 @@
     {{ empresa_ativa }} - {{ nome_empresa_ativa }}
 </div>
 
-{% set ns = namespace(todas_abertas=true) %}
-
-{% for p in parcelas %}
-  {% if p.situacao != 'EM_ABERTO' %}
-    {% set ns.todas_abertas = false %}
-  {% endif %}
-{% endfor %}
-
-<div class="acoes-topo">
-
-  {% if parcelas and ns.todas_abertas %}
-
-    <form method="POST"
-          action="{{ url_for('financeiro.excluir_todas_parcelas_emprestimo_financiamento',
-                            id_emprestimo=contrato.id_emprestimo) }}"
-          onsubmit="return confirm('Confirma a exclusão de todas as parcelas deste contrato?');">
-
-      <button type="submit" class="btn-excluir-parcelas">
-        Excluir Parcelas
-      </button>
-
-    </form>
-
-  {% else %}
-
-    <button type="button"
-            class="btn-excluir-parcelas btn-desabilitado"
-            disabled
-            title="Só é possível excluir parcelas se todas estiverem em aberto.">
-      Excluir Parcelas
-    </button>
-
-  {% endif %}
-
-</div>
+{% set parcelas_geradas = contrato and contrato.qtde_parcelas_geradas and contrato.qtde_parcelas_geradas > 0 %}
 
 <div class="card">
 
@@ -224,7 +196,7 @@
         <div class="acoes-topo">
             <button type="submit" class="btn-salvar">
                 Salvar
-            </button>
+            </button>       
         </div>
         <div class="grid">
 
@@ -240,6 +212,7 @@
                 <label>Descrição</label>
                 <input type="text"
                     name="descricao"
+                    required
                     value="{{ contrato.descricao if contrato else '' }}">
             </div>
 
@@ -252,24 +225,67 @@
 
             <div class="campo">
                 <label>Tipo</label>
-                <select name="tipo">
+                <select name="tipo" {% if parcelas_geradas %}disabled{% endif %}>
                     <option value="EMPRESTIMO">Empréstimo</option>
                     <option value="FINANCIAMENTO">Financiamento</option>
                 </select>
             </div>
 
             <div class="campo">
+                <label>Modalidade de Cálculo</label>
+                <select id="modalidade_calculo"
+                        name="modalidade_calculo"
+                        {% if parcelas_geradas %}disabled{% endif %}>
+
+                    <option value="PARCELA_FIXA" {% if contrato and contrato.modalidade_calculo == 'PARCELA_FIXA' %}selected{% endif %}>Parcelas Fixas</option>
+                    <option value="PRICE" {% if contrato and contrato.modalidade_calculo == 'PRICE' %}selected{% endif %}>Tabela Price</option>
+                    <option value="SAC" {% if contrato and contrato.modalidade_calculo == 'SAC' %}selected{% endif %}>Sistema SAC</option>
+                    <option value="PARCELA_INFORMADA" {% if contrato and contrato.modalidade_calculo == 'PARCELA_INFORMADA' %}selected{% endif %}>Parcelas Informadas</option>
+                    <option value="JUROS_VARIAVEIS" {% if contrato and contrato.modalidade_calculo == 'JUROS_VARIAVEIS' %}selected{% endif %}>Juros Variáveis</option>
+
+                </select>
+            </div>
+
+            <div class="campo" id="bloco-indexador">
+                <label>Indexador</label>
+                <select name="indexador" {% if parcelas_geradas %}disabled{% endif %}>
+                    <option value="">Selecione</option>
+                    <option value="CDI" {% if contrato and contrato.indexador == 'CDI' %}selected{% endif %}>CDI</option>
+                    <option value="SELIC" {% if contrato and contrato.indexador == 'SELIC' %}selected{% endif %}>SELIC</option>
+                    <option value="IPCA" {% if contrato and contrato.indexador == 'IPCA' %}selected{% endif %}>IPCA</option>
+                    <option value="IGPM" {% if contrato and contrato.indexador == 'IGPM' %}selected{% endif %}>IGPM</option>
+                    <option value="TR" {% if contrato and contrato.indexador == 'TR' %}selected{% endif %}>TR</option>
+                    <option value="OUTRO" {% if contrato and contrato.indexador == 'OUTRO' %}selected{% endif %}>Outro</option>
+                </select>
+            </div>
+
+            <div class="campo" id="bloco-spread">
+                <label>Spread (%)</label>
+                <input type="text"
+                    name="spread"
+                    class="campo-percentual-br"
+                    value="{{ contrato.spread if contrato else '' }}"
+                    {% if parcelas_geradas %}readonly{% endif %}>
+            </div>
+
+            <div class="campo">
                 <label>Data da Contratação</label>
                 <input type="date"
                     name="data_contratacao"
-                    value="{{ contrato.data_contratacao if contrato else '' }}">
+                    min="2000-01-01"
+                    max="2100-12-31"
+                    value="{{ contrato.data_contratacao if contrato else '' }}"
+                    {% if parcelas_geradas %}readonly{% endif %}>
             </div>
 
             <div class="campo">
                 <label>Primeiro Vencimento</label>
                 <input type="date"
                     name="data_primeiro_vencimento"
-                    value="{{ contrato.data_primeiro_vencimento if contrato else '' }}">
+                    min="2000-01-01"
+                    max="2100-12-31"    
+                    value="{{ contrato.data_primeiro_vencimento if contrato else '' }}"
+                    {% if parcelas_geradas %}readonly{% endif %}>
             </div>
 
             <div class="campo">
@@ -277,7 +293,8 @@
                 <input type="text"
                     class="campo-numero-br"
                     name="valor_contratado"
-                    value="{{ contrato.valor_contratado if contrato else '' }}">
+                    value="{{ contrato.valor_contratado if contrato else '' }}"
+                    {% if parcelas_geradas %}readonly{% endif %}>
             </div>
 
             <div class="campo">
@@ -287,8 +304,8 @@
                     <input type="text"
                         class="campo-percentual-br"
                         name="taxa_juros"
-                        value="{{ contrato.taxa_juros if contrato and contrato.taxa_juros is not none else '' }}">
-
+                        value="{{ contrato.taxa_juros if contrato else '' }}"
+                        {% if parcelas_geradas %}readonly{% endif %}>
                     <span>%</span>
                 </div>
             </div>
@@ -297,14 +314,16 @@
                 <label>Quantidade de Parcelas</label>
                 <input type="number"
                     name="quantidade_parcelas"
-                    value="{{ contrato.quantidade_parcelas if contrato else '' }}">
+                    value="{{ contrato.quantidade_parcelas if contrato else '' }}"
+                    {% if parcelas_geradas %}readonly{% endif %}>
             </div>
 
             <div class="campo">
                 <label>Meses de Carência</label>
                 <input type="number"
                     name="meses_carencia"
-                    value="{{ contrato.meses_carencia if contrato else 0 }}">
+                    value="{{ contrato.meses_carencia if contrato else 0 }}"
+                    {% if parcelas_geradas %}readonly{% endif %}>
             </div>
 
             <div class="campo">
@@ -312,12 +331,13 @@
                 <input type="text"
                     class="campo-numero-br"
                     name="valor_parcela"
-                    value="{{ contrato.valor_parcela if contrato else '' }}">
+                    value="{{ contrato.valor_parcela if contrato else '' }}"
+                    {% if parcelas_geradas %}readonly{% endif %}>
             </div>
 
             <div class="campo">
                 <label>Situação</label>
-                <select name="situacao">
+                <select name="situacao" {% if parcelas_geradas %}disabled{% endif %}>
                     <option value="EM_ANDAMENTO">Em Andamento</option>
                     <option value="QUITADO">Quitado</option>
                     <option value="CANCELADO">Cancelado</option>
@@ -326,7 +346,7 @@
 
             <div class="campo">
                 <label>Ativo</label>
-                <select name="ativo">
+                <select name="ativo" {% if parcelas_geradas %}disabled{% endif %}>
                     <option value="true">Sim</option>
                     <option value="false">Não</option>
                 </select>
@@ -418,5 +438,34 @@
             campo.value = formatarPercentualBR(campo.value);
         });
     });
+
+    function controlarModalidadeCalculo() {
+        const modalidade = document.getElementById('modalidade_calculo');
+        const blocoIndexador = document.getElementById('bloco-indexador');
+        const blocoSpread = document.getElementById('bloco-spread');
+
+        if (!modalidade) return;
+
+        if (modalidade.value === 'JUROS_VARIAVEIS') {
+            blocoIndexador.style.display = 'flex';
+            blocoSpread.style.display = 'flex';
+        } else {
+            blocoIndexador.style.display = 'none';
+            blocoSpread.style.display = 'none';
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        controlarModalidadeCalculo();
+
+        const modalidade = document.getElementById('modalidade_calculo');
+
+        if (modalidade) {
+            modalidade.addEventListener('change', controlarModalidadeCalculo);
+        }
+    });
+
+
+
 </script>
 {% endblock %}

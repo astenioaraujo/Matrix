@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+    .pagina-titulo {
+        font-size: 36px;
+        font-weight: 800;
+        margin-bottom: 10px;
+    }
+
+    .empresa {
+        font-size: 22px;
+        margin-bottom: 25px;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+    }
+
+    th {
+        background: #3b6fb6;
+        color: white;
+        padding: 8px;
+        font-size: 13px;
+        text-align: center;
+    }
+
+    td {
+        border: 1px solid #ddd;
+        padding: 7px;
+        font-size: 13px;
+    }
+
+    tr:nth-child(even) {
+        background: #fafafa;
+    }
+
+    .centro {
+        text-align: center;
+    }
+
+    .direita {
+        text-align: right;
+    }
+
+    .ativo {
+        color: #16833a;
+        font-weight: 800;
+    }
+
+    .inativo {
+        color: #c62828;
+        font-weight: 800;
+    }
+
+    .separador-esquerda {
+        border-left: 3px solid #5f5f5f !important;
+    }
+    .separador-direita {
+        border-right: 3px solid #5f5f5f !important;
+    }
+
+    .linha-total td {
+        background: #e8f0fe;
+        font-weight: 900;
+        border-top: 3px solid #555;
+    }
+
+    .parcelas-geradas {
+        color: #16833a;
+        font-weight: 900;
+    }
+</style>
+
+<div class="pagina-titulo">
+    Consulta de Empréstimos e Financiamentos
+</div>
+
+<div class="empresa">
+    <strong>Empresa:</strong>
+    {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>Código</th>
+            <th>Descrição</th>
+            <th>Instituição</th>
+            <th>Tipo</th>
+            <th>Contratado</th>
+            <th>Parcela</th>
+            <th class="separador-direita">Parcelas</th>
+
+            <th class="separador-esquerda">Parcelas Pagas</th>
+            <th class="separador-direita">Valor Pago</th>
+            <th>Parcelas Restantes</th>
+            <th>Valor a Pagar</th>
+
+            <th class="separador-esquerda">Situação</th>
+            <th>Ativo</th>
+        </tr>
+    </thead>
+
+    <tbody>
+
+        {% for c in contratos %}
+        <tr>
+
+            <td class="centro">
+                {{ c.codigo }}
+            </td>
+
+            <td>
+                {{ c.descricao }}
+            </td>
+
+            <td>
+                {{ c.instituicao }}
+            </td>
+
+            <td class="centro">
+                {{ c.tipo }}
+            </td>
+
+            <td class="direita">
+                {{ formatar_numero_br(c.valor_contratado) }}
+            </td>
+
+            <td class="direita">
+                {{ formatar_numero_br(c.valor_parcela) }}
+            </td>
+
+            <td class="centro separador-direita">
+                {% if c.qtde_parcelas_geradas > 0 %}
+                    <span class="parcelas-geradas">
+                        {{ c.quantidade_parcelas }}
+                    </span>
+                {% else %}
+                    {{ c.quantidade_parcelas }}
+                {% endif %}
+            </td>
+
+            <td class="centro separador-esquerda">
+                {{ c.parcelas_pagas }}
+            </td>
+
+            <td class="direita separador-direita">
+                {{ formatar_numero_br(c.valor_pago) }}
+            </td>
+
+            <td class="centro">
+                {{ c.parcelas_restantes }}
+            </td>
+
+            <td class="direita">
+                {{ formatar_numero_br(c.valor_a_pagar) }}
+            </td>
+
+            <td class="centro separador-esquerda">
+                {{ c.situacao }}
+            </td>
+
+            <td class="centro">
+                {% if c.ativo %}
+                    <span class="ativo">Sim</span>
+                {% else %}
+                    <span class="inativo">Não</span>
+                {% endif %}
+            </td>
+
+        </tr>
+        {% endfor %}
+
+        {% if not contratos %}
+        <tr>
+            <td colspan="13" class="centro">
+                Nenhum contrato encontrado.
+            </td>
+        </tr>
+        {% endif %}
+
+    </tbody>
+
+    <tfoot>
+        <tr class="linha-total">
+
+            <td colspan="4" class="direita">
+                TOTAL
+            </td>
+
+            <td class="direita">
+                {{ formatar_numero_br(total_valor_contratado) }}
+            </td>
+
+            <td></td>
+
+            <td></td>
+
+            <td></td>
+
+            <td class="direita">
+                {{ formatar_numero_br(total_valor_pago) }}
+            </td>
+
+            <td></td>
+
+            <td class="direita">
+                {{ formatar_numero_br(total_valor_a_pagar) }}
+            </td>
+
+            <td></td>
+
+            <td></td>
+
+        </tr>
+    </tfoot>
+
+</table>
+
+{% endblock %}

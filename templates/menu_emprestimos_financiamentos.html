@@ -4,68 +4,80 @@
 {% include "components/nav.html" %}
 
 <style>
-  .pagina-titulo {
-    font-size: 36px;
-    font-weight: 800;
-    margin-bottom: 10px;
-  }
+    .pagina-titulo {
+        font-size: 36px;
+        font-weight: 800;
+        margin-bottom: 10px;
+    }
 
-  .empresa {
-    font-size: 22px;
-    margin-bottom: 30px;
-  }
+    .empresa {
+        font-size: 22px;
+        margin-bottom: 30px;
+    }
 
-  .menu-botoes {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, 260px);
-    gap: 14px;
-    margin-bottom: 50px;
-  }
+    .menu-botoes {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, 260px);
+        gap: 14px;
+        margin-bottom: 50px;
+    }
 
-  .menu-botoes a {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 64px;
-    border-radius: 12px;
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 16px;
-    color: #fff;
-    background: #6b4f2a;
-    border: 1px solid #6b4f2a;
-    box-shadow: 0 3px 8px rgba(0,0,0,0.15);
-    transition: all 0.2s ease;
-    text-align: center;
-    padding: 0 10px;
-  }
+    .menu-botoes a {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 64px;
+        border-radius: 12px;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 16px;
+        color: #fff;
+        background: #6b4f2a;
+        border: 1px solid #6b4f2a;
+        box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+        transition: all 0.2s ease;
+        text-align: center;
+        padding: 0 10px;
+    }
 
-  .menu-botoes a:hover {
-    transform: translateY(-2px);
-    background: #5a4123;
-    border-color: #5a4123;
-  }
+    .menu-botoes a:hover {
+        transform: translateY(-2px);
+        background: #5a4123;
+        border-color: #5a4123;
+    }
 </style>
 
 <div class="pagina-titulo">Empréstimos e Financiamentos</div>
 
 <div class="empresa">
-  <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+    <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
 </div>
 
 <div class="menu-botoes">
 
-  {% if pode_cadastrar_contratos %}
-    <a href="{{ url_for('financeiro.cadastro_emprestimos_financiamentos') }}">
-      Cadastrar Contratos
-    </a>
-  {% endif %}
+    {% if pode_cadastrar_contratos %}
+        <a href="{{ url_for('financeiro.cadastro_emprestimos_financiamentos') }}">
+        Cadastrar Contratos
+        </a>
+    {% endif %}
 
-  {% if pode_consultar_emprestimos_financiamentos %}
-    <a href="{{ url_for('financeiro.consulta_emprestimos_financiamentos') }}">
-      Consultar Empréstimos<br>e Financiamentos
+    {% if pode_consultar_emprestimos_financiamentos %}
+        <a href="{{ url_for('financeiro.consulta_emprestimos_financiamentos') }}">
+        Consultar Empréstimos<br>e Financiamentos
+        </a>
+    {% endif %}
+
+    {% if pode_registrar_pagamentos_emprestimos_financiamentos %}
+    <a href="{{ url_for('financeiro.pagamentos_emprestimos_financiamentos') }}">
+        Pagar<br>Parcelas
     </a>
-  {% endif %}
+    {% endif %}
+
+    {% if pode_consultar_emprestimos_financiamentos %}
+    <a href="{{ url_for('financeiro.consulta_fluxo_pagamentos_emprestimos_financiamentos') }}">
+        Consultar Fluxo<br>de Pagamentos
+    </a>
+{% endif %}
 
 </div>
 

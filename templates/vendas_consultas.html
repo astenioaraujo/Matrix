@@ -22,6 +22,7 @@
     flex-wrap: wrap;
   }
 
+
   .btn-topo {
     display: inline-block;
     padding: 10px 16px;
@@ -36,7 +37,16 @@
   .btn-topo:hover {
     background: #ededed;
   }
+  .btn-consultar {
+    background: #6b8e23;
+    color: #fff;
+    border: 1px solid #6b8e23;
+    }
 
+    .btn-consultar:hover {
+    background: #5f7f1f;
+    border-color: #5f7f1f;
+    }
   .painel-filtros {
     background: #fff;
     border: 1px solid #d9d9d9;
@@ -46,12 +56,39 @@
   }
 
   .grid-filtros {
-    display: grid;
-    grid-template-columns: 170px 170px 240px auto;
-    gap: 12px;
-    align-items: end;
-    justify-content: start;
-  }
+  display: grid;
+  grid-template-columns: 220px 220px 240px auto;
+  gap: 12px;
+  align-items: end;
+  justify-content: start;
+}
+
+.data-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.data-nav input {
+  flex: 1;
+}
+
+.btn-data-nav {
+  width: 38px;
+  height: 38px;
+  border: 1px solid #c7c7c7;
+  border-radius: 9px;
+  background: #c8e6c9;
+  color: #111;
+  font-size: 18px;
+  font-weight: 900;
+  cursor: pointer;
+  padding: 0;
+}
+
+.btn-data-nav:hover {
+  background: #a5d6a7;
+}
 
   .campo label {
     display: block;
@@ -162,23 +199,24 @@
   }
 
   th.col-qtd, td.col-qtd {
-    width: 85px;
-    min-width: 85px;
-    max-width: 85px;
-  }
+  width: 120px;
+  min-width: 120px;
+  max-width: 120px;
+}
 
-  th.col-valor, td.col-valor,
-  th.col-mb, td.col-mb {
-    width: 100px;
-    min-width: 100px;
-    max-width: 100px;
-  }
+th.col-valor, td.col-valor,
+th.col-mb, td.col-mb {
+  width: 140px;
+  min-width: 140px;
+  max-width: 140px;
+}
 
-  th.col-mun, td.col-mun {
-    width: 55px;
-    min-width: 55px;
-    max-width: 55px;
-  }
+th.col-mun, td.col-mun {
+  width: 90px;
+  min-width: 90px;
+  max-width: 90px;
+}
+
 
   tbody tr:nth-child(even) {
     background: #fafafa;
@@ -197,7 +235,9 @@
     padding: 20px;
     color: #666;
   }
-
+    tr.separador-semana td {
+        border-top: 4px solid #555 !important;
+    }
   @media (max-width: 900px) {
     .grid-filtros {
       grid-template-columns: 1fr;
@@ -230,12 +270,24 @@
     <div class="grid-filtros">
       <div class="campo">
         <label for="data_ini">Data inicial</label>
+        <div class="data-nav">
+        <button type="button" class="btn-data-nav" onclick="mudarData('data_ini', -1)">←</button>
+
         <input type="date" id="data_ini" name="data_ini" value="{{ data_ini }}">
+
+        <button type="button" class="btn-data-nav" onclick="mudarData('data_ini', 1)">→</button>
+        </div>
       </div>
 
       <div class="campo">
         <label for="data_fim">Data final</label>
+        <div class="data-nav">
+        <button type="button" class="btn-data-nav" onclick="mudarData('data_fim', -1)">←</button>
+
         <input type="date" id="data_fim" name="data_fim" value="{{ data_fim }}">
+
+        <button type="button" class="btn-data-nav" onclick="mudarData('data_fim', 1)">→</button>
+        </div>
       </div>
 
       <div class="campo">
@@ -252,7 +304,9 @@
       </div>
 
       <div class="campo">
-        <button type="submit" class="btn-topo">Consultar</button>
+        <button type="submit" class="btn-topo btn-consultar">
+            Consultar
+        </button>
       </div>
     </div>
   </form>
@@ -262,17 +316,29 @@
     <div class="bloco-titulo">Consulta por filial</div>
 
     <div class="nav-filial">
-      {% if filial_anterior %}
-        <a class="btn-topo" href="{{ url_for('vendas.vendas_consultas', data_ini=data_ini, data_fim=data_fim, cod_filial=filial_anterior.cod_filial) }}">
-          ← Filial anterior
-        </a>
-      {% endif %}
+        {% if filial_anterior %}
+            <a class="btn-topo" href="{{ url_for('vendas.vendas_consultas', data_ini=data_ini, data_fim=data_fim, cod_filial=filial_anterior.cod_filial) }}">
+            ← Filial anterior
+            </a>
+        {% else %}
+            <span class="btn-topo" style="opacity: 0.45; pointer-events: none;">
+            ← Filial anterior
+            </span>
+        {% endif %}
 
-      {% if filial_proxima %}
-        <a class="btn-topo" href="{{ url_for('vendas.vendas_consultas', data_ini=data_ini, data_fim=data_fim, cod_filial=filial_proxima.cod_filial) }}">
-          Próxima filial →
+        <a class="btn-topo btn-consultar" href="{{ url_for('vendas.vendas_consultas', data_ini=data_ini, data_fim=data_fim) }}">
+            Todas as filiais
         </a>
-      {% endif %}
+
+        {% if filial_proxima %}
+            <a class="btn-topo" href="{{ url_for('vendas.vendas_consultas', data_ini=data_ini, data_fim=data_fim, cod_filial=filial_proxima.cod_filial) }}">
+            Próxima filial →
+            </a>
+        {% else %}
+            <span class="btn-topo" style="opacity: 0.45; pointer-events: none;">
+            Próxima filial →
+            </span>
+        {% endif %}
     </div>
 
     <div class="pagina-subtitulo" style="margin-bottom: 12px;">
@@ -313,7 +379,7 @@
           </thead>
           <tbody>
             {% for linha in linhas_filial %}
-            <tr>
+            <tr class="{% if linha.dia_semana == 'Segunda' %}separador-semana{% endif %}">
               <td class="col-data">{{ linha.data_fmt }}</td>
               <td class="col-dia">{{ linha.dia_semana }}</td>
               <td class="col-qtd" style="background: {{ linha.quantidade_cor }};">{{ formatar_numero_br(linha.quantidade) }}</td>
@@ -342,7 +408,13 @@
   </div>
   {% else %}
   <div class="bloco">
-    <div class="bloco-titulo">Consulta de todos os postos</div>
+    <div class="nav-filial">
+        {% if filiais %}
+            <a class="btn-topo btn-consultar" href="{{ url_for('vendas.vendas_consultas', data_ini=data_ini, data_fim=data_fim, cod_filial=filiais[0].cod_filial) }}">
+            Ir para primeira filial →
+            </a>
+        {% endif %}
+    </div>
 
     {% if linhas_totais %}
       <div class="resumo-faixa">
@@ -378,7 +450,7 @@
           </thead>
           <tbody>
             {% for linha in linhas_totais %}
-            <tr>
+            <tr class="{% if linha.dia_semana == 'Segunda' %}separador-semana{% endif %}">
               <td class="col-data">{{ linha.data_fmt }}</td>
               <td class="col-dia">{{ linha.dia_semana }}</td>
               <td class="col-qtd" style="background: {{ linha.quantidade_cor }};">{{ formatar_numero_br(linha.quantidade) }}</td>
@@ -407,5 +479,29 @@
   </div>
   {% endif %}
 </div>
+<script>
+  function mudarData(idCampo, dias) {
+    const inputData = document.getElementById(idCampo);
 
+    if (!inputData || !inputData.value) {
+      return;
+    }
+
+    const partes = inputData.value.split("-");
+    const ano = parseInt(partes[0], 10);
+    const mes = parseInt(partes[1], 10) - 1;
+    const dia = parseInt(partes[2], 10);
+
+    const data = new Date(ano, mes, dia);
+    data.setDate(data.getDate() + dias);
+
+    const novoAno = data.getFullYear();
+    const novoMes = String(data.getMonth() + 1).padStart(2, "0");
+    const novoDia = String(data.getDate()).padStart(2, "0");
+
+    inputData.value = `${novoAno}-${novoMes}-${novoDia}`;
+
+    inputData.form.submit();
+  }
+</script>
 {% endblock %}

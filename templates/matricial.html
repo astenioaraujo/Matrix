@@ -3,45 +3,45 @@
 {% include "components/nav.html" %}
 
 <style>
-  html, body {
-    overflow-x: auto !important;
-    overflow-y: auto !important;
-    height: auto !important;
-    max-height: none !important;
-  }
+    html, body {
+        overflow-x: auto !important;
+        overflow-y: auto !important;
+        height: auto !important;
+        max-height: none !important;
+    }
 
-  main, .content, .content-wrapper, .container, .page-matricial {
-    overflow: visible !important;
-    overflow-y: visible !important;
-    height: auto !important;
-    max-height: none !important;
-  }
+    main, .content, .content-wrapper, .container, .page-matricial {
+        overflow: visible !important;
+        overflow-y: visible !important;
+        height: auto !important;
+        max-height: none !important;
+    }
 
-  .page-matricial {
-    display: block;
-    min-width: 100%;
-    padding-bottom: 180px;
-  }
+    .page-matricial {
+        display: block;
+        min-width: 100%;
+        padding-bottom: 180px;
+    }
 
-  .page-topo-fixo {
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    background: var(--bg, #f4f4f4);
-    padding-top: 16px;
-    padding-bottom: 12px;
-  }
+    .page-topo-fixo {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background: var(--bg, #f4f4f4);
+        padding-top: 16px;
+        padding-bottom: 12px;
+    }
 
-  .table-wrapper {
-  display: block;
-  width: max-content;
-  min-width: max-content;
-  overflow: visible !important;
-  border: 1px solid #d9d9d9;
-  border-radius: 10px;
-  background: #fff;
-  margin-bottom: 60px;
-  }
+    .table-wrapper {
+        display: block;
+        width: max-content;
+        min-width: max-content;
+        overflow: visible !important;
+        border: 1px solid #d9d9d9;
+        border-radius: 10px;
+        background: #fff;
+        margin-bottom: 60px;
+    }
 
   .matriz-tabela {
   border-collapse: collapse;
@@ -141,6 +141,32 @@
     z-index: 3;
     background: #fff;
   }
+    .mes-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .mes-nav select {
+    min-width: 90px;
+  }
+
+  .btn-mes-nav {
+    width: 38px;
+    height: 38px;
+    border: 1px solid #c7c7c7;
+    border-radius: 9px;
+    background: #c8e6c9;
+    color: #111;
+    font-size: 18px;
+    font-weight: 900;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .btn-mes-nav:hover {
+    background: #a5d6a7;
+  }
   .btn-acao {
     padding: 10px 16px;
     border-radius: 10px;
@@ -213,29 +239,35 @@
 
       <div>
         <label for="mes">Mês</label><br>
-        <select id="mes" name="mes">
-          <option value="">(Todos)</option>
-          {% for m in meses %}
-            <option value="{{ m }}" {% if mes_sel|string == m|string %}selected{% endif %}>{{ m }}</option>
-          {% endfor %}
-        </select>
-      </div>
+        <div class="mes-nav">
+            <button type="button" class="btn-mes-nav" onclick="mudarMes(-1)">←</button>
 
-      <div>
-        <label for="filial">Filial</label><br>
-        <select id="filial" name="filial">
-          <option value="">(Todas)</option>
-          {% for f in filiais %}
-            <option value="{{ f[0] }}" {% if f[0]|string == filial_sel %}selected{% endif %}>{{ f[1] }}</option>
-          {% endfor %}
-        </select>
-      </div>
+            <select id="mes" name="mes">
+            <option value="">(Todos)</option>
+            {% for m in meses %}
+                <option value="{{ m }}" {% if mes_sel|string == m|string %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+            </select>
 
-      <div>
-        <button type="submit" class="btn-acao btn-carregar">
-          Carregar
-        </button>
-      </div>
+            <button type="button" class="btn-mes-nav" onclick="mudarMes(1)">→</button>
+        </div>
+        </div>
+
+        <div>
+            <label for="filial">Filial</label><br>
+            <select id="filial" name="filial">
+            <option value="">(Todas)</option>
+            {% for f in filiais %}
+                <option value="{{ f[0] }}" {% if f[0]|string == filial_sel %}selected{% endif %}>{{ f[1] }}</option>
+            {% endfor %}
+            </select>
+        </div>
+
+        <div>
+            <button type="submit" class="btn-acao btn-carregar">
+                Carregar
+            </button>
+        </div>
     </div>
   </form>
 
@@ -332,6 +364,42 @@
 </div>
 
 <script>
+    function mudarMes(delta) {
+        const selectMes = document.getElementById("mes");
+        const selectAno = document.getElementById("ano");
+
+        if (!selectMes || !selectAno) {
+        return;
+        }
+
+        let mes = parseInt(selectMes.value || "0", 10);
+        let ano = parseInt(selectAno.value || new Date().getFullYear(), 10);
+
+        if (!mes || mes < 1 || mes > 12) {
+        mes = new Date().getMonth() + 1;
+        }
+
+        mes += delta;
+
+        if (mes < 1) {
+        mes = 12;
+        ano -= 1;
+        }
+
+        if (mes > 12) {
+        mes = 1;
+        ano += 1;
+        }
+
+        selectMes.value = String(mes);
+
+        const optionAno = Array.from(selectAno.options).find(opt => opt.value === String(ano));
+        if (optionAno) {
+        selectAno.value = String(ano);
+        }
+
+        selectMes.form.submit();
+    }
   document.addEventListener("DOMContentLoaded", function () {
     const linhas = document.querySelectorAll("#matriz-tabela tbody tr[data-linha='conta']");
   

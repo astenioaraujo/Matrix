@@ -12,119 +12,123 @@
 
 <style>
 
-  .pagina-titulo{
-    font-size:36px;
-    font-weight:800;
-    margin-bottom:10px;
-  }
+    .pagina-titulo{
+        font-size:36px;
+        font-weight:800;
+        margin-bottom:10px;
+    }
 
-  .empresa{
-    font-size:20px;
-    margin-bottom:20px;
-  }
+    .empresa{
+        font-size:20px;
+        margin-bottom:20px;
+    }
 
-  .card-resumo{
-    background:#fff;
-    border:1px solid #d9d9d9;
-    border-radius:12px;
-    padding:18px;
-    margin-bottom:20px;
-  }
+    .card-resumo{
+        background:#fff;
+        border:1px solid #d9d9d9;
+        border-radius:12px;
+        padding:18px;
+        margin-bottom:20px;
+    }
 
-  .grid{
-    display:grid;
-    grid-template-columns: repeat(4,1fr);
-    gap:14px;
-  }
+    .grid{
+        display:grid;
+        grid-template-columns: repeat(4,1fr);
+        gap:14px;
+    }
 
-  .campo{
-    display:flex;
-    flex-direction:column;
-  }
+    .campo{
+        display:flex;
+        flex-direction:column;
+    }
 
-  .campo label{
-    font-size:12px;
-    font-weight:700;
-    color:#666;
-    margin-bottom:4px;
-  }
+    .linha-passada td{
+        color:#7bb874;
+        opacity:0.90;
+    }
+    .campo label{
+        font-size:12px;
+        font-weight:700;
+        color:#666;
+        margin-bottom:4px;
+    }
 
-  .campo span{
-    font-size:15px;
-    font-weight:600;
-  }
+    .campo span{
+        font-size:15px;
+        font-weight:600;
+    }
 
-  table{
-    width:100%;
-    border-collapse:collapse;
-    background:#fff;
-  }
+    table{
+        width:100%;
+        border-collapse:collapse;
+        background:#fff;
+    }
 
-  th{
-    background:#3b6fb6;
-    color:white;
-    padding:8px;
-    font-size:13px;
-    text-align:center;
-  }
+    th{
+        background:#3b6fb6;
+        color:white;
+        padding:8px;
+        font-size:13px;
+        text-align:center;
+    }
 
-  td{
-    border:1px solid #ddd;
-    padding:7px;
-    font-size:13px;
-  }
+    td{
+        border:1px solid #ddd;
+        padding:7px;
+        font-size:13px;
+    }
 
-  tr:nth-child(even){
-    background:#fafafa;
-  }
+    tr:nth-child(even){
+        background:#fafafa;
+    }
 
-  .centro{
-    text-align:center;
-  }
+    .centro{
+        text-align:center;
+    }
 
-  .direita{
-    text-align:right;
-  }
+    .direita{
+        text-align:right;
+    }
 
-  .situacao-aberta{
-    color:#c62828;
-    font-weight:800;
-  }
+    .situacao-aberta{
+        color:#c62828;
+        font-weight:800;
+    }
 
-  .situacao-paga{
-    color:#16833a;
-    font-weight:800;
-  }
-    .acoes-topo{
-    display:flex;
-    gap:10px;
-    align-items:center;
-    margin-bottom:18px;
-    flex-wrap:wrap;
-  }
+    .situacao-paga{
+        color:#16833a;
+        font-weight:800;
+    }
+        .acoes-topo{
+        display:flex;
+        gap:10px;
+        align-items:center;
+        margin-bottom:18px;
+        flex-wrap:wrap;
+    }
 
-  .btn-excluir-parcelas{
-    background:#c62828;
-    color:white;
-    height:42px;
-    min-width:190px;
-    padding:0 18px;
-    border:none;
-    border-radius:10px;
-    font-size:14px;
-    font-weight:800;
-    cursor:pointer;
-  }
+    .btn-excluir-parcelas{
+        background:#c62828;
+        color:white;
+        height:42px;
+        min-width:190px;
+        padding:0 18px;
+        border:none;
+        border-radius:10px;
+        font-size:14px;
+        font-weight:800;
+        cursor:pointer;
+    }
 
-  .btn-excluir-parcelas:hover{
-    background:#a91f1f;
-  }
+    .btn-excluir-parcelas:hover{
+        background:#a91f1f;
+    }
 
-  .btn-desabilitado{
-    background:#c7c7c7 !important;
-    color:#666 !important;
-    cursor:not-allowed !important;
-  }
+    .btn-desabilitado{
+        background:#c7c7c7 !important;
+        color:#666 !important;
+        cursor:not-allowed !important;
+    }
 
 
 </style>
@@ -135,12 +139,12 @@
 
 
 <div class="pagina-titulo">
-  Parcelas do Contrato
+    Parcelas do Contrato
 </div>
 
-    <div class="empresa">
-  <strong>Empresa:</strong>
-  {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+<div class="empresa">
+    <strong>Empresa:</strong>
+    {{ empresa_ativa }} - {{ nome_empresa_ativa }}
 </div>
 
 {% set ns = namespace(todas_abertas=true) %}
@@ -240,8 +244,13 @@
       <th>Parcela</th>
       <th>Tipo</th>
       <th>Vencimento</th>
-      <th>Valor</th>
+      <th>Saldo Inicial</th>
+      <th>Principal</th>
+      <th>Juros</th>
+      <th>Valor Parcela</th>
       <th>Valor Pago</th>
+      <th>Saldo Final</th>
+      <th>Taxa</th>
       <th>Pagamento</th>
       <th>Situação</th>
       <th>Observação</th>
@@ -251,79 +260,56 @@
   <tbody>
 
     {% for p in parcelas %}
-    <tr>
+        <tr class="{% if p.data_vencimento and p.data_vencimento < hoje %}linha-passada{% endif %}">
 
-      <td class="centro">
-        {{ p.numero_parcela }}
-      </td>
+            <td class="centro">{{ p.numero_parcela }}</td>
 
-      <td class="centro">
-        {{ p.tipo_parcela }}
-      </td>
+            <td class="centro">{{ p.tipo_parcela }}</td>
 
-      <td class="centro">
-        {{ p.data_vencimento.strftime('%d/%m/%Y') if p.data_vencimento else '' }}
-      </td>
+            <td class="centro">
+            {{ p.data_vencimento.strftime('%d/%m/%Y') if p.data_vencimento else '' }}
+            </td>
 
-      <td class="direita">
-        {{ formatar_numero_br(p.valor_parcela) }}
-      </td>
+            <td class="direita">{{ formatar_numero_br(p.saldo_inicial) }}</td>
 
-      <td class="direita">
-        {{ formatar_numero_br(p.valor_pago) }}
-      </td>
+            <td class="direita">{{ formatar_numero_br(p.valor_principal) }}</td>
 
-      <td class="centro">
-        {{ p.data_pagamento.strftime('%d/%m/%Y') if p.data_pagamento else '' }}
-      </td>
+            <td class="direita">{{ formatar_numero_br(p.valor_juros) }}</td>
 
-      <td class="centro">
+            <td class="direita">{{ formatar_numero_br(p.valor_parcela) }}</td>
 
-        {% if p.situacao == 'PAGO' %}
-          <span class="situacao-paga">
-            {{ p.situacao }}
-          </span>
-        {% else %}
-          <span class="situacao-aberta">
-            {{ p.situacao }}
-          </span>
-        {% endif %}
+            <td class="direita">{{ formatar_numero_br(p.valor_pago) }}</td>
 
-      </td>
+            <td class="direita">{{ formatar_numero_br(p.saldo_final) }}</td>
 
-      <td>
-        {{ p.observacao or '' }}
-      </td>
+            <td class="direita">
+            {{ formatar_numero_br(p.taxa_juros) }}%
+            </td>
 
-    </tr>
+            <td class="centro">
+            {{ p.data_pagamento.strftime('%d/%m/%Y') if p.data_pagamento else '' }}
+            </td>
+
+            <td class="centro">
+            {% if p.situacao == 'PAGO' %}
+                <span class="situacao-paga">{{ p.situacao }}</span>
+            {% else %}
+                <span class="situacao-aberta">{{ p.situacao }}</span>
+            {% endif %}
+            </td>
+
+            <td>{{ p.observacao or '' }}</td>
+
+        </tr>
     {% endfor %}
 
     {% if not parcelas %}
     <tr>
-      <td colspan="8" class="centro">
+      <td colspan="13" class="centro">
         Nenhuma parcela gerada.
       </td>
     </tr>
     {% endif %}
-
-
-    <script>
-
-        function abrirModalExcluirParcelas() {
-            document.getElementById('modalExcluirParcelas').style.display = 'flex';
-        }
-
-        function fecharModalExcluirParcelas() {
-            document.getElementById('modalExcluirParcelas').style.display = 'none';
-        }
-
-        function confirmarExclusaoParcelas() {
-            document.getElementById('form-excluir-parcelas').submit();
-        }
-
-    </script>
-
-
 
   </tbody>
 

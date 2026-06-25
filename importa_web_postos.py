@@ -2,19 +2,11 @@ import os
 import re
 import tempfile
 import pdfplumber
+import psycopg2
+
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-
-import pandas as pd
-import psycopg2
-import warnings
-warnings.filterwarnings(
-    "ignore",
-    message="Workbook contains no default style, apply openpyxl's default"
-)
-
-COLUNA_HISTORICO_PADRAO = "A"
-COLUNA_VALOR_PADRAO = "F"
+from psycopg2.extras import execute_values
 
 
 def get_connection():
@@ -27,59 +19,10 @@ def get_connection():
     )
 
 
-def listar_arquivos_excel(diretorio):
-    arquivos = []
-    for nome in os.listdir(diretorio):
-        if nome.startswith("~$"):
-            continue
-        if nome.lower().endswith((".xlsx", ".xls")):
-            arquivos.append(os.path.join(diretorio, nome))
-    arquivos.sort()
-    return arquivos
-
-
-def extrair_cod_filial_do_nome_arquivo(caminho_arquivo):
-    nome = os.path.basename(caminho_arquivo)
-    nome_sem_ext = os.path.splitext(nome)[0]
-
-    match = re.search(r"\bV\s*(\d+)\b", nome_sem_ext, flags=re.IGNORECASE)
-    if match:
-        return int(match.group(1))
-
-    match = re.search(
-        r"fluxo\s*de\s*caixa\s*-\s*(\d+)",
-        nome_sem_ext,
-        flags=re.IGNORECASE
-    )
-    if match:
-        return int(match.group(1))
-
-    match = re.match(r"^\s*(\d+)", nome_sem_ext)
-    if match:
-        return int(match.group(1))
-
-    raise ValueError(f"Código da filial inválido no nome do arquivo: {nome}")
-
-
-def buscar_nome_filial(conn, cod_empresa, cod_filial):
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT nome_filial
-        FROM filiais
-        WHERE cod_empresa = %s
-          AND cod_filial = %s
-          AND ativo = true
-    """, (str(cod_empresa).strip(), int(cod_filial)))
-    r = cur.fetchone()
-    cur.close()
-
-    if not r:
-        raise ValueError(
-            f"Filial não cadastrada ou inativa. Empresa={cod_empresa}, Filial={cod_filial}. "
-            f"Cadastre a filial antes de importar o arquivo."
-        )
-
-    return r[0]
+def normalizar_texto(texto):
+    texto = str(texto or "").strip().lower()
+    texto = re.sub(r"\s+", " ", texto)
+    return texto
 
 
 def converter_decimal(valor):
@@ -93,8 +36,6 @@ def converter_decimal(valor):
 
     if "," in texto:
         texto = texto.replace(".", "").replace(",", ".")
-    else:
-        texto = texto
 
     try:
         return Decimal(texto)
@@ -105,65 +46,111 @@ def converter_decimal(valor):
             return Decimal("0")
 
 
-def letra_para_indice_coluna(coluna):
-    coluna = str(coluna or "").strip().upper()
+def extrair_codigo_hierarquico(historico):
+    texto = str(historico or "").strip()
 
-    if not coluna or not coluna.isalpha():
-        raise ValueError(f"Coluna inválida: {coluna}")
+    match = re.match(r"^(\d+(?:\.\d+)*)\s*[-–_]", texto)
+    if match:
+        return match.group(1)
 
-    resultado = 0
-    for ch in coluna:
-        resultado = resultado * 26 + (ord(ch) - ord("A") + 1)
+    match = re.match(r"^(\d+(?:\.\d+)*)\b", texto)
+    if match:
+        return match.group(1)
 
-    return resultado - 1
-
-
-def ler_arquivo_excel(caminho_arquivo):
-    if caminho_arquivo.lower().endswith(".xlsx"):
-        xls = pd.ExcelFile(caminho_arquivo)
-    else:
-        xls = pd.ExcelFile(caminho_arquivo, engine="xlrd")
-
-    nome_aba = xls.sheet_names[0]
-
-    if caminho_arquivo.lower().endswith(".xlsx"):
-        df = pd.read_excel(
-            caminho_arquivo,
-            sheet_name=nome_aba,
-            dtype=str,
-            header=None
-        )
-    else:
-        df = pd.read_excel(
-            caminho_arquivo,
-            sheet_name=nome_aba,
-            dtype=str,
-            engine="xlrd",
-            header=None
-        )
-
-    df = df.fillna("")
-    return df
+    return ""
 
 
-def obter_valor_por_letra(df, row, letra_coluna, caminho_arquivo):
-    indice = letra_para_indice_coluna(letra_coluna)
+def montar_prefixos_sinteticos(codigos):
+    """
+    Exemplo:
+    Se existe 2.3.4, então 2 e 2.3 são sintéticas.
+    Isso evita comparar cada conta contra todas as outras.
+    """
+    prefixos = set()
 
-    if indice >= len(df.columns):
-        raise ValueError(
-            f"A coluna '{letra_coluna}' não foi encontrada no arquivo {os.path.basename(caminho_arquivo)}"
-        )
+    for codigo in codigos:
+        partes = str(codigo or "").split(".")
 
-    return row.iloc[indice]
+        if len(partes) <= 1:
+            continue
 
-def eh_conta_sintetica_excel(codigo_atual, codigo_proximo):
-    if not codigo_atual or not codigo_proximo:
-        return False
+        for i in range(1, len(partes)):
+            prefixos.add(".".join(partes[:i]))
 
-    return codigo_proximo.startswith(codigo_atual + ".")
+    return prefixos
 
-def inserir_importacao(cur, registro):
+
+def carregar_filiais_importacao(cur, cod_empresa):
     cur.execute("""
+        SELECT cod_filial, nome_filial, COALESCE(nome_filial_importacao, '')
+        FROM filiais
+        WHERE cod_empresa = %s
+          AND ativo = true
+    """, (cod_empresa,))
+
+    filiais = {}
+
+    for cod_filial, nome_filial, nome_importacao in cur.fetchall() or []:
+        nome_norm = normalizar_texto(nome_importacao)
+
+        if nome_norm:
+            filiais[nome_norm] = {
+                "cod_filial": int(cod_filial),
+                "nome_filial": nome_filial,
+            }
+
+    return filiais
+
+
+def detectar_filial_na_linha(linha, filiais_importacao):
+    linha_norm = normalizar_texto(linha)
+
+    if linha_norm.startswith("filial:"):
+        nome_pdf = linha.split(":", 1)[1].strip()
+        nome_pdf_norm = normalizar_texto(nome_pdf)
+
+        filial = filiais_importacao.get(nome_pdf_norm)
+
+        if not filial:
+            raise ValueError(
+                f"Filial NÃO encontrada para importação do PDF.\n"
+                f"Nome no PDF='{nome_pdf}'\n\n"
+                f"Verifique o campo 'nome_filial_importacao' na tabela FILIAIS."
+            )
+
+        return filial["cod_filial"], filial["nome_filial"]
+
+    filial = filiais_importacao.get(linha_norm)
+
+    if filial:
+        return filial["cod_filial"], filial["nome_filial"]
+
+    return None, None
+
+
+def inserir_importacoes_em_lote(cur, registros):
+    if not registros:
+        return 0
+
+    valores = [
+        (
+            r["cod_empresa"],
+            r["cod_filial"],
+            r["nome_filial"],
+            r["data"],
+            r["ano"],
+            r["mes"],
+            r["historico"],
+            r["valor"],
+            r["grupo"],
+            r["conta"],
+            r["descricao_conta"],
+            r["complemento"],
+        )
+        for r in registros
+    ]
+
+    execute_values(cur, """
         INSERT INTO importacoes (
             cod_empresa,
             cod_filial,
@@ -178,40 +165,14 @@ def inserir_importacao(cur, registro):
             descricao_conta,
             complemento
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """, (
-        registro["cod_empresa"],
-        registro["cod_filial"],
-        registro["nome_filial"],
-        registro["data"],
-        registro["ano"],
-        registro["mes"],
-        registro["historico"],
-        registro["valor"],
-        registro["grupo"],
-        registro["conta"],
-        registro["descricao_conta"],
-        registro["complemento"],
-    ))
+        VALUES %s
+    """, valores)
+
+    return len(registros)
 
 
-def normalizar_texto(texto):
-    texto = str(texto or "").strip().lower()
-    texto = re.sub(r"\s+", " ", texto)
-    return texto
-
-
-def classificar_lancamentos_importados(cod_empresa_fixo, conn=None):
-    if not cod_empresa_fixo:
-        raise ValueError("Cod_empresa não informado para classificação.")
-
+def classificar_lancamentos_importados(cod_empresa_fixo, conn):
     cod_empresa = str(cod_empresa_fixo).strip()
-    fechar_conexao = False
-
-    if conn is None:
-        conn = get_connection()
-        fechar_conexao = True
-
     cur = conn.cursor()
 
     try:
@@ -230,391 +191,92 @@ def classificar_lancamentos_importados(cod_empresa_fixo, conn=None):
               AND TRIM(COALESCE(ca.texto, '')) <> ''
             ORDER BY LENGTH(TRIM(ca.texto)) DESC, LOWER(ca.texto)
         """, (cod_empresa,))
-        classificacoes = cur.fetchall()
+
+        classificacoes = []
+
+        for texto, cod_grupo, cod_conta, descricao in cur.fetchall() or []:
+            texto_norm = normalizar_texto(texto)
+
+            if texto_norm:
+                classificacoes.append((
+                    texto_norm,
+                    cod_grupo,
+                    cod_conta,
+                    descricao
+                ))
+
+        if not classificacoes:
+            return 0
 
         cur.execute("""
-            SELECT
-                id_lancamento,
-                COALESCE(historico, '')
+            SELECT id_lancamento, COALESCE(historico, '')
             FROM importacoes
             WHERE cod_empresa = %s
+              AND grupo IS NULL
+              AND conta IS NULL
         """, (cod_empresa,))
-        lancamentos = cur.fetchall()
 
-        total_classificados = 0
+        atualizacoes = []
 
-        for id_lancamento, historico in lancamentos:
+        for id_lancamento, historico in cur.fetchall() or []:
             historico_norm = normalizar_texto(historico)
 
             if not historico_norm:
                 continue
 
-            grupo_encontrado = None
-            conta_encontrada = None
-            descricao_conta_encontrada = None
-
-            for texto_class, cod_grupo, cod_conta, descricao_conta in classificacoes:
-                texto_norm = normalizar_texto(texto_class)
-
-                if not texto_norm:
-                    continue
-
+            for texto_norm, cod_grupo, cod_conta, descricao in classificacoes:
                 if texto_norm in historico_norm:
-                    grupo_encontrado = cod_grupo
-                    conta_encontrada = cod_conta
-                    descricao_conta_encontrada = descricao_conta
+                    atualizacoes.append((
+                        cod_grupo,
+                        cod_conta,
+                        descricao,
+                        id_lancamento,
+                        cod_empresa,
+                    ))
                     break
 
-            if grupo_encontrado is not None and conta_encontrada is not None:
-                cur.execute("""
-                    UPDATE importacoes
-                    SET grupo = %s,
-                        conta = %s,
-                        descricao_conta = %s
-                    WHERE id_lancamento = %s
-                      AND cod_empresa = %s
-                """, (
-                    grupo_encontrado,
-                    conta_encontrada,
-                    descricao_conta_encontrada,
-                    id_lancamento,
-                    cod_empresa
-                ))
+        if atualizacoes:
+            cur.executemany("""
+                UPDATE importacoes
+                SET grupo = %s,
+                    conta = %s,
+                    descricao_conta = %s
+                WHERE id_lancamento = %s
+                  AND cod_empresa = %s
+            """, atualizacoes)
 
-                if cur.rowcount > 0:
-                    total_classificados += 1
-
-        if fechar_conexao:
-            conn.commit()
-
-        return total_classificados
-
-    except Exception:
-        if fechar_conexao:
-            conn.rollback()
-        raise
+        return len(atualizacoes)
 
     finally:
         cur.close()
-        if fechar_conexao:
-            conn.close()
-
-
-def extrair_codigo_hierarquico(historico):
-    texto = str(historico or "").strip()
-
-    match = re.match(r"^(\d+(?:\.\d+)*)\s*[-–]", texto)
-    if match:
-        return match.group(1)
-
-    match = re.match(r"^(\d+(?:\.\d+)*)\b", texto)
-    if match:
-        return match.group(1)
-
-    return ""
-
-
-def montar_codigos_hierarquicos(df, caminho_arquivo):
-    codigos = []
-
-    for _, row in df.iterrows():
-        historico = str(
-            obter_valor_por_letra(df, row, COLUNA_HISTORICO_PADRAO, caminho_arquivo)
-        ).strip()
-
-        codigos.append(extrair_codigo_hierarquico(historico))
-
-    return codigos
-
-
-def processar_dataframe(
-    df,
-    caminho_arquivo,
-    data_lancamento,
-    coluna_valor,
-    cod_empresa_fixo,
-    conn,
-    callback_progresso=None,
-    arquivo_index=1,
-    total_arquivos=1,
-    total_importado_atual=0
-):
-    cod_empresa = str(cod_empresa_fixo).strip()
-    cod_filial = extrair_cod_filial_do_nome_arquivo(caminho_arquivo)
-    nome_filial = buscar_nome_filial(conn, cod_empresa, cod_filial)
-
-    total_linhas = len(df.index)
-    importados = total_importado_atual
-
-    cur = conn.cursor()
-    codigos_hierarquicos = montar_codigos_hierarquicos(df, caminho_arquivo)
-    data_obj = datetime.strptime(data_lancamento, "%Y-%m-%d")
-
-    for idx_zero_based, (_, row) in enumerate(df.iterrows()):
-        idx = idx_zero_based + 1
-
-        historico = str(
-            obter_valor_por_letra(df, row, COLUNA_HISTORICO_PADRAO, caminho_arquivo)
-        ).strip()
-
-        valor_bruto = obter_valor_por_letra(df, row, coluna_valor, caminho_arquivo)
-        valor = converter_decimal(valor_bruto)
-
-        codigo_atual = codigos_hierarquicos[idx_zero_based]
-
-        codigo_proximo = ""
-        for j in range(idx_zero_based + 1, len(codigos_hierarquicos)):
-            if codigos_hierarquicos[j]:
-                codigo_proximo = codigos_hierarquicos[j]
-                break
-
-        historico_limpo = historico.strip().lower()
-
-        if historico_limpo == "":
-            continue
-
-        if historico_limpo == "saldo inicial":
-            continue
-
-        if abs(valor) < Decimal("0.01"):
-            continue
-
-        if eh_conta_sintetica_excel(codigo_atual, codigo_proximo):
-            continue
-
-        registro = {
-            "cod_empresa": cod_empresa,
-            "cod_filial": cod_filial,
-            "nome_filial": nome_filial,
-            "data": data_lancamento,
-            "ano": data_obj.year,
-            "mes": data_obj.month,
-            "historico": historico,
-            "valor": valor,
-            "grupo": None,
-            "conta": None,
-            "descricao_conta": None,
-            "complemento": None,
-        }
-
-        inserir_importacao(cur, registro)
-        importados += 1
-
-        if callback_progresso and (idx % 25 == 0 or idx == total_linhas):
-            percentual = int(
-                (
-                    ((arquivo_index - 1) + (idx / max(total_linhas, 1)))
-                    / max(total_arquivos, 1)
-                ) * 100
-            )
-
-            callback_progresso({
-                "status": "rodando",
-                "percentual": percentual,
-                "mensagem": f"Importando arquivo {arquivo_index} de {total_arquivos}",
-                "arquivo_atual": os.path.basename(caminho_arquivo),
-                "filial_atual": nome_filial,
-                "linha_atual": idx,
-                "total_linhas_arquivo": total_linhas,
-                "importados": importados
-            })
-
-    cur.close()
-    return importados
-
-
-def Importa_Web_Postos(
-    diretorio,
-    data_lancamento,
-    coluna_valor=None,
-    cod_empresa_fixo=None,
-    callback_progresso=None
-):
-    if not cod_empresa_fixo:
-        raise ValueError("Cod_empresa da sessão não foi informado.")
-
-    coluna_valor = (coluna_valor or COLUNA_VALOR_PADRAO).strip().upper()
-
-    arquivos = listar_arquivos_excel(diretorio)
-
-    if not arquivos:
-        raise ValueError("Nenhum arquivo Excel foi encontrado no diretório informado.")
-
-    conn = get_connection()
-    total_importado = 0
-    total_classificado = 0
-
-    try:
-        total_arquivos = len(arquivos)
-
-        for arquivo_index, caminho_arquivo in enumerate(arquivos, start=1):
-            df = ler_arquivo_excel(caminho_arquivo)
-
-            total_importado = processar_dataframe(
-                df=df,
-                caminho_arquivo=caminho_arquivo,
-                data_lancamento=data_lancamento,
-                coluna_valor=coluna_valor,
-                cod_empresa_fixo=cod_empresa_fixo,
-                conn=conn,
-                callback_progresso=callback_progresso,
-                arquivo_index=arquivo_index,
-                total_arquivos=total_arquivos,
-                total_importado_atual=total_importado
-            )
-
-        total_classificado = classificar_lancamentos_importados(
-            cod_empresa_fixo=cod_empresa_fixo,
-            conn=conn
-        )
-
-        conn.commit()
-        return {
-            "total_importado": total_importado,
-            "total_classificado": total_classificado
-        }
-
-    except Exception:
-        conn.rollback()
-        raise
-
-    finally:
-        conn.close()
-
-
-def Importa_Web_Postos_Arquivos(
-    arquivos,
-    data_lancamento,
-    coluna_valor=None,
-    cod_empresa_fixo=None,
-    callback_progresso=None
-):
-    if not cod_empresa_fixo:
-        raise ValueError("Cod_empresa da sessão não foi informado.")
-
-    coluna_valor = (coluna_valor or COLUNA_VALOR_PADRAO).strip().upper()
-
-    arquivos_validos = []
-    for arq in arquivos:
-        nome = (arq.filename or "").strip()
-        if nome and nome.lower().endswith((".xlsx", ".xls")):
-            arquivos_validos.append(arq)
-
-    if not arquivos_validos:
-        raise ValueError("Nenhum arquivo Excel válido foi enviado.")
-
-    conn = get_connection()
-    total_importado = 0
-    total_classificado = 0
-
-    try:
-        total_arquivos = len(arquivos_validos)
-
-        for arquivo_index, arquivo in enumerate(arquivos_validos, start=1):
-            nome_temp = arquivo.filename
-            caminho_temp = os.path.join("/tmp", f"importacao_{arquivo_index}_{nome_temp}")
-            arquivo.save(caminho_temp)
-
-            try:
-                df = ler_arquivo_excel(caminho_temp)
-
-                total_importado = processar_dataframe(
-                    df=df,
-                    caminho_arquivo=nome_temp,
-                    data_lancamento=data_lancamento,
-                    coluna_valor=coluna_valor,
-                    cod_empresa_fixo=cod_empresa_fixo,
-                    conn=conn,
-                    callback_progresso=callback_progresso,
-                    arquivo_index=arquivo_index,
-                    total_arquivos=total_arquivos,
-                    total_importado_atual=total_importado
-                )
-            finally:
-                if os.path.exists(caminho_temp):
-                    os.remove(caminho_temp)
-
-        total_classificado = classificar_lancamentos_importados(
-            cod_empresa_fixo=cod_empresa_fixo,
-            conn=conn
-        )
-
-        conn.commit()
-        return {
-            "total_importado": total_importado,
-            "total_classificado": total_classificado
-        }
-
-    except Exception:
-        conn.rollback()
-        raise
-
-    finally:
-        conn.close()
-
-def somar_importacoes_empresa(conn, cod_empresa):
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT COALESCE(SUM(valor), 0)
-        FROM importacoes
-        WHERE cod_empresa = %s
-    """, (str(cod_empresa).strip(),))
-
-    total = cur.fetchone()[0]
-    cur.close()
-
-    return Decimal(str(total or 0))
-
-
-def eh_conta_sintetica(codigo_atual, todos_codigos):
-    codigo_atual = str(codigo_atual or "").strip()
-
-    if not codigo_atual:
-        return False
-
-    prefixo = codigo_atual + "."
-
-    return any(
-        str(cod or "").strip().startswith(prefixo)
-        for cod in todos_codigos
-        if str(cod or "").strip() != codigo_atual
-    )
 
 
 def calcular_auditoria_movimento_pdf(conn, cod_empresa):
-    """
-    Auditoria correta:
-    Para cada filial/mês:
-    PDF = 1 - RECEBIMENTO + 2 - PAGAMENTOS
-    Sistema = soma das contas analíticas importadas
-    Diferença = Sistema - PDF
-
-    Esta função deve rodar ANTES de remover as contas sintéticas.
-    """
     cod_empresa = str(cod_empresa).strip()
     cur = conn.cursor()
 
-    cur.execute("""
-        SELECT
-            id_lancamento,
-            cod_filial,
-            nome_filial,
-            ano,
-            mes,
-            historico,
-            valor
-        FROM importacoes
-        WHERE cod_empresa = %s
-        ORDER BY cod_filial, ano, mes, historico
-    """, (cod_empresa,))
+    try:
+        cur.execute("""
+            SELECT
+                cod_filial,
+                nome_filial,
+                ano,
+                mes,
+                historico,
+                valor
+            FROM importacoes
+            WHERE cod_empresa = %s
+            ORDER BY cod_filial, ano, mes, historico
+        """, (cod_empresa,))
 
-    linhas = cur.fetchall()
-    cur.close()
+        linhas = cur.fetchall() or []
+
+    finally:
+        cur.close()
 
     grupos = {}
 
-    for id_lancamento, cod_filial, nome_filial, ano, mes, historico, valor in linhas:
+    for cod_filial, nome_filial, ano, mes, historico, valor in linhas:
         chave = (
             int(cod_filial),
             str(nome_filial or ""),
@@ -634,17 +296,13 @@ def calcular_auditoria_movimento_pdf(conn, cod_empresa):
         historico_norm = normalizar_texto(historico)
 
         grupos[chave]["linhas"].append({
-            "id_lancamento": id_lancamento,
             "codigo": codigo,
-            "historico": historico,
             "valor": valor_dec,
         })
 
-        # Conta sintética principal de recebimentos
         if codigo == "1" and "receb" in historico_norm:
             grupos[chave]["recebimentos_pdf"] += valor_dec
 
-        # Conta sintética principal de pagamentos
         if codigo == "2" and "pag" in historico_norm:
             grupos[chave]["pagamentos_pdf"] += valor_dec
 
@@ -661,6 +319,8 @@ def calcular_auditoria_movimento_pdf(conn, cod_empresa):
             if item["codigo"]
         ]
 
+        prefixos_sinteticos = montar_prefixos_sinteticos(codigos)
+
         movimento_sistema = Decimal("0")
 
         for item in dados["linhas"]:
@@ -669,7 +329,7 @@ def calcular_auditoria_movimento_pdf(conn, cod_empresa):
             if not codigo:
                 continue
 
-            if eh_conta_sintetica(codigo, codigos):
+            if codigo in prefixos_sinteticos:
                 continue
 
             movimento_sistema += item["valor"]
@@ -707,45 +367,61 @@ def remover_contas_sinteticas_importadas(conn, cod_empresa):
     cod_empresa = str(cod_empresa).strip()
     cur = conn.cursor()
 
-    cur.execute("""
-        SELECT id_lancamento, historico
-        FROM importacoes
-        WHERE cod_empresa = %s
-    """, (cod_empresa,))
-
-    linhas = cur.fetchall()
-
-    codigos_por_id = {}
-
-    for id_lancamento, historico in linhas:
-        codigo = extrair_codigo_hierarquico(historico)
-        if codigo:
-            codigos_por_id[id_lancamento] = codigo
-
-    todos_codigos = list(codigos_por_id.values())
-
-    ids_sinteticas = [
-        id_lancamento
-        for id_lancamento, codigo in codigos_por_id.items()
-        if eh_conta_sintetica(codigo, todos_codigos)
-    ]
-
-    if ids_sinteticas:
+    try:
         cur.execute("""
-            DELETE FROM importacoes
+            SELECT id_lancamento, historico
+            FROM importacoes
             WHERE cod_empresa = %s
-              AND id_lancamento = ANY(%s)
-        """, (cod_empresa, ids_sinteticas))
+        """, (cod_empresa,))
 
-    qtd_removidas = len(ids_sinteticas)
-    cur.close()
+        linhas = cur.fetchall() or []
 
-    return qtd_removidas
+        codigos_por_id = {}
+
+        for id_lancamento, historico in linhas:
+            codigo = extrair_codigo_hierarquico(historico)
+
+            if codigo:
+                codigos_por_id[id_lancamento] = codigo
+
+        prefixos_sinteticos = montar_prefixos_sinteticos(codigos_por_id.values())
+
+        ids_sinteticas = [
+            id_lancamento
+            for id_lancamento, codigo in codigos_por_id.items()
+            if codigo in prefixos_sinteticos
+        ]
+
+        if ids_sinteticas:
+            cur.execute("""
+                DELETE FROM importacoes
+                WHERE cod_empresa = %s
+                  AND id_lancamento = ANY(%s)
+            """, (cod_empresa, ids_sinteticas))
+
+        return len(ids_sinteticas)
+
+    finally:
+        cur.close()
 
 
-# -------------------------------------------------------------------------------------------------------------------------
-# IMPORTA PDF WEBPOSTOS
-# -------------------------------------------------------------------------------------------------------------------------
+def somar_importacoes_empresa(conn, cod_empresa):
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            SELECT COALESCE(SUM(valor), 0)
+            FROM importacoes
+            WHERE cod_empresa = %s
+        """, (str(cod_empresa).strip(),))
+
+        total = cur.fetchone()[0]
+        return Decimal(str(total or 0))
+
+    finally:
+        cur.close()
+
+
 def Importa_Fluxo_Caixa_PDF(
     arquivo_pdf,
     cod_empresa_fixo,
@@ -756,77 +432,50 @@ def Importa_Fluxo_Caixa_PDF(
 
     cod_empresa = str(cod_empresa_fixo).strip()
 
-    nome_seguro = re.sub(r"[^a-zA-Z0-9_.-]", "_", arquivo_pdf.filename or "fluxo_caixa.pdf")
-    caminho_temp = os.path.join("/tmp", f"fluxo_caixa_{nome_seguro}")
+    nome_original = arquivo_pdf.filename or "fluxo_caixa.pdf"
+    nome_seguro = re.sub(r"[^a-zA-Z0-9_.-]", "_", nome_original)
 
-    arquivo_pdf.stream.seek(0)
-    arquivo_pdf.save(caminho_temp)
-
-    conn = get_connection()
-    cur = conn.cursor()
+    caminho_temp = None
+    conn = None
+    cur = None
 
     total_importado = 0
+    registros_pendentes = []
+    tamanho_lote = 300
 
     meses_map = {
-        "jan": 1, "fev": 2, "mar": 3, "abr": 4,
-        "mai": 5, "jun": 6, "jul": 7, "ago": 8,
-        "set": 9, "out": 10, "nov": 11, "dez": 12,
+        "jan": 1,
+        "fev": 2,
+        "mar": 3,
+        "abr": 4,
+        "mai": 5,
+        "jun": 6,
+        "jul": 7,
+        "ago": 8,
+        "set": 9,
+        "out": 10,
+        "nov": 11,
+        "dez": 12,
     }
 
     regex_valor = r"-?\d{1,3}(?:\.\d{3})*,\d{2}|-?\d+,\d{2}"
     regex_conta = r"^\s*\d+(?:\.\d+)*\s*[-–_]"
-
-    def carregar_filiais_importacao():
-        cur.execute("""
-            SELECT cod_filial, nome_filial, COALESCE(nome_filial_importacao, '')
-            FROM filiais
-            WHERE cod_empresa = %s
-              AND ativo = true
-        """, (cod_empresa,))
-
-        rows = cur.fetchall() or []
-        resultado = []
-
-        for cod_filial, nome_filial, nome_importacao in rows:
-            if str(nome_importacao or "").strip():
-                resultado.append({
-                    "cod_filial": int(cod_filial),
-                    "nome_filial": nome_filial,
-                    "nome_importacao": nome_importacao,
-                    "nome_norm": normalizar_texto(nome_importacao),
-                })
-
-        return resultado
-
-    def detectar_filial_na_linha(linha, filiais_importacao):
-        linha_norm = normalizar_texto(linha)
-
-        if linha_norm.startswith("filial:"):
-            nome_pdf = linha.split(":", 1)[1].strip()
-            return buscar_filial_por_nome_importacao(conn, cod_empresa, nome_pdf)
-
-        for f in filiais_importacao:
-            if linha_norm == f["nome_norm"]:
-                return f["cod_filial"], f["nome_filial"]
-
-        return None, None
+    regex_meses = r"(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\.?\s+(\d{4})"
 
     def limpar_historico(linha):
-        texto = re.sub(r"#.*$", "", linha).strip()
-        texto = re.sub(regex_valor, "", texto).strip()
-        texto = re.sub(r"\s+", " ", texto).strip()
-        return texto
+        texto = re.sub(r"#\s*\d+\s*,\s*\d+", "", linha)
+        texto = re.sub(regex_valor, "", texto)
+        texto = re.sub(r"\s+", " ", texto)
+        return texto.strip()
 
-    def extrair_grupo_conta(linha):
-        m = re.search(r"#\s*(\d+)\s*,\s*(\d+)", linha)
-        if not m:
-            return None, None
+    def flush_lote():
+        nonlocal total_importado, registros_pendentes
 
-        return int(m.group(1)), int(m.group(2))
+        if registros_pendentes:
+            total_importado += inserir_importacoes_em_lote(cur, registros_pendentes)
+            registros_pendentes = []
 
     def gravar_linha_pdf(linha, cod_filial, nome_filial, meses_linha):
-        nonlocal total_importado
-
         linha = re.sub(r"\s+", " ", linha or "").strip()
 
         if not linha:
@@ -838,7 +487,6 @@ def Importa_Fluxo_Caixa_PDF(
         if not meses_linha:
             return
 
-        grupo, conta = extrair_grupo_conta(linha)
         valores_txt = re.findall(regex_valor, linha)
 
         if not valores_txt:
@@ -857,16 +505,6 @@ def Importa_Fluxo_Caixa_PDF(
         if not historico:
             return
 
-        if grupo is not None and conta is not None:
-            descricao_conta = buscar_descricao_conta_gerencial(
-                conn,
-                cod_empresa,
-                grupo,
-                conta
-            )
-        else:
-            descricao_conta = None
-
         for idx, valor_txt in enumerate(valores_txt_usar):
             valor = converter_decimal(valor_txt)
 
@@ -877,7 +515,7 @@ def Importa_Fluxo_Caixa_PDF(
             mes = meses_usar[idx]["mes"]
             data_lancamento = datetime(ano, mes, 1).date().isoformat()
 
-            registro = {
+            registros_pendentes.append({
                 "cod_empresa": cod_empresa,
                 "cod_filial": cod_filial,
                 "nome_filial": nome_filial,
@@ -886,23 +524,34 @@ def Importa_Fluxo_Caixa_PDF(
                 "mes": mes,
                 "historico": historico,
                 "valor": valor,
-                "grupo": grupo,
-                "conta": conta,
-                "descricao_conta": descricao_conta,
+                "grupo": None,
+                "conta": None,
+                "descricao_conta": None,
                 "complemento": "Importado de PDF",
-            }
+            })
 
-            inserir_importacao(cur, registro)
-            total_importado += 1
+            if len(registros_pendentes) >= tamanho_lote:
+                flush_lote()
 
     try:
-        # Tabela transitória: toda importação de PDF começa limpando a empresa atual.
+        with tempfile.NamedTemporaryFile(
+            prefix="fluxo_caixa_",
+            suffix=f"_{nome_seguro}",
+            delete=False
+        ) as tmp:
+            caminho_temp = tmp.name
+            arquivo_pdf.stream.seek(0)
+            tmp.write(arquivo_pdf.read())
+
+        conn = get_connection()
+        cur = conn.cursor()
+
         cur.execute("""
             DELETE FROM importacoes
             WHERE cod_empresa = %s
         """, (cod_empresa,))
 
-        filiais_importacao = carregar_filiais_importacao()
+        filiais_importacao = carregar_filiais_importacao(cur, cod_empresa)
 
         filial_atual = None
         nome_filial_atual = None
@@ -933,7 +582,7 @@ def Importa_Fluxo_Caixa_PDF(
                                 buffer_linha,
                                 filial_atual,
                                 nome_filial_atual,
-                                list(meses_detectados)
+                                meses_detectados
                             )
 
                         filial_atual = cod_filial_detectada
@@ -941,10 +590,7 @@ def Importa_Fluxo_Caixa_PDF(
                         buffer_linha = ""
                         continue
 
-                    meses_encontrados = re.findall(
-                        r"(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\.?\s+(\d{4})",
-                        linha_lower
-                    )
+                    meses_encontrados = re.findall(regex_meses, linha_lower)
 
                     if meses_encontrados:
                         if buffer_linha:
@@ -952,13 +598,13 @@ def Importa_Fluxo_Caixa_PDF(
                                 buffer_linha,
                                 filial_atual,
                                 nome_filial_atual,
-                                list(meses_detectados)
+                                meses_detectados
                             )
 
                         meses_detectados = [
                             {
                                 "mes": meses_map[mes_txt],
-                                "ano": int(ano_txt)
+                                "ano": int(ano_txt),
                             }
                             for mes_txt, ano_txt in meses_encontrados
                         ]
@@ -975,7 +621,7 @@ def Importa_Fluxo_Caixa_PDF(
                                 buffer_linha,
                                 filial_atual,
                                 nome_filial_atual,
-                                list(meses_detectados)
+                                meses_detectados
                             )
 
                         buffer_linha = ""
@@ -987,21 +633,19 @@ def Importa_Fluxo_Caixa_PDF(
                                 buffer_linha,
                                 filial_atual,
                                 nome_filial_atual,
-                                list(meses_detectados)
+                                meses_detectados
                             )
 
                         buffer_linha = ""
                         continue
 
-                    tem_conta = re.match(regex_conta, linha)
-
-                    if tem_conta:
+                    if re.match(regex_conta, linha):
                         if buffer_linha:
                             gravar_linha_pdf(
                                 buffer_linha,
                                 filial_atual,
                                 nome_filial_atual,
-                                list(meses_detectados)
+                                meses_detectados
                             )
 
                         buffer_linha = linha
@@ -1016,31 +660,24 @@ def Importa_Fluxo_Caixa_PDF(
                         buffer_linha,
                         filial_atual,
                         nome_filial_atual,
-                        list(meses_detectados)
+                        meses_detectados
                     )
 
-        # AUDITORIA ANTES DE REMOVER SINTÉTICAS
-        auditoria_movimento = calcular_auditoria_movimento_pdf(
-            conn,
-            cod_empresa
-        )
+        flush_lote()
 
-        # AGORA REMOVE AS SINTÉTICAS
+        auditoria_movimento = calcular_auditoria_movimento_pdf(conn, cod_empresa)
+
         qtd_sinteticas_removidas = remover_contas_sinteticas_importadas(
             conn,
             cod_empresa
         )
 
-        # CLASSIFICA O QUE FICOU
         total_classificado = classificar_lancamentos_importados(
             cod_empresa_fixo=cod_empresa,
             conn=conn
         )
 
-        soma_importada = somar_importacoes_empresa(
-            conn,
-            cod_empresa
-        )
+        soma_importada = somar_importacoes_empresa(conn, cod_empresa)
 
         conn.commit()
 
@@ -1048,153 +685,36 @@ def Importa_Fluxo_Caixa_PDF(
             "total_importado": total_importado,
             "total_sinteticas_removidas": qtd_sinteticas_removidas,
             "total_classificado": total_classificado,
-
             "auditoria_movimento": auditoria_movimento["linhas"],
             "total_pdf": auditoria_movimento["total_pdf"],
             "total_sistema": auditoria_movimento["total_sistema"],
             "diferenca_total": auditoria_movimento["diferenca_total"],
-
-            # Mantidos por compatibilidade com telas antigas
             "saldo_final_pdf": auditoria_movimento["total_pdf"],
             "soma_importada": soma_importada,
             "diferenca_saldo": auditoria_movimento["diferenca_total"],
         }
 
     except Exception:
-        conn.rollback()
+        if conn:
+            conn.rollback()
         raise
 
     finally:
-        cur.close()
-        conn.close()
+        if cur:
+            cur.close()
 
-        if os.path.exists(caminho_temp):
+        if conn:
+            conn.close()
+
+        if caminho_temp and os.path.exists(caminho_temp):
             os.remove(caminho_temp)
 
 
-def buscar_filial_por_nome_importacao(conn, cod_empresa, nome_pdf):
-    cur = conn.cursor()
-
-    nome_pdf_norm = normalizar_texto(nome_pdf)
-
-    cur.execute("""
-        SELECT cod_filial, nome_filial, COALESCE(nome_filial_importacao, '')
-        FROM filiais
-        WHERE cod_empresa = %s
-          AND ativo = true
-    """, (str(cod_empresa).strip(),))
-
-    filiais = cur.fetchall()
-    cur.close()
-
-    for cod_filial, nome_filial, nome_importacao in filiais:
-        if normalizar_texto(nome_importacao) == nome_pdf_norm:
-            return int(cod_filial), nome_filial
-
-    raise ValueError(
-        f"Filial NÃO encontrada para importação do PDF.\n"
-        f"Empresa={cod_empresa}\n"
-        f"Nome no PDF='{nome_pdf}'\n\n"
-        f"Verifique o campo 'nome_filial_importacao' na tabela FILIAIS."
-    )
+# Compatibilidade: mantidas apenas para não quebrar imports antigos.
+# Como você informou que não usa mais Excel, elas ficam desativadas.
+def Importa_Web_Postos(*args, **kwargs):
+    raise ValueError("Importação Excel desativada. Use Importa_Fluxo_Caixa_PDF.")
 
 
-def buscar_descricao_conta_gerencial(conn, cod_empresa, grupo, conta):
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT descricao
-        FROM contas_gerenciais
-        WHERE cod_empresa = %s
-          AND cod_grupo = %s
-          AND cod_conta = %s
-        LIMIT 1
-    """, (
-        str(cod_empresa).strip(),
-        int(grupo),
-        int(conta)
-    ))
-
-    row = cur.fetchone()
-    cur.close()
-
-    if not row:
-        raise ValueError(
-            f"Conta gerencial não encontrada.\n"
-            f"Empresa={cod_empresa}\n"
-            f"Grupo={grupo}\n"
-            f"Conta={conta}\n\n"
-            f"Cadastre essa conta em contas_gerenciais antes de importar o PDF."
-        )
-
-    return row[0]
-
-
-def somar_importacoes_empresa(conn, cod_empresa):
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT COALESCE(SUM(valor), 0)
-        FROM importacoes
-        WHERE cod_empresa = %s
-    """, (str(cod_empresa).strip(),))
-
-    total = cur.fetchone()[0]
-    cur.close()
-
-    return Decimal(str(total or 0))
-
-
-def eh_conta_sintetica(codigo_atual, todos_codigos):
-    codigo_atual = str(codigo_atual or "").strip()
-
-    if not codigo_atual:
-        return False
-
-    prefixo = codigo_atual + "."
-
-    return any(
-        str(cod or "").strip().startswith(prefixo)
-        for cod in todos_codigos
-        if str(cod or "").strip() != codigo_atual
-    )
-
-
-def remover_contas_sinteticas_importadas(conn, cod_empresa):
-    cod_empresa = str(cod_empresa).strip()
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT id_lancamento, historico
-        FROM importacoes
-        WHERE cod_empresa = %s
-    """, (cod_empresa,))
-
-    linhas = cur.fetchall()
-
-    codigos_por_id = {}
-
-    for id_lancamento, historico in linhas:
-        codigo = extrair_codigo_hierarquico(historico)
-        if codigo:
-            codigos_por_id[id_lancamento] = codigo
-
-    todos_codigos = list(codigos_por_id.values())
-
-    ids_sinteticas = [
-        id_lancamento
-        for id_lancamento, codigo in codigos_por_id.items()
-        if eh_conta_sintetica(codigo, todos_codigos)
-    ]
-
-    if ids_sinteticas:
-        cur.execute("""
-            DELETE FROM importacoes
-            WHERE cod_empresa = %s
-              AND id_lancamento = ANY(%s)
-        """, (cod_empresa, ids_sinteticas))
-
-    qtd_removidas = len(ids_sinteticas)
-    cur.close()
-
-    return qtd_removidas
-
+def Importa_Web_Postos_Arquivos(*args, **kwargs):
+    raise ValueError("Importação Excel desativada. Use Importa_Fluxo_Caixa_PDF.")

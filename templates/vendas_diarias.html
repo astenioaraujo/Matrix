@@ -48,16 +48,17 @@
     border-color: #25834a;
   }
 
-  .btn-consultas {
-    background: #1a73e8;
-    color: #fff;
-    border: 1px solid #1a73e8;
-  }
+    .btn-atualizar {
+        background: #6b8e23;
+        color: #fff;
+        border: 1px solid #6b8e23;
+    }
 
-  .btn-consultas:hover {
-    background: #155bc1;
-    border-color: #155bc1;
-  }
+    .btn-atualizar:hover {
+    background: #5f7f1f;
+    border-color: #5f7f1f;
+    }
+
 
   .painel-filtros {
     background: #fff;
@@ -280,9 +281,6 @@ th.col-mb, td.col-mb {
       Importar Vendas Diárias
     </a>
 
-    <a class="btn-topo btn-consultas" href="{{ url_for('vendas.vendas_consultas') }}">
-      Consultas
-    </a>
   </div>
 
   <form method="get" class="painel-filtros">
@@ -298,7 +296,9 @@ th.col-mb, td.col-mb {
       </div>
 
       <div class="campo campo-botao">
-        <button type="submit" class="btn-topo">Atualizar</button>
+        <button type="submit" class="btn-topo btn-atualizar">
+            Atualizar
+        </button>
       </div>
     </div>
   </form>

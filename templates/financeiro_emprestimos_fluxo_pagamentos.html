@@ -1,0 +1,275 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+
+    .pagina-titulo{
+        font-size:36px;
+        font-weight:800;
+        margin-bottom:10px;
+    }
+
+    .coluna-fixa{
+        position:sticky;
+        left:0;
+        background:white;
+        z-index:2;
+    }
+
+    .empresa{
+        font-size:22px;
+        margin-bottom:25px;
+    }
+
+    table{
+        width:100%;
+        border-collapse:collapse;
+        background:white;
+    }
+
+    th{
+        background:#3b6fb6;
+        color:white;
+        padding:8px;
+        font-size:13px;
+        text-align:center;
+        white-space:nowrap;
+    }
+
+    td{
+        border:1px solid #ddd;
+        padding:7px;
+        font-size:13px;
+    }
+
+    tr:nth-child(even){
+        background:#fafafa;
+    }
+
+    .centro{
+        text-align:center;
+    }
+
+    .direita{
+        text-align:right;
+    }
+
+    .linha-total{
+        background:#dbeafe !important;
+        font-weight:900;
+    }
+
+    .linha-media{
+        background:#fef3c7 !important;
+        font-weight:900;
+    }
+
+    .descricao{
+        min-width:260px;
+    }
+
+    .codigo{
+        min-width:110px;
+    }
+
+    .ano{
+        min-width:120px;
+    }
+
+</style>
+
+<div class="pagina-titulo">
+    Fluxo de Pagamentos
+</div>
+
+<div class="empresa">
+    <strong>Empresa:</strong>
+    {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<table id="fluxo-pagamentos-tabela">
+
+    <thead>
+
+        <tr>
+            
+            <th>Descrição</th>
+
+            <th class="ano">
+                TOTAL
+            </th>
+
+            {% for ano in anos %}
+                <th class="ano">
+                    {{ ano }}
+                </th>
+            {% endfor %}
+
+
+        </tr>
+
+    </thead>
+
+    <tbody>
+
+        {% for linha in linhas %}
+
+        <tr>
+
+            <td>
+                {{ linha.descricao }}
+            </td>
+
+            <td class="direita hm-total-contrato">
+                {{ formatar_numero_br(linha.total) }}
+            </td>
+
+            {% for ano in anos %}
+
+                <td class="direita hm-parcela">
+
+                    {% set valor = linha.valores[ano] %}
+
+                    {% if valor > 0 %}
+                        {{ formatar_numero_br(valor) }}
+                    {% endif %}
+
+                </td>
+
+            {% endfor %}
+
+
+        </tr>
+
+        {% endfor %}
+
+    </tbody>
+
+    <tfoot>
+
+        <tr class="linha-total">
+
+            <td colspan="1">
+                TOTAL GERAL
+            </td>
+            <td class="direita">
+                {{ formatar_numero_br(total_geral) }}
+            </td>
+
+            {% for ano in anos %}
+
+                <td class="direita hm-total-ano">
+                    {{ formatar_numero_br(totais_por_ano[ano]) }}
+                </td>
+
+            {% endfor %}
+
+
+        </tr>
+
+        <tr class="linha-media">
+
+            <td colspan="1">
+                MÉDIA MENSAL POR ANO
+            </td>
+            <td></td>
+
+            {% for ano in anos %}
+
+                <td class="direita">
+                    {{ formatar_numero_br(media_mensal_por_ano[ano]) }}
+                </td>
+
+            {% endfor %}
+
+            
+
+        </tr>
+
+    </tfoot>
+
+</table>
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+    function getColorExcel(ratio) {
+        let r, g, b;
+
+        if (ratio <= 0.5) {
+            const t = ratio / 0.5;
+            r = 248 + (255 - 248) * t;
+            g = 105 + (235 - 105) * t;
+            b = 107 + (132 - 107) * t;
+        } else {
+            const t = (ratio - 0.5) / 0.5;
+            r = 255 + (99 - 255) * t;
+            g = 235 + (190 - 235) * t;
+            b = 132 + (123 - 132) * t;
+        }
+
+        return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+    }
+
+    function textoParaNumero(texto) {
+        texto = String(texto || "")
+            .replace(/[^\d,.-]/g, "")
+            .replace(/\./g, "")
+            .replace(",", ".")
+            .trim();
+
+        const numero = parseFloat(texto);
+
+        if (isNaN(numero)) {
+            return null;
+        }
+
+        return numero;
+    }
+
+    function aplicarHeatmapPorClasse(classe) {
+        const celulas = Array.from(document.querySelectorAll("." + classe));
+
+        const valores = celulas
+            .map((celula) => textoParaNumero(celula.innerText))
+            .filter((valor) => valor !== null && valor > 0);
+
+        if (!valores.length) {
+            return;
+        }
+
+        const min = Math.min(...valores);
+        const max = Math.max(...valores);
+
+        celulas.forEach((celula) => {
+            const valor = textoParaNumero(celula.innerText);
+
+            if (valor === null || valor <= 0) {
+                return;
+            }
+
+            let ratio = (valor - min) / ((max - min) || 1);
+
+            // Inverte a lógica porque aqui são dívidas:
+            // valores maiores ficam vermelhos, valores menores ficam verdes
+            ratio = 1 - ratio;
+
+            // 51 faixas discretas, padrão Excel
+            ratio = Math.round(ratio * 50) / 50;
+
+            celula.style.setProperty(
+                "background-color",
+                getColorExcel(ratio),
+                "important"
+            );
+        });
+    }
+
+    aplicarHeatmapPorClasse("hm-total-contrato");
+    aplicarHeatmapPorClasse("hm-parcela");
+    aplicarHeatmapPorClasse("hm-total-ano");
+
+});
+</script>
+{% endblock %}

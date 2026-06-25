@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 22px;
+    border: 1px solid #ddd;
+  }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: 180px 1fr 160px;
+    gap: 12px;
+    align-items: end;
+  }
+
+  label {
+    font-weight: 700;
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  input {
+    width: 100%;
+    padding: 9px 10px;
+    border-radius: 8px;
+    border: 1px solid #bbb;
+    font-size: 15px;
+  }
+
+  button, .btn-topo {
+    padding: 10px 16px;
+    border-radius: 9px;
+    border: 1px solid #1f3c88;
+    background: #1f3c88;
+    color: white;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: none;
+  }
+
+  .btn-excluir {
+    background: #b00020;
+    border-color: #b00020;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+  }
+
+  th, td {
+    padding: 10px;
+    border-bottom: 1px solid #ddd;
+    text-align: left;
+  }
+
+  th {
+    background: #f2f2f2;
+  }
+
+  .acoes-topo {
+    margin-bottom: 20px;
+  }
+</style>
+
+<div class="acoes-topo">
+  <a class="btn-topo" href="{{ url_voltar }}">{{ texto_voltar }}</a>
+</div>
+
+<div class="pagina-titulo">Calendário de Feriados</div>
+<div class="pagina-subtitulo">
+  Empresa: {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="card">
+  <form method="post">
+    <div class="form-grid">
+      <div>
+        <label>Data</label>
+        <input type="date" name="data_feriado" required>
+      </div>
+
+      <div>
+        <label>Descrição</label>
+        <input type="text" name="descricao" placeholder="Ex: São João, Natal, feriado municipal">
+      </div>
+
+      <div>
+        <button type="submit">Salvar</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Data</th>
+      <th>Descrição</th>
+      <th style="width: 120px;">Ação</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    {% for f in feriados %}
+    <tr>
+      <td>{{ f.data_feriado.strftime("%d/%m/%Y") }}</td>
+      <td>{{ f.descricao }}</td>
+      <td>
+        <form method="post"
+              action="{{ url_for('operacoes.excluir_feriado_operacoes', id_feriado=f.id) }}"
+              onsubmit="return confirm('Excluir este feriado?');">
+          <button type="submit" class="btn-excluir">Excluir</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="3">Nenhum feriado cadastrado.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% endblock %}

@@ -1,0 +1,383 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 36px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 20px;
+    margin-bottom: 20px;
+  }
+
+  .card {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 180px 160px 1fr 160px 160px;
+    gap: 14px;
+    align-items: end;
+  }
+
+  .campo {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .campo label {
+    font-weight: 800;
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+
+  .campo input,
+  .campo select {
+    height: 42px;
+    padding: 0 12px;
+    border: 1px solid #cfd4dc;
+    border-radius: 10px;
+    font-size: 14px;
+    background: #fff;
+  }
+
+  .acoes-topo {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+
+  .btn-salvar {
+    height: 42px;
+    min-width: 125px;
+    padding: 0 18px;
+    border: none;
+    border-radius: 10px;
+    background: #16833a;
+    color: #fff;
+    font-weight: 800;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .btn-salvar:hover {
+    background: #10662d;
+  }
+
+  .btn-filtrar {
+    height: 42px;
+    min-width: 110px;
+    padding: 0 18px;
+    border: none;
+    border-radius: 10px;
+    background: #1f5fd1;
+    color: #fff;
+    font-weight: 800;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .btn-filtrar:hover {
+    background: #174bad;
+  }
+
+    .btn-excluir{
+        background:#c62828;
+        color:white;
+        border:none;
+        border-radius:8px;
+        height:32px;
+        min-width:80px;
+        font-size:12px;
+        font-weight:700;
+        cursor:pointer;
+    }
+
+.btn-excluir:hover{
+    background:#a91f1f;
+}
+
+  .mensagem {
+    padding: 12px;
+    margin-bottom: 14px;
+    border: 1px solid #9fd39f;
+    background: #eef9ee;
+    color: #245b24;
+    border-radius: 8px;
+    font-weight: 700;
+  }
+
+  .erro {
+    padding: 12px;
+    margin-bottom: 14px;
+    border: 1px solid #d99b9b;
+    background: #fff1f1;
+    color: #7a1f1f;
+    border-radius: 8px;
+    font-weight: 700;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+  }
+
+  th {
+    background: #3b6fb6;
+    color: white;
+    padding: 8px;
+    font-size: 13px;
+    text-align: center;
+  }
+
+  td {
+    border: 1px solid #ddd;
+    padding: 7px;
+    font-size: 13px;
+  }
+
+  tr:nth-child(even) {
+    background: #fafafa;
+  }
+
+  .centro {
+    text-align: center;
+  }
+
+  .direita {
+    text-align: right;
+  }
+
+  .situacao-paga {
+    color: #16833a;
+    font-weight: 800;
+  }
+</style>
+
+<div class="pagina-titulo">
+  Pagamentos de Parcelas
+</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+{% if mensagem %}
+  <div class="mensagem">{{ mensagem }}</div>
+{% endif %}
+
+{% if erro %}
+  <div class="erro">{{ erro }}</div>
+{% endif %}
+
+<div class="card">
+
+  <form method="get">
+    <div class="grid">
+      <div class="campo">
+        <label>Mês</label>
+        <input type="number" name="mes" min="1" max="12" value="{{ mes_sel }}">
+      </div>
+
+      <div class="campo">
+        <label>Ano</label>
+        <input type="number" name="ano" value="{{ ano_sel }}">
+      </div>
+
+      <div class="campo" style="width:120px;">
+        <label>&nbsp;</label>
+        <button type="submit" class="btn-filtrar">
+          Filtrar
+        </button>
+      </div>
+    </div>
+  </form>
+
+</div>
+
+<div class="card">
+
+  <form method="post">
+
+    <input type="hidden" name="mes" value="{{ mes_sel }}">
+    <input type="hidden" name="ano" value="{{ ano_sel }}">
+
+    <div class="grid">
+
+      <div class="campo" style="grid-column: span 2;">
+        <label>Contrato / Primeira Parcela em Aberto</label>
+
+        <select name="id_parcela" required>
+          <option value="">Selecione</option>
+
+          {% for c in contratos %}
+            <option value="{{ c.id_parcela }}"
+                    data-valor="{{ formatar_numero_br(c.valor_parcela) }}">
+              {{ c.codigo }} - Parcela {{ c.numero_parcela }} - Venc. {{ c.data_vencimento.strftime('%d/%m/%Y') if c.data_vencimento else '' }} - {{ c.descricao }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="campo">
+        <label>Data Pagamento</label>
+        <input type="date"
+               name="data_pagamento"
+               value="{{ hoje }}">
+      </div>
+
+      <div class="campo">
+        <label>Valor Pago</label>
+        <input type="text"
+               name="valor_pago"
+               class="campo-numero-br"
+               required>
+      </div>
+
+      <div class="campo">
+        <label>&nbsp;</label>
+        <button type="submit" class="btn-salvar">
+          Registrar
+        </button>
+      </div>
+
+    </div>
+
+  </form>
+
+</div>
+
+
+
+<!-- Tabela de pagamentos -->
+
+
+
+<table>
+  <thead>
+    <tr>
+      <th>Contrato</th>
+      <th>Descrição</th>
+      <th>Instituição</th>
+      <th>Parcela</th>
+      <th>Vencimento</th>
+      <th>Valor Parcela</th>
+      <th>Valor Pago</th>
+      <th>Data Pagamento</th>
+      <th>Situação</th>
+      <th>Ações</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    {% for p in pagamentos %}
+      <tr>
+        <td class="centro">{{ p.codigo }}</td>
+        <td>{{ p.descricao }}</td>
+        <td>{{ p.instituicao }}</td>
+        <td class="centro">{{ p.numero_parcela }}</td>
+        <td class="centro">{{ p.data_vencimento.strftime('%d/%m/%Y') if p.data_vencimento else '' }}</td>
+        <td class="direita">{{ formatar_numero_br(p.valor_parcela) }}</td>
+        <td class="direita">{{ formatar_numero_br(p.valor_pago) }}</td>
+        <td class="centro">{{ p.data_pagamento.strftime('%d/%m/%Y') if p.data_pagamento else '' }}</td>
+        <td class="centro">
+          <span class="situacao-paga">{{ p.situacao }}</span>
+        </td>
+        <td class="centro">
+
+            {% if p.data_pagamento
+                and p.data_pagamento.month == hoje.month
+                and p.data_pagamento.year == hoje.year %}
+
+                <form method="POST"
+                    action="{{ url_for('financeiro.excluir_pagamento_emprestimo_financiamento',
+                                        id_pagamento=p.id_pagamento) }}"
+                    style="margin:0;">
+
+                    <button type="button"
+                            class="btn-excluir"
+                            onclick="confirmarExclusaoPagamento(this)">
+                        Excluir
+                    </button>
+
+                </form>
+
+            {% endif %}
+
+        </td>
+
+      </tr>
+    {% endfor %}
+
+    {% if not pagamentos %}
+      <tr>
+        <td colspan="10" class="centro">
+          Nenhum pagamento registrado para o período.
+        </td>
+      </tr>
+    {% endif %}
+  </tbody>
+</table>
+
+<script>
+    function formatarNumeroBR(valor) {
+        valor = String(valor || '').replace(/\D/g, '');
+
+        if (valor === '') {
+            return '';
+        }
+
+        let numero = (parseInt(valor, 10) / 100).toFixed(2);
+        let partes = numero.split('.');
+        let inteiro = partes[0];
+        let decimal = partes[1];
+
+        inteiro = inteiro.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+
+        return inteiro + ',' + decimal;
+    }
+
+    document.querySelectorAll('.campo-numero-br').forEach(function(campo) {
+        campo.addEventListener('keyup', function() {
+            campo.value = formatarNumeroBR(campo.value);
+        });
+    });
+
+    const seletorParcela = document.querySelector('select[name="id_parcela"]');
+    const campoValor = document.querySelector('input[name="valor_pago"]');
+
+    if (seletorParcela && campoValor) {
+        seletorParcela.addEventListener('change', function() {
+            const option = seletorParcela.options[seletorParcela.selectedIndex];
+            const valor = option.getAttribute('data-valor');
+
+            if (valor) {
+                campoValor.value = valor;
+            }
+        });
+    }
+
+    function confirmarExclusaoPagamento(botao) {
+        mostrarConfirmacaoGlobal(
+            'ATENÇÃO',
+            'Deseja realmente excluir este pagamento?<br><br>A parcela voltará para EM_ABERTO.',
+            function() {
+                botao.closest('form').submit();
+            }
+        );
+    }
+</script>
+
+{% endblock %}

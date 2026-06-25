@@ -60,8 +60,14 @@
       Capacidade de Tanques
     </a>
 
-    <a href="{{ url_for('operacoes.fornecedores_combustiveis') }}" class="card-menu">
+    <a href="{{ url_for('operacoes.fornecedores_combustiveis') }}">
       Fornecedores de Combustíveis
+    </a>
+  {% endif %}
+
+  {% if pode_feriados %}
+    <a href="{{ url_for('operacoes.feriados_operacoes') }}">
+      Calendário de Feriados
     </a>
   {% endif %}
 </div>

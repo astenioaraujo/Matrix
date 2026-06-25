@@ -142,11 +142,17 @@ td:nth-child(3) {
 
 <div class="menu-botoes">
 
-  {% if pode_fluxo_caixa %}
-    <a class="btn-fluxo" href="{{ url_for('financeiro.menu_fluxo_caixa') }}">
-      Fluxo de Caixa
-    </a>
-  {% endif %}
+    {% if pode_fluxo_caixa %}
+        <a class="btn-fluxo" href="{{ url_for('financeiro.menu_fluxo_caixa') }}">
+        Fluxo de Caixa
+        </a>
+    {% endif %}
+    
+    {% if pode_fluxo_caixa %}
+        <a class="btn-fluxo-projetado" href="{{ url_for('financeiro.fluxo_caixa_projetado') }}">
+            Fluxo de Caixa<br>Projetado
+        </a>
+    {% endif %}
 
   {% if pode_emprestimos_financiamentos %}
     <a class="btn-emprestimos" href="{{ url_for('financeiro.menu_emprestimos_financiamentos') }}">

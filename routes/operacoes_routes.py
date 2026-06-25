@@ -33,6 +33,38 @@ def formatar_numero_br(valor):
         return f"{float(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     except:
         return "0,00"
+def eh_feriado_empresa(cur, cod_empresa, data_ref):
+    cur.execute("""
+        SELECT 1
+        FROM financeiro_feriados
+        WHERE cod_empresa = %s
+          AND data_feriado = %s
+        LIMIT 1
+    """, (cod_empresa, data_ref))
+
+    return cur.fetchone() is not None
+
+
+def datas_medicao_permitidas(cur, cod_empresa, hoje=None):
+    if hoje is None:
+        hoje = hoje_br()
+
+    permitidas = [hoje]
+
+    data_ref = hoje - timedelta(days=1)
+
+    while True:
+        eh_sabado_ou_domingo = data_ref.weekday() in (5, 6)
+        eh_feriado = eh_feriado_empresa(cur, cod_empresa, data_ref)
+
+        if eh_sabado_ou_domingo or eh_feriado:
+            permitidas.append(data_ref)
+            data_ref = data_ref - timedelta(days=1)
+        else:
+            break
+
+    return permitidas
+
 
 #------------------------------------------
 # MENU OPERACOES
@@ -154,12 +186,7 @@ def informar_medicoes():
 
     hoje = hoje_br()
 
-    datas_permitidas = [hoje]
-
-    # Segunda-feira: permite hoje, domingo e sábado
-    if hoje.weekday() == 0:
-        datas_permitidas.append(hoje - timedelta(days=1))  # domingo
-        datas_permitidas.append(hoje - timedelta(days=2))  # sábado
+    
 
     data_medicao_txt = (request.values.get("data_medicao") or hoje.isoformat()).strip()
 
@@ -168,16 +195,19 @@ def informar_medicoes():
     except ValueError:
         data_medicao = hoje
 
-    if data_medicao not in datas_permitidas:
-        flash("Data de medição não permitida.", "error")
-        data_medicao = hoje
 
     # BLOQUEIO REMOVIDO
     bloqueado_horario = False
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    datas_permitidas = datas_medicao_permitidas(cur, cod_empresa, hoje)
 
+    if data_medicao not in datas_permitidas:
+        flash("Data de medição não permitida.", "error")
+        data_medicao = hoje
+        
     try:
         if tipo_global == "superusuario":
             cur.execute(
@@ -400,6 +430,7 @@ def menu_configuracoes():
         url_voltar=url_for("operacoes.menu_operacoes"),
         texto_voltar="← Voltar",
         pode_capacidade_tanques=pode_capacidade_tanques,
+        pode_feriados=True,
     )
 
 # ---------------------------------------
@@ -3673,12 +3704,7 @@ def ajax_salvar_medicao():
 
     hoje = hoje_br()
 
-    datas_permitidas = [hoje]
 
-    # Segunda-feira: permite hoje, domingo e sábado
-    if hoje.weekday() == 0:
-        datas_permitidas.append(hoje - timedelta(days=1))  # domingo
-        datas_permitidas.append(hoje - timedelta(days=2))  # sábado
 
     data_medicao_txt = (request.form.get("data_medicao") or hoje.isoformat()).strip()
 
@@ -3687,13 +3713,15 @@ def ajax_salvar_medicao():
     except ValueError:
         data_medicao = hoje
 
-    if data_medicao not in datas_permitidas:
-        return {"ok": False, "erro": "Data de medição não permitida."}, 400
 
     conn = get_connection()
     cur = conn.cursor()
 
     try:
+        datas_permitidas = datas_medicao_permitidas(cur, cod_empresa, hoje)
+
+        if data_medicao not in datas_permitidas:
+            return {"ok": False, "erro": "Data de medição não permitida."}, 400
         cur.execute(
             """
             INSERT INTO medicoes (
@@ -3853,3 +3881,125 @@ def ajax_salvar_capacidade():
     finally:
         cur.close()
         conn.close()
+# ---------------------------------------------------------------------
+# CALENDÁRIO DE FERIADOS
+# ---------------------------------------------------------------------
+@operacoes_bp.route("/configuracoes/feriados", methods=["GET", "POST"])
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONFIGURACOES",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def feriados_operacoes():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        if request.method == "POST":
+            data_feriado_txt = (request.form.get("data_feriado") or "").strip()
+            descricao = (request.form.get("descricao") or "").strip()
+
+            if not data_feriado_txt:
+                flash("Informe a data do feriado.", "error")
+                return redirect(url_for("operacoes.feriados_operacoes"))
+
+            if not descricao:
+                descricao = "Feriado"
+
+            cur.execute("""
+                INSERT INTO financeiro_feriados (
+                    cod_empresa,
+                    data_feriado,
+                    descricao,
+                    criado_em
+                )
+                VALUES (%s, %s, %s, NOW())
+                ON CONFLICT (cod_empresa, data_feriado)
+                DO UPDATE SET
+                    descricao = EXCLUDED.descricao
+            """, (
+                cod_empresa,
+                data_feriado_txt,
+                descricao
+            ))
+
+            conn.commit()
+            flash("Feriado salvo com sucesso.", "success")
+            return redirect(url_for("operacoes.feriados_operacoes"))
+
+        cur.execute("""
+            SELECT
+                id,
+                cod_empresa,
+                data_feriado,
+                descricao
+            FROM financeiro_feriados
+            WHERE cod_empresa = %s
+            ORDER BY data_feriado DESC
+        """, (cod_empresa,))
+
+        feriados = cur.fetchall() or []
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao processar feriados: {e}", "error")
+        feriados = []
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "feriados_operacoes.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        feriados=feriados,
+        url_voltar=url_for("operacoes.menu_configuracoes"),
+        texto_voltar="← Voltar",
+    )
+# ---------------------------------------------------------------------
+# EXCLUSÃO DE FERIADOS
+# ---------------------------------------------------------------------
+@operacoes_bp.route("/configuracoes/feriados/excluir/<int:id_feriado>", methods=["POST"])
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONFIGURACOES",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def excluir_feriado_operacoes(id_feriado):
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            DELETE FROM financeiro_feriados
+            WHERE id = %s
+              AND cod_empresa = %s
+        """, (id_feriado, cod_empresa))
+
+        conn.commit()
+        flash("Feriado excluído com sucesso.", "success")
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao excluir feriado: {e}", "error")
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return redirect(url_for("operacoes.feriados_operacoes"))
