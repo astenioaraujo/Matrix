@@ -34,6 +34,8 @@ def menu_rh():
             "pode_funcionarios": True,
             "pode_consultar_funcionarios": True,
             "pode_movimentacoes_funcionarios": True,
+            "pode_funcoes": True,
+            "pode_consultar_funcoes": True,
         }
     else:
         permissoes = {
@@ -57,6 +59,12 @@ def menu_rh():
             ),
             "pode_movimentacoes_funcionarios": usuario_tem_permissao(
                 id_usuario, cod_empresa, "RH", "MOVIMENTACOES_FUNCIONARIOS"
+            ),
+            "pode_funcoes": usuario_tem_permissao(
+                id_usuario, cod_empresa, "RH", "FUNCOES"
+            ),
+            "pode_consultar_funcoes": usuario_tem_permissao(
+                id_usuario, cod_empresa, "RH", "CONSULTAR_FUNCOES"
             ),
         }
 
@@ -1288,6 +1296,195 @@ def consultar_funcionarios():
         totais_filial=totais_filial,
         filial_sel=filial_sel,
         somente_ativos=somente_ativos,
+        url_voltar=url_for("rh.menu_rh"),
+        texto_voltar="← Voltar",
+    )
+
+
+# ------------------------------------------
+# CADASTRO DE FUNÇÕES
+# Descrição livre (título + texto), sem vínculo com funcionário ou cargo.
+# ------------------------------------------
+@rh_bp.route("/funcoes", methods=["GET", "POST"])
+@permissao_obrigatoria(
+    "RH",
+    "FUNCOES",
+    redirecionar_para="rh.menu_rh",
+)
+def funcoes():
+    from psycopg2.extras import RealDictCursor
+
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        if request.method == "POST":
+            titulo = (request.form.get("titulo") or "").strip()
+            descricao = (request.form.get("descricao") or "").strip()
+
+            if not titulo or not descricao:
+                flash("Informe título e descrição.", "error")
+                return redirect(url_for("rh.funcoes"))
+
+            cur.execute("""
+                INSERT INTO rh_funcoes (cod_empresa, titulo, descricao, ativo)
+                VALUES (%s, %s, %s, TRUE)
+            """, (cod_empresa, titulo, descricao))
+
+            conn.commit()
+            flash("Função cadastrada com sucesso.", "success")
+            return redirect(url_for("rh.funcoes"))
+
+        cur.execute("""
+            SELECT id, titulo, descricao, ativo
+            FROM rh_funcoes
+            WHERE cod_empresa = %s
+            ORDER BY ativo DESC, titulo
+        """, (cod_empresa,))
+        funcoes_lista = cur.fetchall() or []
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao processar funções: {e}", "error")
+        funcoes_lista = []
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "funcoes.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        funcoes=funcoes_lista,
+        url_voltar=url_for("rh.menu_rh"),
+        texto_voltar="← Voltar",
+    )
+
+
+# ------------------------------------------
+# EDITAR FUNÇÃO
+# ------------------------------------------
+@rh_bp.route("/funcoes/<int:id_funcao>/editar", methods=["POST"])
+@permissao_obrigatoria(
+    "RH",
+    "FUNCOES",
+    redirecionar_para="rh.menu_rh",
+)
+def editar_funcao(id_funcao):
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    titulo = (request.form.get("titulo") or "").strip()
+    descricao = (request.form.get("descricao") or "").strip()
+    ativo = True if request.form.get("ativo") == "on" else False
+
+    if not titulo or not descricao:
+        flash("Informe título e descrição.", "error")
+        return redirect(url_for("rh.funcoes"))
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            UPDATE rh_funcoes
+            SET titulo = %s,
+                descricao = %s,
+                ativo = %s,
+                atualizado_em = NOW()
+            WHERE id = %s
+              AND cod_empresa = %s
+        """, (titulo, descricao, ativo, id_funcao, cod_empresa))
+
+        conn.commit()
+        flash("Função atualizada com sucesso.", "success")
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao atualizar função: {e}", "error")
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return redirect(url_for("rh.funcoes"))
+
+
+# ------------------------------------------
+# CONSULTAR FUNÇÕES
+# ------------------------------------------
+@rh_bp.route("/funcoes/consultar")
+@permissao_obrigatoria(
+    "RH",
+    "CONSULTAR_FUNCOES",
+    redirecionar_para="rh.menu_rh",
+)
+def consultar_funcoes():
+    from psycopg2.extras import RealDictCursor
+
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+
+    busca = (request.args.get("busca") or "").strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        filtros = ["cod_empresa = %s", "ativo = TRUE"]
+        params = [cod_empresa]
+
+        if busca:
+            filtros.append("(titulo ILIKE %s OR descricao ILIKE %s)")
+            params.append(f"%{busca}%")
+            params.append(f"%{busca}%")
+
+        where_sql = " AND ".join(filtros)
+
+        cur.execute(f"""
+            SELECT id, titulo, descricao
+            FROM rh_funcoes
+            WHERE {where_sql}
+            ORDER BY titulo
+        """, params)
+
+        funcoes = cur.fetchall() or []
+
+    except Exception as e:
+        flash(f"Erro ao consultar funções: {e}", "error")
+        funcoes = []
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "consultar_funcoes.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        funcoes=funcoes,
+        busca=busca,
         url_voltar=url_for("rh.menu_rh"),
         texto_voltar="← Voltar",
     )

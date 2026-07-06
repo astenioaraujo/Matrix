@@ -1,9 +1,10 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+from collections import defaultdict
 import math
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import RealDictCursor, execute_batch
 from db import get_connection
-from security_helpers import usuario_tem_permissao
+from security_helpers import usuario_tem_permissao, permissao_obrigatoria
 from services.dashboard_service import montar_dashboard
 from utils.formatters import formatar_numero_br, formatar_int
 
@@ -285,11 +286,20 @@ def menu_empresa():
 
     if tipo_global == "superusuario":
 
+        pode_saldos = True
         pode_fluxo_caixa = True
         pode_cadastros = True
         pode_emprestimos_financiamentos = True
 
     else:
+
+        # Saldos
+        pode_saldos = usuario_tem_permissao(
+            id_usuario,
+            cod_empresa,
+            "FINANCEIRO",
+            "MENU_SALDOS"
+        )
 
         # Cadastros
         pode_cadastros = usuario_tem_permissao(
@@ -342,6 +352,7 @@ def menu_empresa():
         ano_atual=datetime.now().year,
         url_voltar=url_for("sistema.selecionar_sistema"),
 
+        pode_saldos=pode_saldos,
         pode_fluxo_caixa=pode_fluxo_caixa,
         pode_cadastros=pode_cadastros,
         pode_emprestimos_financiamentos=pode_emprestimos_financiamentos
@@ -3306,3 +3317,1092 @@ def fluxo_caixa_projetado():
         formatar_numero_br=formatar_numero_br,
         url_voltar=url_for("financeiro.menu_empresa")
     )
+
+#---------------------------------------------------------
+# SALDOS (CONCILIAÇÃO BANCÁRIA)
+#---------------------------------------------------------
+
+# =========================
+# TELAS
+# =========================
+@financeiro_bp.route("/saldos")
+@permissao_obrigatoria("FINANCEIRO", "CONSULTA_SALDOS")
+def menu_saldos():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    id_usuario = session["id_usuario"]
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global == "superusuario":
+        pode_lancamento = True
+    else:
+        pode_lancamento = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "LANCAMENTO_SALDOS")
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT id_area, nome_area
+            FROM areas
+            WHERE cod_empresa = %s AND ativo = TRUE
+            ORDER BY nome_area
+        """, (cod_empresa,))
+        areas = cur.fetchall()
+
+        if tipo_global != "superusuario":
+            areas_ok = areas_permitidas_usuario(cur, cod_empresa, id_usuario)
+            areas = [a for a in areas if a["id_area"] in areas_ok]
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "saldos.html",
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session["nome_empresa"],
+        areas=areas,
+        pode_lancamento=pode_lancamento,
+        url_voltar=url_for("financeiro.menu_empresa"),
+    )
+
+
+@financeiro_bp.route("/saldos/cadastros")
+@permissao_obrigatoria("FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS")
+def cadastro_saldos():
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT id_area, nome_area
+            FROM areas
+            WHERE cod_empresa = %s AND ativo = TRUE
+            ORDER BY nome_area
+        """, (cod_empresa,))
+        areas = cur.fetchall()
+
+        cur.execute("""
+            SELECT u.id_usuario, u.nome
+            FROM usuarios u
+            JOIN usuarios_empresas ue ON ue.id_usuario = u.id_usuario
+            WHERE ue.cod_empresa = %s AND u.ativo = TRUE
+            ORDER BY u.nome
+        """, (cod_empresa,))
+        usuarios = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "cadastro_saldos.html",
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session["nome_empresa"],
+        areas=areas,
+        usuarios=usuarios,
+        url_voltar=url_for("financeiro.menu_cadastros"),
+    )
+
+
+# =========================
+# API
+# =========================
+
+def filiais_da_area(cur, cod_empresa, id_area):
+    cur.execute("""
+        SELECT af.cod_filial, f.nome_filial
+        FROM areas_filiais af
+        JOIN filiais f
+          ON f.cod_empresa = af.cod_empresa
+         AND f.cod_filial = af.cod_filial
+        WHERE af.cod_empresa = %s
+          AND af.id_area = %s
+          AND f.ativo = TRUE
+        ORDER BY af.ordem, f.nome_filial
+    """, (cod_empresa, id_area))
+    return cur.fetchall()
+
+
+def areas_permitidas_usuario(cur, cod_empresa, id_usuario):
+    cur.execute("""
+        SELECT id_area
+        FROM usuarios_areas_saldos
+        WHERE cod_empresa = %s AND id_usuario = %s AND ativo = TRUE
+    """, (cod_empresa, id_usuario))
+    linhas = cur.fetchall()
+    if not linhas:
+        return set()
+    if isinstance(linhas[0], dict):
+        return {int(r["id_area"]) for r in linhas}
+    return {int(r[0]) for r in linhas}
+
+
+def filiais_permitidas_usuario(cur, cod_empresa, id_area):
+    filiais = filiais_da_area(cur, cod_empresa, id_area)
+
+    if session.get("tipo_global") == "superusuario":
+        return filiais
+
+    areas_ok = areas_permitidas_usuario(cur, cod_empresa, session["id_usuario"])
+    if id_area not in areas_ok:
+        return []
+
+    return filiais
+
+
+def cod_filiais_permitidas_lancamento(cur, cod_empresa):
+    if session.get("tipo_global") == "superusuario":
+        cur.execute("SELECT cod_filial FROM filiais WHERE cod_empresa = %s AND ativo = TRUE", (cod_empresa,))
+        return {int(r[0]) for r in cur.fetchall()}
+
+    areas_ok = areas_permitidas_usuario(cur, cod_empresa, session["id_usuario"])
+    if not areas_ok:
+        return set()
+
+    cur.execute("""
+        SELECT DISTINCT af.cod_filial
+        FROM areas_filiais af
+        WHERE af.cod_empresa = %s AND af.id_area = ANY(%s)
+    """, (cod_empresa, list(areas_ok)))
+    return {int(r[0]) for r in cur.fetchall()}
+
+
+def data_minima_editavel(cod_empresa):
+    """Normalmente só ontem/anteontem são editáveis. Uma liberação temporária
+    ativada há menos de 1 hora abaixa esse limite para a data liberada."""
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT data_liberada_desde, ativado_em
+            FROM saldos_liberacao_temporaria
+            WHERE cod_empresa = %s
+            ORDER BY ativado_em DESC
+            LIMIT 1
+        """, (cod_empresa,))
+        liberacao = cur.fetchone()
+    finally:
+        cur.close()
+        conn.close()
+
+    if liberacao and (datetime.now() - liberacao["ativado_em"]) < timedelta(hours=1):
+        return liberacao["data_liberada_desde"]
+
+    return date.today() - timedelta(days=2)
+
+
+# =========================
+# CADASTRO: CONTAS BANCÁRIAS
+# =========================
+@financeiro_bp.route("/api/contas-bancarias", methods=["GET"])
+@permissao_obrigatoria("FINANCEIRO", "CONSULTA_SALDOS")
+def api_listar_contas_bancarias():
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT id_conta_bancaria, banco, apelido, ordem, ativo
+            FROM contas_bancarias
+            WHERE cod_empresa = %s
+            ORDER BY ordem, banco
+        """, (cod_empresa,))
+        contas = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "contas_bancarias": contas})
+
+
+@financeiro_bp.route("/api/contas-bancarias", methods=["POST"])
+@permissao_obrigatoria("FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS")
+def api_criar_conta_bancaria():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    dados = request.get_json(silent=True) or {}
+
+    banco = (dados.get("banco") or "").strip()
+    apelido = (dados.get("apelido") or "").strip() or None
+    ordem = dados.get("ordem", 10)
+
+    if not banco:
+        return jsonify({"ok": False, "erro": "Informe o banco."}), 400
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            INSERT INTO contas_bancarias (cod_empresa, banco, apelido, ordem)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id_conta_bancaria, banco, apelido, ordem, ativo
+        """, (cod_empresa, banco, apelido, ordem))
+        conta = cur.fetchone()
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "conta_bancaria": conta}), 201
+
+
+@financeiro_bp.route("/api/contas-bancarias/<int:id_conta_bancaria>", methods=["PUT"])
+@permissao_obrigatoria("FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS")
+def api_alterar_conta_bancaria(id_conta_bancaria):
+    cod_empresa = str(session["cod_empresa"]).strip()
+    dados = request.get_json(silent=True) or {}
+
+    banco = (dados.get("banco") or "").strip()
+    apelido = (dados.get("apelido") or "").strip() or None
+    ordem = dados.get("ordem", 10)
+    ativo = bool(dados.get("ativo", True))
+
+    if not banco:
+        return jsonify({"ok": False, "erro": "Informe o banco."}), 400
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            UPDATE contas_bancarias
+            SET banco = %s, apelido = %s, ordem = %s, ativo = %s, atualizado_em = NOW()
+            WHERE id_conta_bancaria = %s AND cod_empresa = %s
+            RETURNING id_conta_bancaria, banco, apelido, ordem, ativo
+        """, (banco, apelido, ordem, ativo, id_conta_bancaria, cod_empresa))
+        conta = cur.fetchone()
+
+        if not conta:
+            conn.rollback()
+            return jsonify({"ok": False, "erro": "Conta bancária não encontrada."}), 404
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "conta_bancaria": conta})
+
+
+@financeiro_bp.route("/api/contas-bancarias/<int:id_conta_bancaria>", methods=["DELETE"])
+@permissao_obrigatoria("FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS")
+def api_excluir_conta_bancaria(id_conta_bancaria):
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            UPDATE contas_bancarias
+            SET ativo = FALSE, atualizado_em = NOW()
+            WHERE id_conta_bancaria = %s AND cod_empresa = %s
+        """, (id_conta_bancaria, cod_empresa))
+
+        if cur.rowcount == 0:
+            conn.rollback()
+            return jsonify({"ok": False, "erro": "Conta bancária não encontrada."}), 404
+
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True})
+
+
+# =========================
+# CADASTRO: INDICADORES DE RECEBÍVEIS
+# =========================
+@financeiro_bp.route("/api/indicadores-recebiveis", methods=["GET"])
+@permissao_obrigatoria("FINANCEIRO", "CONSULTA_SALDOS")
+def api_listar_indicadores_recebiveis():
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT id_indicador_recebivel, nome, ordem, ativo
+            FROM indicadores_recebiveis
+            WHERE cod_empresa = %s
+            ORDER BY ordem, nome
+        """, (cod_empresa,))
+        indicadores = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "indicadores_recebiveis": indicadores})
+
+
+@financeiro_bp.route("/api/indicadores-recebiveis", methods=["POST"])
+@permissao_obrigatoria("FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS")
+def api_criar_indicador_recebivel():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    dados = request.get_json(silent=True) or {}
+
+    nome = (dados.get("nome") or "").strip()
+    ordem = dados.get("ordem", 10)
+
+    if not nome:
+        return jsonify({"ok": False, "erro": "Informe o nome do indicador."}), 400
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            INSERT INTO indicadores_recebiveis (cod_empresa, nome, ordem)
+            VALUES (%s, %s, %s)
+            RETURNING id_indicador_recebivel, nome, ordem, ativo
+        """, (cod_empresa, nome, ordem))
+        indicador = cur.fetchone()
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "indicador_recebivel": indicador}), 201
+
+
+@financeiro_bp.route("/api/indicadores-recebiveis/<int:id_indicador_recebivel>", methods=["PUT"])
+@permissao_obrigatoria("FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS")
+def api_alterar_indicador_recebivel(id_indicador_recebivel):
+    cod_empresa = str(session["cod_empresa"]).strip()
+    dados = request.get_json(silent=True) or {}
+
+    nome = (dados.get("nome") or "").strip()
+    ordem = dados.get("ordem", 10)
+    ativo = bool(dados.get("ativo", True))
+
+    if not nome:
+        return jsonify({"ok": False, "erro": "Informe o nome do indicador."}), 400
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            UPDATE indicadores_recebiveis
+            SET nome = %s, ordem = %s, ativo = %s, atualizado_em = NOW()
+            WHERE id_indicador_recebivel = %s AND cod_empresa = %s
+            RETURNING id_indicador_recebivel, nome, ordem, ativo
+        """, (nome, ordem, ativo, id_indicador_recebivel, cod_empresa))
+        indicador = cur.fetchone()
+
+        if not indicador:
+            conn.rollback()
+            return jsonify({"ok": False, "erro": "Indicador não encontrado."}), 404
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "indicador_recebivel": indicador})
+
+
+@financeiro_bp.route("/api/indicadores-recebiveis/<int:id_indicador_recebivel>", methods=["DELETE"])
+@permissao_obrigatoria("FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS")
+def api_excluir_indicador_recebivel(id_indicador_recebivel):
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            UPDATE indicadores_recebiveis
+            SET ativo = FALSE, atualizado_em = NOW()
+            WHERE id_indicador_recebivel = %s AND cod_empresa = %s
+        """, (id_indicador_recebivel, cod_empresa))
+
+        if cur.rowcount == 0:
+            conn.rollback()
+            return jsonify({"ok": False, "erro": "Indicador não encontrado."}), 404
+
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True})
+
+
+# =========================
+# CADASTRO: COMPETÊNCIA (DATA DE CORTE)
+# =========================
+@financeiro_bp.route("/api/competencias", methods=["GET"])
+@permissao_obrigatoria("FINANCEIRO", "CONSULTA_SALDOS")
+def api_listar_competencias():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    id_area = request.args.get("id_area", type=int)
+    ano = request.args.get("ano", type=int)
+
+    sql = """
+        SELECT id_competencia, id_area, mes_ano, data_corte_inicio
+        FROM competencia_mes
+        WHERE cod_empresa = %s
+    """
+    params = [cod_empresa]
+
+    if id_area:
+        sql += " AND id_area = %s"
+        params.append(id_area)
+
+    if ano:
+        sql += " AND EXTRACT(YEAR FROM mes_ano) = %s"
+        params.append(ano)
+
+    sql += " ORDER BY mes_ano"
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute(sql, params)
+        competencias = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "competencias": competencias})
+
+
+@financeiro_bp.route("/api/competencias", methods=["POST"])
+@permissao_obrigatoria("FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS")
+def api_criar_competencia():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    dados = request.get_json(silent=True) or {}
+
+    id_area = dados.get("id_area")
+    mes_ano = dados.get("mes_ano")
+    data_corte_inicio = dados.get("data_corte_inicio")
+
+    if not id_area or not mes_ano or not data_corte_inicio:
+        return jsonify({"ok": False, "erro": "Informe id_area, mes_ano e data_corte_inicio."}), 400
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            INSERT INTO competencia_mes (cod_empresa, id_area, mes_ano, data_corte_inicio)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (cod_empresa, id_area, mes_ano)
+            DO UPDATE SET data_corte_inicio = EXCLUDED.data_corte_inicio, atualizado_em = NOW()
+            RETURNING id_competencia, id_area, mes_ano, data_corte_inicio
+        """, (cod_empresa, id_area, mes_ano, data_corte_inicio))
+        competencia = cur.fetchone()
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "competencia": competencia}), 201
+
+
+# =========================
+# CADASTRO: ACESSO POR ÁREA (QUEM PODE VER/LANÇAR CADA ÁREA NOS SALDOS)
+# =========================
+@financeiro_bp.route("/api/usuarios-areas-saldos", methods=["GET"])
+@permissao_obrigatoria("FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS")
+def api_listar_usuarios_areas_saldos():
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT uas.id_usuario_area_saldo, uas.id_usuario, u.nome AS nome_usuario,
+                   uas.id_area, a.nome_area
+            FROM usuarios_areas_saldos uas
+            JOIN usuarios u ON u.id_usuario = uas.id_usuario
+            JOIN areas a ON a.id_area = uas.id_area
+            WHERE uas.cod_empresa = %s AND uas.ativo = TRUE
+            ORDER BY u.nome, a.nome_area
+        """, (cod_empresa,))
+        acessos = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "acessos": acessos})
+
+
+@financeiro_bp.route("/api/usuarios-areas-saldos", methods=["POST"])
+@permissao_obrigatoria("FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS")
+def api_conceder_acesso_area_saldos():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    dados = request.get_json(silent=True) or {}
+
+    id_usuario = dados.get("id_usuario")
+    id_area = dados.get("id_area")
+
+    if not id_usuario or not id_area:
+        return jsonify({"ok": False, "erro": "Informe id_usuario e id_area."}), 400
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            INSERT INTO usuarios_areas_saldos (cod_empresa, id_usuario, id_area)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (cod_empresa, id_usuario, id_area)
+            DO UPDATE SET ativo = TRUE, atualizado_em = NOW()
+            RETURNING id_usuario_area_saldo, id_usuario, id_area
+        """, (cod_empresa, id_usuario, id_area))
+        acesso = cur.fetchone()
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "acesso": acesso}), 201
+
+
+@financeiro_bp.route("/api/usuarios-areas-saldos/<int:id_usuario_area_saldo>", methods=["DELETE"])
+@permissao_obrigatoria("FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS")
+def api_revogar_acesso_area_saldos(id_usuario_area_saldo):
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            UPDATE usuarios_areas_saldos
+            SET ativo = FALSE, atualizado_em = NOW()
+            WHERE id_usuario_area_saldo = %s AND cod_empresa = %s
+        """, (id_usuario_area_saldo, cod_empresa))
+
+        if cur.rowcount == 0:
+            conn.rollback()
+            return jsonify({"ok": False, "erro": "Acesso não encontrado."}), 404
+
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True})
+
+
+# =========================
+# CADASTRO: LIBERAÇÃO TEMPORÁRIA DE DATAS ANTIGAS
+# =========================
+@financeiro_bp.route("/api/saldos/liberacao-temporaria", methods=["GET"])
+@permissao_obrigatoria("FINANCEIRO", "CONSULTA_SALDOS")
+def api_status_liberacao_temporaria():
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT sl.data_liberada_desde, sl.ativado_em, u.nome AS ativado_por
+            FROM saldos_liberacao_temporaria sl
+            LEFT JOIN usuarios u ON u.id_usuario = sl.id_usuario_ativou
+            WHERE sl.cod_empresa = %s
+            ORDER BY sl.ativado_em DESC
+            LIMIT 1
+        """, (cod_empresa,))
+        liberacao = cur.fetchone()
+    finally:
+        cur.close()
+        conn.close()
+
+    expira_em = None
+    ativa = False
+    if liberacao:
+        expira_em = liberacao["ativado_em"] + timedelta(hours=1)
+        ativa = datetime.now() < expira_em
+
+    return jsonify({
+        "ok": True,
+        "ativa": ativa,
+        "data_liberada_desde": liberacao["data_liberada_desde"].isoformat() if (liberacao and ativa) else None,
+        "expira_em": expira_em.isoformat() if (liberacao and ativa) else None,
+        "ativado_por": liberacao["ativado_por"] if (liberacao and ativa) else None,
+        "data_minima_editavel": data_minima_editavel(cod_empresa).isoformat(),
+    })
+
+
+@financeiro_bp.route("/api/saldos/liberacao-temporaria", methods=["POST"])
+@permissao_obrigatoria("FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS")
+def api_ativar_liberacao_temporaria():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    id_usuario = session["id_usuario"]
+    dados = request.get_json(silent=True) or {}
+
+    data_liberada_desde = dados.get("data_liberada_desde")
+    try:
+        data_liberada_desde = datetime.strptime(data_liberada_desde, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "erro": "Informe data_liberada_desde no formato YYYY-MM-DD."}), 400
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            INSERT INTO saldos_liberacao_temporaria (cod_empresa, data_liberada_desde, id_usuario_ativou)
+            VALUES (%s, %s, %s)
+            RETURNING id_liberacao, data_liberada_desde, ativado_em
+        """, (cod_empresa, data_liberada_desde, id_usuario))
+        liberacao = cur.fetchone()
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    expira_em = liberacao["ativado_em"] + timedelta(hours=1)
+    return jsonify({
+        "ok": True,
+        "data_liberada_desde": liberacao["data_liberada_desde"].isoformat(),
+        "expira_em": expira_em.isoformat(),
+    }), 201
+
+
+# =========================
+# CONSULTA CONSOLIDADA
+# =========================
+def montar_bloco_dia(data_atual, contas, indicadores, codigos_filiais,
+                      linhas_bancarias, linhas_recebiveis, linhas_informados,
+                      linhas_bancarias_anterior, linhas_recebiveis_anterior,
+                      inicio_competencia):
+
+    def indexar(linhas, chave_id):
+        mapa = defaultdict(dict)
+        for r in linhas:
+            mapa[r[chave_id]][int(r["cod_filial"])] = r
+        return mapa
+
+    bancarios_map = indexar(linhas_bancarias, "id_conta_bancaria")
+    bancarios_map_anterior = indexar(linhas_bancarias_anterior, "id_conta_bancaria")
+    recebiveis_map = indexar(linhas_recebiveis, "id_indicador_recebivel")
+    recebiveis_map_anterior = indexar(linhas_recebiveis_anterior, "id_indicador_recebivel")
+    informados_map = {int(r["cod_filial"]): r for r in linhas_informados}
+
+    def montar_linhas(cadastros, chave_id, mapa, mapa_anterior, valor_banco_col, valor_sistema_col):
+        linhas = []
+        subtotal_banco = {f: 0.0 for f in codigos_filiais}
+        subtotal_sistema = {f: 0.0 for f in codigos_filiais}
+        subtotal_variacao = {f: 0.0 for f in codigos_filiais}
+
+        for cadastro in cadastros:
+            linhas_cadastro = mapa.get(cadastro[chave_id], {})
+            linhas_cadastro_anterior = mapa_anterior.get(cadastro[chave_id], {})
+            saldo_banco, saldo_sistema, diferenca, variacao = {}, {}, {}, {}
+
+            for f in codigos_filiais:
+                r = linhas_cadastro.get(f)
+                r_anterior = linhas_cadastro_anterior.get(f)
+                vb = float(r[valor_banco_col]) if r else 0.0
+                vs = float(r[valor_sistema_col]) if r else 0.0
+                vb_anterior = float(r_anterior[valor_banco_col]) if r_anterior else 0.0
+                # calculado em Python (não via LAG do SQL): quando não há lançamento no dia
+                # (r é None) o valor efetivo é 0, e a variação precisa refletir isso — o LAG
+                # simplesmente pula o dia sem lançamento, o que zerava a variação por engano.
+                var = vb - vb_anterior
+
+                saldo_banco[f] = vb
+                saldo_sistema[f] = vs
+                diferenca[f] = vb - vs
+                variacao[f] = var
+
+                subtotal_banco[f] += vb
+                subtotal_sistema[f] += vs
+                subtotal_variacao[f] += var
+
+            linha = {
+                chave_id: cadastro[chave_id],
+                "saldo_banco": saldo_banco,
+                "saldo_sistema": saldo_sistema,
+                "diferenca": diferenca,
+                "variacao": variacao,
+                "total_banco": sum(saldo_banco.values()),
+                "total_sistema": sum(saldo_sistema.values()),
+            }
+            linha.update({k: v for k, v in cadastro.items() if k != chave_id})
+            linhas.append(linha)
+
+        subtotal = {
+            "banco": subtotal_banco,
+            "sistema": subtotal_sistema,
+            "total_banco": sum(subtotal_banco.values()),
+            "total_sistema": sum(subtotal_sistema.values()),
+        }
+        return linhas, subtotal, subtotal_variacao
+
+    contas_bloco, subtotal_contas, variacao_contas = montar_linhas(
+        contas, "id_conta_bancaria", bancarios_map, bancarios_map_anterior, "saldo_banco", "saldo_sistema"
+    )
+    recebiveis_bloco, subtotal_recebiveis, variacao_recebiveis = montar_linhas(
+        indicadores, "id_indicador_recebivel", recebiveis_map, recebiveis_map_anterior, "valor_banco", "valor_sistema"
+    )
+
+    total_banco = {f: subtotal_contas["banco"][f] + subtotal_recebiveis["banco"][f] for f in codigos_filiais}
+    total_sistema = {f: subtotal_contas["sistema"][f] + subtotal_recebiveis["sistema"][f] for f in codigos_filiais}
+    variacao_total = {f: variacao_contas[f] + variacao_recebiveis[f] for f in codigos_filiais}
+
+    valores_informados_bloco = {}
+    for f in codigos_filiais:
+        r = informados_map.get(f)
+        perdas_sobras = float(r["perdas_sobras"]) if r else 0.0
+        extras = float(r["extras"]) if r else 0.0
+        emprestimos_devolucoes = float(r["emprestimos_devolucoes"]) if r else 0.0
+        despesas = float(r["despesas"]) if r else 0.0
+
+        valores_informados_bloco[f] = {
+            "perdas_sobras": perdas_sobras,
+            "extras": extras,
+            "emprestimos_devolucoes": emprestimos_devolucoes,
+            "despesas": despesas,
+            "variacao_final": variacao_total[f] + perdas_sobras + extras + emprestimos_devolucoes - despesas,
+        }
+
+    return {
+        "data": data_atual.isoformat(),
+        "inicio_competencia": inicio_competencia,
+        "contas_bancarias": contas_bloco,
+        "subtotal_contas": subtotal_contas,
+        "recebiveis": recebiveis_bloco,
+        "subtotal_recebiveis": subtotal_recebiveis,
+        "total": {
+            "banco": total_banco,
+            "sistema": total_sistema,
+            "total_banco": sum(total_banco.values()),
+            "total_sistema": sum(total_sistema.values()),
+            "total_diferenca": sum(total_banco.values()) - sum(total_sistema.values()),
+        },
+        "variacao": {
+            "contas": variacao_contas,
+            "recebiveis": variacao_recebiveis,
+            "total": variacao_total,
+        },
+        "valores_informados": valores_informados_bloco,
+    }
+
+
+@financeiro_bp.route("/api/saldos", methods=["GET"])
+@permissao_obrigatoria("FINANCEIRO", "CONSULTA_SALDOS")
+def api_consultar_saldos():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    id_area = request.args.get("id_area", type=int)
+
+    if not id_area:
+        return jsonify({"ok": False, "erro": "Informe id_area."}), 400
+
+    try:
+        data_inicio = datetime.strptime(request.args.get("data_inicio", ""), "%Y-%m-%d").date()
+        data_fim = datetime.strptime(request.args.get("data_fim", ""), "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify({"ok": False, "erro": "Informe data_inicio e data_fim no formato YYYY-MM-DD."}), 400
+
+    if data_inicio > data_fim:
+        return jsonify({"ok": False, "erro": "data_inicio não pode ser maior que data_fim."}), 400
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        filiais = filiais_permitidas_usuario(cur, cod_empresa, id_area)
+        if not filiais:
+            return jsonify({"ok": False, "erro": "Nenhuma filial disponível para esta área."}), 404
+
+        codigos_filiais = [int(f["cod_filial"]) for f in filiais]
+        data_inicio_extendida = data_inicio - timedelta(days=1)
+
+        cur.execute("""
+            SELECT id_conta_bancaria, banco, apelido, ordem
+            FROM contas_bancarias
+            WHERE cod_empresa = %s AND ativo = TRUE
+            ORDER BY ordem, banco
+        """, (cod_empresa,))
+        contas = cur.fetchall()
+
+        cur.execute("""
+            SELECT id_indicador_recebivel, nome, ordem
+            FROM indicadores_recebiveis
+            WHERE cod_empresa = %s AND ativo = TRUE
+            ORDER BY ordem, nome
+        """, (cod_empresa,))
+        indicadores = cur.fetchall()
+
+        cur.execute("""
+            SELECT cod_filial, data, id_conta_bancaria, saldo_banco, saldo_sistema
+            FROM saldos_bancarios
+            WHERE cod_empresa = %s AND cod_filial = ANY(%s) AND data BETWEEN %s AND %s
+        """, (cod_empresa, codigos_filiais, data_inicio_extendida, data_fim))
+        linhas_bancarios = cur.fetchall()
+
+        cur.execute("""
+            SELECT cod_filial, data, id_indicador_recebivel, valor_banco, valor_sistema
+            FROM saldos_recebiveis
+            WHERE cod_empresa = %s AND cod_filial = ANY(%s) AND data BETWEEN %s AND %s
+        """, (cod_empresa, codigos_filiais, data_inicio_extendida, data_fim))
+        linhas_recebiveis = cur.fetchall()
+
+        cur.execute("""
+            SELECT cod_filial, data, perdas_sobras, extras, emprestimos_devolucoes, despesas
+            FROM valores_informados
+            WHERE cod_empresa = %s AND cod_filial = ANY(%s) AND data BETWEEN %s AND %s
+        """, (cod_empresa, codigos_filiais, data_inicio, data_fim))
+        linhas_informados = cur.fetchall()
+
+        cur.execute("""
+            SELECT data_corte_inicio
+            FROM competencia_mes
+            WHERE cod_empresa = %s AND id_area = %s AND data_corte_inicio BETWEEN %s AND %s
+        """, (cod_empresa, id_area, data_inicio, data_fim))
+        datas_inicio_competencia = {r["data_corte_inicio"] for r in cur.fetchall()}
+    finally:
+        cur.close()
+        conn.close()
+
+    bancarios_por_dia = defaultdict(list)
+    for r in linhas_bancarios:
+        bancarios_por_dia[r["data"]].append(r)
+
+    recebiveis_por_dia = defaultdict(list)
+    for r in linhas_recebiveis:
+        recebiveis_por_dia[r["data"]].append(r)
+
+    informados_por_dia = defaultdict(list)
+    for r in linhas_informados:
+        informados_por_dia[r["data"]].append(r)
+
+    dias = []
+    data_atual = data_inicio
+    while data_atual <= data_fim:
+        data_anterior = data_atual - timedelta(days=1)
+        dias.append(montar_bloco_dia(
+            data_atual, contas, indicadores, codigos_filiais,
+            bancarios_por_dia.get(data_atual, []),
+            recebiveis_por_dia.get(data_atual, []),
+            informados_por_dia.get(data_atual, []),
+            bancarios_por_dia.get(data_anterior, []),
+            recebiveis_por_dia.get(data_anterior, []),
+            data_atual in datas_inicio_competencia,
+        ))
+        data_atual += timedelta(days=1)
+
+    return jsonify({
+        "ok": True,
+        "id_area": id_area,
+        "periodo": {"data_inicio": data_inicio.isoformat(), "data_fim": data_fim.isoformat()},
+        "filiais": [{"cod_filial": int(f["cod_filial"]), "nome_filial": f["nome_filial"]} for f in filiais],
+        "dias": dias,
+    })
+
+
+# =========================
+# LANÇAMENTO (EDIÇÃO MANUAL — UPSERT EM LOTE)
+# =========================
+def validar_lancamento_data(dados):
+    data_str = dados.get("data")
+    try:
+        return datetime.strptime(data_str, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+@financeiro_bp.route("/api/saldos/bancarios", methods=["PUT"])
+@permissao_obrigatoria("FINANCEIRO", "LANCAMENTO_SALDOS")
+def api_lancar_saldos_bancarios():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    id_usuario = session["id_usuario"]
+    dados = request.get_json(silent=True) or {}
+
+    data_lancamento = validar_lancamento_data(dados)
+    lancamentos = dados.get("lancamentos") or []
+
+    if not data_lancamento:
+        return jsonify({"ok": False, "erro": "Informe a data no formato YYYY-MM-DD."}), 400
+    if not lancamentos:
+        return jsonify({"ok": False, "erro": "Informe ao menos um lançamento."}), 400
+
+    data_minima = data_minima_editavel(cod_empresa)
+    if data_lancamento < data_minima:
+        return jsonify({"ok": False, "erro": f"Data bloqueada para edição. Só é possível lançar a partir de {data_minima.strftime('%d/%m/%Y')}."}), 403
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        filiais_ok = cod_filiais_permitidas_lancamento(cur, cod_empresa)
+
+        registros = []
+        for item in lancamentos:
+            try:
+                cod_filial = int(item["cod_filial"])
+                id_conta_bancaria = int(item["id_conta_bancaria"])
+                saldo_banco = float(item.get("saldo_banco") or 0)
+                saldo_sistema = float(item.get("saldo_sistema") or 0)
+            except (KeyError, TypeError, ValueError):
+                return jsonify({"ok": False, "erro": "Lançamento inválido: informe cod_filial, id_conta_bancaria, saldo_banco e saldo_sistema."}), 400
+
+            if cod_filial not in filiais_ok:
+                return jsonify({"ok": False, "erro": f"Filial {cod_filial} não permitida para este usuário."}), 403
+
+            registros.append((cod_empresa, cod_filial, data_lancamento, id_conta_bancaria, saldo_banco, saldo_sistema, id_usuario))
+
+        execute_batch(cur, """
+            INSERT INTO saldos_bancarios (
+                cod_empresa, cod_filial, data, id_conta_bancaria, saldo_banco, saldo_sistema, usuario_lancamento
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (cod_empresa, cod_filial, data, id_conta_bancaria)
+            DO UPDATE SET
+                saldo_banco = EXCLUDED.saldo_banco,
+                saldo_sistema = EXCLUDED.saldo_sistema,
+                usuario_lancamento = EXCLUDED.usuario_lancamento,
+                atualizado_em = NOW()
+        """, registros, page_size=100)
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "quantidade": len(registros)})
+
+
+@financeiro_bp.route("/api/saldos/recebiveis", methods=["PUT"])
+@permissao_obrigatoria("FINANCEIRO", "LANCAMENTO_SALDOS")
+def api_lancar_saldos_recebiveis():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    id_usuario = session["id_usuario"]
+    dados = request.get_json(silent=True) or {}
+
+    data_lancamento = validar_lancamento_data(dados)
+    lancamentos = dados.get("lancamentos") or []
+
+    if not data_lancamento:
+        return jsonify({"ok": False, "erro": "Informe a data no formato YYYY-MM-DD."}), 400
+    if not lancamentos:
+        return jsonify({"ok": False, "erro": "Informe ao menos um lançamento."}), 400
+
+    data_minima = data_minima_editavel(cod_empresa)
+    if data_lancamento < data_minima:
+        return jsonify({"ok": False, "erro": f"Data bloqueada para edição. Só é possível lançar a partir de {data_minima.strftime('%d/%m/%Y')}."}), 403
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        filiais_ok = cod_filiais_permitidas_lancamento(cur, cod_empresa)
+
+        registros = []
+        for item in lancamentos:
+            try:
+                cod_filial = int(item["cod_filial"])
+                id_indicador_recebivel = int(item["id_indicador_recebivel"])
+                valor_banco = float(item.get("valor_banco") or 0)
+                valor_sistema = float(item.get("valor_sistema") or 0)
+            except (KeyError, TypeError, ValueError):
+                return jsonify({"ok": False, "erro": "Lançamento inválido: informe cod_filial, id_indicador_recebivel, valor_banco e valor_sistema."}), 400
+
+            if cod_filial not in filiais_ok:
+                return jsonify({"ok": False, "erro": f"Filial {cod_filial} não permitida para este usuário."}), 403
+
+            registros.append((cod_empresa, cod_filial, data_lancamento, id_indicador_recebivel, valor_banco, valor_sistema, id_usuario))
+
+        execute_batch(cur, """
+            INSERT INTO saldos_recebiveis (
+                cod_empresa, cod_filial, data, id_indicador_recebivel, valor_banco, valor_sistema, usuario_lancamento
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (cod_empresa, cod_filial, data, id_indicador_recebivel)
+            DO UPDATE SET
+                valor_banco = EXCLUDED.valor_banco,
+                valor_sistema = EXCLUDED.valor_sistema,
+                usuario_lancamento = EXCLUDED.usuario_lancamento,
+                atualizado_em = NOW()
+        """, registros, page_size=100)
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "quantidade": len(registros)})
+
+
+@financeiro_bp.route("/api/saldos/valores-informados", methods=["PUT"])
+@permissao_obrigatoria("FINANCEIRO", "LANCAMENTO_SALDOS")
+def api_lancar_valores_informados():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    id_usuario = session["id_usuario"]
+    dados = request.get_json(silent=True) or {}
+
+    data_lancamento = validar_lancamento_data(dados)
+    lancamentos = dados.get("lancamentos") or []
+
+    if not data_lancamento:
+        return jsonify({"ok": False, "erro": "Informe a data no formato YYYY-MM-DD."}), 400
+    if not lancamentos:
+        return jsonify({"ok": False, "erro": "Informe ao menos um lançamento."}), 400
+
+    data_minima = data_minima_editavel(cod_empresa)
+    if data_lancamento < data_minima:
+        return jsonify({"ok": False, "erro": f"Data bloqueada para edição. Só é possível lançar a partir de {data_minima.strftime('%d/%m/%Y')}."}), 403
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        filiais_ok = cod_filiais_permitidas_lancamento(cur, cod_empresa)
+
+        registros = []
+        for item in lancamentos:
+            try:
+                cod_filial = int(item["cod_filial"])
+                perdas_sobras = float(item.get("perdas_sobras") or 0)
+                extras = float(item.get("extras") or 0)
+                emprestimos_devolucoes = float(item.get("emprestimos_devolucoes") or 0)
+                despesas = float(item.get("despesas") or 0)
+            except (KeyError, TypeError, ValueError):
+                return jsonify({"ok": False, "erro": "Lançamento inválido: informe cod_filial e os valores informados."}), 400
+
+            if cod_filial not in filiais_ok:
+                return jsonify({"ok": False, "erro": f"Filial {cod_filial} não permitida para este usuário."}), 403
+
+            registros.append((cod_empresa, cod_filial, data_lancamento, perdas_sobras, extras, emprestimos_devolucoes, despesas, id_usuario))
+
+        execute_batch(cur, """
+            INSERT INTO valores_informados (
+                cod_empresa, cod_filial, data, perdas_sobras, extras, emprestimos_devolucoes, despesas, usuario_lancamento
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (cod_empresa, cod_filial, data)
+            DO UPDATE SET
+                perdas_sobras = EXCLUDED.perdas_sobras,
+                extras = EXCLUDED.extras,
+                emprestimos_devolucoes = EXCLUDED.emprestimos_devolucoes,
+                despesas = EXCLUDED.despesas,
+                usuario_lancamento = EXCLUDED.usuario_lancamento,
+                atualizado_em = NOW()
+        """, registros, page_size=100)
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "quantidade": len(registros)})

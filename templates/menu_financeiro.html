@@ -142,6 +142,12 @@ td:nth-child(3) {
 
 <div class="menu-botoes">
 
+    {% if pode_saldos %}
+        <a class="btn-saldos" href="{{ url_for('financeiro.menu_saldos') }}">
+        Saldos
+        </a>
+    {% endif %}
+
     {% if pode_fluxo_caixa %}
         <a class="btn-fluxo" href="{{ url_for('financeiro.menu_fluxo_caixa') }}">
         Fluxo de Caixa

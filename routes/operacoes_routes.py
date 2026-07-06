@@ -54,7 +54,7 @@ def datas_medicao_permitidas(cur, cod_empresa, hoje=None):
     data_ref = hoje - timedelta(days=1)
 
     while True:
-        eh_sabado_ou_domingo = data_ref.weekday() in (5, 6)
+        eh_sabado_ou_domingo = data_ref.weekday() == 6  # apenas domingo
         eh_feriado = eh_feriado_empresa(cur, cod_empresa, data_ref)
 
         if eh_sabado_ou_domingo or eh_feriado:
@@ -459,21 +459,22 @@ def capacidade_tanques():
     try:
         cur.execute("""
             SELECT
-                ct.cod_filial,
+                f.cod_filial,
                 f.nome_filial,
-                ct.cod_produto,
+                c.cod_produto,
                 c.descricao,
-                ct.capacidade_tanque
-            FROM capacidade_tanques ct
-            LEFT JOIN filiais f
-              ON f.cod_empresa = ct.cod_empresa
-             AND f.cod_filial = ct.cod_filial
-            LEFT JOIN combustiveis c
-              ON c.cod_empresa = ct.cod_empresa
-             AND c.cod_produto = ct.cod_produto
-            WHERE ct.cod_empresa = %s
-            ORDER BY ct.cod_filial, ct.cod_produto
-        """, (cod_empresa,))
+                COALESCE(ct.capacidade_tanque, 0) AS capacidade_tanque
+            FROM filiais f
+            CROSS JOIN combustiveis c
+            LEFT JOIN capacidade_tanques ct
+              ON ct.cod_empresa = f.cod_empresa
+             AND ct.cod_filial = f.cod_filial
+             AND ct.cod_produto = c.cod_produto
+            WHERE f.cod_empresa = %s
+              AND c.cod_empresa = %s
+              AND f.ativo = TRUE
+            ORDER BY f.cod_filial, c.cod_produto
+        """, (cod_empresa, cod_empresa))
 
         linhas = cur.fetchall() or []
 
@@ -2374,6 +2375,7 @@ def consultar_estoques():
                         WHEN POSITION('S500' IN txt) > 0 THEN 'C4'
                         WHEN POSITION('ADIT' IN txt) > 0 THEN 'C2'
                         WHEN POSITION('ETAN' IN txt) > 0 THEN 'C3'
+                        WHEN POSITION('PODIUM' IN txt) > 0 THEN 'C6'
                         WHEN POSITION('GASOL' IN txt) > 0 THEN 'C1'
                         ELSE NULL
                     END AS cod_produto,
@@ -2399,6 +2401,7 @@ def consultar_estoques():
                         WHEN POSITION('S500' IN txt) > 0 THEN 'C4'
                         WHEN POSITION('ADIT' IN txt) > 0 THEN 'C2'
                         WHEN POSITION('ETAN' IN txt) > 0 THEN 'C3'
+                        WHEN POSITION('PODIUM' IN txt) > 0 THEN 'C6'
                         WHEN POSITION('GASOL' IN txt) > 0 THEN 'C1'
                         ELSE NULL
                     END
@@ -2412,6 +2415,7 @@ def consultar_estoques():
                         WHEN POSITION('S500' IN txt) > 0 THEN 'C4'
                         WHEN POSITION('ADIT' IN txt) > 0 THEN 'C2'
                         WHEN POSITION('ETAN' IN txt) > 0 THEN 'C3'
+                        WHEN POSITION('PODIUM' IN txt) > 0 THEN 'C6'
                         WHEN POSITION('GASOL' IN txt) > 0 THEN 'C1'
                         ELSE NULL
                     END AS cod_produto,
@@ -2443,6 +2447,7 @@ def consultar_estoques():
                         WHEN POSITION('S500' IN txt) > 0 THEN 'C4'
                         WHEN POSITION('ADIT' IN txt) > 0 THEN 'C2'
                         WHEN POSITION('ETAN' IN txt) > 0 THEN 'C3'
+                        WHEN POSITION('PODIUM' IN txt) > 0 THEN 'C6'
                         WHEN POSITION('GASOL' IN txt) > 0 THEN 'C1'
                         ELSE NULL
                     END

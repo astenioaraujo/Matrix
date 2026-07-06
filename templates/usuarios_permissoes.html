@@ -17,39 +17,81 @@
 
   .table-wrapper {
     margin-top: 10px;
+    width: calc(100vw - 80px);
+    max-height: 75vh;
     overflow: auto;
+    border: 1px solid #dcdcdc;
+    -webkit-overflow-scrolling: touch;
+    /* CRÍTICO: position relative no wrapper para o sticky ter referência */
+    position: relative;
   }
 
-  table {
+  .tabela-permissoes {
     font-size: 13px;
-    border-collapse: collapse;
-    min-width: max-content;
+    /* CRÍTICO: border-collapse collapse quebra sticky — usar separate */
+    border-collapse: separate;
+    border-spacing: 0;
+    /* CRÍTICO: não usar width: max-content na tabela */
+    table-layout: auto;
     background: #fff;
   }
 
-  th, td {
-    border: 1px solid #dcdcdc;
+  .tabela-permissoes th,
+  .tabela-permissoes td {
+    border-right: 1px solid #dcdcdc;
+    border-bottom: 1px solid #dcdcdc;
     padding: 8px 10px;
     text-align: center;
     white-space: nowrap;
+    background: #fff;
   }
 
-  th {
+  /* Cabeçalhos: sticky no topo */
+  .tabela-permissoes thead th {
     background: #f1f1f1;
     position: sticky;
     top: 0;
-    z-index: 1;
+    z-index: 10;
   }
 
-  th.col-usuario, td.col-usuario {
+  /* Primeira coluna do corpo: sticky na esquerda */
+  .tabela-permissoes tbody td.col-usuario {
     text-align: left;
+    width: 220px;
     min-width: 220px;
+    position: sticky;
+    left: 0;
+    z-index: 20;
+    background: #fff;
+    /* Sombra para separar visualmente do conteúdo que passa por baixo */
+    box-shadow: 4px 0 6px -2px rgba(0,0,0,0.15);
+  }
+
+  /* Cabeçalho da primeira coluna: sticky topo + esquerda */
+  .tabela-permissoes thead th.col-usuario {
+    text-align: left;
+    width: 220px;
+    min-width: 220px;
+    position: sticky;
+    top: 0;
+    left: 0;
+    z-index: 50;
+    background: #f1f1f1;
+    box-shadow: 4px 0 6px -2px rgba(0,0,0,0.15);
+  }
+
+  .tabela-permissoes tbody tr:hover td {
+    background: #f7f7f7;
+  }
+
+  .tabela-permissoes tbody tr:hover td.col-usuario {
+    background: #f7f7f7;
   }
 
   .acoes-lote {
     display: flex;
     gap: 6px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 
   .btn-mini {
@@ -88,7 +130,7 @@
 </div>
 
 <div class="table-wrapper">
-  <table>
+  <table class="tabela-permissoes">
     <thead>
       <tr>
         <th class="col-usuario">Usuário</th>
@@ -169,7 +211,6 @@ document.querySelectorAll(".chk-permissao").forEach(function(chk) {
 document.querySelectorAll(".btn-marcar-todas-permissoes").forEach(function(btn) {
   btn.addEventListener("click", function() {
     const idUsuario = this.dataset.id;
-
     const formData = new URLSearchParams();
     formData.append("id_usuario", idUsuario);
     formData.append("ativo", "true");
@@ -184,11 +225,7 @@ document.querySelectorAll(".btn-marcar-todas-permissoes").forEach(function(btn) 
     })
     .then(r => r.json())
     .then(data => {
-      if (!data.ok) {
-        alert("Erro ao marcar todas as permissões.");
-        return;
-      }
-
+      if (!data.ok) { alert("Erro ao marcar todas as permissões."); return; }
       document.querySelectorAll('.chk-permissao[data-id-usuario="' + idUsuario + '"]').forEach(function(chk) {
         chk.checked = true;
       });
@@ -200,7 +237,6 @@ document.querySelectorAll(".btn-marcar-todas-permissoes").forEach(function(btn) 
 document.querySelectorAll(".btn-desmarcar-todas-permissoes").forEach(function(btn) {
   btn.addEventListener("click", function() {
     const idUsuario = this.dataset.id;
-
     const formData = new URLSearchParams();
     formData.append("id_usuario", idUsuario);
     formData.append("ativo", "false");
@@ -215,11 +251,7 @@ document.querySelectorAll(".btn-desmarcar-todas-permissoes").forEach(function(bt
     })
     .then(r => r.json())
     .then(data => {
-      if (!data.ok) {
-        alert("Erro ao desmarcar todas as permissões.");
-        return;
-      }
-
+      if (!data.ok) { alert("Erro ao desmarcar todas as permissões."); return; }
       document.querySelectorAll('.chk-permissao[data-id-usuario="' + idUsuario + '"]').forEach(function(chk) {
         chk.checked = false;
       });

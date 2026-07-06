@@ -1,0 +1,1142 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 8px;
+    color: #111;
+  }
+
+  .pagina-subtitulo {
+    font-size: 20px;
+    margin-bottom: 20px;
+    color: #222;
+  }
+
+  .painel-controles {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin-bottom: 24px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    align-items: flex-end;
+  }
+
+  .campo label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+    font-size: 13px;
+    color: #444;
+  }
+
+  .campo select,
+  .campo input[type="date"] {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #bbb;
+    min-width: 160px;
+  }
+
+  .campo input[type="date"] {
+    font-size: 18px;
+    padding: 10px 12px;
+    min-height: 44px;
+  }
+
+  .chips {
+    display: flex;
+    gap: 8px;
+  }
+
+  .chip {
+    padding: 8px 14px;
+    border-radius: 20px;
+    border: 1px solid #1a73e8;
+    background: #fff;
+    color: #1a73e8;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .chip:hover {
+    background: #eaf1fd;
+  }
+
+  .btn-nav-periodo {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    border: 1px solid #1a73e8;
+    background: #fff;
+    color: #1a73e8;
+    font-size: 18px;
+    font-weight: 900;
+    cursor: pointer;
+  }
+
+  .btn-nav-periodo:hover {
+    background: #eaf1fd;
+  }
+
+  .modo-toggle {
+    display: flex;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #1a73e8;
+  }
+
+  .modo-btn {
+    padding: 9px 16px;
+    background: #fff;
+    color: #1a73e8;
+    border: none;
+    border-right: 1px solid #1a73e8;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .modo-btn:last-child {
+    border-right: none;
+  }
+
+  .modo-btn.ativo {
+    background: #1a73e8;
+    color: #fff;
+  }
+
+  .btn-salvar {
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .status-msg {
+    font-size: 14px;
+    font-weight: 700;
+    color: #1e6b34;
+    min-height: 20px;
+    margin-bottom: 16px;
+  }
+
+  .status-msg.erro {
+    color: #9f2f2f;
+  }
+
+  .banner-liberacao {
+    background: #fff4e5;
+    color: #8a4b00;
+    border: 1px solid #f0c27b;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-weight: 700;
+    margin-bottom: 16px;
+  }
+
+  .dia-card {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin-bottom: 24px;
+  }
+
+  .dia-titulo {
+    font-size: 20px;
+    font-weight: 800;
+    margin-bottom: 14px;
+    color: #c0392b;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .badge-competencia {
+    font-size: 12px;
+    font-weight: 700;
+    background: #fff4e5;
+    color: #8a4b00;
+    border: 1px solid #f0c27b;
+    padding: 3px 10px;
+    border-radius: 12px;
+  }
+
+  .bloco-titulo {
+    font-size: 15px;
+    font-weight: 800;
+    margin: 18px 0 8px;
+    color: #333;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .btn-duplicar {
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid #2e9b57;
+    background: #2e9b57;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .btn-duplicar:hover {
+    background: #25834a;
+  }
+
+  /* Grid estilo Excel (mesmo padrão de matricial.html) */
+  html, body {
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  main, .content, .content-wrapper, .container {
+    overflow: visible !important;
+    overflow-y: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  .table-wrapper {
+    display: block;
+    width: max-content;
+    min-width: max-content;
+    overflow: visible !important;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  table.tabela-saldos {
+    border-collapse: collapse;
+    table-layout: fixed;
+    width: auto;
+    font-size: 13px;
+  }
+
+  table.tabela-saldos th,
+  table.tabela-saldos td {
+    border: 1px solid #d9d9d9;
+    padding: 6px 10px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  table.tabela-saldos th {
+    background: #bdd7ee;
+    font-weight: normal;
+    text-align: center;
+    white-space: normal;
+  }
+
+  table.tabela-modo-sistema th {
+    background: #d9c7f0;
+  }
+
+  table.tabela-saldos th:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+  }
+
+  table.tabela-saldos td.valor,
+  table.tabela-saldos th.valor {
+    text-align: right !important;
+    padding-right: 10px;
+  }
+
+  table.tabela-saldos td.rotulo {
+    text-align: left;
+    font-weight: 600;
+    background: #fff;
+    white-space: normal;
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.06);
+  }
+
+  table.tabela-saldos td.valor.total {
+    font-weight: 800;
+    background: #f7f7f7;
+    border-left: 2px solid #9a9a9a;
+  }
+
+  table.tabela-saldos td.fim-filial,
+  table.tabela-saldos th.fim-filial {
+    border-right: 3px solid #8f8f8f;
+  }
+
+  table.tabela-saldos tr.linha-subtotal td {
+    font-weight: 800;
+    background: #f3f3f3;
+    border-top: 2px solid #9a9a9a;
+  }
+
+  table.tabela-saldos tr.linha-subtotal td.rotulo {
+    background: #f3f3f3;
+  }
+
+  table.tabela-saldos tr.linha-total td {
+    font-weight: 800;
+    background: #bdd7ee;
+    border-top: 2px solid #9a9a9a;
+  }
+
+  table.tabela-saldos tr.linha-total td.rotulo,
+  table.tabela-saldos tr.linha-total td.valor.total {
+    background: #bdd7ee;
+  }
+
+  table.tabela-modo-sistema tr.linha-total td {
+    background: #d9c7f0;
+  }
+
+  table.tabela-modo-sistema tr.linha-total td.rotulo,
+  table.tabela-modo-sistema tr.linha-total td.valor.total {
+    background: #d9c7f0;
+  }
+
+  /* Sem linhas de grade nas tabelas de Variação e Valores Informados, só na linha de total */
+  .tabela-variacao td,
+  .tabela-variacao th,
+  .tabela-informados td,
+  .tabela-informados th {
+    border: none;
+  }
+
+  .tabela-variacao tr.linha-subtotal td,
+  .tabela-informados tr.linha-subtotal td {
+    border-top: 2px solid #9a9a9a;
+  }
+
+  .input-valor {
+    width: 100%;
+    min-width: 90px;
+    padding: 0;
+    margin: 0;
+    border: none;
+    border-radius: 0 !important;
+    outline: none;
+    text-align: right;
+    font-size: 13px;
+    font-family: inherit;
+    color: inherit;
+    background: transparent;
+    appearance: none;
+    -webkit-appearance: none;
+    box-shadow: none;
+  }
+
+  .input-valor:focus {
+    outline: 2px solid #1a73e8;
+    outline-offset: -2px;
+    background: #fff;
+  }
+
+  .input-valor[readonly] {
+    background: transparent;
+    color: #555;
+  }
+
+  td.valor.diverge {
+    background: #e74c3c;
+    color: #fff;
+    font-weight: 800;
+  }
+
+  td.valor.negativo {
+    color: #9f2f2f;
+  }
+
+  table.tabela-variacao td.valor {
+    color: #222;
+  }
+
+  table.tabela-variacao tr.linha-subtotal td.valor.negativo {
+    color: #9f2f2f;
+  }
+
+  .sem-dados {
+    padding: 30px;
+    text-align: center;
+    color: #777;
+    font-weight: 600;
+  }
+
+  .titulo-modo {
+    font-size: 30px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    color: #111;
+    margin-bottom: 16px;
+  }
+</style>
+
+<div class="pagina-titulo">Saldos</div>
+
+<div class="pagina-subtitulo">
+  <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<div class="painel-controles">
+  <div class="campo">
+    <label>Área</label>
+    <select id="selArea">
+      {% for a in areas %}
+        <option value="{{ a.id_area }}">{{ a.nome_area }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="campo">
+    <label>Período rápido</label>
+    <div class="chips">
+      <button type="button" class="chip" id="chipOntemAnteontem">Anteontem / Ontem</button>
+      <button type="button" class="chip" id="chipMes">Desde início do mês</button>
+    </div>
+  </div>
+
+  <div class="campo">
+    <label>&nbsp;</label>
+    <button type="button" class="btn-nav-periodo" id="btnPeriodoAnterior" title="Período anterior">←</button>
+  </div>
+
+  <div class="campo">
+    <label>De</label>
+    <input type="date" id="dataInicio">
+  </div>
+
+  <div class="campo">
+    <label>Até</label>
+    <input type="date" id="dataFim">
+  </div>
+
+  <div class="campo">
+    <label>&nbsp;</label>
+    <button type="button" class="btn-nav-periodo" id="btnPeriodoProximo" title="Próximo período">→</button>
+  </div>
+
+  <div class="campo">
+    <label>Modo de visualização</label>
+    <div class="modo-toggle">
+      <button type="button" class="modo-btn ativo" data-modo="banco">Bancos</button>
+      <button type="button" class="modo-btn" data-modo="sistema">Sistema</button>
+      <button type="button" class="modo-btn" data-modo="lado_a_lado">Lado a lado</button>
+    </div>
+  </div>
+
+  <div class="campo">
+    <button type="button" class="btn-salvar" id="btnAtualizar">Atualizar</button>
+  </div>
+</div>
+
+<div class="banner-liberacao" id="bannerLiberacao" style="display:none"></div>
+
+<div class="status-msg" id="statusSaldos"></div>
+
+<div id="blocosDias"></div>
+
+<script>
+  const PODE_LANCAMENTO = {{ pode_lancamento | tojson }};
+  const EMPRESA_ATIVA = {{ empresa_ativa | tojson }};
+
+  let MODO_ATUAL = "banco";
+  let ultimaResposta = null;
+  let DATA_MINIMA_EDITAVEL = null;
+
+  function escapeHtml(texto) {
+    const div = document.createElement("div");
+    div.textContent = texto || "";
+    return div.innerHTML;
+  }
+
+  function formatarNumeroBRDigitando(valor) {
+    if (!valor) return "";
+    const negativo = valor.toString().trim().startsWith("-");
+    const digitos = valor.toString().replace(/\D/g, "");
+    if (digitos === "") return negativo ? "-" : "";
+    let numero = (parseInt(digitos, 10) / 100).toFixed(2);
+    numero = numero.replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    return (negativo ? "-" : "") + numero;
+  }
+
+  function formatarBR(numero) {
+    return (Number(numero) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function paraNumero(valorFormatado) {
+    if (!valorFormatado) return 0;
+    const negativo = valorFormatado.toString().trim().startsWith("-");
+    const limpo = valorFormatado.toString().replace(/[^\d,]/g, "").replace(",", ".");
+    const numero = Number(limpo) || 0;
+    return negativo ? -numero : numero;
+  }
+
+  function formatarDataBR(dataIso) {
+    const [ano, mes, dia] = dataIso.split("-");
+    return `${dia}/${mes}/${ano}`;
+  }
+
+  function formatarDataISO(d) {
+    const ano = d.getFullYear();
+    const mes = String(d.getMonth() + 1).padStart(2, "0");
+    const dia = String(d.getDate()).padStart(2, "0");
+    return `${ano}-${mes}-${dia}`;
+  }
+
+  function parseDataISO(str) {
+    const [ano, mes, dia] = str.split("-").map(Number);
+    return new Date(ano, mes - 1, dia);
+  }
+
+  async function fetchJson(url, opcoes) {
+    const resp = await fetch(url, opcoes);
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+    }
+    return resp.json();
+  }
+
+  function normalizarResposta(resp) {
+    resp.dias.forEach(dia => {
+      dia.contas_bancarias.forEach(c => {
+        c.label = c.banco;
+        c.id_item = c.id_conta_bancaria;
+      });
+      dia.recebiveis.forEach(r => {
+        r.label = r.nome;
+        r.id_item = r.id_indicador_recebivel;
+      });
+    });
+    return resp;
+  }
+
+  // ---------------- RENDERIZAÇÃO ----------------
+
+  function celulaLinha(linha, filial, tipo, dataStr, modo, editavel) {
+    const fid = filial.cod_filial;
+    if (modo === "lado_a_lado") {
+      const vb = linha.saldo_banco[fid] || 0;
+      const vs = linha.saldo_sistema[fid] || 0;
+      const dif = linha.diferenca[fid] || 0;
+      const classeDiverge = dif !== 0 ? "diverge" : "";
+      return `<td class="valor ${classeDiverge}">${formatarBR(vb)}</td><td class="valor fim-filial ${classeDiverge}">${formatarBR(vs)}</td>`;
+    }
+    const campo = modo === "banco" ? "saldo_banco" : "saldo_sistema";
+    const valor = linha[campo][fid] || 0;
+    return `<td class="valor"><input type="text" class="input-valor" data-tipo="${tipo}" data-campo="${campo}" data-data="${dataStr}" data-cod-filial="${fid}" data-id-item="${linha.id_item}" value="${formatarBR(valor)}" ${editavel ? "" : "readonly"}></td>`;
+  }
+
+  function celulaTotalLinha(linha, modo) {
+    if (modo === "lado_a_lado") {
+      return `<td class="valor total">${formatarBR(linha.total_banco)}</td><td class="valor total">${formatarBR(linha.total_sistema)}</td>`;
+    }
+    const total = modo === "banco" ? linha.total_banco : linha.total_sistema;
+    return `<td class="valor total">${formatarBR(total)}</td>`;
+  }
+
+  const LARGURA_ROTULO = 220;
+  const LARGURA_COL = 110;
+
+  function colgroupComTotal(filiais, modo) {
+    const n = modo === "lado_a_lado" ? 2 : 1;
+    let cols = `<col style="width:${LARGURA_ROTULO}px">`;
+    filiais.forEach(() => {
+      for (let i = 0; i < n; i++) cols += `<col style="width:${LARGURA_COL}px">`;
+    });
+    for (let i = 0; i < n; i++) cols += `<col style="width:${LARGURA_COL}px">`;
+    return `<colgroup>${cols}</colgroup>`;
+  }
+
+  function colgroupSimples(filiais, modo) {
+    const largura = modo === "lado_a_lado" ? LARGURA_COL * 2 : LARGURA_COL;
+    let cols = `<col style="width:${LARGURA_ROTULO}px">`;
+    filiais.forEach(() => { cols += `<col style="width:${largura}px">`; });
+    cols += `<col style="width:${largura}px">`;
+    return `<colgroup>${cols}</colgroup>`;
+  }
+
+  function classeModo(modo) {
+    return modo === "sistema" ? "tabela-modo-sistema" : "";
+  }
+
+  function theadColunas(filiais, modo) {
+    let cols = "";
+    let subhead = "";
+    if (modo === "lado_a_lado") {
+      filiais.forEach(f => { cols += `<th colspan="2" class="fim-filial">${escapeHtml(f.nome_filial)}</th>`; });
+      cols += `<th colspan="2">TOTAL</th>`;
+      subhead = '<tr class="subhead"><th></th>';
+      filiais.forEach(() => { subhead += '<th>Banco</th><th class="fim-filial">Sistema</th>'; });
+      subhead += "<th>Banco</th><th>Sistema</th></tr>";
+    } else {
+      filiais.forEach(f => { cols += `<th>${escapeHtml(f.nome_filial)}</th>`; });
+      cols += `<th>TOTAL</th>`;
+    }
+    return { cols, subhead };
+  }
+
+  function montarThead(cols, subhead, mostrarCabecalho) {
+    const linhaNomes = mostrarCabecalho ? `<tr><th></th>${cols}</tr>` : "";
+    if (!linhaNomes && !subhead) return "";
+    return `<thead>${linhaNomes}${subhead}</thead>`;
+  }
+
+  function construirLinhaResumo(rotulo, dados, filiais, modo, comDivergencia) {
+    const classeLinha = comDivergencia ? "linha-total" : "linha-subtotal";
+    let linha = `<tr class="${classeLinha}"><td class="rotulo">${rotulo}</td>`;
+    filiais.forEach(f => {
+      const fid = f.cod_filial;
+      if (modo === "lado_a_lado") {
+        const vb = dados.banco[fid] || 0;
+        const vs = dados.sistema[fid] || 0;
+        const divergeClasse = vb - vs !== 0 ? "diverge" : "";
+        linha += `<td class="valor ${divergeClasse}">${formatarBR(vb)}</td><td class="valor fim-filial ${divergeClasse}">${formatarBR(vs)}</td>`;
+      } else {
+        const campo = modo === "banco" ? "banco" : "sistema";
+        linha += `<td class="valor">${formatarBR(dados[campo][fid] || 0)}</td>`;
+      }
+    });
+    if (modo === "lado_a_lado") {
+      linha += `<td class="valor total">${formatarBR(dados.total_banco)}</td><td class="valor total">${formatarBR(dados.total_sistema)}</td>`;
+    } else {
+      const totalCampo = modo === "banco" ? "total_banco" : "total_sistema";
+      linha += `<td class="valor total">${formatarBR(dados[totalCampo])}</td>`;
+    }
+    linha += "</tr>";
+    return linha;
+  }
+
+  function montarTabelaBloco(titulo, linhas, subtotal, tipo, dataStr, filiais, modo, editavel, mostrarCabecalho, totalGeral, mostrarBotaoDuplicar) {
+    const { cols, subhead } = theadColunas(filiais, modo);
+
+    let corpo = "";
+    linhas.forEach(linha => {
+      corpo += `<tr><td class="rotulo">${escapeHtml(linha.label)}</td>`;
+      filiais.forEach(f => { corpo += celulaLinha(linha, f, tipo, dataStr, modo, editavel); });
+      corpo += celulaTotalLinha(linha, modo);
+      corpo += "</tr>";
+    });
+
+    corpo += construirLinhaResumo("SUBTOTAL", subtotal, filiais, modo, false);
+    if (totalGeral) {
+      corpo += construirLinhaResumo("TOTAL", totalGeral, filiais, modo, true);
+    }
+
+    const botaoDuplicar = mostrarBotaoDuplicar
+      ? `<button type="button" class="btn-duplicar" data-tipo="${tipo}">↻ Duplicar de Anteontem</button>`
+      : "";
+
+    return `
+      <div class="bloco-titulo">${titulo}${botaoDuplicar}</div>
+      <div class="table-wrapper">
+        <table class="tabela-saldos ${classeModo(modo)}">
+          ${colgroupComTotal(filiais, modo)}
+          ${montarThead(cols, subhead, mostrarCabecalho)}
+          <tbody>${corpo}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function montarBlocoVariacao(dia, filiais, modo) {
+    const linhas = [
+      { label: "Contas Bancárias", valores: dia.variacao.contas },
+      ...dia.recebiveis.map(r => ({ label: r.label, valores: r.variacao })),
+      { label: "Total", valores: dia.variacao.total, destaque: true },
+    ];
+
+    let corpo = "";
+    linhas.forEach(l => {
+      corpo += `<tr class="${l.destaque ? "linha-subtotal" : ""}"><td class="rotulo">${l.label}</td>`;
+      let somaLinha = 0;
+      filiais.forEach(f => {
+        const v = l.valores[f.cod_filial] || 0;
+        somaLinha += v;
+        const classeExtra = l.destaque && v < 0 ? "negativo" : "";
+        corpo += `<td class="valor ${classeExtra}">${formatarBR(v)}</td>`;
+      });
+      const classeTotalExtra = l.destaque && somaLinha < 0 ? "negativo" : "";
+      corpo += `<td class="valor total valor-total-coluna ${classeTotalExtra}">${formatarBR(somaLinha)}</td>`;
+      corpo += "</tr>";
+    });
+
+    return `
+      <div class="bloco-titulo">Variação (dia a dia)</div>
+      <div class="table-wrapper">
+        <table class="tabela-saldos tabela-variacao">
+          ${colgroupSimples(filiais, modo)}
+          <tbody>${corpo}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function montarBlocoInformados(dia, filiais, modo, editavel) {
+    const dataStr = dia.data;
+    const campos = [
+      { campo: "perdas_sobras", label: "Perdas (+) / Sobras (−)" },
+      { campo: "extras", label: "Extras" },
+      { campo: "emprestimos_devolucoes", label: "Empréstimos (+) / Devoluções (−)" },
+      { campo: "despesas", label: "Despesas" },
+    ];
+
+    let corpo = "";
+    campos.forEach(c => {
+      corpo += `<tr><td class="rotulo">${c.label}</td>`;
+      let somaLinha = 0;
+      filiais.forEach(f => {
+        const fid = f.cod_filial;
+        const registro = dia.valores_informados[fid] || {};
+        const valor = registro[c.campo] || 0;
+        somaLinha += valor;
+        corpo += `<td class="valor"><input type="text" class="input-valor" data-tipo="informado" data-campo="${c.campo}" data-data="${dataStr}" data-cod-filial="${fid}" value="${formatarBR(valor)}" ${editavel ? "" : "readonly"}></td>`;
+      });
+      corpo += `<td class="valor total valor-total-coluna">${formatarBR(somaLinha)}</td>`;
+      corpo += "</tr>";
+    });
+
+    corpo += `<tr class="linha-subtotal"><td class="rotulo">Variação Final</td>`;
+    let somaFinal = 0;
+    filiais.forEach(f => {
+      const registro = dia.valores_informados[f.cod_filial] || {};
+      const v = registro.variacao_final || 0;
+      somaFinal += v;
+      corpo += `<td class="valor ${v < 0 ? "negativo" : ""}">${formatarBR(v)}</td>`;
+    });
+    corpo += `<td class="valor total valor-total-coluna ${somaFinal < 0 ? "negativo" : ""}">${formatarBR(somaFinal)}</td>`;
+    corpo += "</tr>";
+
+    return `
+      <div class="bloco-titulo">Valores Informados</div>
+      <div class="table-wrapper">
+        <table class="tabela-saldos tabela-informados">
+          ${colgroupSimples(filiais, modo)}
+          <tbody>${corpo}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function montarBlocoDia(dia, filiais, modo, editavel, podeDuplicarContas, podeDuplicarRecebiveis) {
+    const badge = dia.inicio_competencia ? '<span class="badge-competencia">Início da competência</span>' : "";
+
+    // Variação e Valores Informados só fazem sentido em cima do saldo bancário real (modo Bancos)
+    const blocosDeVariacao = modo === "banco"
+      ? `${montarBlocoVariacao(dia, filiais, modo)}${montarBlocoInformados(dia, filiais, modo, editavel)}`
+      : "";
+
+    return `
+      <div class="dia-card">
+        <div class="dia-titulo">${formatarDataBR(dia.data)} ${badge}</div>
+        ${montarTabelaBloco("Contas Bancárias", dia.contas_bancarias, dia.subtotal_contas, "bancario", dia.data, filiais, modo, editavel, true, null, podeDuplicarContas)}
+        ${montarTabelaBloco("Estoques e Recebíveis", dia.recebiveis, dia.subtotal_recebiveis, "recebivel", dia.data, filiais, modo, editavel, false, dia.total, podeDuplicarRecebiveis)}
+        ${blocosDeVariacao}
+      </div>
+    `;
+  }
+
+  function diasAtras(n) {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return formatarDataISO(d);
+  }
+
+  function blocoTotalmenteVazio(linhas, filiais) {
+    return linhas.every(linha =>
+      filiais.every(f => (linha.saldo_banco[f.cod_filial] || 0) === 0 && (linha.saldo_sistema[f.cod_filial] || 0) === 0)
+    );
+  }
+
+  function blocoTemAlgumValor(linhas, filiais) {
+    return linhas.some(linha =>
+      filiais.some(f => (linha.saldo_banco[f.cod_filial] || 0) !== 0 || (linha.saldo_sistema[f.cod_filial] || 0) !== 0)
+    );
+  }
+
+  function renderTudo() {
+    const container = document.getElementById("blocosDias");
+    if (!ultimaResposta || !ultimaResposta.dias || ultimaResposta.dias.length === 0) {
+      container.innerHTML = '<div class="sem-dados">Nenhum dado para o período selecionado.</div>';
+      return;
+    }
+
+    const editavelBase = PODE_LANCAMENTO && MODO_ATUAL !== "lado_a_lado";
+    const rotuloModo = { banco: "BANCOS", sistema: "SISTEMA", lado_a_lado: "LADO A LADO" }[MODO_ATUAL];
+
+    const ontemStr = diasAtras(1);
+    const anteontemStr = diasAtras(2);
+    const diaOntem = ultimaResposta.dias.find(d => d.data === ontemStr);
+    const diaAnteontem = ultimaResposta.dias.find(d => d.data === anteontemStr);
+
+    let podeDuplicarContas = false;
+    let podeDuplicarRecebiveis = false;
+    if (editavelBase && diaOntem && diaAnteontem) {
+      podeDuplicarContas = blocoTotalmenteVazio(diaOntem.contas_bancarias, ultimaResposta.filiais)
+        && blocoTemAlgumValor(diaAnteontem.contas_bancarias, ultimaResposta.filiais);
+      podeDuplicarRecebiveis = blocoTotalmenteVazio(diaOntem.recebiveis, ultimaResposta.filiais)
+        && blocoTemAlgumValor(diaAnteontem.recebiveis, ultimaResposta.filiais);
+    }
+
+    container.innerHTML = `<div class="titulo-modo">${rotuloModo}</div>` + ultimaResposta.dias
+      .map(d => montarBlocoDia(
+        d, ultimaResposta.filiais, MODO_ATUAL,
+        editavelBase && (!DATA_MINIMA_EDITAVEL || d.data >= DATA_MINIMA_EDITAVEL),
+        d.data === ontemStr && podeDuplicarContas,
+        d.data === ontemStr && podeDuplicarRecebiveis
+      ))
+      .join("");
+
+    container.querySelectorAll(".input-valor").forEach(input => {
+      input.addEventListener("input", function () {
+        this.value = formatarNumeroBRDigitando(this.value);
+      });
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          salvarValor(this);
+        }
+      });
+      input.addEventListener("blur", function () {
+        salvarValor(this);
+      });
+      input.addEventListener("focus", function () {
+        this.select();
+      });
+    });
+
+    container.querySelectorAll(".btn-duplicar").forEach(btn => {
+      btn.addEventListener("click", function () {
+        duplicarDeAnteontem(this.dataset.tipo);
+      });
+    });
+
+    aplicarMapaCalorVariacao();
+    aplicarMapaCalorColunaTotal();
+  }
+
+  async function duplicarDeAnteontem(tipo) {
+    const ontemStr = diasAtras(1);
+    const anteontemStr = diasAtras(2);
+    const diaOntem = ultimaResposta.dias.find(d => d.data === ontemStr);
+    const diaAnteontem = ultimaResposta.dias.find(d => d.data === anteontemStr);
+    if (!diaOntem || !diaAnteontem) return;
+
+    const linhasAnteontem = tipo === "bancario" ? diaAnteontem.contas_bancarias : diaAnteontem.recebiveis;
+    const lancamentos = [];
+    linhasAnteontem.forEach(linha => {
+      ultimaResposta.filiais.forEach(f => {
+        const fid = f.cod_filial;
+        const vb = linha.saldo_banco[fid] || 0;
+        const vs = linha.saldo_sistema[fid] || 0;
+        if (tipo === "bancario") {
+          lancamentos.push({ cod_filial: fid, id_conta_bancaria: linha.id_item, saldo_banco: vb, saldo_sistema: vs });
+        } else {
+          lancamentos.push({ cod_filial: fid, id_indicador_recebivel: linha.id_item, valor_banco: vb, valor_sistema: vs });
+        }
+      });
+    });
+
+    const url = tipo === "bancario" ? "/api/saldos/bancarios" : "/api/saldos/recebiveis";
+    const status = document.getElementById("statusSaldos");
+    status.textContent = "Duplicando valores de anteontem...";
+    status.classList.remove("erro");
+
+    try {
+      const data = await fetchJson(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: diaOntem.data, cod_empresa: EMPRESA_ATIVA, lancamentos }),
+      });
+      if (data.ok) {
+        status.textContent = "Valores duplicados com sucesso.";
+        await carregarSaldos();
+      } else {
+        status.textContent = data.erro || "Erro ao duplicar.";
+        status.classList.add("erro");
+      }
+    } catch (e) {
+      status.textContent = e.message || "Erro ao duplicar.";
+      status.classList.add("erro");
+    }
+  }
+
+  // ---------------- MAPA DE CALOR (igual ao matricial.html) ----------------
+
+  function getCorCalor(ratio) {
+    let r, g, b;
+    if (ratio <= 0.5) {
+      const t = ratio / 0.5;
+      r = 248 + (255 - 248) * t;
+      g = 105 + (235 - 105) * t;
+      b = 107 + (132 - 107) * t;
+    } else {
+      const t = (ratio - 0.5) / 0.5;
+      r = 255 + (99 - 255) * t;
+      g = 235 + (190 - 235) * t;
+      b = 132 + (123 - 132) * t;
+    }
+    return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+  }
+
+  function aplicarMapaCalorVariacao() {
+    document.querySelectorAll(".tabela-variacao tbody tr:not(.linha-subtotal)").forEach(linha => {
+      const celulas = Array.from(linha.querySelectorAll("td.valor:not(.valor-total-coluna)"));
+      const valores = celulas.map(c => paraNumero(c.textContent));
+
+      if (valores.length < 2) return;
+
+      const min = Math.min(...valores);
+      const max = Math.max(...valores);
+
+      celulas.forEach((celula, i) => {
+        const valor = valores[i];
+        let ratio = (valor - min) / ((max - min) || 1);
+        ratio = Math.round(ratio * 50) / 50;
+        celula.style.background = getCorCalor(ratio);
+      });
+    });
+  }
+
+  function aplicarMapaCalorColunaTotal() {
+    document.querySelectorAll(".tabela-variacao, .tabela-informados").forEach(tabela => {
+      const celulas = Array.from(tabela.querySelectorAll("tbody tr:not(.linha-subtotal) td.valor-total-coluna"));
+      const valores = celulas.map(c => paraNumero(c.textContent));
+
+      if (valores.length < 2) return;
+
+      const min = Math.min(...valores);
+      const max = Math.max(...valores);
+
+      celulas.forEach((celula, i) => {
+        let ratio = (valores[i] - min) / ((max - min) || 1);
+        ratio = Math.round(ratio * 50) / 50;
+        celula.style.background = getCorCalor(ratio);
+      });
+    });
+  }
+
+  // ---------------- SALVAMENTO ----------------
+
+  async function salvarValor(input) {
+    if (input.dataset.salvando === "1") return;
+    input.dataset.salvando = "1";
+
+    const tipo = input.dataset.tipo;
+    const campo = input.dataset.campo;
+    const dataStr = input.dataset.data;
+    const codFilial = Number(input.dataset.codFilial);
+    const novoValor = paraNumero(input.value);
+
+    const dia = ultimaResposta.dias.find(d => d.data === dataStr);
+    const status = document.getElementById("statusSaldos");
+    status.textContent = "Salvando...";
+    status.classList.remove("erro");
+
+    let url, payload;
+
+    if (tipo === "informado") {
+      const registro = dia.valores_informados[codFilial] || {
+        perdas_sobras: 0, extras: 0, emprestimos_devolucoes: 0, despesas: 0,
+      };
+      const lancamento = {
+        cod_filial: codFilial,
+        perdas_sobras: registro.perdas_sobras || 0,
+        extras: registro.extras || 0,
+        emprestimos_devolucoes: registro.emprestimos_devolucoes || 0,
+        despesas: registro.despesas || 0,
+      };
+      lancamento[campo] = novoValor;
+      url = "/api/saldos/valores-informados";
+      payload = { data: dataStr, cod_empresa: EMPRESA_ATIVA, lancamentos: [lancamento] };
+    } else {
+      const idItem = Number(input.dataset.idItem);
+      const lista = tipo === "bancario" ? dia.contas_bancarias : dia.recebiveis;
+      const item = lista.find(x => x.id_item === idItem);
+
+      let valorBanco = item.saldo_banco[codFilial] || 0;
+      let valorSistema = item.saldo_sistema[codFilial] || 0;
+      if (campo === "saldo_banco") valorBanco = novoValor; else valorSistema = novoValor;
+
+      if (tipo === "bancario") {
+        url = "/api/saldos/bancarios";
+        payload = {
+          data: dataStr, cod_empresa: EMPRESA_ATIVA,
+          lancamentos: [{ cod_filial: codFilial, id_conta_bancaria: idItem, saldo_banco: valorBanco, saldo_sistema: valorSistema }],
+        };
+      } else {
+        url = "/api/saldos/recebiveis";
+        payload = {
+          data: dataStr, cod_empresa: EMPRESA_ATIVA,
+          lancamentos: [{ cod_filial: codFilial, id_indicador_recebivel: idItem, valor_banco: valorBanco, valor_sistema: valorSistema }],
+        };
+      }
+    }
+
+    try {
+      const data = await fetchJson(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (data.ok) {
+        status.textContent = "Salvo.";
+        setTimeout(() => { if (status.textContent === "Salvo.") status.textContent = ""; }, 1500);
+        agendarAtualizacaoSuave();
+      } else {
+        status.textContent = data.erro || "Erro ao salvar.";
+        status.classList.add("erro");
+      }
+    } catch (e) {
+      status.textContent = e.message || "Erro ao salvar.";
+      status.classList.add("erro");
+    } finally {
+      input.dataset.salvando = "0";
+    }
+  }
+
+  // ---------------- CARREGAMENTO / PERÍODO ----------------
+
+  let timeoutAtualizacaoSuave = null;
+
+  function agendarAtualizacaoSuave() {
+    if (timeoutAtualizacaoSuave) clearTimeout(timeoutAtualizacaoSuave);
+    timeoutAtualizacaoSuave = setTimeout(function tentar() {
+      const focoAtual = document.activeElement;
+      const digitando = focoAtual && focoAtual.classList && focoAtual.classList.contains("input-valor");
+      if (digitando) {
+        timeoutAtualizacaoSuave = setTimeout(tentar, 1500);
+        return;
+      }
+      carregarSaldos();
+    }, 1500);
+  }
+
+  async function carregarStatusLiberacao() {
+    const elBanner = document.getElementById("bannerLiberacao");
+    try {
+      const data = await fetchJson("/api/saldos/liberacao-temporaria");
+      DATA_MINIMA_EDITAVEL = data.data_minima_editavel;
+      if (data.ativa) {
+        const expira = new Date(data.expira_em);
+        const hora = String(expira.getHours()).padStart(2, "0") + ":" + String(expira.getMinutes()).padStart(2, "0");
+        elBanner.textContent = `Liberação temporária ativa (por ${data.ativado_por}): edição liberada desde ${formatarDataBR(data.data_liberada_desde)} até ${hora}.`;
+        elBanner.style.display = "block";
+      } else {
+        elBanner.style.display = "none";
+      }
+    } catch (e) {
+      // se não conseguir checar, mantém o limite normal (ontem/anteontem) já assumido pelo servidor
+    }
+  }
+
+  async function carregarSaldos() {
+    const idArea = document.getElementById("selArea").value;
+    const dataInicio = document.getElementById("dataInicio").value;
+    const dataFim = document.getElementById("dataFim").value;
+    if (!idArea || !dataInicio || !dataFim) return;
+
+    const status = document.getElementById("statusSaldos");
+    status.textContent = "Carregando...";
+    status.classList.remove("erro");
+
+    try {
+      await carregarStatusLiberacao();
+      const data = await fetchJson(`/api/saldos?id_area=${idArea}&data_inicio=${dataInicio}&data_fim=${dataFim}`);
+      if (!data.ok) {
+        status.textContent = data.erro || "Erro ao carregar.";
+        status.classList.add("erro");
+        document.getElementById("blocosDias").innerHTML = "";
+        return;
+      }
+      ultimaResposta = normalizarResposta(data);
+      status.textContent = "";
+      renderTudo();
+    } catch (e) {
+      status.textContent = e.message || "Erro ao carregar.";
+      status.classList.add("erro");
+    }
+  }
+
+  function definirPeriodoOntemAnteontem() {
+    const hoje = new Date();
+    const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1);
+    const anteontem = new Date(hoje); anteontem.setDate(hoje.getDate() - 2);
+    document.getElementById("dataInicio").value = formatarDataISO(anteontem);
+    document.getElementById("dataFim").value = formatarDataISO(ontem);
+  }
+
+  async function definirPeriodoDesdeInicioMes() {
+    const hoje = new Date();
+    const idArea = document.getElementById("selArea").value;
+    const ano = hoje.getFullYear();
+    const mesAtualStr = `${ano}-${String(hoje.getMonth() + 1).padStart(2, "0")}-01`;
+    let dataInicioStr = mesAtualStr;
+
+    try {
+      const data = await fetchJson(`/api/competencias?id_area=${idArea}&ano=${ano}`);
+      const comp = (data.competencias || []).find(c => c.mes_ano.substring(0, 10) === mesAtualStr);
+      if (comp) dataInicioStr = comp.data_corte_inicio.substring(0, 10);
+    } catch (e) { /* mantém o fallback do dia 1 do mês */ }
+
+    const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1);
+    document.getElementById("dataInicio").value = dataInicioStr;
+    document.getElementById("dataFim").value = formatarDataISO(ontem);
+    carregarSaldos();
+  }
+
+  document.getElementById("chipOntemAnteontem").addEventListener("click", () => {
+    definirPeriodoOntemAnteontem();
+    carregarSaldos();
+  });
+
+  document.getElementById("chipMes").addEventListener("click", definirPeriodoDesdeInicioMes);
+  document.getElementById("btnAtualizar").addEventListener("click", carregarSaldos);
+  document.getElementById("selArea").addEventListener("change", carregarSaldos);
+
+  function deslocarPeriodo(deltaDias) {
+    const inicio = parseDataISO(document.getElementById("dataInicio").value);
+    const fim = parseDataISO(document.getElementById("dataFim").value);
+    inicio.setDate(inicio.getDate() + deltaDias);
+    fim.setDate(fim.getDate() + deltaDias);
+    document.getElementById("dataInicio").value = formatarDataISO(inicio);
+    document.getElementById("dataFim").value = formatarDataISO(fim);
+    carregarSaldos();
+  }
+
+  document.getElementById("btnPeriodoAnterior").addEventListener("click", () => deslocarPeriodo(-1));
+  document.getElementById("btnPeriodoProximo").addEventListener("click", () => deslocarPeriodo(1));
+
+  document.querySelectorAll(".modo-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".modo-btn").forEach(b => b.classList.remove("ativo"));
+      btn.classList.add("ativo");
+      MODO_ATUAL = btn.dataset.modo;
+      renderTudo();
+    });
+  });
+
+  definirPeriodoOntemAnteontem();
+  carregarSaldos();
+</script>
+
+{% endblock %}

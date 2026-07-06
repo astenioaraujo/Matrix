@@ -1,0 +1,633 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 8px;
+    color: #111;
+  }
+
+  .pagina-subtitulo {
+    font-size: 20px;
+    margin-bottom: 24px;
+    color: #222;
+  }
+
+  .abas {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+
+  .aba-btn {
+    padding: 10px 20px;
+    border-radius: 10px 10px 0 0;
+    border: 1px solid #d9d9d9;
+    border-bottom: none;
+    background: #eee;
+    font-weight: 700;
+    cursor: pointer;
+    color: #444;
+  }
+
+  .aba-btn.ativa {
+    background: #fff;
+    color: #111;
+    border-color: #1a73e8;
+    box-shadow: 0 -2px 0 #1a73e8 inset;
+  }
+
+  .aba-conteudo {
+    display: none;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 0 10px 10px 10px;
+    padding: 20px;
+  }
+
+  .aba-conteudo.ativa {
+    display: block;
+  }
+
+  .topo-aba {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+
+  .btn-mini {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .btn-mini.excluir {
+    border-color: #c0392b;
+    background: #c0392b;
+  }
+
+  .btn-mini:hover {
+    filter: brightness(0.92);
+  }
+
+  .btn-novo {
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .linha-form-acesso {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+
+  .linha-form-acesso select {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #bbb;
+    min-width: 200px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+  }
+
+  th {
+    background: #dbe8f4;
+  }
+
+  td input[type="text"],
+  td input[type="number"],
+  td input[type="month"],
+  td input[type="date"],
+  td select {
+    width: 100%;
+    padding: 6px 8px;
+    box-sizing: border-box;
+    border-radius: 6px;
+    border: 1px solid #bbb;
+  }
+
+  td.col-ativo, td.col-acoes {
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .status-msg {
+    font-size: 13px;
+    margin-top: 10px;
+    color: #1e6b34;
+    min-height: 18px;
+  }
+
+  .status-msg.erro {
+    color: #9f2f2f;
+  }
+</style>
+
+<div class="pagina-titulo">Cadastros de Saldos</div>
+
+<div class="pagina-subtitulo">
+  <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<div class="abas">
+  <div class="aba-btn ativa" data-aba="contas">Contas Bancárias</div>
+  <div class="aba-btn" data-aba="indicadores">Indicadores de Recebíveis</div>
+  <div class="aba-btn" data-aba="competencia">Competência</div>
+  <div class="aba-btn" data-aba="acesso-area">Acesso por Área</div>
+  <div class="aba-btn" data-aba="liberacao-temp">Liberação Temporária</div>
+</div>
+
+<div class="aba-conteudo ativa" id="aba-contas">
+  <div class="topo-aba">
+    <div>Contas comuns a todas as áreas da empresa.</div>
+    <button type="button" class="btn-novo" id="btnNovaConta">+ Nova Conta</button>
+  </div>
+  <table>
+    <thead>
+      <tr><th style="width:90px">Ordem</th><th>Banco</th><th>Apelido</th><th style="width:70px">Ativo</th><th style="width:150px">Ações</th></tr>
+    </thead>
+    <tbody id="corpoContas"></tbody>
+  </table>
+  <div class="status-msg" id="statusContas"></div>
+</div>
+
+<div class="aba-conteudo" id="aba-indicadores">
+  <div class="topo-aba">
+    <div>Indicadores do bloco Estoques e Recebíveis, comuns a todas as áreas.</div>
+    <button type="button" class="btn-novo" id="btnNovoIndicador">+ Novo Indicador</button>
+  </div>
+  <table>
+    <thead>
+      <tr><th style="width:90px">Ordem</th><th>Nome</th><th style="width:70px">Ativo</th><th style="width:150px">Ações</th></tr>
+    </thead>
+    <tbody id="corpoIndicadores"></tbody>
+  </table>
+  <div class="status-msg" id="statusIndicadores"></div>
+</div>
+
+<div class="aba-conteudo" id="aba-competencia">
+  <div class="topo-aba">
+    <div>Data de corte de competência (último dia válido do mês anterior), por área.</div>
+    <button type="button" class="btn-novo" id="btnNovaCompetencia">+ Nova Competência</button>
+  </div>
+  <table>
+    <thead>
+      <tr><th>Área</th><th>Mês/Ano</th><th>Data de Corte</th><th style="width:150px">Ações</th></tr>
+    </thead>
+    <tbody id="corpoCompetencias"></tbody>
+  </table>
+  <div class="status-msg" id="statusCompetencias"></div>
+</div>
+
+<div class="aba-conteudo" id="aba-acesso-area">
+  <div class="topo-aba">
+    <div>Quem pode ver e lançar saldos de cada área. Sem acesso concedido aqui, o usuário não vê a área na tela de Saldos.</div>
+  </div>
+  <div class="linha-form-acesso">
+    <select id="selUsuarioAcesso">
+      {% for u in usuarios %}
+        <option value="{{ u.id_usuario }}">{{ u.nome }}</option>
+      {% endfor %}
+    </select>
+    <select id="selAreaAcesso">
+      {% for a in areas %}
+        <option value="{{ a.id_area }}">{{ a.nome_area }}</option>
+      {% endfor %}
+    </select>
+    <button type="button" class="btn-novo" id="btnConcederAcesso">+ Conceder Acesso</button>
+  </div>
+  <table>
+    <thead>
+      <tr><th>Usuário</th><th>Área</th><th style="width:150px">Ações</th></tr>
+    </thead>
+    <tbody id="corpoAcessoArea"></tbody>
+  </table>
+  <div class="status-msg" id="statusAcessoArea"></div>
+</div>
+
+<div class="aba-conteudo" id="aba-liberacao-temp">
+  <div class="topo-aba">
+    <div>
+      Normalmente só é possível lançar/editar ontem e anteontem. Liberar aqui permite editar
+      a partir de uma data mais antiga — mas dura só <strong>1 hora</strong> depois de ativado,
+      voltando sozinho ao normal em seguida.
+    </div>
+  </div>
+  <div class="linha-form-acesso">
+    <input type="date" id="dataLiberacaoDesde">
+    <button type="button" class="btn-novo" id="btnLiberarTemp">Liberar Temporariamente</button>
+  </div>
+  <div id="statusLiberacaoAtual" style="margin-bottom:14px; font-weight:700;"></div>
+  <div class="status-msg" id="statusLiberacaoTemp"></div>
+</div>
+
+<script>
+  const AREAS = [
+    {% for a in areas %}
+      { id_area: {{ a.id_area }}, nome_area: {{ a.nome_area|tojson }} },
+    {% endfor %}
+  ];
+
+  function escapeHtml(texto) {
+    const div = document.createElement("div");
+    div.textContent = texto || "";
+    return div.innerHTML;
+  }
+
+  async function fetchJson(url, opcoes) {
+    const resp = await fetch(url, opcoes);
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+    }
+    return resp.json();
+  }
+
+  document.querySelectorAll(".aba-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".aba-btn").forEach(b => b.classList.remove("ativa"));
+      document.querySelectorAll(".aba-conteudo").forEach(c => c.classList.remove("ativa"));
+      btn.classList.add("ativa");
+      document.getElementById("aba-" + btn.dataset.aba).classList.add("ativa");
+    });
+  });
+
+  function mostrarStatus(idStatus, mensagem, erro) {
+    const el = document.getElementById(idStatus);
+    el.textContent = mensagem;
+    el.classList.toggle("erro", !!erro);
+    if (!erro) setTimeout(() => { el.textContent = ""; }, 2500);
+  }
+
+  // ---------------- CONTAS BANCÁRIAS ----------------
+  function linhaConta(c) {
+    const tr = document.createElement("tr");
+    tr.dataset.id = c ? c.id_conta_bancaria : "";
+    tr.innerHTML = `
+      <td><input type="number" class="input-ordem" value="${c ? c.ordem : 10}"></td>
+      <td><input type="text" class="input-banco" value="${c ? escapeHtml(c.banco) : ''}" placeholder="Nome do banco"></td>
+      <td><input type="text" class="input-apelido" value="${c && c.apelido ? escapeHtml(c.apelido) : ''}" placeholder="Opcional"></td>
+      <td class="col-ativo"><input type="checkbox" class="input-ativo" ${(!c || c.ativo) ? "checked" : ""}></td>
+      <td class="col-acoes">
+        <button type="button" class="btn-mini">Salvar</button>
+        ${c ? '<button type="button" class="btn-mini excluir">Excluir</button>' : ""}
+      </td>
+    `;
+    tr.querySelector(".btn-mini").addEventListener("click", () => salvarConta(tr));
+    const btnExcluir = tr.querySelector(".btn-mini.excluir");
+    if (btnExcluir) btnExcluir.addEventListener("click", () => excluirConta(tr));
+    return tr;
+  }
+
+  async function carregarContas() {
+    try {
+      const data = await fetchJson("/api/contas-bancarias");
+      const corpo = document.getElementById("corpoContas");
+      corpo.innerHTML = "";
+      (data.contas_bancarias || []).forEach(c => corpo.appendChild(linhaConta(c)));
+    } catch (e) {
+      mostrarStatus("statusContas", e.message || "Erro ao carregar.", true);
+    }
+  }
+
+  async function salvarConta(tr) {
+    const id = tr.dataset.id;
+    const payload = {
+      banco: tr.querySelector(".input-banco").value.trim(),
+      apelido: tr.querySelector(".input-apelido").value.trim(),
+      ordem: Number(tr.querySelector(".input-ordem").value || 10),
+      ativo: tr.querySelector(".input-ativo").checked,
+    };
+    if (!payload.banco) {
+      mostrarStatus("statusContas", "Informe o banco.", true);
+      return;
+    }
+    try {
+      const data = await fetchJson(id ? `/api/contas-bancarias/${id}` : "/api/contas-bancarias", {
+        method: id ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (data.ok) {
+        mostrarStatus("statusContas", "Salvo com sucesso.", false);
+        carregarContas();
+      } else {
+        mostrarStatus("statusContas", data.erro || "Erro ao salvar.", true);
+      }
+    } catch (e) {
+      mostrarStatus("statusContas", e.message || "Erro ao salvar.", true);
+    }
+  }
+
+  async function excluirConta(tr) {
+    if (!confirm("Excluir esta conta bancária?")) return;
+    try {
+      const data = await fetchJson(`/api/contas-bancarias/${tr.dataset.id}`, { method: "DELETE" });
+      if (data.ok) {
+        mostrarStatus("statusContas", "Excluída com sucesso.", false);
+        carregarContas();
+      } else {
+        mostrarStatus("statusContas", data.erro || "Erro ao excluir.", true);
+      }
+    } catch (e) {
+      mostrarStatus("statusContas", e.message || "Erro ao excluir.", true);
+    }
+  }
+
+  document.getElementById("btnNovaConta").addEventListener("click", () => {
+    document.getElementById("corpoContas").prepend(linhaConta(null));
+  });
+
+  // ---------------- INDICADORES DE RECEBÍVEIS ----------------
+  function linhaIndicador(ind) {
+    const tr = document.createElement("tr");
+    tr.dataset.id = ind ? ind.id_indicador_recebivel : "";
+    tr.innerHTML = `
+      <td><input type="number" class="input-ordem" value="${ind ? ind.ordem : 10}"></td>
+      <td><input type="text" class="input-nome" value="${ind ? escapeHtml(ind.nome) : ''}" placeholder="Nome do indicador"></td>
+      <td class="col-ativo"><input type="checkbox" class="input-ativo" ${(!ind || ind.ativo) ? "checked" : ""}></td>
+      <td class="col-acoes">
+        <button type="button" class="btn-mini">Salvar</button>
+        ${ind ? '<button type="button" class="btn-mini excluir">Excluir</button>' : ""}
+      </td>
+    `;
+    tr.querySelector(".btn-mini").addEventListener("click", () => salvarIndicador(tr));
+    const btnExcluir = tr.querySelector(".btn-mini.excluir");
+    if (btnExcluir) btnExcluir.addEventListener("click", () => excluirIndicador(tr));
+    return tr;
+  }
+
+  async function carregarIndicadores() {
+    try {
+      const data = await fetchJson("/api/indicadores-recebiveis");
+      const corpo = document.getElementById("corpoIndicadores");
+      corpo.innerHTML = "";
+      (data.indicadores_recebiveis || []).forEach(i => corpo.appendChild(linhaIndicador(i)));
+    } catch (e) {
+      mostrarStatus("statusIndicadores", e.message || "Erro ao carregar.", true);
+    }
+  }
+
+  async function salvarIndicador(tr) {
+    const id = tr.dataset.id;
+    const payload = {
+      nome: tr.querySelector(".input-nome").value.trim(),
+      ordem: Number(tr.querySelector(".input-ordem").value || 10),
+      ativo: tr.querySelector(".input-ativo").checked,
+    };
+    if (!payload.nome) {
+      mostrarStatus("statusIndicadores", "Informe o nome.", true);
+      return;
+    }
+    try {
+      const data = await fetchJson(id ? `/api/indicadores-recebiveis/${id}` : "/api/indicadores-recebiveis", {
+        method: id ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (data.ok) {
+        mostrarStatus("statusIndicadores", "Salvo com sucesso.", false);
+        carregarIndicadores();
+      } else {
+        mostrarStatus("statusIndicadores", data.erro || "Erro ao salvar.", true);
+      }
+    } catch (e) {
+      mostrarStatus("statusIndicadores", e.message || "Erro ao salvar.", true);
+    }
+  }
+
+  async function excluirIndicador(tr) {
+    if (!confirm("Excluir este indicador?")) return;
+    try {
+      const data = await fetchJson(`/api/indicadores-recebiveis/${tr.dataset.id}`, { method: "DELETE" });
+      if (data.ok) {
+        mostrarStatus("statusIndicadores", "Excluído com sucesso.", false);
+        carregarIndicadores();
+      } else {
+        mostrarStatus("statusIndicadores", data.erro || "Erro ao excluir.", true);
+      }
+    } catch (e) {
+      mostrarStatus("statusIndicadores", e.message || "Erro ao excluir.", true);
+    }
+  }
+
+  document.getElementById("btnNovoIndicador").addEventListener("click", () => {
+    document.getElementById("corpoIndicadores").prepend(linhaIndicador(null));
+  });
+
+  // ---------------- COMPETÊNCIA ----------------
+  function nomeArea(idArea) {
+    const a = AREAS.find(x => x.id_area === idArea);
+    return a ? a.nome_area : idArea;
+  }
+
+  function linhaCompetencia(comp) {
+    const tr = document.createElement("tr");
+    const mesAnoValor = comp ? comp.mes_ano.substring(0, 7) : "";
+    tr.innerHTML = `
+      <td>
+        <select class="input-area" ${comp ? "disabled" : ""}>
+          ${AREAS.map(a => `<option value="${a.id_area}" ${comp && comp.id_area === a.id_area ? "selected" : ""}>${escapeHtml(a.nome_area)}</option>`).join("")}
+        </select>
+      </td>
+      <td><input type="month" class="input-mes-ano" value="${mesAnoValor}" ${comp ? "disabled" : ""}></td>
+      <td><input type="date" class="input-corte" value="${comp ? comp.data_corte_inicio.substring(0, 10) : ''}"></td>
+      <td class="col-acoes"><button type="button" class="btn-mini">Salvar</button></td>
+    `;
+    tr.querySelector(".btn-mini").addEventListener("click", () => salvarCompetencia(tr));
+    return tr;
+  }
+
+  async function carregarCompetencias() {
+    const corpo = document.getElementById("corpoCompetencias");
+    corpo.innerHTML = "";
+    try {
+      for (const area of AREAS) {
+        const data = await fetchJson(`/api/competencias?id_area=${area.id_area}`);
+        (data.competencias || []).forEach(c => corpo.appendChild(linhaCompetencia(c)));
+      }
+    } catch (e) {
+      mostrarStatus("statusCompetencias", e.message || "Erro ao carregar.", true);
+    }
+  }
+
+  async function salvarCompetencia(tr) {
+    const payload = {
+      id_area: Number(tr.querySelector(".input-area").value),
+      mes_ano: tr.querySelector(".input-mes-ano").value + "-01",
+      data_corte_inicio: tr.querySelector(".input-corte").value,
+    };
+    if (!payload.mes_ano || payload.mes_ano === "-01" || !payload.data_corte_inicio) {
+      mostrarStatus("statusCompetencias", "Preencha mês/ano e data de corte.", true);
+      return;
+    }
+    try {
+      const data = await fetchJson("/api/competencias", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (data.ok) {
+        mostrarStatus("statusCompetencias", "Salvo com sucesso.", false);
+        carregarCompetencias();
+      } else {
+        mostrarStatus("statusCompetencias", data.erro || "Erro ao salvar.", true);
+      }
+    } catch (e) {
+      mostrarStatus("statusCompetencias", e.message || "Erro ao salvar.", true);
+    }
+  }
+
+  document.getElementById("btnNovaCompetencia").addEventListener("click", () => {
+    document.getElementById("corpoCompetencias").prepend(linhaCompetencia(null));
+  });
+
+  // ---------------- ACESSO POR ÁREA ----------------
+  function linhaAcessoArea(acesso) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(acesso.nome_usuario)}</td>
+      <td>${escapeHtml(acesso.nome_area)}</td>
+      <td class="col-acoes"><button type="button" class="btn-mini excluir">Remover</button></td>
+    `;
+    tr.querySelector(".btn-mini.excluir").addEventListener("click", () => excluirAcessoArea(acesso.id_usuario_area_saldo));
+    return tr;
+  }
+
+  async function carregarAcessoArea() {
+    try {
+      const data = await fetchJson("/api/usuarios-areas-saldos");
+      const corpo = document.getElementById("corpoAcessoArea");
+      corpo.innerHTML = "";
+      (data.acessos || []).forEach(a => corpo.appendChild(linhaAcessoArea(a)));
+    } catch (e) {
+      mostrarStatus("statusAcessoArea", e.message || "Erro ao carregar.", true);
+    }
+  }
+
+  async function concederAcessoArea() {
+    const id_usuario = Number(document.getElementById("selUsuarioAcesso").value);
+    const id_area = Number(document.getElementById("selAreaAcesso").value);
+
+    if (!id_usuario || !id_area) {
+      mostrarStatus("statusAcessoArea", "Selecione usuário e área.", true);
+      return;
+    }
+
+    try {
+      const data = await fetchJson("/api/usuarios-areas-saldos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id_usuario, id_area }),
+      });
+      if (data.ok) {
+        mostrarStatus("statusAcessoArea", "Acesso concedido com sucesso.", false);
+        carregarAcessoArea();
+      } else {
+        mostrarStatus("statusAcessoArea", data.erro || "Erro ao conceder acesso.", true);
+      }
+    } catch (e) {
+      mostrarStatus("statusAcessoArea", e.message || "Erro ao conceder acesso.", true);
+    }
+  }
+
+  async function excluirAcessoArea(id) {
+    if (!confirm("Remover este acesso?")) return;
+    try {
+      const data = await fetchJson(`/api/usuarios-areas-saldos/${id}`, { method: "DELETE" });
+      if (data.ok) {
+        mostrarStatus("statusAcessoArea", "Acesso removido com sucesso.", false);
+        carregarAcessoArea();
+      } else {
+        mostrarStatus("statusAcessoArea", data.erro || "Erro ao remover.", true);
+      }
+    } catch (e) {
+      mostrarStatus("statusAcessoArea", e.message || "Erro ao remover.", true);
+    }
+  }
+
+  document.getElementById("btnConcederAcesso").addEventListener("click", concederAcessoArea);
+
+  // ---------------- LIBERAÇÃO TEMPORÁRIA ----------------
+  function formatarDataBR(dataIso) {
+    const [ano, mes, dia] = dataIso.split("-");
+    return `${dia}/${mes}/${ano}`;
+  }
+
+  async function carregarStatusLiberacaoTemp() {
+    const elStatus = document.getElementById("statusLiberacaoAtual");
+    try {
+      const data = await fetchJson("/api/saldos/liberacao-temporaria");
+      if (data.ativa) {
+        const expira = new Date(data.expira_em);
+        const hora = String(expira.getHours()).padStart(2, "0") + ":" + String(expira.getMinutes()).padStart(2, "0");
+        elStatus.textContent = `Liberação ATIVA (por ${data.ativado_por}): desde ${formatarDataBR(data.data_liberada_desde)}, expira às ${hora}.`;
+        elStatus.style.color = "#8a4b00";
+      } else {
+        elStatus.textContent = `Sem liberação ativa. Hoje só é possível editar a partir de ${formatarDataBR(data.data_minima_editavel)}.`;
+        elStatus.style.color = "#444";
+      }
+    } catch (e) {
+      mostrarStatus("statusLiberacaoTemp", e.message || "Erro ao carregar.", true);
+    }
+  }
+
+  async function ativarLiberacaoTemp() {
+    const dataLiberacao = document.getElementById("dataLiberacaoDesde").value;
+    if (!dataLiberacao) {
+      mostrarStatus("statusLiberacaoTemp", "Selecione a data.", true);
+      return;
+    }
+    try {
+      const data = await fetchJson("/api/saldos/liberacao-temporaria", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data_liberada_desde: dataLiberacao }),
+      });
+      if (data.ok) {
+        mostrarStatus("statusLiberacaoTemp", "Liberado com sucesso por 1 hora.", false);
+        carregarStatusLiberacaoTemp();
+      } else {
+        mostrarStatus("statusLiberacaoTemp", data.erro || "Erro ao liberar.", true);
+      }
+    } catch (e) {
+      mostrarStatus("statusLiberacaoTemp", e.message || "Erro ao liberar.", true);
+    }
+  }
+
+  document.getElementById("btnLiberarTemp").addEventListener("click", ativarLiberacaoTemp);
+
+  carregarContas();
+  carregarIndicadores();
+  carregarCompetencias();
+  carregarAcessoArea();
+  carregarStatusLiberacaoTemp();
+</script>
+
+{% endblock %}

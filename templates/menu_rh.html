@@ -120,6 +120,18 @@
     </a>
   {% endif %}
 
+  {% if pode_funcoes %}
+    <a href="{{ url_for('rh.funcoes') }}" class="btn-informar">
+      Cadastrar Funções
+    </a>
+  {% endif %}
+
+  {% if pode_consultar_funcoes %}
+    <a href="{{ url_for('rh.consultar_funcoes') }}" class="btn-consultar">
+      Consultar Funções
+    </a>
+  {% endif %}
+
 </div>
 
 {% endblock %}

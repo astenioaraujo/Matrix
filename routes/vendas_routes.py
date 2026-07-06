@@ -157,6 +157,30 @@ def formatar_data_brasil(dt):
     except Exception:
         return dt.strftime("%d/%m/%y")
 
+def normalizar_nome_filial_importacao(nome):
+    if not nome:
+        return ""
+
+    texto = str(nome).strip().upper()
+    texto = re.sub(r"\s+", " ", texto)
+
+    return texto
+
+
+def localizar_filial_por_nome_importacao(nome_planilha, mapa_filiais):
+    nome_planilha_norm = normalizar_nome_filial_importacao(nome_planilha)
+
+    if not nome_planilha_norm:
+        return None
+
+    for nome_padrao, cod_filial in mapa_filiais.items():
+        tamanho = len(nome_padrao)
+
+        if nome_planilha_norm[:tamanho] == nome_padrao:
+            return cod_filial
+
+    return None
+
 
 def cor_excel_51(valor, minimo, maximo):
     try:
@@ -1278,8 +1302,10 @@ def vendas_importar_diarias():
 
         mapa_filiais = {}
         for cod_filial, nome_importacao in filiais_db:
-            if nome_importacao:
-                mapa_filiais[str(nome_importacao).strip().upper()] = int(cod_filial)
+            nome_norm = normalizar_nome_filial_importacao(nome_importacao)
+
+            if nome_norm:
+                mapa_filiais[nome_norm] = int(cod_filial)
 
         dados = []
         linhas_ignoradas = 0
@@ -1315,8 +1341,13 @@ def vendas_importar_diarias():
             col_d = str(linha[3] or "").strip()
 
             if col_a.upper().startswith("FILIAL:"):
-                nome_filial_planilha = col_a.split(":", 1)[1].strip().upper()
-                filial_atual = mapa_filiais.get(nome_filial_planilha)
+                nome_filial_planilha = col_a.split(":", 1)[1].strip()
+
+                filial_atual = localizar_filial_por_nome_importacao(
+                    nome_filial_planilha,
+                    mapa_filiais
+                )
+
                 data_atual = None
                 dia_semana_atual = ""
                 continue
