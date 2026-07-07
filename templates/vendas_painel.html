@@ -453,10 +453,6 @@
   </div>
 
   <div class="acoes-topo">
-    <a class="btn-topo btn-importar-painel" href="{{ url_for('vendas.vendas_importar_painel') }}">
-      Importar Painel
-    </a>
-
   </div>
 
   {% if resumo_projecao %}
@@ -490,6 +486,11 @@
       <div class="resumo-linha">
         <div class="rotulo">QTD/DIA</div>
         <div class="valor">{{ formatar_numero_br(resumo_projecao.qtd_dia) }}</div>
+      </div>
+
+      <div class="resumo-linha">
+        <div class="rotulo">MB/DIA</div>
+        <div class="valor">{{ formatar_numero_br(resumo_projecao.mb_dia) }}</div>
       </div>
     </div>
   </div>

@@ -124,8 +124,22 @@
   <form method="get">
     <div class="linha-filtro">
       <div>
-        <label for="mes_ref">Mês de Referência</label>
-        <input type="month" id="mes_ref" name="mes_ref" value="{{ mes_ref }}">
+        <label for="sel_mes">Mês</label>
+        <select id="sel_mes" name="sel_mes">
+          {% set nomes_meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'] %}
+          {% for i in range(1, 13) %}
+            <option value="{{ i }}" {% if i == mes_num %}selected{% endif %}>{{ nomes_meses[i-1] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label for="sel_ano">Ano</label>
+        <select id="sel_ano" name="sel_ano">
+          {% for a in anos_disponiveis %}
+            <option value="{{ a }}" {% if a == ano_num %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
       </div>
 
       <button type="submit" class="btn">Filtrar</button>

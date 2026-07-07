@@ -112,7 +112,7 @@ def listar_importacoes():
         erro=erro,
         empresa_ativa=session["cod_empresa"],
         nome_empresa_ativa=session["nome_empresa"],
-        url_voltar=url_for("financeiro.menu_empresa"),
+        url_voltar=url_for("financeiro.menu_fluxo_caixa"),
         texto_voltar="← Voltar"
     )
 
@@ -297,6 +297,37 @@ def transferir_importacoes():
         if pendentes > 0:
             session["erro_importacoes"] = (
                 f"Transferência negada. Existem {pendentes} lançamento(s) sem grupo e/ou conta."
+            )
+            return redirect(url_for("importacoes.listar_importacoes"))
+
+        # Verificar se já existem lançamentos para os mesmos períodos (ano/mês) em importacoes
+        cur.execute("""
+            SELECT DISTINCT ano, mes
+            FROM importacoes
+            WHERE cod_empresa = %s
+              AND ano IS NOT NULL AND mes IS NOT NULL
+            ORDER BY ano, mes
+        """, (cod_empresa,))
+        periodos_importacao = cur.fetchall()
+
+        periodos_com_dados = []
+        for ano_imp, mes_imp in periodos_importacao:
+            cur.execute("""
+                SELECT COUNT(*)
+                FROM lancamentos
+                WHERE cod_empresa = %s
+                  AND ano = %s
+                  AND mes = %s
+            """, (cod_empresa, ano_imp, mes_imp))
+            qtd = cur.fetchone()[0]
+            if qtd > 0:
+                periodos_com_dados.append(f"{str(mes_imp).zfill(2)}/{ano_imp}")
+
+        if periodos_com_dados:
+            session["erro_importacoes"] = (
+                "Transferência bloqueada. Já existem lançamentos nos seguintes períodos: "
+                + ", ".join(periodos_com_dados)
+                + ". Exclua os lançamentos existentes antes de importar."
             )
             return redirect(url_for("importacoes.listar_importacoes"))
 

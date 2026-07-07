@@ -122,6 +122,53 @@
     font-weight: 600;
     margin-top: 2px;
   }
+
+  .col-sel {
+    width: 36px;
+    min-width: 36px;
+    text-align: center;
+    position: sticky;
+    left: 0;
+    z-index: 25;
+    background: #f1f1f1;
+  }
+
+  .tabela-permissoes tbody td.col-sel {
+    background: #fff;
+    box-shadow: none;
+    z-index: 15;
+  }
+
+  .tabela-permissoes tbody td.col-usuario {
+    left: 36px;
+  }
+
+  .tabela-permissoes thead th.col-usuario {
+    left: 36px;
+  }
+
+  .barra-comparar {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .btn-comparar {
+    padding: 9px 20px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 14px;
+    background: #6a1b9a;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+  }
+
+  .btn-comparar:hover { background: #4a148c; }
+  .btn-comparar:disabled { background: #bbb; cursor: default; }
+
+  #label-sel { font-size: 13px; color: #555; }
 </style>
 
 <div class="pagina-titulo">Permissão por Sistema e Atividades</div>
@@ -129,10 +176,16 @@
   Empresa: <strong>{{ nome_empresa }}</strong>
 </div>
 
+<div class="barra-comparar">
+  <button class="btn-comparar" id="btn-comparar" disabled onclick="abrirComparar()">Comparar / Editar selecionados</button>
+  <span id="label-sel">Nenhum usuário selecionado</span>
+</div>
+
 <div class="table-wrapper">
   <table class="tabela-permissoes">
     <thead>
       <tr>
+        <th class="col-sel"><input type="checkbox" id="chk-sel-todos" title="Selecionar todos" onchange="toggleSelecionarTodos(this)"></th>
         <th class="col-usuario">Usuário</th>
         <th>Email</th>
         <th>Perfil</th>
@@ -148,6 +201,7 @@
     <tbody>
       {% for u in usuarios %}
       <tr>
+        <td class="col-sel"><input type="checkbox" class="chk-sel-usuario" value="{{ u.id_usuario }}" onchange="atualizarSelecao()"></td>
         <td class="col-usuario">{{ u.nome }}</td>
         <td>{{ u.email }}</td>
         <td>{{ u.perfil_empresa }}</td>
@@ -178,6 +232,35 @@
 </div>
 
 <script>
+function atualizarSelecao() {
+  const selecionados = Array.from(document.querySelectorAll(".chk-sel-usuario:checked"));
+  const btn = document.getElementById("btn-comparar");
+  const label = document.getElementById("label-sel");
+  btn.disabled = selecionados.length === 0;
+  if (selecionados.length === 0) {
+    label.textContent = "Nenhum usuário selecionado";
+  } else {
+    label.textContent = selecionados.length + " usuário(s) selecionado(s)";
+  }
+  const todos = document.querySelectorAll(".chk-sel-usuario");
+  document.getElementById("chk-sel-todos").indeterminate =
+    selecionados.length > 0 && selecionados.length < todos.length;
+  document.getElementById("chk-sel-todos").checked =
+    selecionados.length === todos.length;
+}
+
+function toggleSelecionarTodos(chk) {
+  document.querySelectorAll(".chk-sel-usuario").forEach(c => c.checked = chk.checked);
+  atualizarSelecao();
+}
+
+function abrirComparar() {
+  const ids = Array.from(document.querySelectorAll(".chk-sel-usuario:checked")).map(c => c.value);
+  if (ids.length === 0) return;
+  const params = ids.map(id => "ids=" + id).join("&");
+  window.location.href = '{{ url_for("usuarios.permissoes_comparar") }}?' + params;
+}
+
 document.querySelectorAll(".chk-permissao").forEach(function(chk) {
   chk.addEventListener("change", function() {
     const formData = new URLSearchParams();

@@ -220,6 +220,43 @@
     background: #ececec !important;
     box-shadow: 2px 0 4px rgba(0,0,0,0.06);
   }
+
+  .filtro-grupo-wrap { position: relative; display: inline-block; }
+  .filtro-grupo-btn {
+    padding: 8px 28px 8px 12px;
+    border: 1px solid #c7c7c7;
+    border-radius: 8px;
+    background: #fff;
+    font-size: 14px;
+    cursor: pointer;
+    min-width: 160px;
+    text-align: left;
+  }
+  .filtro-grupo-btn::after { content: " ▾"; }
+  .filtro-grupo-dropdown {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 8px 0;
+    min-width: 220px;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  }
+  .filtro-grupo-dropdown.aberto { display: block; }
+  .filtro-grupo-item {
+    padding: 5px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .filtro-grupo-item:hover { background: #f0f4ff; }
+  .filtro-grupo-sep { border-top: 1px solid #eee; margin: 4px 0; }
 </style>
 
 <div class="page-matricial">
@@ -268,6 +305,39 @@
                 Carregar
             </button>
         </div>
+
+        <div>
+          <label>Grupos</label><br>
+          <div class="filtro-grupo-wrap">
+            <button type="button" class="filtro-grupo-btn" id="btn-filtro-grupo" onclick="toggleFiltroGrupo()">
+              Todos os grupos
+            </button>
+            <div class="filtro-grupo-dropdown" id="dropdown-grupos">
+              <div class="filtro-grupo-item">
+                <input type="checkbox" id="chk-todos-grupos" checked onchange="toggleTodosGrupos(this)">
+                <label for="chk-todos-grupos" style="cursor:pointer;">Selecionar tudo</label>
+              </div>
+              <div class="filtro-grupo-sep"></div>
+              {% for grupo in grupos_ordenados %}
+              <div class="filtro-grupo-item">
+                <input type="checkbox" class="chk-grupo" value="{{ grupo.grupo }}" id="chk-g-{{ grupo.grupo }}" checked onchange="atualizarFiltroGrupo()">
+                <label for="chk-g-{{ grupo.grupo }}" style="cursor:pointer;">
+                  Grupo {{ grupo.grupo }}
+                  {% if grupo.grupo|string == '1' %} - Receitas Operacionais
+                  {% elif grupo.grupo|string == '2' %} - Receitas Não Operacionais
+                  {% elif grupo.grupo|string == '3' %} - Custos / Produtos
+                  {% elif grupo.grupo|string == '4' %} - Despesas
+                  {% elif grupo.grupo|string == '5' %} - Saídas Não Operacionais
+                  {% elif grupo.grupo|string == '6' %} - Dividendos
+                  {% elif grupo.grupo|string == '7' %} - Transferências
+                  {% endif %}
+                </label>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
     </div>
   </form>
 
@@ -364,6 +434,44 @@
 </div>
 
 <script>
+    function toggleFiltroGrupo() {
+      document.getElementById("dropdown-grupos").classList.toggle("aberto");
+    }
+
+    document.addEventListener("click", function(e) {
+      if (!e.target.closest(".filtro-grupo-wrap")) {
+        document.getElementById("dropdown-grupos").classList.remove("aberto");
+      }
+    });
+
+    function toggleTodosGrupos(chk) {
+      document.querySelectorAll(".chk-grupo").forEach(c => c.checked = chk.checked);
+      atualizarFiltroGrupo();
+    }
+
+    function atualizarFiltroGrupo() {
+      const selecionados = Array.from(document.querySelectorAll(".chk-grupo:checked")).map(c => c.value);
+      const todos = document.querySelectorAll(".chk-grupo");
+      document.getElementById("chk-todos-grupos").checked = (selecionados.length === todos.length);
+
+      // Atualiza label do botão
+      const btn = document.getElementById("btn-filtro-grupo");
+      if (selecionados.length === todos.length) {
+        btn.textContent = "Todos os grupos";
+      } else if (selecionados.length === 0) {
+        btn.textContent = "Nenhum grupo";
+      } else {
+        btn.textContent = "Grupos: " + selecionados.join(", ");
+      }
+      btn.insertAdjacentText("beforeend", " ▾");
+
+      // Mostra/oculta linhas e blocos de grupo
+      document.querySelectorAll("tr[data-grupo]").forEach(tr => {
+        const g = String(tr.getAttribute("data-grupo"));
+        tr.style.display = selecionados.includes(g) ? "" : "none";
+      });
+    }
+
     function mudarMes(delta) {
         const selectMes = document.getElementById("mes");
         const selectAno = document.getElementById("ano");

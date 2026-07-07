@@ -96,6 +96,7 @@ def menu_operacoes():
             "pode_consultar_descarregos": True,
             "pode_consultar_resumo_descarregos": True,
             "pode_consultar_estoques": True,
+            "pode_consultar_perdas_sobras": True,
             "pode_consultar_vendas": True,
             "pode_consultar_emprestimos": True,
             "pode_consultar_saldo_emprestimos": True,
@@ -139,6 +140,9 @@ def menu_operacoes():
             ),
             "pode_consultar_estoques": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_ESTOQUES"
+            ),
+            "pode_consultar_perdas_sobras": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_PERDAS_SOBRAS"
             ),
             "pode_consultar_vendas": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_VENDAS"
@@ -3324,12 +3328,20 @@ def consultar_perdas_sobras():
 
     hoje = hoje_br()
 
+    sel_mes = (request.args.get("sel_mes") or "").strip()
+    sel_ano = (request.args.get("sel_ano") or "").strip()
+
+    # compatibilidade com parâmetro antigo mes_ref
     mes_ref = (request.args.get("mes_ref") or "").strip()
 
-    if not mes_ref:
-        mes_ref = hoje.strftime("%Y-%m")
-
-    ano, mes = map(int, mes_ref.split("-"))
+    if sel_mes and sel_ano:
+        mes = int(sel_mes)
+        ano = int(sel_ano)
+    elif mes_ref:
+        ano, mes = map(int, mes_ref.split("-"))
+    else:
+        ano = hoje.year
+        mes = hoje.month
 
     data_ini = date(ano, mes, 1)
 
@@ -3580,13 +3592,17 @@ def consultar_perdas_sobras():
         cur.close()
         conn.close()
 
+    anos_disponiveis = list(range(hoje.year - 3, hoje.year + 1))
+
     return render_template(
         "consultar_perdas_sobras.html",
         cod_empresa=cod_empresa,
         nome_empresa=nome_empresa,
         ano=ano,
         mes=mes,
-        mes_ref=mes_ref,
+        mes_num=mes,
+        ano_num=ano,
+        anos_disponiveis=anos_disponiveis,
         ultimo_dia=ultimo_dia,
         dias=dias_com_dados,
         linhas=linhas,

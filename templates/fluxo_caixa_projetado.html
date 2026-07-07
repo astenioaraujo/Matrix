@@ -1,0 +1,387 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 10px; }
+  .empresa { font-size: 20px; margin-bottom: 20px; }
+
+  .barra-controles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: flex-end;
+    margin-bottom: 20px;
+  }
+
+  .controle-label { font-weight: 700; font-size: 13px; display: block; margin-bottom: 5px; }
+
+  /* navegador de ano */
+  .nav-ano {
+    display: flex; align-items: center; gap: 6px;
+    border: 1px solid #bbb; border-radius: 8px;
+    overflow: hidden; height: 36px;
+  }
+  .nav-ano button {
+    width: 34px; height: 36px;
+    border: none; border-right: 1px solid #bbb;
+    background: #f1f1f1; font-size: 16px;
+    font-weight: 900; cursor: pointer;
+  }
+  .nav-ano button:last-child { border-right: none; border-left: 1px solid #bbb; }
+  .nav-ano button:hover { background: #ddd; }
+  .nav-ano span {
+    min-width: 60px; text-align: center;
+    font-weight: 800; font-size: 16px;
+  }
+
+  /* toggle visualização */
+  .vis-toggle {
+    display: flex; align-items: center;
+    border: 1px solid #bbb; border-radius: 8px;
+    overflow: hidden; height: 36px;
+  }
+  .vis-toggle input[type=radio] { display: none; }
+  .vis-toggle label {
+    margin: 0; padding: 0 14px; height: 100%;
+    display: flex; align-items: center;
+    font-weight: 700; font-size: 13px;
+    cursor: pointer; background: #f1f1f1; color: #555;
+  }
+  .vis-toggle input[type=radio]:checked + label { background: #1565c0; color: #fff; }
+
+  /* filtro de grupos estilo Excel */
+  .filtro-grupo-wrap { position: relative; }
+  .filtro-grupo-btn {
+    height: 36px; padding: 0 30px 0 12px;
+    border: 1px solid #bbb; border-radius: 8px;
+    background: #fff; font-size: 13px; font-weight: 700;
+    cursor: pointer; position: relative; min-width: 160px;
+    text-align: left;
+  }
+  .filtro-grupo-btn::after {
+    content: "▼"; position: absolute; right: 10px; top: 50%;
+    transform: translateY(-50%); font-size: 10px; color: #666;
+  }
+  .filtro-grupo-dropdown {
+    display: none;
+    position: absolute; top: calc(100% + 4px); left: 0;
+    background: #fff; border: 1px solid #bbb; border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    z-index: 100; min-width: 200px;
+    padding: 6px 0; max-height: 280px; overflow-y: auto;
+  }
+  .filtro-grupo-dropdown.aberto { display: block; }
+  .filtro-grupo-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 14px; cursor: pointer; font-size: 13px;
+  }
+  .filtro-grupo-item:hover { background: #f0f4ff; }
+  .filtro-grupo-item input[type=checkbox] { cursor: pointer; }
+  .filtro-grupo-sep { border-top: 1px solid #eee; margin: 4px 0; }
+
+  /* botões */
+  .btn {
+    height: 36px; padding: 0 16px; border-radius: 8px;
+    border: 1px solid #1565c0; background: #1565c0;
+    color: #fff; font-weight: 700; font-size: 13px; cursor: pointer;
+  }
+  .btn-voltar {
+    display: inline-flex; align-items: center;
+    height: 36px; padding: 0 16px; border-radius: 8px;
+    border: 1px solid #444; background: #444;
+    color: #fff; font-weight: 700; font-size: 13px;
+    text-decoration: none; margin-bottom: 20px;
+  }
+
+  /* tabela */
+  .painel {
+    width: max-content; min-width: calc(100vw - 40px);
+    background: #fff; border: 1px solid #d9d9d9;
+    border-radius: 16px; padding: 20px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    overflow-x: auto;
+  }
+
+  table { border-collapse: collapse; font-size: 13px; width: max-content; }
+
+  th, td { border: 1px solid #dcdcdc; padding: 5px 8px; white-space: nowrap; }
+  th { background: #f1f1f1; font-weight: 800; text-align: center; }
+
+  .col-desc  { width: 260px; }
+  .col-num   { width: 110px; text-align: right; }
+  .col-total { width: 120px; text-align: right; font-weight: 900; background: #fffbe6; }
+
+  .linha-grupo td {
+    background: #1565c0; color: #fff;
+    font-weight: 900; font-size: 13px;
+  }
+  .linha-grupo .col-num,
+  .linha-grupo .col-total { background: #1565c0; color: #fff; }
+
+  .linha-conta td { background: #fff; }
+
+  .linha-total-geral td {
+    background: #263238; color: #fff;
+    font-weight: 900; font-size: 13px;
+  }
+  .linha-total-geral .col-num,
+  .linha-total-geral .col-total { background: #263238; color: #fff; }
+
+  .positivo { color: #2e7d32; }
+  .negativo { color: #c62828; }
+  .linha-grupo .positivo,
+  .linha-grupo .negativo,
+  .linha-total-geral .positivo,
+  .linha-total-geral .negativo { color: #fff; }
+
+  .projetado { font-style: italic; opacity: 0.75; }
+
+  /* ocultar contas no modo sintético */
+  .modo-sintetico .linha-conta { display: none; }
+
+  /* modo margem bruta: oculta grupos 1/2/3 e contas deles; mostra linha-mb */
+  .linha-mb { display: none; }
+  .modo-mb .linha-mb { display: table-row; }
+  .modo-mb .linha-grupo-123,
+  .modo-mb .linha-conta-123,
+  .modo-mb .linha-grupo-7,
+  .modo-mb .linha-conta-7 { display: none; }
+
+  .linha-mb td {
+    background: #1b5e20; color: #fff;
+    font-weight: 900; font-size: 13px;
+  }
+  .linha-mb .col-num,
+  .linha-mb .col-total { background: #1b5e20; color: #fff; }
+</style>
+
+<div class="pagina-titulo">Fluxo de Caixa Projetado</div>
+<div class="empresa"><strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}</div>
+
+
+<div class="barra-controles">
+
+  <!-- Navegador de ano -->
+  <div>
+    <span class="controle-label">Ano</span>
+    <div class="nav-ano">
+      <button type="button" onclick="mudarAno(-1)">←</button>
+      <span id="ano-display">{{ ano_sel }}</span>
+      <button type="button" onclick="mudarAno(1)">→</button>
+    </div>
+  </div>
+
+  <!-- Visualização -->
+  <div>
+    <span class="controle-label">Visualização</span>
+    <div class="vis-toggle">
+      <input type="radio" name="vis" id="vis-analitico" value="analitico" checked>
+      <label for="vis-analitico">Analítico</label>
+      <input type="radio" name="vis" id="vis-sintetico" value="sintetico">
+      <label for="vis-sintetico">Sintético</label>
+    </div>
+  </div>
+
+  <!-- Tipo de análise -->
+  <div>
+    <span class="controle-label">Tipo de Análise</span>
+    <div class="vis-toggle">
+      <input type="radio" name="tipo" id="tipo-fluxo" value="fluxo" checked>
+      <label for="tipo-fluxo">Fluxo de Caixa</label>
+      <input type="radio" name="tipo" id="tipo-mb" value="mb">
+      <label for="tipo-mb">Margem Bruta</label>
+    </div>
+  </div>
+
+  <!-- Filtro de grupos -->
+  <div class="filtro-grupo-wrap">
+    <span class="controle-label">Grupos</span>
+    <button type="button" class="filtro-grupo-btn" id="btn-filtro-grupo" onclick="toggleFiltroGrupo()">
+      Todos os grupos
+    </button>
+    <div class="filtro-grupo-dropdown" id="dropdown-grupos">
+      <div class="filtro-grupo-item">
+        <input type="checkbox" id="chk-todos" checked onchange="toggleTodos(this)">
+        <label for="chk-todos" style="cursor:pointer;font-weight:700;">(Selecionar tudo)</label>
+      </div>
+      <div class="filtro-grupo-sep"></div>
+      {% for g in todos_grupos %}
+      <div class="filtro-grupo-item">
+        <input type="checkbox" class="chk-grupo" value="{{ g }}" id="chk-g-{{ g }}" checked onchange="atualizarFiltro()">
+        <label for="chk-g-{{ g }}" style="cursor:pointer;">Grupo {{ g }}</label>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+
+<div class="painel">
+  <div id="wrapper-tabela">
+    <table id="tabela-fluxo">
+      <thead>
+        <tr>
+          <th class="col-desc">Descrição</th>
+          {% for m in meses %}
+            <th class="col-num {% if ano_aberto and m >= mes_atual %}projetado{% endif %}">
+              {{ nomes_meses[m-1] }}{% if ano_aberto and m >= mes_atual %} *{% endif %}
+            </th>
+          {% endfor %}
+          <th class="col-total">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- linha MB (visível só no modo margem bruta) -->
+        <tr class="linha-mb">
+          <td class="col-desc">0 - Margem Bruta</td>
+          {% for m in meses %}
+            {% set v = mb_por_mes[m] %}
+            <td class="col-num {% if v.projetado %}projetado{% endif %} {% if v.valor < 0 %}negativo{% elif v.valor > 0 %}positivo{% endif %}">
+              {{ formatar_numero_br(v.valor) if v.valor != 0 else "" }}
+            </td>
+          {% endfor %}
+          <td class="col-total {% if total_mb < 0 %}negativo{% elif total_mb > 0 %}positivo{% endif %}">
+            {{ formatar_numero_br(total_mb) }}
+          </td>
+        </tr>
+
+        <!-- espaçador entre MB e despesas operacionais (só no modo margem bruta) -->
+        <tr class="linha-mb linha-mb-sep">
+          <td colspan="{{ meses|length + 2 }}" style="background: #f5f5f5; height: 12px; border: none;"></td>
+        </tr>
+
+        {% for grupo in grupos %}
+        <!-- linha do grupo -->
+        <tr class="linha-grupo linha-fluxo {% if grupo.grupo in ['1','2','3'] %}linha-grupo-123{% endif %} {% if grupo.grupo == '7' %}linha-grupo-7{% endif %}" data-grupo="{{ grupo.grupo }}">
+          <td class="col-desc">{{ grupo.grupo }}{% if grupo.nome_grupo %} - {{ grupo.nome_grupo }}{% endif %}</td>
+          {% for m in meses %}
+            {% set v = grupo.total_mes[m] %}
+            <td class="col-num {% if v.projetado %}projetado{% endif %} {% if v.valor < 0 %}negativo{% elif v.valor > 0 %}positivo{% endif %}">
+              {{ formatar_numero_br(v.valor) if v.valor != 0 else "" }}
+            </td>
+          {% endfor %}
+          <td class="col-total {% if grupo.total < 0 %}negativo{% elif grupo.total > 0 %}positivo{% endif %}">
+            {{ formatar_numero_br(grupo.total) }}
+          </td>
+        </tr>
+        <!-- linhas das contas -->
+        {% for conta in grupo.contas %}
+        <tr class="linha-conta linha-fluxo {% if grupo.grupo in ['1','2','3'] %}linha-conta-123{% endif %} {% if grupo.grupo == '7' %}linha-conta-7{% endif %}" data-grupo="{{ grupo.grupo }}">
+          <td class="col-desc" style="padding-left:24px;">{{ conta.cod_conta }} - {{ conta.descricao }}</td>
+          {% for m in meses %}
+            {% set v = conta.valores[m] %}
+            <td class="col-num {% if v.projetado %}projetado{% endif %} {% if v.valor < 0 %}negativo{% elif v.valor > 0 %}positivo{% endif %}">
+              {{ formatar_numero_br(v.valor) if v.valor != 0 else "" }}
+            </td>
+          {% endfor %}
+          <td class="col-total {% if conta.total < 0 %}negativo{% elif conta.total > 0 %}positivo{% endif %}">
+            {{ formatar_numero_br(conta.total) }}
+          </td>
+        </tr>
+        {% endfor %}
+        {% endfor %}
+
+        <!-- total geral — modo fluxo -->
+        <tr class="linha-total-geral total-fluxo">
+          <td class="col-desc">SALDO</td>
+          {% for m in meses %}
+            {% set v = totais_mes[m] %}
+            <td class="col-num {% if v.projetado %}projetado{% endif %} {% if v.valor < 0 %}negativo{% elif v.valor > 0 %}positivo{% endif %}">
+              {{ formatar_numero_br(v.valor) if v.valor != 0 else "" }}
+            </td>
+          {% endfor %}
+          <td class="col-total {% if total_geral < 0 %}negativo{% elif total_geral > 0 %}positivo{% endif %}">
+            {{ formatar_numero_br(total_geral) }}
+          </td>
+        </tr>
+
+        <!-- saldo — modo margem bruta -->
+        <tr class="linha-total-geral total-mb" style="display:none;">
+          <td class="col-desc">SALDO</td>
+          {% for m in meses %}
+            {% set v = totais_mes_mb[m] %}
+            <td class="col-num {% if v.projetado %}projetado{% endif %} {% if v.valor < 0 %}negativo{% elif v.valor > 0 %}positivo{% endif %}">
+              {{ formatar_numero_br(v.valor) if v.valor != 0 else "" }}
+            </td>
+          {% endfor %}
+          <td class="col-total {% if total_saldo_mb < 0 %}negativo{% elif total_saldo_mb > 0 %}positivo{% endif %}">
+            {{ formatar_numero_br(total_saldo_mb) }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    {% if ano_aberto %}
+    <p style="font-size:12px;color:#888;margin-top:8px;">* Meses projetados com base na média dos meses realizados.</p>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+  let anoAtual = {{ ano_sel }};
+
+  function mudarAno(delta) {
+    anoAtual += delta;
+    document.getElementById("ano-display").textContent = anoAtual;
+    window.location.href = "?ano=" + anoAtual;
+  }
+
+  const wrapper = document.getElementById("wrapper-tabela");
+
+  // Visualização sintético/analítico
+  document.querySelectorAll('input[name="vis"]').forEach(r => {
+    r.addEventListener("change", function() {
+      if (this.value === "sintetico") wrapper.classList.add("modo-sintetico");
+      else wrapper.classList.remove("modo-sintetico");
+    });
+  });
+
+  // Tipo de análise: fluxo / margem bruta
+  document.querySelectorAll('input[name="tipo"]').forEach(r => {
+    r.addEventListener("change", function() {
+      const modoMB = this.value === "mb";
+      wrapper.classList.toggle("modo-mb", modoMB);
+      document.querySelector(".total-fluxo").style.display = modoMB ? "none" : "";
+      document.querySelector(".total-mb").style.display   = modoMB ? "" : "none";
+    });
+  });
+
+  // Filtro de grupos
+  function toggleFiltroGrupo() {
+    document.getElementById("dropdown-grupos").classList.toggle("aberto");
+  }
+
+  document.addEventListener("click", function(e) {
+    const wrap = document.querySelector(".filtro-grupo-wrap");
+    if (!wrap.contains(e.target)) {
+      document.getElementById("dropdown-grupos").classList.remove("aberto");
+    }
+  });
+
+  function toggleTodos(chk) {
+    document.querySelectorAll(".chk-grupo").forEach(c => { c.checked = chk.checked; });
+    atualizarFiltro();
+  }
+
+  function atualizarFiltro() {
+    const marcados = Array.from(document.querySelectorAll(".chk-grupo:checked")).map(c => c.value);
+    const todos = document.querySelectorAll(".chk-grupo");
+    document.getElementById("chk-todos").checked = (marcados.length === todos.length);
+
+    document.querySelectorAll("tr[data-grupo]").forEach(tr => {
+      const g = tr.getAttribute("data-grupo");
+      tr.style.display = marcados.includes(g) ? "" : "none";
+    });
+
+    // atualizar label do botão
+    const btn = document.getElementById("btn-filtro-grupo");
+    if (marcados.length === todos.length) btn.textContent = "Todos os grupos";
+    else if (marcados.length === 0) btn.textContent = "Nenhum grupo";
+    else btn.textContent = "Grupos: " + marcados.join(", ");
+
+    // recolocar o ▼
+    btn.style.paddingRight = "30px";
+  }
+</script>
+
+{% endblock %}

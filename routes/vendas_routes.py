@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, session, redirect, url_for, request, flash
+from security_helpers import permissao_obrigatoria
 import psycopg2
 from psycopg2.extras import RealDictCursor, execute_values
 from openpyxl import load_workbook
@@ -304,6 +305,7 @@ def aplicar_heatmap_consulta(linhas):
     if not linhas:
         return linhas
     return aplicar_heatmap_variacoes(linhas, ["quantidade", "valor", "mb", "mun"])
+
 
 
 def localizar_total_filial(ws, nome_busca):
@@ -666,6 +668,7 @@ def montar_resumo_projecao(grade_unidades, grade_valores, grade_mb, dias_mes=Non
 
     mun = (mb / quantidade) if quantidade else 0.0
     qtd_dia = (quantidade / dias_mes) if dias_mes else 0.0
+    mb_dia = (mb / dias_mes) if dias_mes else 0.0
 
     return {
         "titulo": f"PROJEÇÃO {ultima_qtd['periodo'].upper()}",
@@ -675,6 +678,7 @@ def montar_resumo_projecao(grade_unidades, grade_valores, grade_mb, dias_mes=Non
         "mb": mb,
         "mun": mun,
         "qtd_dia": qtd_dia,
+        "mb_dia": mb_dia,
         "dias_mes": dias_mes
     }
 
@@ -779,6 +783,7 @@ def atualizar_job_importacao(
 # PAINEL
 # =========================
 @vendas_bp.route("/painel")
+@permissao_obrigatoria("VENDAS", "CONSULTAR_PAINEL", redirecionar_para="vendas.menu_vendas")
 def vendas_painel():
     if "id_usuario" not in session:
         return redirect(url_for("auth.index"))
@@ -904,7 +909,7 @@ def vendas_painel():
 # IMPORTAÇÃO DO PAINEL
 # =========================
 @vendas_bp.route("/painel/importar", methods=["GET", "POST"])
-@vendas_bp.route("/painel/importar", methods=["GET", "POST"])
+@permissao_obrigatoria("VENDAS", "IMPORTAR_PAINEL", redirecionar_para="vendas.menu_vendas")
 def vendas_importar_painel():
     if "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
@@ -921,8 +926,8 @@ def vendas_importar_painel():
             mes_sugerido=padrao["mes"],
             dia_base_sugerido=padrao["dia_base"],
             dias_mes_sugerido=padrao["dias_mes"],
-            url_voltar=url_for("vendas.vendas_painel"),
-            texto_voltar="← Voltar para Painel"
+            url_voltar=url_for("sistema.menu_vendas"),
+            texto_voltar="← Voltar"
         )
 
     arquivo = request.files.get("arquivo")
@@ -1020,6 +1025,53 @@ def vendas_importar_painel():
 
         wb = load_workbook(tmp.name, data_only=True)
         ws = wb.worksheets[0]
+
+        # --- validação prévia de filiais ---
+        # Coleta nomes de filiais presentes no Excel (células col A imediatamente antes de "TOTAL FILIAL:")
+        nomes_painel_excel = set()
+        ultima_col_a = None
+        for rl in range(1, 10000):
+            val_cel = ws.cell(row=rl, column=1).value
+            txt_cel = str(val_cel).strip().upper() if val_cel is not None else ""
+            if txt_cel == "TOTAL FILIAL:":
+                if ultima_col_a:
+                    nomes_painel_excel.add(ultima_col_a)
+            if txt_cel:
+                ultima_col_a = txt_cel
+
+        filiais_nao_encontradas = []
+        for f in filiais:
+            nome_busca = f["nome_filial_importacao"]
+            if not nome_busca:
+                continue
+            if not localizar_total_filial(ws, nome_busca):
+                filiais_nao_encontradas.append(nome_busca)
+
+        # Filiais no Excel que não batem com nenhuma do cadastro
+        nomes_db_upper = [
+            str(f["nome_filial_importacao"]).strip().upper()
+            for f in filiais
+            if f["nome_filial_importacao"]
+        ]
+        excel_sem_cadastro = [
+            n for n in sorted(nomes_painel_excel)
+            if not any(db in n or n in db for db in nomes_db_upper)
+            and n not in ("TOTAL FILIAL:", "")
+        ]
+
+        if filiais_nao_encontradas:
+            flash(
+                "ATENÇÃO — As seguintes filiais do cadastro NÃO foram encontradas no arquivo Excel e NÃO serão importadas: "
+                + ", ".join(filiais_nao_encontradas),
+                "error"
+            )
+        if excel_sem_cadastro:
+            flash(
+                "ATENÇÃO — As seguintes entradas do Excel NÃO correspondem a nenhuma filial do cadastro: "
+                + ", ".join(excel_sem_cadastro),
+                "warning"
+            )
+        # --- fim validação ---
 
         cur2 = conn.cursor()
 
@@ -1151,8 +1203,8 @@ def vendas_importar_painel():
         mes_sugerido=mes,
         dia_base_sugerido=dia_base,
         dias_mes_sugerido=dias_mes,
-        url_voltar=url_for("vendas.vendas_painel"),
-        texto_voltar="← Voltar para Painel"
+        url_voltar=url_for("sistema.menu_vendas"),
+        texto_voltar="← Voltar para o Menu"
     )
 
 
@@ -1306,6 +1358,51 @@ def vendas_importar_diarias():
 
             if nome_norm:
                 mapa_filiais[nome_norm] = int(cod_filial)
+
+        # --- validação prévia de filiais ---
+        nomes_excel = set()
+        for row_val in ws.iter_rows(min_row=1, values_only=True):
+            col_a = str(row_val[0] if row_val else "").strip()
+            if col_a.upper().startswith("FILIAL:"):
+                nome_filial_planilha = col_a.split(":", 1)[1].strip()
+                if nome_filial_planilha:
+                    nomes_excel.add(nome_filial_planilha)
+        ws.reset_dimensions()
+
+        nomes_db_norm = {normalizar_nome_filial_importacao(ni): ni for _, ni in filiais_db if ni}
+
+        filiais_excel_sem_cadastro = [
+            n for n in sorted(nomes_excel)
+            if localizar_filial_por_nome_importacao(n, mapa_filiais) is None
+        ]
+        filiais_db_sem_excel = [
+            ni for norm_ni, ni in nomes_db_norm.items()
+            if not any(
+                normalizar_nome_filial_importacao(n)[:len(norm_ni)] == norm_ni
+                for n in nomes_excel
+            )
+        ]
+
+        if filiais_excel_sem_cadastro:
+            atualizar_job_importacao(
+                cur, job_id, etapa="validacao",
+                mensagem="Aviso: filiais no Excel sem cadastro",
+                percentual=16
+            )
+            conn.commit()
+            flash(
+                "ATENÇÃO — As seguintes filiais estão no Excel mas NÃO foram encontradas no cadastro (não serão importadas): "
+                + ", ".join(filiais_excel_sem_cadastro),
+                "error"
+            )
+
+        if filiais_db_sem_excel:
+            flash(
+                "ATENÇÃO — As seguintes filiais do cadastro NÃO foram encontradas no arquivo Excel e NÃO serão importadas: "
+                + ", ".join(sorted(filiais_db_sem_excel)),
+                "error"
+            )
+        # --- fim validação ---
 
         dados = []
         linhas_ignoradas = 0

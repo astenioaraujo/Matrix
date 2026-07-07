@@ -3221,11 +3221,21 @@ def consulta_fluxo_pagamentos_emprestimos_financiamentos():
 def fluxo_caixa_projetado():
     if "id_usuario" not in session:
         return redirect(url_for("auth.index"))
-
     if "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
 
     cod_empresa = str(session["cod_empresa"]).strip()
+    hoje = date.today()
+    ano_atual = hoje.year
+    mes_atual = hoje.month
+
+    try:
+        ano_sel = int(request.args.get("ano") or ano_atual)
+    except ValueError:
+        ano_sel = ano_atual
+
+    ano_aberto = (ano_sel == ano_atual)
+    meses = list(range(1, 13))
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -3233,87 +3243,172 @@ def fluxo_caixa_projetado():
     try:
         cur.execute("""
             SELECT
-                grupo,
-                COALESCE(NULLIF(TRIM(descricao_conta), ''), 'SEM DESCRIÇÃO') AS descricao,
-                ano,
-                mes,
-                COALESCE(SUM(valor), 0) AS valor
-            FROM lancamentos
-            WHERE cod_empresa = %s
-              AND grupo IS NOT NULL
-              AND ano IS NOT NULL
-              AND mes IS NOT NULL
-            GROUP BY
-                grupo,
-                COALESCE(NULLIF(TRIM(descricao_conta), ''), 'SEM DESCRIÇÃO'),
-                ano,
-                mes
-            ORDER BY
-                ano,
-                mes,
-                grupo,
-                descricao
-        """, (cod_empresa,))
-
+                l.grupo,
+                COALESCE(gg.descricao, '') AS nome_grupo,
+                l.conta,
+                COALESCE(NULLIF(TRIM(l.descricao_conta), ''), 'SEM DESCRIÇÃO') AS descricao,
+                l.mes,
+                COALESCE(SUM(l.valor), 0) AS valor
+            FROM lancamentos l
+            LEFT JOIN grupos_gerenciais gg
+              ON gg.cod_grupo = l.grupo
+            WHERE l.cod_empresa = %s
+              AND l.ano = %s
+              AND l.grupo IS NOT NULL
+              AND l.mes IS NOT NULL
+            GROUP BY l.grupo, gg.descricao, l.conta,
+                COALESCE(NULLIF(TRIM(l.descricao_conta), ''), 'SEM DESCRIÇÃO'),
+                l.mes
+            ORDER BY l.grupo, l.conta, descricao, l.mes
+        """, (cod_empresa, ano_sel))
         registros = cur.fetchall()
+
+        cur.execute("""
+            SELECT DISTINCT grupo
+            FROM lancamentos
+            WHERE cod_empresa = %s AND grupo IS NOT NULL
+            ORDER BY grupo
+        """, (cod_empresa,))
+        todos_grupos = [str(r["grupo"]) for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT mes, COALESCE(SUM(margem_bruta), 0) AS mb
+            FROM vendas_mb_sintetico
+            WHERE cod_empresa = %s AND ano = %s
+            GROUP BY mes
+            ORDER BY mes
+        """, (cod_empresa, ano_sel))
+        mb_registros = cur.fetchall()
 
     finally:
         cur.close()
         conn.close()
 
-    periodos = sorted({
-        (int(r["ano"]), int(r["mes"]))
-        for r in registros
-    })
+    # Montar MB por mês com projeção
+    mb_vals = {int(r["mes"]): float(r["mb"] or 0) for r in mb_registros}
+    meses_base_mb = mes_atual - 1
+    proj_mb = (sum(mb_vals.get(m, 0) for m in range(1, mes_atual)) / meses_base_mb) if meses_base_mb > 0 else 0.0
 
-    linhas_mapa = {}
+    mb_por_mes = {}
+    for m in meses:
+        if ano_aberto and m >= mes_atual:
+            mb_por_mes[m] = {"valor": proj_mb, "projetado": True}
+        else:
+            mb_por_mes[m] = {"valor": mb_vals.get(m, 0), "projetado": False}
+    total_mb = sum(v["valor"] for v in mb_por_mes.values())
 
+    # Montar estrutura por grupo > conta > mês
+    grupos_mapa = {}
     for r in registros:
-        chave = (
-            str(r["grupo"]),
-            r["descricao"]
-        )
+        g = str(r["grupo"])
+        conta = r["conta"]
+        desc = r["descricao"]
+        nome_grupo = r["nome_grupo"] or ""
+        m = int(r["mes"])
+        v = float(r["valor"] or 0)
 
-        periodo = (int(r["ano"]), int(r["mes"]))
-        valor = float(r["valor"] or 0)
+        if g not in grupos_mapa:
+            grupos_mapa[g] = {"grupo": g, "nome_grupo": nome_grupo, "contas": {}}
 
-        if chave not in linhas_mapa:
-            linhas_mapa[chave] = {
-                "grupo": r["grupo"],
-                "descricao": r["descricao"],
-                "valores": {p: 0 for p in periodos},
-                "total": 0
+        if conta not in grupos_mapa[g]["contas"]:
+            grupos_mapa[g]["contas"][conta] = {
+                "cod_conta": conta,
+                "descricao": desc,
+                "valores": {mes: 0 for mes in meses}
             }
+        else:
+            # Atualiza descrição para a mais recente encontrada
+            grupos_mapa[g]["contas"][conta]["descricao"] = desc
 
-        linhas_mapa[chave]["valores"][periodo] = valor
-        linhas_mapa[chave]["total"] += valor
+        grupos_mapa[g]["contas"][conta]["valores"][m] += v
 
-    linhas = list(linhas_mapa.values())
+    # Calcular projeção para meses futuros (ano aberto)
+    def calcular_projecao(valores_mes):
+        meses_base = mes_atual - 1
+        if meses_base <= 0:
+            return 0.0
+        total = sum(valores_mes.get(m, 0) for m in range(1, mes_atual))
+        return total / meses_base
 
-    linhas.sort(
-        key=lambda x: (
-            int(x["grupo"]) if str(x["grupo"]).isdigit() else 999,
-            x["descricao"]
-        )
-    )
+    grupos = []
+    for g in sorted(grupos_mapa.keys(), key=lambda x: int(x) if x.isdigit() else 999):
+        info = grupos_mapa[g]
+        contas = []
 
-    totais_periodo = {p: 0 for p in periodos}
-    total_geral = 0
+        for chave in sorted(info["contas"].keys(), key=lambda x: (x if x is not None else 999)):
+            conta_info = info["contas"][chave]
+            vals = conta_info["valores"]
+            proj = calcular_projecao(vals) if ano_aberto else None
+            valores_exibir = {}
+            for m in meses:
+                if ano_aberto and m >= mes_atual:
+                    valor_proj = 0.0 if g == "7" else proj
+                    valores_exibir[m] = {"valor": valor_proj, "projetado": True}
+                else:
+                    valores_exibir[m] = {"valor": vals.get(m, 0), "projetado": False}
+            total = sum(v["valor"] for v in valores_exibir.values())
+            contas.append({
+                "cod_conta": conta_info["cod_conta"],
+                "descricao": conta_info["descricao"],
+                "valores": valores_exibir,
+                "total": total
+            })
 
-    for linha in linhas:
-        for p in periodos:
-            valor = linha["valores"].get(p, 0)
-            totais_periodo[p] += valor
-            total_geral += valor
+        # Total do grupo por mês
+        total_grupo_mes = {}
+        for m in meses:
+            total_grupo_mes[m] = {
+                "valor": sum(c["valores"][m]["valor"] for c in contas),
+                "projetado": ano_aberto and m >= mes_atual
+            }
+        total_grupo = sum(v["valor"] for v in total_grupo_mes.values())
+        grupos.append({
+            "grupo": g,
+            "nome_grupo": grupos_mapa[g]["nome_grupo"],
+            "contas": contas,
+            "total_mes": total_grupo_mes,
+            "total": total_grupo
+        })
+
+    # Total geral por mês (todos os grupos — modo fluxo)
+    totais_mes = {}
+    for m in meses:
+        totais_mes[m] = {
+            "valor": sum(g["total_mes"][m]["valor"] for g in grupos),
+            "projetado": ano_aberto and m >= mes_atual
+        }
+    total_geral = sum(v["valor"] for v in totais_mes.values())
+
+    # Saldo MB: MB + grupos 4, 5, 6
+    grupos_mb = [g for g in grupos if g["grupo"] in ("4", "5", "6")]
+    totais_mes_mb = {}
+    for m in meses:
+        valor_grupos = sum(g["total_mes"][m]["valor"] for g in grupos_mb)
+        totais_mes_mb[m] = {
+            "valor": mb_por_mes[m]["valor"] + valor_grupos,
+            "projetado": ano_aberto and m >= mes_atual
+        }
+    total_saldo_mb = sum(v["valor"] for v in totais_mes_mb.values())
+
+    nomes_meses = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"]
 
     return render_template(
         "fluxo_caixa_projetado.html",
         empresa_ativa=cod_empresa,
         nome_empresa_ativa=session["nome_empresa"],
-        periodos=periodos,
-        linhas=linhas,
-        totais_periodo=totais_periodo,
+        ano_sel=ano_sel,
+        ano_aberto=ano_aberto,
+        mes_atual=mes_atual,
+        meses=meses,
+        nomes_meses=nomes_meses,
+        grupos=grupos,
+        todos_grupos=todos_grupos,
+        totais_mes=totais_mes,
         total_geral=total_geral,
+        mb_por_mes=mb_por_mes,
+        totais_mes_mb=totais_mes_mb,
+        total_saldo_mb=total_saldo_mb,
+        total_mb=total_mb,
         formatar_numero_br=formatar_numero_br,
         url_voltar=url_for("financeiro.menu_empresa")
     )

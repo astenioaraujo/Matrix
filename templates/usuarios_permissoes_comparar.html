@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
+  .pagina-subtitulo { font-size: 16px; margin-bottom: 16px; }
+
+  .table-wrapper {
+    margin-top: 10px;
+    width: calc(100vw - 80px);
+    max-height: 78vh;
+    overflow: auto;
+    border: 1px solid #dcdcdc;
+    position: relative;
+  }
+
+  .tabela-comp {
+    font-size: 13px;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: auto;
+    background: #fff;
+  }
+
+  .tabela-comp th, .tabela-comp td {
+    border-right: 1px solid #dcdcdc;
+    border-bottom: 1px solid #dcdcdc;
+    padding: 6px 10px;
+    white-space: nowrap;
+    background: #fff;
+  }
+
+  .tabela-comp thead th {
+    background: #e8eaf6;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    text-align: center;
+    font-weight: 700;
+  }
+
+  .tabela-comp thead th.col-desc {
+    text-align: left;
+    position: sticky;
+    top: 0;
+    left: 0;
+    z-index: 50;
+    background: #e8eaf6;
+    min-width: 240px;
+    box-shadow: 4px 0 6px -2px rgba(0,0,0,0.12);
+  }
+
+  .tabela-comp tbody td.col-desc {
+    text-align: left;
+    position: sticky;
+    left: 0;
+    z-index: 5;
+    background: #fff;
+    min-width: 240px;
+    box-shadow: 4px 0 6px -2px rgba(0,0,0,0.08);
+  }
+
+  .linha-sistema td {
+    background: #1565c0 !important;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    text-align: center;
+  }
+
+  .linha-sistema td.col-desc {
+    text-align: left;
+    background: #1565c0 !important;
+    color: #fff;
+  }
+
+  .tabela-comp tbody tr:hover td { background: #f5f5f5; }
+  .tabela-comp tbody tr:hover td.col-desc { background: #f5f5f5; }
+  .tabela-comp tbody .linha-sistema:hover td { background: #1565c0 !important; }
+
+  .chk-comp {
+    transform: scale(1.2);
+    cursor: pointer;
+    accent-color: #1565c0;
+  }
+
+  .col-usuario-header small {
+    display: block;
+    font-size: 10px;
+    font-weight: 400;
+    color: #555;
+    margin-top: 2px;
+  }
+
+  .status-salvo {
+    font-size: 11px;
+    color: #2e7d32;
+    margin-left: 6px;
+    display: none;
+  }
+
+  .btn-lote {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    margin: 0 2px;
+  }
+  .btn-lote-on { background: #c8e6c9; color: #1b5e20; }
+  .btn-lote-off { background: #ffcdd2; color: #b71c1c; }
+  .btn-lote:hover { opacity: 0.8; }
+</style>
+
+<div class="pagina-titulo">Comparar / Editar Permissões</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="table-wrapper">
+  <table class="tabela-comp" id="tabela-comp">
+    <thead>
+      <tr>
+        <th class="col-desc">Permissão</th>
+        {% for u in usuarios %}
+        <th class="col-usuario-header">
+          {{ u.nome }}
+          <small>{{ u.email }}</small>
+          <div style="margin-top:4px;">
+            <button class="btn-lote btn-lote-on" onclick="marcarTodos({{ u.id_usuario }}, true)">Todos</button>
+            <button class="btn-lote btn-lote-off" onclick="marcarTodos({{ u.id_usuario }}, false)">Nenhum</button>
+          </div>
+        </th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for sistema, opcoes in sistemas.items() %}
+      <tr class="linha-sistema">
+        <td class="col-desc">{{ sistema }}</td>
+        {% for u in usuarios %}<td></td>{% endfor %}
+      </tr>
+      {% for p in opcoes %}
+      {% set chave = p.sistema ~ '|' ~ p.opcao %}
+      <tr>
+        <td class="col-desc" style="padding-left:20px;">{{ p.descricao }}</td>
+        {% for u in usuarios %}
+        <td style="text-align:center;">
+          <input
+            type="checkbox"
+            class="chk-comp"
+            data-id-usuario="{{ u.id_usuario }}"
+            data-sistema="{{ p.sistema }}"
+            data-opcao="{{ p.opcao }}"
+            {% if vinculos.get(u.id_usuario, {}).get(chave, false) %}checked{% endif %}
+          >
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+const urlToggle = '{{ url_for("usuarios.toggle_permissao_usuario") }}';
+
+function togglePermissao(chk) {
+  const formData = new URLSearchParams();
+  formData.append("id_usuario", chk.dataset.idUsuario);
+  formData.append("sistema", chk.dataset.sistema);
+  formData.append("opcao", chk.dataset.opcao);
+  formData.append("ativo", chk.checked ? "true" : "false");
+
+  const orig = chk.checked;
+  chk.disabled = true;
+
+  fetch(urlToggle, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "X-Requested-With": "XMLHttpRequest"
+    },
+    body: formData.toString()
+  })
+  .then(r => r.json())
+  .then(data => {
+    chk.disabled = false;
+    if (!data.ok) {
+      alert("Erro ao salvar permissão.");
+      chk.checked = !orig;
+    }
+  })
+  .catch(() => {
+    chk.disabled = false;
+    alert("Erro ao salvar permissão.");
+    chk.checked = !orig;
+  });
+}
+
+function marcarTodos(idUsuario, ativo) {
+  const checkboxes = document.querySelectorAll('.chk-comp[data-id-usuario="' + idUsuario + '"]');
+  const promises = [];
+
+  checkboxes.forEach(chk => {
+    if (chk.checked === ativo) return;
+    chk.checked = ativo;
+
+    const formData = new URLSearchParams();
+    formData.append("id_usuario", idUsuario);
+    formData.append("sistema", chk.dataset.sistema);
+    formData.append("opcao", chk.dataset.opcao);
+    formData.append("ativo", ativo ? "true" : "false");
+
+    promises.push(
+      fetch(urlToggle, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-Requested-With": "XMLHttpRequest"
+        },
+        body: formData.toString()
+      })
+    );
+  });
+
+  Promise.all(promises).catch(() => alert("Erro ao salvar algumas permissões."));
+}
+
+document.querySelectorAll(".chk-comp").forEach(chk => {
+  chk.addEventListener("change", function() { togglePermissao(this); });
+});
+</script>
+
+{% endblock %}

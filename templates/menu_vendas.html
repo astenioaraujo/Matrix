@@ -46,6 +46,7 @@
   }
 
   .btn-painel { background: #1565c0; }
+  .btn-importar-painel { background: #6a1b9a; }
   .btn-diarias { background: #00897b; }
   .btn-consultas { background: #5e35b1; }
   .btn-produto { background: #d97706; color: #fff; }
@@ -64,7 +65,11 @@
   <div class="menu-botoes">
 
     <a class="btn-painel" href="{{ url_for('vendas.vendas_painel') }}">
-      Painel
+      Consultar Painel
+    </a>
+
+    <a class="btn-importar-painel" href="{{ url_for('vendas.vendas_importar_painel') }}">
+      Importar Painel
     </a>
 
     <a class="btn-diarias" href="{{ url_for('vendas.vendas_diarias') }}">

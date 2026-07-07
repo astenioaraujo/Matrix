@@ -502,6 +502,79 @@ def permissoes_sistema():
         mostrar_menu_modulo=False
     )
 
+
+@usuarios_bp.route("/permissoes-comparar")
+@admin_empresa_obrigatorio
+def permissoes_comparar():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+
+    ids_raw = request.args.getlist("ids")
+    ids = [int(x) for x in ids_raw if x.isdigit()]
+
+    if not ids:
+        return redirect(url_for("usuarios.permissoes_sistema"))
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT u.id_usuario, u.nome, u.email
+            FROM usuarios u
+            JOIN usuarios_empresas ue ON ue.id_usuario = u.id_usuario
+            WHERE ue.cod_empresa = %s AND u.id_usuario = ANY(%s)
+            ORDER BY u.nome
+        """, (cod_empresa, ids))
+        usuarios = cur.fetchall() or []
+
+        cur.execute("""
+            SELECT sistema, opcao, descricao, ordem
+            FROM permissoes_catalogo
+            WHERE ativo = TRUE
+            ORDER BY ordem, sistema, opcao
+        """)
+        permissoes = cur.fetchall() or []
+
+        cur.execute("""
+            SELECT id_usuario, sistema, opcao, ativo
+            FROM usuarios_permissoes
+            WHERE cod_empresa = %s AND id_usuario = ANY(%s)
+        """, (cod_empresa, ids))
+        vinculos_raw = cur.fetchall() or []
+
+        vinculos = {}
+        for v in vinculos_raw:
+            uid = v["id_usuario"]
+            chave = f"{v['sistema']}|{v['opcao']}"
+            if uid not in vinculos:
+                vinculos[uid] = {}
+            vinculos[uid][chave] = bool(v["ativo"])
+
+        # Agrupar permissões por sistema
+        sistemas = {}
+        for p in permissoes:
+            s = p["sistema"]
+            if s not in sistemas:
+                sistemas[s] = []
+            sistemas[s].append(p)
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "usuarios_permissoes_comparar.html",
+        nome_empresa=nome_empresa,
+        cod_empresa=cod_empresa,
+        usuarios=usuarios,
+        sistemas=sistemas,
+        vinculos=vinculos,
+        url_voltar=url_for("usuarios.permissoes_sistema"),
+        texto_voltar="← Voltar",
+    )
+
+
 @usuarios_bp.route("/editar/<int:id_usuario>", methods=["GET", "POST"])
 @admin_empresa_obrigatorio
 def editar_usuario(id_usuario):
