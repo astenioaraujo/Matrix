@@ -45,6 +45,7 @@
     gap: 14px;
     align-items: end;
     margin-bottom: 20px;
+    flex-wrap: wrap;
   }
 
   label { font-weight: 700; display: block; margin-bottom: 6px; }
@@ -55,441 +56,391 @@
     border-radius: 6px;
   }
 
-  .data-nav {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .data-nav input {
-    flex: 1;
-  }
+  .data-nav { display: flex; align-items: center; gap: 6px; }
+  .data-nav input { flex: 1; }
 
   .btn-data-nav {
-    width: 38px;
-    height: 38px;
+    width: 38px; height: 38px;
     border: 1px solid #c7c7c7;
     border-radius: 9px;
     background: #c8e6c9;
     color: #111;
-    font-size: 18px;
-    font-weight: 900;
+    font-size: 18px; font-weight: 900;
     cursor: pointer;
   }
+  .btn-data-nav:hover { background: #a5d6a7; }
 
-  .btn-data-nav:hover {
-    background: #a5d6a7;
-  }
+  .divisor-esquerda { border-left: 3px solid #666 !important; }
+  .divisor-direita  { border-right: 3px solid #666 !important; }
 
-  .divisor-esquerda {
-    border-left: 3px solid #666 !important;
-  }
   .btn {
-    padding: 9px 14px;
-    border-radius: 8px;
-    border: 1px solid #1565c0;
-    background: #1565c0;
-    color: #fff;
-    font-weight: 700;
-    cursor: pointer;
+    padding: 9px 14px; border-radius: 8px;
+    border: 1px solid #1565c0; background: #1565c0;
+    color: #fff; font-weight: 700; cursor: pointer;
   }
 
-  .col-filial { width: 150px; font-weight: 800; }
+  .btn-excel {
+    padding: 9px 14px; border-radius: 8px;
+    border: 1px solid #2e7d32; background: #2e7d32;
+    color: #fff; font-weight: 700; cursor: pointer;
+  }
+  .btn-excel:hover { background: #1b5e20; }
+
+  .vis-toggle {
+    display: flex; align-items: center; gap: 0;
+    border: 1px solid #bbb; border-radius: 8px;
+    overflow: hidden; height: 38px;
+  }
+  .vis-toggle label {
+    margin: 0; padding: 0 14px; height: 100%;
+    display: flex; align-items: center;
+    font-weight: 700; font-size: 13px;
+    cursor: pointer; background: #f1f1f1; color: #555;
+    border: none; transition: background 0.15s, color 0.15s;
+  }
+  .vis-toggle input[type=radio] { display: none; }
+  .vis-toggle input[type=radio]:checked + label { background: #1565c0; color: #fff; }
+
+  .col-filial  { width: 150px; font-weight: 800; }
   .col-produto { width: 190px; font-weight: 700; }
-  .col-num { width: 115px; text-align: right; }
+  .col-num     { width: 115px; text-align: right; }
 
-  .divisor-direita {
-    border-right: 3px solid #666 !important;
-  }
+  .linha-filial td     { background: #eef4ff; font-weight: 900; font-size: 15px; }
+  .linha-total-filial td { background: #f5f5f5; font-weight: 900; }
+  .linha-total-geral td  { background: #dfe6e9; font-weight: 900; font-size: 15px; }
+  .linha-espaco td { height: 12px; border: none; background: #fff; }
 
-  .linha-filial td {
-    background: #eef4ff;
-    font-weight: 900;
-    font-size: 15px;
-  }
+  .total-calculado, .total-litros { background: #fffbe6; font-weight: 900; }
+  .medicao-atual { background: #e8f5e9; font-weight: 900; }
+  .perda-negativa { color: #c62828; background: #ffebee; font-weight: 900; }
+  .sobra-positiva { color: #2e7d32; background: #e8f5e9; font-weight: 900; }
 
-  .linha-total-filial td {
-    background: #f5f5f5;
-    font-weight: 900;
-  }
+  /*
+    col-operacional  : visível em Total e Simplificada; oculto em Estoques
+    col-somente-total: visível apenas em Total; oculto em Simplificada e Estoques
+    col-financeiro   : visível em Total e Estoques; oculto em Simplificada
+  */
+  .vis-simplificada .col-somente-total { display: none; }
+  .vis-simplificada .col-financeiro    { display: none; }
+  .vis-simplificada table              { min-width: unset; }
 
-  .linha-total-geral td {
-    background: #dfe6e9;
-    font-weight: 900;
-    font-size: 15px;
-  }
-
-  .linha-espaco td {
-    height: 12px;
-    border: none;
-    background: #fff;
-  }
-
-  .total-calculado,
-  .total-litros {
-    background: #fffbe6;
-    font-weight: 900;
-  }
-
-  .medicao-atual {
-    background: #e8f5e9;
-    font-weight: 900;
-  }
-
-  .perda-negativa {
-    color: #c62828;
-    background: #ffebee;
-    font-weight: 900;
-  }
-
-  .sobra-positiva {
-    color: #2e7d32;
-    background: #e8f5e9;
-    font-weight: 900;
-  }
+  .vis-estoques .col-operacional  { display: none; }
+  .vis-estoques .col-somente-total { display: none; }
+  .vis-estoques table             { min-width: unset; }
 </style>
 
 <div class="pagina-titulo">Consulta de Estoques</div>
-
-<div class="empresa">
-  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
-</div>
+<div class="empresa"><strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}</div>
 
 <div class="painel">
-  <form method="get">
+  <form method="get" id="form-filtro">
     <div class="linha-filtro">
       <div>
         <label for="data">Data do Estoque</label>
         <div class="data-nav">
           <button type="button" class="btn-data-nav" onclick="mudarData(-1)">←</button>
-
           <input type="date" id="data" name="data" value="{{ data_sel }}">
-
           <button type="button" class="btn-data-nav" onclick="mudarData(1)">→</button>
         </div>
       </div>
 
       <button type="submit" class="btn">Filtrar</button>
+
+      <div style="align-self:flex-end;">
+        <label style="margin-bottom:6px;">Visualização</label>
+        <div class="vis-toggle">
+          <input type="radio" name="vis" id="vis-total" value="total" checked>
+          <label for="vis-total">Total</label>
+          <input type="radio" name="vis" id="vis-simp" value="simplificada">
+          <label for="vis-simp">Simplificada</label>
+          <input type="radio" name="vis" id="vis-est" value="estoques">
+          <label for="vis-est">Estoques</label>
+        </div>
+      </div>
+
+      <div style="align-self:flex-end;">
+        <button type="button" class="btn-excel" onclick="exportarExcel()">⬇ Exportar Excel</button>
+      </div>
     </div>
   </form>
 
-  <table>
-    <thead>
-      <tr>
-        <th class="col-filial">Filial</th>
-        <th class="col-produto">Produto</th>
-        <th class="col-num">Capacidade Tanque</th>
-        <th class="col-num">Medição Anterior<br>{{ data_anterior.strftime("%d/%m/%Y") }}</th>
-        <th class="col-num">Descarregos</th>
-        <th class="col-num">Vendas</th>
-        <th class="col-num">Total Calculado</th>
-        <th class="col-num">Medição Atual<br>{{ data_sel[8:10] }}/{{ data_sel[5:7] }}/{{ data_sel[0:4] }}</th>
-        <th class="col-num divisor-esquerda">Perdas/Sobras<br>em lts</th>
-        <th class="col-num divisor-direita">Perdas/Sobras<br>em R$</th>
-        <th class="col-num">Compras</th>
-        <th class="col-num">Estoque em Trânsito</th>
-        <th class="col-num divisor-direita total-litros">TOTAL em litros</th>
-        <th class="col-num">Média<br>Vendas Dia</th>
-        <th class="col-num">Dias de<br>Estoque</th>
-        <th class="col-num divisor-direita">Sugestão<br>Compra</th>
-        <th class="col-num">Estoque Atual R$</th>
-        <th class="col-num">Compras R$</th>
-        <th class="col-num">Trânsito R$</th>
-        <th class="col-num">Total R$</th>
-      </tr>
-    </thead>
+  <div id="wrapper-tabela">
+    <table id="tabela-estoques">
+      <thead>
+        <tr>
+          <th class="col-filial">Filial</th>
+          <th class="col-produto">Produto</th>
+          <th class="col-num col-operacional">Capacidade Tanque</th>
+          <th class="col-num col-operacional">Medição Anterior<br>{{ data_anterior.strftime("%d/%m/%Y") }}</th>
+          <th class="col-num col-operacional">Descarregos</th>
+          <th class="col-num col-operacional">Vendas</th>
+          <th class="col-num col-operacional">Total Calculado</th>
+          <th class="col-num col-operacional">Medição Atual<br>{{ data_sel[8:10] }}/{{ data_sel[5:7] }}/{{ data_sel[0:4] }}</th>
+          <th class="col-num col-operacional divisor-esquerda">Perdas/Sobras<br>em lts</th>
+          <th class="col-num col-operacional divisor-direita">Perdas/Sobras<br>em R$</th>
+          <th class="col-num col-somente-total">Compras</th>
+          <th class="col-num col-somente-total">Estoque em Trânsito</th>
+          <th class="col-num col-somente-total divisor-direita total-litros">TOTAL em litros</th>
+          <th class="col-num col-somente-total">Média<br>Vendas Dia</th>
+          <th class="col-num col-somente-total">Dias de<br>Estoque</th>
+          <th class="col-num col-somente-total divisor-direita">Sugestão<br>Compra</th>
+          <th class="col-num col-financeiro">Estoque Atual R$</th>
+          <th class="col-num col-financeiro">Compras R$</th>
+          <th class="col-num col-financeiro">Trânsito R$</th>
+          <th class="col-num col-financeiro">Total R$</th>
+        </tr>
+      </thead>
 
-    <tbody>
-      {% set ns = namespace(
-        filial_atual=None,
+      <tbody>
+        {% set ns = namespace(
+          filial_atual=None,
+          f_capacidade=0, f_anterior=0, f_compras=0, f_transito=0,
+          f_total_litros=0, f_media_vendas=0, f_descarregos=0,
+          f_vendas=0, f_calculado=0, f_atual=0, f_perda=0,
+          f_perda_rs=0, f_estoque_atual_rs=0, f_compras_rs=0,
+          f_transito_rs=0, f_total_rs=0,
+          g_capacidade=0, g_anterior=0, g_compras=0, g_transito=0,
+          g_total_litros=0, g_media_vendas=0, g_descarregos=0,
+          g_vendas=0, g_calculado=0, g_atual=0, g_perda=0,
+          g_perda_rs=0, g_estoque_atual_rs=0, g_compras_rs=0,
+          g_transito_rs=0, g_total_rs=0
+        ) %}
 
-        f_capacidade=0,
-        f_anterior=0,
-        f_compras=0,
-        f_transito=0,
-        f_total_litros=0,
-        f_media_vendas=0,
-        f_descarregos=0,
-        f_vendas=0,
-        f_calculado=0,
-        f_atual=0,
-        f_perda=0,
-        f_perda_rs=0,
-        f_estoque_atual_rs=0,
-        f_compras_rs=0,
-        f_transito_rs=0,
-        f_total_rs=0,
+        {% for l in linhas %}
 
-        g_capacidade=0,
-        g_anterior=0,
-        g_compras=0,
-        g_transito=0,
-        g_total_litros=0,
-        g_media_vendas=0,
-        g_descarregos=0,
-        g_vendas=0,
-        g_calculado=0,
-        g_atual=0,
-        g_perda=0,
-        g_perda_rs=0,
-        g_estoque_atual_rs=0,
-        g_compras_rs=0,
-        g_transito_rs=0,
-        g_total_rs=0
-      ) %}
+          {% if ns.filial_atual != l.cod_filial %}
 
-      {% for l in linhas %}
+            {% if ns.filial_atual is not none %}
+            <tr class="linha-total-filial">
+              <td class="col-filial"></td>
+              <td class="col-produto" style="color:#999;">Total Filial</td>
+              <td class="col-num col-operacional">{{ ns.f_capacidade | br }}</td>
+              <td class="col-num col-operacional">{{ ns.f_anterior | br }}</td>
+              <td class="col-num col-operacional">{{ ns.f_descarregos | br }}</td>
+              <td class="col-num col-operacional">{{ ns.f_vendas | br }}</td>
+              <td class="col-num col-operacional total-calculado">{{ ns.f_calculado | br }}</td>
+              <td class="col-num col-operacional medicao-atual">{{ ns.f_atual | br }}</td>
+              <td class="col-num col-operacional divisor-esquerda {% if ns.f_perda < 0 %}perda-negativa{% elif ns.f_perda > 0 %}sobra-positiva{% endif %}">{{ ns.f_perda | br }}</td>
+              <td class="col-num col-operacional divisor-direita {% if ns.f_perda_rs < 0 %}perda-negativa{% elif ns.f_perda_rs > 0 %}sobra-positiva{% endif %}">{{ ns.f_perda_rs | br }}</td>
+              <td class="col-num col-somente-total">{{ ns.f_compras | br }}</td>
+              <td class="col-num col-somente-total">{{ ns.f_transito | br }}</td>
+              <td class="col-num col-somente-total divisor-direita total-litros">{{ ns.f_total_litros | br }}</td>
+              <td class="col-num col-somente-total">{% if mostrar_indicadores_compra %}{{ ns.f_media_vendas | br }}{% endif %}</td>
+              <td class="col-num col-somente-total"></td>
+              <td class="col-num col-somente-total divisor-direita"></td>
+              <td class="col-num col-financeiro">{{ ns.f_estoque_atual_rs | br }}</td>
+              <td class="col-num col-financeiro">{{ ns.f_compras_rs | br }}</td>
+              <td class="col-num col-financeiro">{{ ns.f_transito_rs | br }}</td>
+              <td class="col-num col-financeiro">{{ ns.f_total_rs | br }}</td>
+            </tr>
+            <tr class="linha-espaco"><td colspan="20"></td></tr>
+            {% endif %}
 
-        {% if ns.filial_atual != l.cod_filial %}
+            {% set ns.filial_atual = l.cod_filial %}
+            {% set ns.f_capacidade = 0 %}{% set ns.f_anterior = 0 %}
+            {% set ns.f_compras = 0 %}{% set ns.f_transito = 0 %}
+            {% set ns.f_total_litros = 0 %}{% set ns.f_media_vendas = 0 %}
+            {% set ns.f_descarregos = 0 %}{% set ns.f_vendas = 0 %}
+            {% set ns.f_calculado = 0 %}{% set ns.f_atual = 0 %}
+            {% set ns.f_perda = 0 %}{% set ns.f_perda_rs = 0 %}
+            {% set ns.f_estoque_atual_rs = 0 %}{% set ns.f_compras_rs = 0 %}
+            {% set ns.f_transito_rs = 0 %}{% set ns.f_total_rs = 0 %}
 
-          {% if ns.filial_atual is not none %}
-          <tr class="linha-total-filial">
-            <td colspan="2" style="color: #999;">Total Filial</td>
-            <td class="col-num">{{ ns.f_capacidade | br }}</td>
-            <td class="col-num">{{ ns.f_anterior | br }}</td>
-            <td class="col-num">{{ ns.f_descarregos | br }}</td>
-            <td class="col-num">{{ ns.f_vendas | br }}</td>
-            <td class="col-num total-calculado">{{ ns.f_calculado | br }}</td>
-            <td class="col-num medicao-atual">{{ ns.f_atual | br }}</td>
-            <td class="col-num divisor-esquerda {% if ns.f_perda < 0 %}perda-negativa{% elif ns.f_perda > 0 %}sobra-positiva{% endif %}">
-              {{ ns.f_perda | br }}
-            </td>
-            
-            <td class="col-num divisor-direita {% if ns.f_perda_rs < 0 %}perda-negativa{% elif ns.f_perda_rs > 0 %}sobra-positiva{% endif %}">
-              {{ ns.f_perda_rs | br }}
-            </td>
-            
-            <td class="col-num">{{ ns.f_compras | br }}</td>
-            <td class="col-num">{{ ns.f_transito | br }}</td>
-            <td class="col-num divisor-direita total-litros">{{ ns.f_total_litros | br }}</td>
-            <td class="col-num">
-              {% if mostrar_indicadores_compra %}
-                {{ ns.f_media_vendas | br }}
+            <tr class="linha-filial">
+              <td colspan="20">{{ l.cod_filial }} - {{ l.nome_filial }}</td>
+            </tr>
+
+          {% endif %}
+
+          {% set med = l.medicao_atual or 0 %}
+          {% set calc = (l.medicao_anterior or 0) + (l.descarregos or 0) - (l.vendas or 0) %}
+          {% set perda_sobra = med - calc %}
+          {% set perda_sobra_rs = l.perda_sobra_rs or 0 %}
+          {% set total_litros = med + (l.compras or 0) + (l.estoque_transito or 0) %}
+          {% set estoque_atual_rs = l.estoque_atual_rs or 0 %}
+          {% set compras_rs = l.compras_rs or 0 %}
+          {% set transito_rs = l.transito_rs or 0 %}
+          {% set total_rs = estoque_atual_rs + compras_rs + transito_rs %}
+
+          {% set ns.f_capacidade = ns.f_capacidade + (l.capacidade_tanque or 0) %}
+          {% set ns.f_anterior = ns.f_anterior + (l.medicao_anterior or 0) %}
+          {% set ns.f_compras = ns.f_compras + (l.compras or 0) %}
+          {% set ns.f_transito = ns.f_transito + (l.estoque_transito or 0) %}
+          {% set ns.f_total_litros = ns.f_total_litros + total_litros %}
+          {% set ns.f_media_vendas = ns.f_media_vendas + (l.media_vendas_dia or 0) %}
+          {% set ns.f_descarregos = ns.f_descarregos + (l.descarregos or 0) %}
+          {% set ns.f_vendas = ns.f_vendas + (l.vendas or 0) %}
+          {% set ns.f_calculado = ns.f_calculado + calc %}
+          {% set ns.f_atual = ns.f_atual + (l.medicao_atual or 0) %}
+          {% set ns.f_perda = ns.f_perda + perda_sobra %}
+          {% set ns.f_perda_rs = ns.f_perda_rs + perda_sobra_rs %}
+          {% set ns.f_estoque_atual_rs = ns.f_estoque_atual_rs + estoque_atual_rs %}
+          {% set ns.f_compras_rs = ns.f_compras_rs + compras_rs %}
+          {% set ns.f_transito_rs = ns.f_transito_rs + transito_rs %}
+          {% set ns.f_total_rs = ns.f_total_rs + total_rs %}
+
+          {% set ns.g_capacidade = ns.g_capacidade + (l.capacidade_tanque or 0) %}
+          {% set ns.g_anterior = ns.g_anterior + (l.medicao_anterior or 0) %}
+          {% set ns.g_compras = ns.g_compras + (l.compras or 0) %}
+          {% set ns.g_transito = ns.g_transito + (l.estoque_transito or 0) %}
+          {% set ns.g_total_litros = ns.g_total_litros + total_litros %}
+          {% set ns.g_media_vendas = ns.g_media_vendas + (l.media_vendas_dia or 0) %}
+          {% set ns.g_descarregos = ns.g_descarregos + (l.descarregos or 0) %}
+          {% set ns.g_vendas = ns.g_vendas + (l.vendas or 0) %}
+          {% set ns.g_calculado = ns.g_calculado + calc %}
+          {% set ns.g_atual = ns.g_atual + (l.medicao_atual or 0) %}
+          {% set ns.g_perda = ns.g_perda + perda_sobra %}
+          {% set ns.g_perda_rs = ns.g_perda_rs + perda_sobra_rs %}
+          {% set ns.g_estoque_atual_rs = ns.g_estoque_atual_rs + estoque_atual_rs %}
+          {% set ns.g_compras_rs = ns.g_compras_rs + compras_rs %}
+          {% set ns.g_transito_rs = ns.g_transito_rs + transito_rs %}
+          {% set ns.g_total_rs = ns.g_total_rs + total_rs %}
+
+          <tr>
+            <td class="col-filial"></td>
+            <td class="col-produto">{{ l.cod_produto }} - {{ l.produto }}</td>
+            <td class="col-num col-operacional">{{ l.capacidade_tanque | br }}</td>
+            <td class="col-num col-operacional">{{ l.medicao_anterior | br }}</td>
+            <td class="col-num col-operacional">{{ l.descarregos | br }}</td>
+            <td class="col-num col-operacional">{{ l.vendas | br }}</td>
+            <td class="col-num col-operacional total-calculado">{{ calc | br }}</td>
+            <td class="col-num col-operacional medicao-atual">{{ l.medicao_atual | br }}</td>
+            <td class="col-num col-operacional divisor-esquerda {% if perda_sobra < 0 %}perda-negativa{% elif perda_sobra > 0 %}sobra-positiva{% endif %}">{{ perda_sobra | br }}</td>
+            <td class="col-num col-operacional divisor-direita {% if perda_sobra_rs < 0 %}perda-negativa{% elif perda_sobra_rs > 0 %}sobra-positiva{% endif %}">{{ perda_sobra_rs | br }}</td>
+            <td class="col-num col-somente-total">{{ l.compras | br }}</td>
+            <td class="col-num col-somente-total">{{ l.estoque_transito | br }}</td>
+            <td class="col-num col-somente-total divisor-direita total-litros">{{ total_litros | br }}</td>
+            <td class="col-num col-somente-total">{% if mostrar_indicadores_compra %}{{ l.media_vendas_dia | br }}{% endif %}</td>
+            <td class="col-num col-somente-total">
+              {% if mostrar_indicadores_compra and l.dias_estoque is not none %}
+                {{ "%.1f"|format(l.dias_estoque)|replace(".", ",") }}
               {% endif %}
             </td>
-            <td class="col-num"></td>
-            <td class="col-num divisor-direita"></td>
-            <td class="col-num">{{ ns.f_estoque_atual_rs | br }}</td>
-            <td class="col-num">{{ ns.f_compras_rs | br }}</td>
-            <td class="col-num">{{ ns.f_transito_rs | br }}</td>
-            <td class="col-num">{{ ns.f_total_rs | br }}</td>
+            <td class="col-num col-somente-total divisor-direita">
+              {% if mostrar_indicadores_compra and l.sugestao_compra %}{{ l.sugestao_compra | br }}{% endif %}
+            </td>
+            <td class="col-num col-financeiro">{{ estoque_atual_rs | br }}</td>
+            <td class="col-num col-financeiro">{{ compras_rs | br }}</td>
+            <td class="col-num col-financeiro">{{ transito_rs | br }}</td>
+            <td class="col-num col-financeiro">{{ total_rs | br }}</td>
+          </tr>
+
+        {% endfor %}
+
+        {% if ns.filial_atual is not none %}
+          <tr class="linha-total-filial">
+            <td class="col-filial"></td>
+            <td class="col-produto" style="color:#999;">Total Filial</td>
+            <td class="col-num col-operacional">{{ ns.f_capacidade | br }}</td>
+            <td class="col-num col-operacional">{{ ns.f_anterior | br }}</td>
+            <td class="col-num col-operacional">{{ ns.f_descarregos | br }}</td>
+            <td class="col-num col-operacional">{{ ns.f_vendas | br }}</td>
+            <td class="col-num col-operacional total-calculado">{{ ns.f_calculado | br }}</td>
+            <td class="col-num col-operacional medicao-atual">{{ ns.f_atual | br }}</td>
+            <td class="col-num col-operacional divisor-esquerda {% if ns.f_perda < 0 %}perda-negativa{% elif ns.f_perda > 0 %}sobra-positiva{% endif %}">{{ ns.f_perda | br }}</td>
+            <td class="col-num col-operacional divisor-direita {% if ns.f_perda_rs < 0 %}perda-negativa{% elif ns.f_perda_rs > 0 %}sobra-positiva{% endif %}">{{ ns.f_perda_rs | br }}</td>
+            <td class="col-num col-somente-total">{{ ns.f_compras | br }}</td>
+            <td class="col-num col-somente-total">{{ ns.f_transito | br }}</td>
+            <td class="col-num col-somente-total divisor-direita total-litros">{{ ns.f_total_litros | br }}</td>
+            <td class="col-num col-somente-total">{% if mostrar_indicadores_compra %}{{ ns.f_media_vendas | br }}{% endif %}</td>
+            <td class="col-num col-somente-total"></td>
+            <td class="col-num col-somente-total divisor-direita"></td>
+            <td class="col-num col-financeiro">{{ ns.f_estoque_atual_rs | br }}</td>
+            <td class="col-num col-financeiro">{{ ns.f_compras_rs | br }}</td>
+            <td class="col-num col-financeiro">{{ ns.f_transito_rs | br }}</td>
+            <td class="col-num col-financeiro">{{ ns.f_total_rs | br }}</td>
           </tr>
 
           <tr class="linha-espaco"><td colspan="20"></td></tr>
-          {% endif %}
 
-          {% set ns.filial_atual = l.cod_filial %}
-
-          {% set ns.f_capacidade = 0 %}
-          {% set ns.f_anterior = 0 %}
-          {% set ns.f_compras = 0 %}
-          {% set ns.f_transito = 0 %}
-          {% set ns.f_total_litros = 0 %}
-          {% set ns.f_media_vendas = 0 %}
-          {% set ns.f_descarregos = 0 %}
-          {% set ns.f_vendas = 0 %}
-          {% set ns.f_calculado = 0 %}
-          {% set ns.f_atual = 0 %}
-          {% set ns.f_perda = 0 %}
-          {% set ns.f_perda_rs = 0 %}
-          {% set ns.f_estoque_atual_rs = 0 %}
-          {% set ns.f_compras_rs = 0 %}
-          {% set ns.f_transito_rs = 0 %}
-          {% set ns.f_total_rs = 0 %}
-
-          <tr class="linha-filial">
-            <td colspan="20">{{ l.cod_filial }} - {{ l.nome_filial }}</td>
+          <tr class="linha-total-geral">
+            <td colspan="2">TOTAL GERAL</td>
+            <td class="col-num col-operacional">{{ ns.g_capacidade | br }}</td>
+            <td class="col-num col-operacional">{{ ns.g_anterior | br }}</td>
+            <td class="col-num col-operacional">{{ ns.g_descarregos | br }}</td>
+            <td class="col-num col-operacional">{{ ns.g_vendas | br }}</td>
+            <td class="col-num col-operacional total-calculado">{{ ns.g_calculado | br }}</td>
+            <td class="col-num col-operacional medicao-atual">{{ ns.g_atual | br }}</td>
+            <td class="col-num col-operacional divisor-esquerda {% if ns.g_perda < 0 %}perda-negativa{% elif ns.g_perda > 0 %}sobra-positiva{% endif %}">{{ ns.g_perda | br }}</td>
+            <td class="col-num col-operacional divisor-direita {% if ns.g_perda_rs < 0 %}perda-negativa{% elif ns.g_perda_rs > 0 %}sobra-positiva{% endif %}">{{ ns.g_perda_rs | br }}</td>
+            <td class="col-num col-somente-total">{{ ns.g_compras | br }}</td>
+            <td class="col-num col-somente-total">{{ ns.g_transito | br }}</td>
+            <td class="col-num col-somente-total divisor-direita total-litros">{{ ns.g_total_litros | br }}</td>
+            <td class="col-num col-somente-total">{% if mostrar_indicadores_compra %}{{ ns.g_media_vendas | br }}{% endif %}</td>
+            <td class="col-num col-somente-total"></td>
+            <td class="col-num col-somente-total divisor-direita"></td>
+            <td class="col-num col-financeiro">{{ ns.g_estoque_atual_rs | br }}</td>
+            <td class="col-num col-financeiro">{{ ns.g_compras_rs | br }}</td>
+            <td class="col-num col-financeiro">{{ ns.g_transito_rs | br }}</td>
+            <td class="col-num col-financeiro">{{ ns.g_total_rs | br }}</td>
           </tr>
-
         {% endif %}
 
-        {% set med = l.medicao_atual or 0 %}
-        {% set calc = (l.medicao_anterior or 0) + (l.descarregos or 0) - (l.vendas or 0) %}
-        {% set perda_sobra = med - calc %}
-        {% set perda_sobra_rs = l.perda_sobra_rs or 0 %}
-        {% set total_litros = med + (l.compras or 0) + (l.estoque_transito or 0) %}
-        {% set estoque_atual_rs = l.estoque_atual_rs or 0 %}
-        {% set compras_rs = l.compras_rs or 0 %}
-        {% set transito_rs = l.transito_rs or 0 %}
-        {% set total_rs = estoque_atual_rs + compras_rs + transito_rs %}
-
-        {% set ns.f_capacidade = ns.f_capacidade + (l.capacidade_tanque or 0) %}
-        {% set ns.f_anterior = ns.f_anterior + (l.medicao_anterior or 0) %}
-        {% set ns.f_compras = ns.f_compras + (l.compras or 0) %}
-        {% set ns.f_transito = ns.f_transito + (l.estoque_transito or 0) %}
-        {% set ns.f_total_litros = ns.f_total_litros + total_litros %}
-        {% set ns.f_media_vendas = ns.f_media_vendas + (l.media_vendas_dia or 0) %}
-        {% set ns.f_descarregos = ns.f_descarregos + (l.descarregos or 0) %}
-        {% set ns.f_vendas = ns.f_vendas + (l.vendas or 0) %}
-        {% set ns.f_calculado = ns.f_calculado + calc %}
-        {% set ns.f_atual = ns.f_atual + (l.medicao_atual or 0) %}
-        {% set ns.f_perda = ns.f_perda + perda_sobra %}
-        {% set ns.f_perda_rs = ns.f_perda_rs + perda_sobra_rs %}
-        {% set ns.f_compras_rs = ns.f_compras_rs + compras_rs %}
-        {% set ns.f_transito_rs = ns.f_transito_rs + transito_rs %}
-        {% set ns.f_total_rs = ns.f_total_rs + total_rs %}
-
-        {% set ns.g_capacidade = ns.g_capacidade + (l.capacidade_tanque or 0) %}
-        {% set ns.g_anterior = ns.g_anterior + (l.medicao_anterior or 0) %}
-        {% set ns.g_compras = ns.g_compras + (l.compras or 0) %}
-        {% set ns.g_transito = ns.g_transito + (l.estoque_transito or 0) %}
-        {% set ns.g_total_litros = ns.g_total_litros + total_litros %}
-        {% set ns.g_media_vendas = ns.g_media_vendas + (l.media_vendas_dia or 0) %}
-        {% set ns.g_descarregos = ns.g_descarregos + (l.descarregos or 0) %}
-        {% set ns.g_vendas = ns.g_vendas + (l.vendas or 0) %}
-        {% set ns.g_calculado = ns.g_calculado + calc %}
-        {% set ns.g_atual = ns.g_atual + (l.medicao_atual or 0) %}
-        {% set ns.g_perda = ns.g_perda + perda_sobra %}
-        {% set ns.g_perda_rs = ns.g_perda_rs + perda_sobra_rs %}
-        {% set ns.f_estoque_atual_rs = ns.f_estoque_atual_rs + estoque_atual_rs %}
-        {% set ns.g_estoque_atual_rs = ns.g_estoque_atual_rs + estoque_atual_rs %}
-        {% set ns.g_compras_rs = ns.g_compras_rs + compras_rs %}
-        {% set ns.g_transito_rs = ns.g_transito_rs + transito_rs %}
-        {% set ns.g_total_rs = ns.g_total_rs + total_rs %}
-
-        <tr>
-          <td class="col-filial"></td>
-          <td class="col-produto">{{ l.cod_produto }} - {{ l.produto }}</td>
-          <td class="col-num">{{ l.capacidade_tanque | br }}</td>
-          <td class="col-num">{{ l.medicao_anterior | br }}</td>
-          <td class="col-num">{{ l.descarregos | br }}</td>
-          <td class="col-num">{{ l.vendas | br }}</td>
-          <td class="col-num total-calculado">{{ calc | br }}</td>
-          <td class="col-num medicao-atual">{{ l.medicao_atual | br }}</td>
-          <td class="col-num divisor-esquerda {% if perda_sobra < 0 %}perda-negativa{% elif perda_sobra > 0 %}sobra-positiva{% endif %}">
-            {{ perda_sobra | br }}
-          </td>
-          
-          <td class="col-num divisor-direita {% if perda_sobra_rs < 0 %}perda-negativa{% elif perda_sobra_rs > 0 %}sobra-positiva{% endif %}">
-            {{ perda_sobra_rs | br }}
-          </td>
-
-          <td class="col-num">{{ l.compras | br }}</td>
-          <td class="col-num">{{ l.estoque_transito | br }}</td>
-          <td class="col-num divisor-direita total-litros">{{ total_litros | br }}</td>
-          <td class="col-num">
-            {% if mostrar_indicadores_compra %}
-              {{ l.media_vendas_dia | br }}
-            {% endif %}
-          </td>
-          
-          <td class="col-num">
-            {% if mostrar_indicadores_compra and l.dias_estoque is not none %}
-              {{ "%.1f"|format(l.dias_estoque)|replace(".", ",") }}
-            {% endif %}
-          </td>
-          
-          <td class="col-num divisor-direita">
-            {% if mostrar_indicadores_compra and l.sugestao_compra %}
-              {{ l.sugestao_compra | br }}
-            {% endif %}
-          </td>
-          <td class="col-num">{{ estoque_atual_rs | br }}</td>
-          <td class="col-num">{{ compras_rs | br }}</td>
-          <td class="col-num">{{ transito_rs | br }}</td>
-          <td class="col-num">{{ total_rs | br }}</td>
-        </tr>
-
-      {% endfor %}
-
-      {% if ns.filial_atual is not none %}
-        <tr class="linha-total-filial">
-          <td colspan="2" style="color: #999;">Total Filial</td>
-          <td class="col-num">{{ ns.f_capacidade | br }}</td>
-          <td class="col-num">{{ ns.f_anterior | br }}</td>
-          <td class="col-num">{{ ns.f_descarregos | br }}</td>
-          <td class="col-num">{{ ns.f_vendas | br }}</td>
-          <td class="col-num total-calculado">{{ ns.f_calculado | br }}</td>
-          <td class="col-num medicao-atual">{{ ns.f_atual | br }}</td>
-          <td class="col-num divisor-esquerda {% if ns.f_perda < 0 %}perda-negativa{% elif ns.f_perda > 0 %}sobra-positiva{% endif %}">
-            {{ ns.f_perda | br }}
-          </td>
-          
-          <td class="col-num divisor-direita {% if ns.f_perda_rs < 0 %}perda-negativa{% elif ns.f_perda_rs > 0 %}sobra-positiva{% endif %}">
-            {{ ns.f_perda_rs | br }}
-          </td>
-          
-          <td class="col-num">{{ ns.f_compras | br }}</td>
-          <td class="col-num">{{ ns.f_transito | br }}</td>
-          <td class="col-num divisor-direita total-litros">{{ ns.f_total_litros | br }}</td>
-
-          <td class="col-num">
-            {% if mostrar_indicadores_compra %}
-              {{ ns.f_media_vendas | br }}
-            {% endif %}
-          </td>
-
-          <td class="col-num"></td>
-          <td class="col-num divisor-direita"></td>
-
-          <td class="col-num">{{ ns.f_estoque_atual_rs | br }}</td>
-          <td class="col-num">{{ ns.f_compras_rs | br }}</td>
-          <td class="col-num">{{ ns.f_transito_rs | br }}</td>
-          <td class="col-num">{{ ns.f_total_rs | br }}</td>
-        </tr>
-
-        <tr class="linha-espaco"><td colspan="20"></td></tr>
-
-        <tr class="linha-total-geral">
-          <td colspan="2">TOTAL GERAL</td>
-          <td class="col-num">{{ ns.g_capacidade | br }}</td>
-          <td class="col-num">{{ ns.g_anterior | br }}</td>
-          <td class="col-num">{{ ns.g_descarregos | br }}</td>
-          <td class="col-num">{{ ns.g_vendas | br }}</td>
-          <td class="col-num total-calculado">{{ ns.g_calculado | br }}</td>
-          <td class="col-num medicao-atual">{{ ns.g_atual | br }}</td>
-          <td class="col-num divisor-esquerda {% if ns.g_perda < 0 %}perda-negativa{% elif ns.g_perda > 0 %}sobra-positiva{% endif %}">
-            {{ ns.g_perda | br }}
-          </td>
-          
-          <td class="col-num divisor-direita {% if ns.g_perda_rs < 0 %}perda-negativa{% elif ns.g_perda_rs > 0 %}sobra-positiva{% endif %}">
-            {{ ns.g_perda_rs | br }}
-          </td>
-          
-          <td class="col-num">{{ ns.g_compras | br }}</td>
-          <td class="col-num">{{ ns.g_transito | br }}</td>
-          <td class="col-num divisor-direita total-litros">{{ ns.g_total_litros | br }}</td>
-          <td class="col-num">
-            {% if mostrar_indicadores_compra %}
-              {{ ns.g_media_vendas | br }}
-            {% endif %}
-          </td>
-          <td class="col-num"></td>
-          <td class="col-num divisor-direita"></td>
-          <td class="col-num">{{ ns.g_estoque_atual_rs | br }}</td>
-          <td class="col-num">{{ ns.g_compras_rs | br }}</td>
-          <td class="col-num">{{ ns.g_transito_rs | br }}</td>
-          <td class="col-num">{{ ns.g_total_rs | br }}</td>
-        </tr>
-      {% endif %}
-
-    </tbody>
-  </table>
+      </tbody>
+    </table>
+  </div>
 </div>
 
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script>
   function mudarData(dias) {
     const inputData = document.getElementById("data");
+    if (!inputData || !inputData.value) return;
+    const partes = inputData.value.split("-");
+    const data = new Date(parseInt(partes[0]), parseInt(partes[1]) - 1, parseInt(partes[2]));
+    data.setDate(data.getDate() + dias);
+    inputData.value = `${data.getFullYear()}-${String(data.getMonth()+1).padStart(2,"0")}-${String(data.getDate()).padStart(2,"0")}`;
+    inputData.form.submit();
+  }
 
-    if (!inputData || !inputData.value) {
-      return;
+  const wrapper = document.getElementById("wrapper-tabela");
+
+  document.querySelectorAll('input[name="vis"]').forEach(radio => {
+    radio.addEventListener("change", function () {
+      wrapper.classList.remove("vis-simplificada", "vis-estoques");
+      if (this.value === "simplificada") wrapper.classList.add("vis-simplificada");
+      if (this.value === "estoques")     wrapper.classList.add("vis-estoques");
+    });
+  });
+
+  function exportarExcel() {
+    const tabela = document.getElementById("tabela-estoques");
+    const simp = wrapper.classList.contains("vis-simplificada");
+    const est  = wrapper.classList.contains("vis-estoques");
+
+    function celulaVisivel(el) {
+      if (simp && el.classList.contains("col-somente-total")) return false;
+      if (simp && el.classList.contains("col-financeiro"))    return false;
+      if (est  && el.classList.contains("col-operacional"))   return false;
+      if (est  && el.classList.contains("col-somente-total")) return false;
+      return true;
     }
 
-    const partes = inputData.value.split("-");
-    const ano = parseInt(partes[0], 10);
-    const mes = parseInt(partes[1], 10) - 1;
-    const dia = parseInt(partes[2], 10);
+    const headers = Array.from(tabela.querySelectorAll("thead th"))
+      .filter(celulaVisivel)
+      .map(th => th.innerText.replace(/\n/g, " ").trim());
 
-    const data = new Date(ano, mes, dia);
-    data.setDate(data.getDate() + dias);
+    const linhas = [];
+    tabela.querySelectorAll("tbody tr").forEach(tr => {
+      if (tr.classList.contains("linha-espaco")) return;
+      const cells = Array.from(tr.querySelectorAll("td")).filter(celulaVisivel);
+      if (cells.length === 0) return;
+      const linha = [];
+      cells.forEach(td => {
+        linha.push(td.innerText.trim());
+        const span = parseInt(td.getAttribute("colspan") || "1", 10);
+        for (let i = 1; i < span; i++) linha.push("");
+      });
+      linhas.push(linha);
+    });
 
-    const novoAno = data.getFullYear();
-    const novoMes = String(data.getMonth() + 1).padStart(2, "0");
-    const novoDia = String(data.getDate()).padStart(2, "0");
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...linhas]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Estoques");
 
-    inputData.value = `${novoAno}-${novoMes}-${novoDia}`;
-
-    inputData.form.submit();
+    const visLabel = simp ? "simplificada" : est ? "estoques" : "total";
+    const data = document.getElementById("data").value || "sem-data";
+    XLSX.writeFile(wb, `estoques_${visLabel}_${data}.xlsx`);
   }
 </script>
 
