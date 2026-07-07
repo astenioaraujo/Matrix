@@ -3566,6 +3566,11 @@ def consultar_perdas_sobras():
             total_geral["total_sobras"] += l["total_sobras"]
             total_geral["saldo"] += l["saldo"]
 
+        dias_com_dados = sorted([
+            d for d in range(1, ultimo_dia + 1)
+            if any(l["dias"][d] != 0 for l in linhas)
+        ])
+
     except Exception as e:
         conn.rollback()
         flash(f"Erro ao consultar perdas e sobras: {e}", "error")
@@ -3583,7 +3588,7 @@ def consultar_perdas_sobras():
         mes=mes,
         mes_ref=mes_ref,
         ultimo_dia=ultimo_dia,
-        dias=range(1, 32),
+        dias=dias_com_dados,
         linhas=linhas,
         totais_filiais=totais_filiais,
         total_geral=total_geral,

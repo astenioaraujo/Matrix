@@ -21,7 +21,6 @@
 
   table {
     width: max-content;
-    min-width: 2200px;
     border-collapse: collapse;
     font-size: 13px;
     table-layout: fixed;
@@ -85,6 +84,11 @@
     font-weight: 900;
   }
 
+  .linha-total-filial td.col-dia,
+  .linha-total-filial td.col-total {
+    border-top: 2px solid #999;
+  }
+
   .linha-total-geral td {
     background: #dfe6e9;
     font-weight: 900;
@@ -138,9 +142,7 @@
           <th class="col-dia">{{ d }}</th>
         {% endfor %}
 
-        <th class="col-total divisor-esquerda">Total Perdas</th>
-        <th class="col-total">Total Sobras</th>
-        <th class="col-total">Saldo</th>
+        <th class="col-total divisor-esquerda">Saldo</th>
       </tr>
     </thead>
 
@@ -155,39 +157,30 @@
             {% set total_filial = totais_filiais[ns.filial_atual] %}
 
             <tr class="linha-total-filial">
-              <td colspan="2" style="color:#999;">Total Filial</td>
+              <td class="col-filial"></td>
+              <td class="col-produto" style="color:#999;">Total Filial</td>
 
               {% for d in dias %}
                 {% set valor = total_filial.dias[d] %}
                 <td class="col-dia {% if valor < 0 %}perda-negativa{% elif valor > 0 %}sobra-positiva{% endif %}">
-                  {% if d <= ultimo_dia and valor != 0 %}
-                    {{ valor | br }}
-                  {% endif %}
+                  {% if valor != 0 %}{{ valor | br }}{% endif %}
                 </td>
               {% endfor %}
 
-              <td class="col-total divisor-esquerda perda-negativa">
-                {{ total_filial.total_perdas | br }}
-              </td>
-
-              <td class="col-total sobra-positiva">
-                {{ total_filial.total_sobras | br }}
-              </td>
-
-              <td class="col-total {% if total_filial.saldo < 0 %}perda-negativa{% elif total_filial.saldo > 0 %}sobra-positiva{% endif %}">
+              <td class="col-total divisor-esquerda {% if total_filial.saldo < 0 %}perda-negativa{% elif total_filial.saldo > 0 %}sobra-positiva{% endif %}">
                 {{ total_filial.saldo | br }}
               </td>
             </tr>
 
             <tr class="linha-espaco">
-              <td colspan="36"></td>
+              <td colspan="{{ dias | list | length + 3 }}"></td>
             </tr>
           {% endif %}
 
           {% set ns.filial_atual = l.cod_filial %}
 
           <tr class="linha-filial">
-            <td colspan="36">{{ l.cod_filial }} - {{ l.nome_filial }}</td>
+            <td colspan="{{ dias | list | length + 3 }}">{{ l.cod_filial }} - {{ l.nome_filial }}</td>
           </tr>
 
         {% endif %}
@@ -199,21 +192,11 @@
           {% for d in dias %}
             {% set valor = l.dias[d] %}
             <td class="col-dia {% if valor < 0 %}perda-negativa{% elif valor > 0 %}sobra-positiva{% endif %}">
-              {% if d <= ultimo_dia and valor != 0 %}
-                {{ valor | br }}
-              {% endif %}
+              {% if valor != 0 %}{{ valor | br }}{% endif %}
             </td>
           {% endfor %}
 
-          <td class="col-total divisor-esquerda perda-negativa">
-            {{ l.total_perdas | br }}
-          </td>
-
-          <td class="col-total sobra-positiva">
-            {{ l.total_sobras | br }}
-          </td>
-
-          <td class="col-total {% if l.saldo < 0 %}perda-negativa{% elif l.saldo > 0 %}sobra-positiva{% endif %}">
+          <td class="col-total divisor-esquerda {% if l.saldo < 0 %}perda-negativa{% elif l.saldo > 0 %}sobra-positiva{% endif %}">
             {{ l.saldo | br }}
           </td>
         </tr>
@@ -229,27 +212,17 @@
           {% for d in dias %}
             {% set valor = total_filial.dias[d] %}
             <td class="col-dia {% if valor < 0 %}perda-negativa{% elif valor > 0 %}sobra-positiva{% endif %}">
-              {% if d <= ultimo_dia and valor != 0 %}
-                {{ valor | br }}
-              {% endif %}
+              {% if valor != 0 %}{{ valor | br }}{% endif %}
             </td>
           {% endfor %}
 
-          <td class="col-total divisor-esquerda perda-negativa">
-            {{ total_filial.total_perdas | br }}
-          </td>
-
-          <td class="col-total sobra-positiva">
-            {{ total_filial.total_sobras | br }}
-          </td>
-
-          <td class="col-total {% if total_filial.saldo < 0 %}perda-negativa{% elif total_filial.saldo > 0 %}sobra-positiva{% endif %}">
+          <td class="col-total divisor-esquerda {% if total_filial.saldo < 0 %}perda-negativa{% elif total_filial.saldo > 0 %}sobra-positiva{% endif %}">
             {{ total_filial.saldo | br }}
           </td>
         </tr>
 
         <tr class="linha-espaco">
-          <td colspan="36"></td>
+          <td colspan="{{ dias | list | length + 3 }}"></td>
         </tr>
 
         <tr class="linha-total-geral">
@@ -258,21 +231,11 @@
           {% for d in dias %}
             {% set valor = total_geral.dias[d] %}
             <td class="col-dia {% if valor < 0 %}perda-negativa{% elif valor > 0 %}sobra-positiva{% endif %}">
-              {% if d <= ultimo_dia and valor != 0 %}
-                {{ valor | br }}
-              {% endif %}
+              {% if valor != 0 %}{{ valor | br }}{% endif %}
             </td>
           {% endfor %}
 
-          <td class="col-total divisor-esquerda perda-negativa">
-            {{ total_geral.total_perdas | br }}
-          </td>
-
-          <td class="col-total sobra-positiva">
-            {{ total_geral.total_sobras | br }}
-          </td>
-
-          <td class="col-total {% if total_geral.saldo < 0 %}perda-negativa{% elif total_geral.saldo > 0 %}sobra-positiva{% endif %}">
+          <td class="col-total divisor-esquerda {% if total_geral.saldo < 0 %}perda-negativa{% elif total_geral.saldo > 0 %}sobra-positiva{% endif %}">
             {{ total_geral.saldo | br }}
           </td>
         </tr>
