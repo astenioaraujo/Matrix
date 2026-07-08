@@ -127,6 +127,9 @@
   .vis-estoques .col-operacional  { display: none; }
   .vis-estoques .col-somente-total { display: none; }
   .vis-estoques table             { min-width: unset; }
+
+  .col-perdas-estoques { display: none; }
+  .vis-estoques .col-perdas-estoques { display: table-cell; }
 </style>
 
 <div class="pagina-titulo">Consulta de Estoques</div>
@@ -184,6 +187,8 @@
           <th class="col-num col-somente-total">Média<br>Vendas Dia</th>
           <th class="col-num col-somente-total">Dias de<br>Estoque</th>
           <th class="col-num col-somente-total divisor-direita">Sugestão<br>Compra</th>
+          <th class="col-num col-perdas-estoques divisor-esquerda">Perdas/Sobras<br>em lts</th>
+          <th class="col-num col-perdas-estoques divisor-direita">Perdas/Sobras<br>em R$</th>
           <th class="col-num col-financeiro">Estoque Atual R$</th>
           <th class="col-num col-financeiro">Compras R$</th>
           <th class="col-num col-financeiro">Trânsito R$</th>
@@ -228,12 +233,14 @@
               <td class="col-num col-somente-total">{% if mostrar_indicadores_compra %}{{ ns.f_media_vendas | br }}{% endif %}</td>
               <td class="col-num col-somente-total"></td>
               <td class="col-num col-somente-total divisor-direita"></td>
+              <td class="col-num col-perdas-estoques divisor-esquerda {% if ns.f_perda < 0 %}perda-negativa{% elif ns.f_perda > 0 %}sobra-positiva{% endif %}">{{ ns.f_perda | br }}</td>
+              <td class="col-num col-perdas-estoques divisor-direita {% if ns.f_perda_rs < 0 %}perda-negativa{% elif ns.f_perda_rs > 0 %}sobra-positiva{% endif %}">{{ ns.f_perda_rs | br }}</td>
               <td class="col-num col-financeiro">{{ ns.f_estoque_atual_rs | br }}</td>
               <td class="col-num col-financeiro">{{ ns.f_compras_rs | br }}</td>
               <td class="col-num col-financeiro">{{ ns.f_transito_rs | br }}</td>
               <td class="col-num col-financeiro">{{ ns.f_total_rs | br }}</td>
             </tr>
-            <tr class="linha-espaco"><td colspan="20"></td></tr>
+            <tr class="linha-espaco"><td colspan="22"></td></tr>
             {% endif %}
 
             {% set ns.filial_atual = l.cod_filial %}
@@ -319,6 +326,8 @@
             <td class="col-num col-somente-total divisor-direita">
               {% if mostrar_indicadores_compra and l.sugestao_compra %}{{ l.sugestao_compra | br }}{% endif %}
             </td>
+            <td class="col-num col-perdas-estoques divisor-esquerda {% if perda_sobra < 0 %}perda-negativa{% elif perda_sobra > 0 %}sobra-positiva{% endif %}">{{ perda_sobra | br }}</td>
+            <td class="col-num col-perdas-estoques divisor-direita {% if perda_sobra_rs < 0 %}perda-negativa{% elif perda_sobra_rs > 0 %}sobra-positiva{% endif %}">{{ perda_sobra_rs | br }}</td>
             <td class="col-num col-financeiro">{{ estoque_atual_rs | br }}</td>
             <td class="col-num col-financeiro">{{ compras_rs | br }}</td>
             <td class="col-num col-financeiro">{{ transito_rs | br }}</td>
@@ -345,13 +354,15 @@
             <td class="col-num col-somente-total">{% if mostrar_indicadores_compra %}{{ ns.f_media_vendas | br }}{% endif %}</td>
             <td class="col-num col-somente-total"></td>
             <td class="col-num col-somente-total divisor-direita"></td>
+            <td class="col-num col-perdas-estoques divisor-esquerda {% if ns.f_perda < 0 %}perda-negativa{% elif ns.f_perda > 0 %}sobra-positiva{% endif %}">{{ ns.f_perda | br }}</td>
+            <td class="col-num col-perdas-estoques divisor-direita {% if ns.f_perda_rs < 0 %}perda-negativa{% elif ns.f_perda_rs > 0 %}sobra-positiva{% endif %}">{{ ns.f_perda_rs | br }}</td>
             <td class="col-num col-financeiro">{{ ns.f_estoque_atual_rs | br }}</td>
             <td class="col-num col-financeiro">{{ ns.f_compras_rs | br }}</td>
             <td class="col-num col-financeiro">{{ ns.f_transito_rs | br }}</td>
             <td class="col-num col-financeiro">{{ ns.f_total_rs | br }}</td>
           </tr>
 
-          <tr class="linha-espaco"><td colspan="20"></td></tr>
+          <tr class="linha-espaco"><td colspan="22"></td></tr>
 
           <tr class="linha-total-geral">
             <td colspan="2">TOTAL GERAL</td>
@@ -369,6 +380,8 @@
             <td class="col-num col-somente-total">{% if mostrar_indicadores_compra %}{{ ns.g_media_vendas | br }}{% endif %}</td>
             <td class="col-num col-somente-total"></td>
             <td class="col-num col-somente-total divisor-direita"></td>
+            <td class="col-num col-perdas-estoques divisor-esquerda {% if ns.g_perda < 0 %}perda-negativa{% elif ns.g_perda > 0 %}sobra-positiva{% endif %}">{{ ns.g_perda | br }}</td>
+            <td class="col-num col-perdas-estoques divisor-direita {% if ns.g_perda_rs < 0 %}perda-negativa{% elif ns.g_perda_rs > 0 %}sobra-positiva{% endif %}">{{ ns.g_perda_rs | br }}</td>
             <td class="col-num col-financeiro">{{ ns.g_estoque_atual_rs | br }}</td>
             <td class="col-num col-financeiro">{{ ns.g_compras_rs | br }}</td>
             <td class="col-num col-financeiro">{{ ns.g_transito_rs | br }}</td>
@@ -413,6 +426,7 @@
       if (simp && el.classList.contains("col-financeiro"))    return false;
       if (est  && el.classList.contains("col-operacional"))   return false;
       if (est  && el.classList.contains("col-somente-total")) return false;
+      if (!est && el.classList.contains("col-perdas-estoques")) return false;
       return true;
     }
 
