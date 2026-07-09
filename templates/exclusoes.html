@@ -138,7 +138,19 @@
   <span><strong>{{ rows|length }}</strong> registro(s) encontrado(s).</span>
 </div>
 
-<form method="post" onsubmit="return confirm('Confirma a exclusão dos lançamentos marcados?');">
+<!-- Modal de confirmação -->
+<div id="modal-confirmar" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:#fff; border-radius:14px; padding:32px 28px; max-width:420px; width:90%; box-shadow:0 8px 32px rgba(0,0,0,0.18); text-align:center;">
+    <div style="font-size:22px; font-weight:800; margin-bottom:10px; color:#b91f1f;">Confirmar Exclusão</div>
+    <div style="font-size:15px; color:#444; margin-bottom:24px;">Tem certeza que deseja excluir os lançamentos selecionados? Esta ação não pode ser desfeita.</div>
+    <div style="display:flex; gap:12px; justify-content:center;">
+      <button type="button" onclick="fecharModal()" style="padding:10px 24px; border-radius:8px; border:1px solid #bbb; background:#f5f5f5; font-weight:700; font-size:14px; cursor:pointer;">Cancelar</button>
+      <button type="button" onclick="confirmarExclusao()" style="padding:10px 24px; border-radius:8px; border:none; background:#d62828; color:#fff; font-weight:700; font-size:14px; cursor:pointer;">Excluir</button>
+    </div>
+  </div>
+</div>
+
+<form method="post" id="form-exclusao">
   <input type="hidden" name="ano" value="{{ ano_sel }}">
   <input type="hidden" name="mes" value="{{ mes_sel }}">
   <input type="hidden" name="filial" value="{{ filial_sel }}">
@@ -147,13 +159,13 @@
   <input type="hidden" name="data_ini" value="{{ data_ini }}">
   <input type="hidden" name="data_fim" value="{{ data_fim }}">
   <input type="hidden" name="busca" value="{{ busca }}">
-  
+
   <div style="margin-bottom: 10px;">
     <label>
       <input type="checkbox" id="marcar_todos">
       Marcar / desmarcar todos
     </label>
-    <button type="submit" class="btn btn-danger" style="margin-left: 12px;">Excluir selecionados</button>
+    <button type="button" class="btn btn-danger" style="margin-left: 12px;" onclick="abrirModal()">Excluir selecionados</button>
   </div>
 
   <div class="table-wrapper">
@@ -210,11 +222,32 @@
 
   if (marcarTodos) {
     marcarTodos.addEventListener("change", function() {
-      checks.forEach(chk => {
-        chk.checked = marcarTodos.checked;
-      });
+      checks.forEach(chk => { chk.checked = marcarTodos.checked; });
     });
   }
+
+  const modal = document.getElementById("modal-confirmar");
+
+  function abrirModal() {
+    const marcados = document.querySelectorAll(".check-item:checked");
+    if (marcados.length === 0) {
+      alert("Selecione ao menos um lançamento para excluir.");
+      return;
+    }
+    modal.style.display = "flex";
+  }
+
+  function fecharModal() {
+    modal.style.display = "none";
+  }
+
+  function confirmarExclusao() {
+    document.getElementById("form-exclusao").submit();
+  }
+
+  modal.addEventListener("click", function(e) {
+    if (e.target === modal) fecharModal();
+  });
 </script>
 
 {% endblock %}

@@ -2536,6 +2536,17 @@ def consultar_estoques():
                 WHERE cod_empresa = %s
                 AND data_preco <= %s
                 ORDER BY cod_produto, data_preco DESC
+            ),
+
+            ultima_compra_empresa AS (
+                SELECT DISTINCT ON (cod_produto)
+                    cod_produto,
+                    COALESCE(preco_unitario, 0) AS preco_empresa
+                FROM compras_combustiveis
+                WHERE cod_empresa = %s
+                  AND data_compra <= %s
+                  AND COALESCE(preco_unitario, 0) > 0
+                ORDER BY cod_produto, data_compra DESC, id_compra DESC
             )
 
             SELECT
@@ -2562,10 +2573,10 @@ def consultar_estoques():
 
                 COALESCE(mat.medicao_atual, 0) AS medicao_atual,
 
-                COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, 0) AS preco_ultima_compra,
+                COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, uce.preco_empresa, 0) AS preco_ultima_compra,
 
                 COALESCE(mat.medicao_atual, 0)
-                * COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, 0) AS estoque_atual_rs,
+                * COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, uce.preco_empresa, 0) AS estoque_atual_rs,
                 (
                     COALESCE(mat.medicao_atual, 0)
                     - (
@@ -2574,12 +2585,12 @@ def consultar_estoques():
                         - COALESCE(v.vendas, 0)
                     )
                 )
-                * COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, 0) AS perda_sobra_rs,
+                * COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, uce.preco_empresa, 0) AS perda_sobra_rs,
 
                 COALESCE(cd.compras_rs, 0) AS compras_rs,
 
                 COALESCE(t.estoque_transito, 0)
-                * COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, 0) AS transito_rs
+                * COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, uce.preco_empresa, 0) AS transito_rs
 
             FROM base b
 
@@ -2618,6 +2629,9 @@ def consultar_estoques():
             LEFT JOIN preco_data pd
               ON pd.cod_produto = b.cod_produto
 
+            LEFT JOIN ultima_compra_empresa uce
+              ON uce.cod_produto = b.cod_produto
+
             ORDER BY b.cod_filial, b.cod_produto
         """
 
@@ -2645,6 +2659,8 @@ def consultar_estoques():
                 cod_empresa, data_anterior,  # ultima_compra
 
                 cod_empresa, data_sel,       # preco_data
+
+                cod_empresa, data_anterior,  # ultima_compra_empresa
             ]
         )
 
