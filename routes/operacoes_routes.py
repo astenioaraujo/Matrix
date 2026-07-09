@@ -3328,6 +3328,10 @@ def consultar_perdas_sobras():
 
     hoje = hoje_br()
 
+    vis = (request.args.get("vis") or "mes").strip().lower()
+    if vis not in ("mes", "ano"):
+        vis = "mes"
+
     sel_mes = (request.args.get("sel_mes") or "").strip()
     sel_ano = (request.args.get("sel_ano") or "").strip()
 
@@ -3343,25 +3347,10 @@ def consultar_perdas_sobras():
         ano = hoje.year
         mes = hoje.month
 
-    data_ini = date(ano, mes, 1)
-
-    if mes == 12:
-        data_fim = date(ano + 1, 1, 1)
-    else:
-        data_fim = date(ano, mes + 1, 1)
-
     limite_dia = hoje_br() - timedelta(days=1)
-
-    if data_ini <= limite_dia < data_fim:
-        data_fim_consulta = limite_dia + timedelta(days=1)
-    else:
-        data_fim_consulta = data_fim
-
-    ultimo_dia = (data_fim_consulta - timedelta(days=1)).day
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    
 
     try:
         if tipo_global == "superusuario":
@@ -3379,11 +3368,7 @@ def consultar_perdas_sobras():
             filtro_filiais_sql = "AND f.cod_filial = ANY(%s)"
             params_filiais = [filiais_permitidas]
 
-        sql = f"""
-            WITH datas AS (
-                SELECT generate_series(%s::date, %s::date, interval '1 day')::date AS data_base
-            ),
-
+        BASE_CTE = f"""
             base AS (
                 SELECT
                     f.cod_filial,
@@ -3401,8 +3386,9 @@ def consultar_perdas_sobras():
                   AND f.ativo = TRUE
                   AND COALESCE(ct.capacidade_tanque, 0) > 0
                   {filtro_filiais_sql}
-            ),
+            )"""
 
+        VENDAS_CTE = """
             vendas AS (
                 SELECT
                     cod_filial,
@@ -3441,8 +3427,9 @@ def consultar_perdas_sobras():
                         WHEN POSITION('GASOL' IN txt) > 0 THEN 'C1'
                         ELSE NULL
                     END
-            ),
+            )"""
 
+        DESCARREGOS_CTE = """
             descarregos AS (
                 SELECT
                     cod_filial_descarga AS cod_filial,
@@ -3454,139 +3441,278 @@ def consultar_perdas_sobras():
                   AND data_descarrego >= %s
                   AND data_descarrego < %s
                 GROUP BY cod_filial_descarga, cod_produto, data_descarrego
+            )"""
+
+        if vis == "mes":
+            data_ini = date(ano, mes, 1)
+            data_fim = date(ano + 1, 1, 1) if mes == 12 else date(ano, mes + 1, 1)
+
+            if data_ini <= limite_dia < data_fim:
+                data_fim_consulta = limite_dia + timedelta(days=1)
+            else:
+                data_fim_consulta = data_fim
+
+            ultimo_dia = (data_fim_consulta - timedelta(days=1)).day
+
+            sql = f"""
+                WITH datas AS (
+                    SELECT generate_series(%s::date, %s::date, interval '1 day')::date AS data_base
+                ),
+                {BASE_CTE},
+                {VENDAS_CTE},
+                {DESCARREGOS_CTE}
+
+                SELECT
+                    b.cod_filial,
+                    b.nome_filial,
+                    b.cod_produto,
+                    b.produto,
+                    EXTRACT(DAY FROM d.data_base)::int AS dia,
+                    CASE
+                        WHEN d.data_base >= '2026-05-01' AND d.data_base <= '2026-06-01' THEN 0
+                        ELSE COALESCE(mat.quantidade_medida, 0)
+                             - (
+                                 COALESCE(ma.quantidade_medida, 0)
+                                 + COALESCE(ds.descarregos, 0)
+                                 - COALESCE(v.vendas, 0)
+                             )
+                    END AS perda_sobra,
+                    (mat.quantidade_medida IS NOT NULL OR ma.quantidade_medida IS NOT NULL) AS tem_medicao
+
+                FROM base b
+                CROSS JOIN datas d
+
+                LEFT JOIN medicoes ma
+                  ON ma.cod_empresa = %s
+                 AND ma.cod_filial = b.cod_filial
+                 AND ma.cod_produto = b.cod_produto
+                 AND ma.data_medicao = d.data_base - interval '1 day'
+
+                LEFT JOIN vendas v
+                  ON v.cod_filial = b.cod_filial
+                 AND v.cod_produto = b.cod_produto
+                 AND v.data = d.data_base - interval '1 day'
+
+                LEFT JOIN descarregos ds
+                  ON ds.cod_filial = b.cod_filial
+                 AND ds.cod_produto = b.cod_produto
+                 AND ds.data_descarrego = d.data_base - interval '1 day'
+
+                LEFT JOIN medicoes mat
+                  ON mat.cod_empresa = %s
+                 AND mat.cod_filial = b.cod_filial
+                 AND mat.cod_produto = b.cod_produto
+                 AND mat.data_medicao = d.data_base
+
+                ORDER BY b.cod_filial, b.cod_produto, dia
+            """
+
+            params = (
+                [data_ini, data_fim_consulta - timedelta(days=1), cod_empresa]
+                + params_filiais
+                + [
+                    cod_empresa, data_ini - timedelta(days=1), data_fim - timedelta(days=1),
+                    cod_empresa, data_ini - timedelta(days=1), data_fim - timedelta(days=1),
+                    cod_empresa,
+                    cod_empresa,
+                ]
             )
 
-            SELECT
-                b.cod_filial,
-                b.nome_filial,
-                b.cod_produto,
-                b.produto,
-                EXTRACT(DAY FROM d.data_base)::int AS dia,
+            cur.execute(sql, params)
+            registros = cur.fetchall() or []
 
-                COALESCE(mat.quantidade_medida, 0)
-                - (
-                    COALESCE(ma.quantidade_medida, 0)
-                    + COALESCE(ds.descarregos, 0)
-                    - COALESCE(v.vendas, 0)
-                ) AS perda_sobra
+            linhas_dict = {}
+            dias_com_medicao = set()
+            for r in registros:
+                chave = (r["cod_filial"], r["nome_filial"], r["cod_produto"], r["produto"])
+                if chave not in linhas_dict:
+                    linhas_dict[chave] = {
+                        "cod_filial": r["cod_filial"],
+                        "nome_filial": r["nome_filial"],
+                        "cod_produto": r["cod_produto"],
+                        "produto": r["produto"],
+                        "dias": {d: 0 for d in range(1, 32)},
+                        "saldo": 0,
+                    }
+                valor = float(r["perda_sobra"] or 0)
+                dia = int(r["dia"])
+                linhas_dict[chave]["dias"][dia] = valor
+                linhas_dict[chave]["saldo"] += valor
+                if r["tem_medicao"]:
+                    dias_com_medicao.add(dia)
 
-            FROM base b
-            CROSS JOIN datas d
+            linhas = list(linhas_dict.values())
 
-            LEFT JOIN medicoes ma
-              ON ma.cod_empresa = %s
-             AND ma.cod_filial = b.cod_filial
-             AND ma.cod_produto = b.cod_produto
-             AND ma.data_medicao = d.data_base - interval '1 day'
+            totais_filiais = {}
+            total_geral = {"dias": {d: 0 for d in range(1, 32)}, "saldo": 0}
 
-            LEFT JOIN vendas v
-              ON v.cod_filial = b.cod_filial
-             AND v.cod_produto = b.cod_produto
-             AND v.data = d.data_base - interval '1 day'
+            for l in linhas:
+                cf = l["cod_filial"]
+                if cf not in totais_filiais:
+                    totais_filiais[cf] = {"dias": {d: 0 for d in range(1, 32)}, "saldo": 0}
+                for d in range(1, 32):
+                    v = l["dias"][d]
+                    totais_filiais[cf]["dias"][d] += v
+                    total_geral["dias"][d] += v
+                totais_filiais[cf]["saldo"] += l["saldo"]
+                total_geral["saldo"] += l["saldo"]
 
-            LEFT JOIN descarregos ds
-              ON ds.cod_filial = b.cod_filial
-             AND ds.cod_produto = b.cod_produto
-             AND ds.data_descarrego = d.data_base - interval '1 day'
+            colunas = sorted([
+                d for d in range(1, ultimo_dia + 1)
+                if d in dias_com_medicao
+            ])
 
-            LEFT JOIN medicoes mat
-              ON mat.cod_empresa = %s
-             AND mat.cod_filial = b.cod_filial
-             AND mat.cod_produto = b.cod_produto
-             AND mat.data_medicao = d.data_base
+            # saldo = soma apenas dos dias visíveis na tela
+            for l in linhas:
+                l["saldo"] = sum(l["dias"][d] for d in colunas)
+            for cf in totais_filiais:
+                totais_filiais[cf]["saldo"] = sum(totais_filiais[cf]["dias"][d] for d in colunas)
+            total_geral["saldo"] = sum(total_geral["dias"][d] for d in colunas)
 
-            ORDER BY b.cod_filial, b.cod_produto, dia
-        """
+        else:  # vis == "ano"
+            data_ini_ano = date(ano, 1, 1)
+            data_fim_ano = date(ano + 1, 1, 1)
 
-        params = (
-            [data_ini, data_fim_consulta - timedelta(days=1), cod_empresa]
-            + params_filiais
-            + [
-                cod_empresa, data_ini - timedelta(days=1), data_fim - timedelta(days=1),
-                cod_empresa, data_ini - timedelta(days=1), data_fim - timedelta(days=1),
-                cod_empresa,
-                cod_empresa,
-            ]
-        )
+            if data_ini_ano <= limite_dia < data_fim_ano:
+                data_fim_consulta_ano = limite_dia + timedelta(days=1)
+            else:
+                data_fim_consulta_ano = data_fim_ano
 
-        cur.execute(sql, params)
-        registros = cur.fetchall() or []
+            # inclui vendas/descarregos de dez/ano-1 para calcular perda do dia 1 de jan
+            data_ini_vendas = date(ano, 1, 1) - timedelta(days=1)
 
-        linhas_dict = {}
+            sql = f"""
+                WITH datas AS (
+                    SELECT generate_series(%s::date, %s::date, interval '1 day')::date AS data_base
+                ),
+                {BASE_CTE},
+                {VENDAS_CTE},
+                {DESCARREGOS_CTE},
 
-        for r in registros:
-            chave = (
-                r["cod_filial"],
-                r["nome_filial"],
-                r["cod_produto"],
-                r["produto"],
+                diario AS (
+                    SELECT
+                        b.cod_filial,
+                        b.nome_filial,
+                        b.cod_produto,
+                        b.produto,
+                        EXTRACT(MONTH FROM d.data_base)::int AS mes_col,
+                        CASE
+                            WHEN d.data_base >= '2026-05-01' AND d.data_base <= '2026-06-01' THEN 0
+                            ELSE COALESCE(mat.quantidade_medida, 0)
+                                 - (
+                                     COALESCE(ma.quantidade_medida, 0)
+                                     + COALESCE(ds.descarregos, 0)
+                                     - COALESCE(v.vendas, 0)
+                                 )
+                        END AS perda_sobra_dia,
+                        (mat.quantidade_medida IS NOT NULL OR ma.quantidade_medida IS NOT NULL) AS tem_medicao_dia
+                    FROM base b
+                    CROSS JOIN datas d
+                    LEFT JOIN medicoes ma
+                      ON ma.cod_empresa = %s
+                     AND ma.cod_filial = b.cod_filial
+                     AND ma.cod_produto = b.cod_produto
+                     AND ma.data_medicao = d.data_base - interval '1 day'
+                    LEFT JOIN vendas v
+                      ON v.cod_filial = b.cod_filial
+                     AND v.cod_produto = b.cod_produto
+                     AND v.data = d.data_base - interval '1 day'
+                    LEFT JOIN descarregos ds
+                      ON ds.cod_filial = b.cod_filial
+                     AND ds.cod_produto = b.cod_produto
+                     AND ds.data_descarrego = d.data_base - interval '1 day'
+                    LEFT JOIN medicoes mat
+                      ON mat.cod_empresa = %s
+                     AND mat.cod_filial = b.cod_filial
+                     AND mat.cod_produto = b.cod_produto
+                     AND mat.data_medicao = d.data_base
+                )
+
+                SELECT
+                    cod_filial,
+                    nome_filial,
+                    cod_produto,
+                    produto,
+                    mes_col,
+                    SUM(perda_sobra_dia) AS perda_sobra,
+                    BOOL_OR(tem_medicao_dia) AS tem_medicao
+                FROM diario
+                GROUP BY cod_filial, nome_filial, cod_produto, produto, mes_col
+                ORDER BY cod_filial, cod_produto, mes_col
+            """
+
+            params = (
+                [date(ano, 1, 1), data_fim_consulta_ano - timedelta(days=1), cod_empresa]
+                + params_filiais
+                + [
+                    cod_empresa, data_ini_vendas, data_fim_ano,
+                    cod_empresa, data_ini_vendas, data_fim_ano,
+                    cod_empresa,
+                    cod_empresa,
+                ]
             )
 
-            if chave not in linhas_dict:
-                linhas_dict[chave] = {
-                    "cod_filial": r["cod_filial"],
-                    "nome_filial": r["nome_filial"],
-                    "cod_produto": r["cod_produto"],
-                    "produto": r["produto"],
-                    "dias": {d: 0 for d in range(1, 32)},
-                    "total_perdas": 0,
-                    "total_sobras": 0,
-                    "saldo": 0,
-                }
+            cur.execute(sql, params)
+            registros = cur.fetchall() or []
 
-            valor = float(r["perda_sobra"] or 0)
-            dia = int(r["dia"])
+            linhas_dict = {}
+            meses_com_medicao = set()
+            for r in registros:
+                chave = (r["cod_filial"], r["nome_filial"], r["cod_produto"], r["produto"])
+                if chave not in linhas_dict:
+                    linhas_dict[chave] = {
+                        "cod_filial": r["cod_filial"],
+                        "nome_filial": r["nome_filial"],
+                        "cod_produto": r["cod_produto"],
+                        "produto": r["produto"],
+                        "meses": {m: 0 for m in range(1, 13)},
+                        "saldo": 0,
+                    }
+                valor = float(r["perda_sobra"] or 0)
+                m_col = int(r["mes_col"])
+                linhas_dict[chave]["meses"][m_col] = valor
+                linhas_dict[chave]["saldo"] += valor
+                if r["tem_medicao"]:
+                    meses_com_medicao.add(m_col)
 
-            linhas_dict[chave]["dias"][dia] = valor
-            linhas_dict[chave]["saldo"] += valor
+            linhas = list(linhas_dict.values())
 
-            if valor < 0:
-                linhas_dict[chave]["total_perdas"] += valor
-            elif valor > 0:
-                linhas_dict[chave]["total_sobras"] += valor
+            totais_filiais = {}
+            total_geral = {"meses": {m: 0 for m in range(1, 13)}, "saldo": 0}
 
-        linhas = list(linhas_dict.values())
-        totais_filiais = {}
-        total_geral = {
-            "dias": {d: 0 for d in range(1, 32)},
-            "total_perdas": 0,
-            "total_sobras": 0,
-            "saldo": 0,
-        }
+            for l in linhas:
+                cf = l["cod_filial"]
+                if cf not in totais_filiais:
+                    totais_filiais[cf] = {"meses": {m: 0 for m in range(1, 13)}, "saldo": 0}
+                for m in range(1, 13):
+                    v = l["meses"][m]
+                    totais_filiais[cf]["meses"][m] += v
+                    total_geral["meses"][m] += v
+                totais_filiais[cf]["saldo"] += l["saldo"]
+                total_geral["saldo"] += l["saldo"]
 
-        for l in linhas:
-            cod_filial = l["cod_filial"]
+            colunas = sorted([
+                m for m in range(1, 13)
+                if m in meses_com_medicao
+            ])
 
-            if cod_filial not in totais_filiais:
-                totais_filiais[cod_filial] = {
-                    "dias": {d: 0 for d in range(1, 32)},
-                    "total_perdas": 0,
-                    "total_sobras": 0,
-                    "saldo": 0,
-                }
+            # saldo = soma apenas dos meses visíveis na tela
+            for l in linhas:
+                l["saldo"] = sum(l["meses"][m] for m in colunas)
+            for cf in totais_filiais:
+                totais_filiais[cf]["saldo"] = sum(totais_filiais[cf]["meses"][m] for m in colunas)
+            total_geral["saldo"] = sum(total_geral["meses"][m] for m in colunas)
 
-            for d in range(1, 32):
-                valor = l["dias"][d]
-                totais_filiais[cod_filial]["dias"][d] += valor
-                total_geral["dias"][d] += valor
-
-            totais_filiais[cod_filial]["total_perdas"] += l["total_perdas"]
-            totais_filiais[cod_filial]["total_sobras"] += l["total_sobras"]
-            totais_filiais[cod_filial]["saldo"] += l["saldo"]
-
-            total_geral["total_perdas"] += l["total_perdas"]
-            total_geral["total_sobras"] += l["total_sobras"]
-            total_geral["saldo"] += l["saldo"]
-
-        dias_com_dados = sorted([
-            d for d in range(1, ultimo_dia + 1)
-            if any(l["dias"][d] != 0 for l in linhas)
-        ])
+            ultimo_dia = None
 
     except Exception as e:
         conn.rollback()
         flash(f"Erro ao consultar perdas e sobras: {e}", "error")
         linhas = []
+        totais_filiais = {}
+        total_geral = {"dias": {}, "saldo": 0} if vis == "mes" else {"meses": {}, "saldo": 0}
+        colunas = []
+        ultimo_dia = None
 
     finally:
         cur.close()
@@ -3598,13 +3724,14 @@ def consultar_perdas_sobras():
         "consultar_perdas_sobras.html",
         cod_empresa=cod_empresa,
         nome_empresa=nome_empresa,
+        vis=vis,
         ano=ano,
         mes=mes,
         mes_num=mes,
         ano_num=ano,
         anos_disponiveis=anos_disponiveis,
         ultimo_dia=ultimo_dia,
-        dias=dias_com_dados,
+        colunas=colunas,
         linhas=linhas,
         totais_filiais=totais_filiais,
         total_geral=total_geral,

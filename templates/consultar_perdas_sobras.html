@@ -3,6 +3,9 @@
 
 {% include "components/nav.html" %}
 
+{% set nomes_meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'] %}
+{% set nomes_meses_completos = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'] %}
+
 <style>
   .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 10px; }
   .empresa { font-size: 22px; margin-bottom: 24px; }
@@ -43,15 +46,15 @@
     gap: 14px;
     align-items: end;
     margin-bottom: 20px;
+    flex-wrap: wrap;
   }
 
   label { font-weight: 700; display: block; margin-bottom: 6px; }
 
-  input {
+  input, select {
     padding: 8px;
     border: 1px solid #cfcfcf;
     border-radius: 6px;
-    width: 150px;
   }
 
   .btn {
@@ -64,9 +67,25 @@
     cursor: pointer;
   }
 
+  .vis-toggle {
+    display: flex; align-items: center; gap: 0;
+    border: 1px solid #bbb; border-radius: 8px;
+    overflow: hidden; height: 38px;
+  }
+  .vis-toggle label {
+    margin: 0; padding: 0 18px; height: 100%;
+    display: flex; align-items: center;
+    font-weight: 700; font-size: 13px;
+    cursor: pointer; background: #f1f1f1; color: #555;
+    border: none; transition: background 0.15s, color 0.15s;
+  }
+  .vis-toggle input[type=radio] { display: none; }
+  .vis-toggle input[type=radio]:checked + label { background: #1565c0; color: #fff; }
+
   .col-filial { width: 150px; font-weight: 800; }
   .col-produto { width: 190px; font-weight: 700; }
   .col-dia { width: 62px; text-align: right; }
+  .col-mes { width: 90px; text-align: right; }
   .col-total { width: 120px; text-align: right; }
 
   .divisor-esquerda {
@@ -85,6 +104,7 @@
   }
 
   .linha-total-filial td.col-dia,
+  .linha-total-filial td.col-mes,
   .linha-total-filial td.col-total {
     border-top: 2px solid #999;
   }
@@ -123,15 +143,17 @@
 <div class="painel">
   <form method="get">
     <div class="linha-filtro">
+
+      {% if vis == "mes" %}
       <div>
         <label for="sel_mes">Mês</label>
         <select id="sel_mes" name="sel_mes">
-          {% set nomes_meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'] %}
           {% for i in range(1, 13) %}
-            <option value="{{ i }}" {% if i == mes_num %}selected{% endif %}>{{ nomes_meses[i-1] }}</option>
+            <option value="{{ i }}" {% if i == mes_num %}selected{% endif %}>{{ nomes_meses_completos[i-1] }}</option>
           {% endfor %}
         </select>
       </div>
+      {% endif %}
 
       <div>
         <label for="sel_ano">Ano</label>
@@ -142,7 +164,20 @@
         </select>
       </div>
 
+      <input type="hidden" name="vis" id="input-vis" value="{{ vis }}">
+
       <button type="submit" class="btn">Filtrar</button>
+
+      <div style="align-self:flex-end;">
+        <label style="margin-bottom:6px;">Período</label>
+        <div class="vis-toggle">
+          <input type="radio" name="_vis_toggle" id="vis-mes" value="mes" {% if vis == "mes" %}checked{% endif %} onchange="trocarVis('mes')">
+          <label for="vis-mes">Mês</label>
+          <input type="radio" name="_vis_toggle" id="vis-ano" value="ano" {% if vis == "ano" %}checked{% endif %} onchange="trocarVis('ano')">
+          <label for="vis-ano">Ano</label>
+        </div>
+      </div>
+
     </div>
   </form>
 
@@ -152,9 +187,15 @@
         <th class="col-filial">Filial</th>
         <th class="col-produto">Produto</th>
 
-        {% for d in dias %}
-          <th class="col-dia">{{ d }}</th>
-        {% endfor %}
+        {% if vis == "mes" %}
+          {% for d in colunas %}
+            <th class="col-dia">{{ d }}</th>
+          {% endfor %}
+        {% else %}
+          {% for m in colunas %}
+            <th class="col-mes">{{ nomes_meses[m-1] }}</th>
+          {% endfor %}
+        {% endif %}
 
         <th class="col-total divisor-esquerda">Saldo</th>
       </tr>
@@ -168,33 +209,42 @@
         {% if ns.filial_atual != l.cod_filial %}
 
           {% if ns.filial_atual is not none %}
-            {% set total_filial = totais_filiais[ns.filial_atual] %}
+            {% set tf = totais_filiais[ns.filial_atual] %}
 
             <tr class="linha-total-filial">
               <td class="col-filial"></td>
               <td class="col-produto" style="color:#999;">Total Filial</td>
 
-              {% for d in dias %}
-                {% set valor = total_filial.dias[d] %}
-                <td class="col-dia {% if valor < 0 %}perda-negativa{% elif valor > 0 %}sobra-positiva{% endif %}">
-                  {% if valor != 0 %}{{ valor | br }}{% endif %}
-                </td>
-              {% endfor %}
+              {% if vis == "mes" %}
+                {% for d in colunas %}
+                  {% set valor = tf.dias[d] %}
+                  <td class="col-dia {% if valor < 0 %}perda-negativa{% elif valor > 0 %}sobra-positiva{% endif %}">
+                    {% if valor != 0 %}{{ valor | br }}{% endif %}
+                  </td>
+                {% endfor %}
+              {% else %}
+                {% for m in colunas %}
+                  {% set valor = tf.meses[m] %}
+                  <td class="col-mes {% if valor < 0 %}perda-negativa{% elif valor > 0 %}sobra-positiva{% endif %}">
+                    {% if valor != 0 %}{{ valor | br }}{% endif %}
+                  </td>
+                {% endfor %}
+              {% endif %}
 
-              <td class="col-total divisor-esquerda {% if total_filial.saldo < 0 %}perda-negativa{% elif total_filial.saldo > 0 %}sobra-positiva{% endif %}">
-                {{ total_filial.saldo | br }}
+              <td class="col-total divisor-esquerda {% if tf.saldo < 0 %}perda-negativa{% elif tf.saldo > 0 %}sobra-positiva{% endif %}">
+                {{ tf.saldo | br }}
               </td>
             </tr>
 
             <tr class="linha-espaco">
-              <td colspan="{{ dias | list | length + 3 }}"></td>
+              <td colspan="{{ colunas | length + 3 }}"></td>
             </tr>
           {% endif %}
 
           {% set ns.filial_atual = l.cod_filial %}
 
           <tr class="linha-filial">
-            <td colspan="{{ dias | list | length + 3 }}">{{ l.cod_filial }} - {{ l.nome_filial }}</td>
+            <td colspan="{{ colunas | length + 3 }}">{{ l.cod_filial }} - {{ l.nome_filial }}</td>
           </tr>
 
         {% endif %}
@@ -203,12 +253,21 @@
           <td class="col-filial"></td>
           <td class="col-produto">{{ l.cod_produto }} - {{ l.produto }}</td>
 
-          {% for d in dias %}
-            {% set valor = l.dias[d] %}
-            <td class="col-dia {% if valor < 0 %}perda-negativa{% elif valor > 0 %}sobra-positiva{% endif %}">
-              {% if valor != 0 %}{{ valor | br }}{% endif %}
-            </td>
-          {% endfor %}
+          {% if vis == "mes" %}
+            {% for d in colunas %}
+              {% set valor = l.dias[d] %}
+              <td class="col-dia {% if valor < 0 %}perda-negativa{% elif valor > 0 %}sobra-positiva{% endif %}">
+                {% if valor != 0 %}{{ valor | br }}{% endif %}
+              </td>
+            {% endfor %}
+          {% else %}
+            {% for m in colunas %}
+              {% set valor = l.meses[m] %}
+              <td class="col-mes {% if valor < 0 %}perda-negativa{% elif valor > 0 %}sobra-positiva{% endif %}">
+                {% if valor != 0 %}{{ valor | br }}{% endif %}
+              </td>
+            {% endfor %}
+          {% endif %}
 
           <td class="col-total divisor-esquerda {% if l.saldo < 0 %}perda-negativa{% elif l.saldo > 0 %}sobra-positiva{% endif %}">
             {{ l.saldo | br }}
@@ -218,36 +277,54 @@
       {% endfor %}
 
       {% if ns.filial_atual is not none %}
-        {% set total_filial = totais_filiais[ns.filial_atual] %}
+        {% set tf = totais_filiais[ns.filial_atual] %}
 
         <tr class="linha-total-filial">
           <td colspan="2" style="color:#999;">Total Filial</td>
 
-          {% for d in dias %}
-            {% set valor = total_filial.dias[d] %}
-            <td class="col-dia {% if valor < 0 %}perda-negativa{% elif valor > 0 %}sobra-positiva{% endif %}">
-              {% if valor != 0 %}{{ valor | br }}{% endif %}
-            </td>
-          {% endfor %}
+          {% if vis == "mes" %}
+            {% for d in colunas %}
+              {% set valor = tf.dias[d] %}
+              <td class="col-dia {% if valor < 0 %}perda-negativa{% elif valor > 0 %}sobra-positiva{% endif %}">
+                {% if valor != 0 %}{{ valor | br }}{% endif %}
+              </td>
+            {% endfor %}
+          {% else %}
+            {% for m in colunas %}
+              {% set valor = tf.meses[m] %}
+              <td class="col-mes {% if valor < 0 %}perda-negativa{% elif valor > 0 %}sobra-positiva{% endif %}">
+                {% if valor != 0 %}{{ valor | br }}{% endif %}
+              </td>
+            {% endfor %}
+          {% endif %}
 
-          <td class="col-total divisor-esquerda {% if total_filial.saldo < 0 %}perda-negativa{% elif total_filial.saldo > 0 %}sobra-positiva{% endif %}">
-            {{ total_filial.saldo | br }}
+          <td class="col-total divisor-esquerda {% if tf.saldo < 0 %}perda-negativa{% elif tf.saldo > 0 %}sobra-positiva{% endif %}">
+            {{ tf.saldo | br }}
           </td>
         </tr>
 
         <tr class="linha-espaco">
-          <td colspan="{{ dias | list | length + 3 }}"></td>
+          <td colspan="{{ colunas | length + 3 }}"></td>
         </tr>
 
         <tr class="linha-total-geral">
           <td colspan="2">TOTAL GERAL</td>
 
-          {% for d in dias %}
-            {% set valor = total_geral.dias[d] %}
-            <td class="col-dia {% if valor < 0 %}perda-negativa{% elif valor > 0 %}sobra-positiva{% endif %}">
-              {% if valor != 0 %}{{ valor | br }}{% endif %}
-            </td>
-          {% endfor %}
+          {% if vis == "mes" %}
+            {% for d in colunas %}
+              {% set valor = total_geral.dias[d] %}
+              <td class="col-dia {% if valor < 0 %}perda-negativa{% elif valor > 0 %}sobra-positiva{% endif %}">
+                {% if valor != 0 %}{{ valor | br }}{% endif %}
+              </td>
+            {% endfor %}
+          {% else %}
+            {% for m in colunas %}
+              {% set valor = total_geral.meses[m] %}
+              <td class="col-mes {% if valor < 0 %}perda-negativa{% elif valor > 0 %}sobra-positiva{% endif %}">
+                {% if valor != 0 %}{{ valor | br }}{% endif %}
+              </td>
+            {% endfor %}
+          {% endif %}
 
           <td class="col-total divisor-esquerda {% if total_geral.saldo < 0 %}perda-negativa{% elif total_geral.saldo > 0 %}sobra-positiva{% endif %}">
             {{ total_geral.saldo | br }}
@@ -257,5 +334,12 @@
     </tbody>
   </table>
 </div>
+
+<script>
+function trocarVis(v) {
+  document.getElementById("input-vis").value = v;
+  document.querySelector("form").submit();
+}
+</script>
 
 {% endblock %}

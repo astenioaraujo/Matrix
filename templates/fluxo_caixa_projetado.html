@@ -333,6 +333,7 @@
     r.addEventListener("change", function() {
       if (this.value === "sintetico") wrapper.classList.add("modo-sintetico");
       else wrapper.classList.remove("modo-sintetico");
+      aplicarMapaCalor();
     });
   });
 
@@ -382,6 +383,69 @@
     // recolocar o ▼
     btn.style.paddingRight = "30px";
   }
+
+  // ── Mapa de calor ──────────────────────────────────────────────────────────
+  function getColorExcel(ratio) {
+    let r, g, b;
+    if (ratio <= 0.5) {
+      const t = ratio / 0.5;
+      r = 248 + (255 - 248) * t;
+      g = 105 + (235 - 105) * t;
+      b = 107 + (132 - 107) * t;
+    } else {
+      const t = (ratio - 0.5) / 0.5;
+      r = 255 + (99 - 255) * t;
+      g = 235 + (190 - 235) * t;
+      b = 132 + (123 - 132) * t;
+    }
+    return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+  }
+
+  function colorirCelulas(celulas) {
+    const valores = celulas.map(cel => {
+      const txt = cel.innerText.replace(/\./g, "").replace(",", ".").trim();
+      const n = parseFloat(txt);
+      return isNaN(n) ? null : n;
+    });
+    const filtrados = valores.filter(v => v !== null);
+    if (!filtrados.length) return;
+    const min = Math.min(...filtrados);
+    const max = Math.max(...filtrados);
+    celulas.forEach((cel, i) => {
+      if (valores[i] === null) {
+        cel.style.background = "#fff";
+        cel.style.color = "";
+        return;
+      }
+      let ratio = (valores[i] - min) / ((max - min) || 1);
+      ratio = Math.round(ratio * 50) / 50;
+      cel.style.background = getColorExcel(ratio);
+      cel.style.color = "#111";
+    });
+  }
+
+  function limparMapaCalor() {
+    document.querySelectorAll("#tabela-fluxo tbody td.col-num").forEach(cel => {
+      cel.style.background = "";
+      cel.style.color = "";
+    });
+  }
+
+  function aplicarMapaCalor() {
+    limparMapaCalor();
+    const sintetico = wrapper.classList.contains("modo-sintetico");
+
+    // cada linha individualmente, sem interferência entre linhas
+    const seletor = sintetico
+      ? "#tabela-fluxo tbody tr.linha-grupo"
+      : "#tabela-fluxo tbody tr.linha-conta";
+
+    document.querySelectorAll(seletor).forEach(linha => {
+      colorirCelulas(Array.from(linha.querySelectorAll("td.col-num")));
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", aplicarMapaCalor);
 </script>
 
 {% endblock %}
