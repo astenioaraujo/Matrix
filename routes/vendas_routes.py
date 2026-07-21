@@ -1295,7 +1295,7 @@ def vendas_importar_diarias():
             "vendas_importar_diarias.html",
             nome_empresa=nome_empresa,
             job_id=None,
-            url_voltar=url_for("vendas.vendas_diarias"),
+            url_voltar=url_for("sistema.menu_vendas"),
             texto_voltar="← Voltar"
         )
 
@@ -1677,7 +1677,7 @@ def vendas_importar_diarias():
         "vendas_importar_diarias.html",
         nome_empresa=nome_empresa,
         job_id=job_id,
-        url_voltar=url_for("vendas.vendas_diarias"),
+        url_voltar=url_for("sistema.menu_vendas"),
         texto_voltar="← Voltar"
     )
 
