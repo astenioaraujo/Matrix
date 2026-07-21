@@ -287,11 +287,17 @@ def menu_empresa():
     if tipo_global == "superusuario":
 
         pode_saldos = True
+        pode_caixas = True
         pode_fluxo_caixa = True
         pode_cadastros = True
         pode_emprestimos_financiamentos = True
 
     else:
+
+        # Caixas
+        pode_caixas = usuario_tem_permissao(
+            id_usuario, cod_empresa, "FINANCEIRO", "MENU_CAIXAS"
+        )
 
         # Saldos
         pode_saldos = usuario_tem_permissao(
@@ -352,6 +358,7 @@ def menu_empresa():
         ano_atual=datetime.now().year,
         url_voltar=url_for("sistema.selecionar_sistema"),
 
+        pode_caixas=pode_caixas,
         pode_saldos=pode_saldos,
         pode_fluxo_caixa=pode_fluxo_caixa,
         pode_cadastros=pode_cadastros,
@@ -1070,6 +1077,10 @@ def resultado_mb():
         else:
             ano = hoje.year
 
+    # Filial selecionada (vazio = todas)
+    filial_sel_raw = (request.args.get("filial") or "").strip()
+    filiais_sel = [int(filial_sel_raw)] if filial_sel_raw.isdigit() else []
+
     conn = get_connection()
     cur = conn.cursor()
 
@@ -1077,40 +1088,37 @@ def resultado_mb():
         cur.execute("""
             SELECT cod_filial, nome_filial
             FROM filiais
-            WHERE cod_empresa = %s
-              AND ativo = true
+            WHERE cod_empresa = %s AND ativo = true
             ORDER BY cod_filial
         """, (cod_empresa,))
-        filiais = cur.fetchall()
+        todas_filiais = cur.fetchall()
+
+        # Filiais exibidas (filtradas ou todas)
+        if filiais_sel:
+            filiais = [f for f in todas_filiais if f[0] in filiais_sel]
+        else:
+            filiais = todas_filiais
 
         def buscar_valores(tabela, filtro_extra):
             where_mes = ""
             params = [cod_empresa, ano]
-
             if mes:
                 where_mes = "AND mes = %s"
                 params.append(mes)
-
-            campo_valor = "valor"
-            if tabela == "vendas_mb_sintetico":
-                campo_valor = "margem_bruta"
-
+            campo_valor = "margem_bruta" if tabela == "vendas_mb_sintetico" else "valor"
             cur.execute(f"""
                 SELECT cod_filial, COALESCE(SUM({campo_valor}), 0)
                 FROM {tabela}
-                WHERE cod_empresa = %s
-                AND ano = %s
-                {where_mes}
-                {filtro_extra}
+                WHERE cod_empresa = %s AND ano = %s
+                {where_mes} {filtro_extra}
                 GROUP BY cod_filial
             """, params)
-
             return {r[0]: float(r[1]) for r in cur.fetchall()}
 
-        mb = buscar_valores("vendas_mb_sintetico", "")
+        mb   = buscar_valores("vendas_mb_sintetico", "")
         desp = buscar_valores("lancamentos", "AND grupo = '4'")
-        inv = buscar_valores("lancamentos", "AND grupo = '5'")
-        div = buscar_valores("lancamentos", "AND grupo = '6'")
+        inv  = buscar_valores("lancamentos", "AND grupo = '5'")
+        div  = buscar_valores("lancamentos", "AND grupo = '6'")
 
         def montar_linha(nome, base):
             linha = {"nome": nome, "total": 0.0, "por_filial": {}}
@@ -1120,37 +1128,22 @@ def resultado_mb():
                 linha["total"] += v
             return linha
 
-        linha_mb = montar_linha("MB", mb)
+        linha_mb   = montar_linha("MB", mb)
         linha_desp = montar_linha("DESPESAS", desp)
-
         linha_res1 = montar_linha("RESULTADO 1", {
-            cod_filial: mb.get(cod_filial, 0.0) + desp.get(cod_filial, 0.0)
-            for cod_filial, _ in filiais
+            f[0]: mb.get(f[0], 0.0) + desp.get(f[0], 0.0) for f in filiais
         })
-
-        linha_inv = montar_linha("INVESTIMENTOS / AMORTIZAÇÕES", inv)
-
+        linha_inv  = montar_linha("INVESTIMENTOS / AMORTIZAÇÕES", inv)
         linha_res2 = montar_linha("RESULTADO 2", {
-            cod_filial: linha_res1["por_filial"][cod_filial] + inv.get(cod_filial, 0.0)
-            for cod_filial, _ in filiais
+            f[0]: linha_res1["por_filial"][f[0]] + inv.get(f[0], 0.0) for f in filiais
         })
-
-        linha_div = montar_linha("ANTECIPAÇÃO DIVIDENDOS", div)
-
+        linha_div  = montar_linha("ANTECIPAÇÃO DIVIDENDOS", div)
         linha_res3 = montar_linha("RESULTADO 3", {
-            cod_filial: linha_res2["por_filial"][cod_filial] + div.get(cod_filial, 0.0)
-            for cod_filial, _ in filiais
+            f[0]: linha_res2["por_filial"][f[0]] + div.get(f[0], 0.0) for f in filiais
         })
 
-        linhas = [
-            linha_mb,
-            linha_desp,
-            linha_res1,
-            linha_inv,
-            linha_res2,
-            linha_div,
-            linha_res3,
-        ]
+        linhas = [linha_mb, linha_desp, linha_res1,
+                  linha_inv, linha_res2, linha_div, linha_res3]
 
     finally:
         cur.close()
@@ -1158,7 +1151,9 @@ def resultado_mb():
 
     return render_template(
         "resultado_mb.html",
+        todas_filiais=todas_filiais,
         filiais=filiais,
+        filial_sel=filial_sel_raw,
         linhas=linhas,
         ano=ano,
         mes=mes,
@@ -1185,7 +1180,23 @@ def matricial():
     filial_sel = (request.args.get("filial") or "").strip()
 
     if not ano_sel and not mes_sel:
-        if hoje.month == 1:
+        conn_def = get_connection()
+        cur_def = conn_def.cursor()
+        try:
+            cur_def.execute("""
+                SELECT ano, mes FROM lancamentos
+                WHERE cod_empresa = %s
+                ORDER BY ano DESC, mes DESC
+                LIMIT 1
+            """, (cod_empresa,))
+            row_def = cur_def.fetchone()
+        finally:
+            cur_def.close()
+            conn_def.close()
+        if row_def:
+            ano_sel = str(row_def[0])
+            mes_sel = str(row_def[1])
+        elif hoje.month == 1:
             ano_sel = str(hoje.year - 1)
             mes_sel = "12"
         else:
@@ -2388,6 +2399,7 @@ def editar_emprestimo_financiamento(id_emprestimo):
 
                 quantidade_parcelas = int(request.form.get("quantidade_parcelas") or 0)
                 meses_carencia = int(request.form.get("meses_carencia") or 0)
+                modalidade_calculo = request.form.get("modalidade_calculo") or "PARCELA_FIXA"
 
                 saldo_devedor = valor_contratado
                 situacao = request.form.get("situacao") or "ATIVO"
@@ -2412,6 +2424,7 @@ def editar_emprestimo_financiamento(id_emprestimo):
                            situacao = %s,
                            observacoes = %s,
                            ativo = %s,
+                           modalidade_calculo = %s,
                            atualizado_em = now()
                      WHERE id_emprestimo = %s
                        AND cod_empresa = %s
@@ -2432,6 +2445,7 @@ def editar_emprestimo_financiamento(id_emprestimo):
                     situacao,
                     observacoes,
                     ativo,
+                    modalidade_calculo,
                     id_emprestimo,
                     cod_empresa
                 ))
@@ -2565,7 +2579,8 @@ def gerar_parcelas_emprestimo_financiamento(id_emprestimo):
                 valor_parcela,
                 taxa_juros,
                 modalidade_calculo,
-                data_primeiro_vencimento
+                data_primeiro_vencimento,
+                meses_carencia
             FROM financeiro_emprestimos
             WHERE id_emprestimo = %s
               AND cod_empresa = %s
@@ -2582,16 +2597,14 @@ def gerar_parcelas_emprestimo_financiamento(id_emprestimo):
         taxa_juros = float(contrato["taxa_juros"] or 0)
         modalidade_calculo = contrato["modalidade_calculo"] or "PARCELA_FIXA"
         data_primeiro_vencimento = contrato["data_primeiro_vencimento"]
+        meses_carencia = int(contrato["meses_carencia"] or 0)
 
         if valor_contratado <= 0:
             return "Valor contratado inválido.", 400
-
         if quantidade_parcelas <= 0:
             return "Quantidade de parcelas inválida.", 400
-
-        if valor_principal_base <= 0:
-            return "Valor da parcela inválido.", 400
-
+        if modalidade_calculo == "PARCELA_FIXA" and valor_principal_base <= 0:
+            return "Valor da parcela inválido para modalidade Parcela Fixa.", 400
         if not data_primeiro_vencimento:
             return "Informe o primeiro vencimento antes de gerar as parcelas.", 400
 
@@ -2600,85 +2613,93 @@ def gerar_parcelas_emprestimo_financiamento(id_emprestimo):
             SELECT COUNT(*) AS qtde
             FROM financeiro_emprestimos_parcelas
             WHERE id_emprestimo = %s
-            AND tipo_parcela = 'NORMAL'
         """, (id_emprestimo,))
-
-        qtde_existente = int(cur.fetchone()["qtde"] or 0)
-
-        if qtde_existente > 0:
+        if int(cur.fetchone()["qtde"] or 0) > 0:
             return "Este contrato já possui parcelas geradas. Exclua as parcelas antes de gerar novamente.", 400
 
+        taxa_mensal = taxa_juros / 100.0
         saldo_atual = valor_contratado
 
-        for numero in range(1, quantidade_parcelas + 1):
+        # Pré-calcula PMT para PRICE
+        if modalidade_calculo == "PRICE":
+            if taxa_mensal > 0:
+                pmt = valor_contratado * taxa_mensal / (1 - (1 + taxa_mensal) ** (-quantidade_parcelas))
+            else:
+                pmt = valor_contratado / quantidade_parcelas
 
+        # Principal fixo para SAC
+        if modalidade_calculo == "SAC":
+            principal_sac = valor_contratado / quantidade_parcelas
+
+        # Contador global de sequência (carência + normais)
+        seq = 0
+
+        def inserir_parcela(numero, tipo, saldo_ini, principal, juros, total, saldo_fin, taxa):
+            nonlocal seq
+            seq += 1
+            cur.execute("""
+                INSERT INTO financeiro_emprestimos_parcelas (
+                    id_emprestimo, cod_empresa, numero_parcela, tipo_parcela,
+                    data_vencimento, saldo_inicial, valor_principal, valor_juros,
+                    valor_parcela, valor_pago, saldo_final, taxa_juros, situacao
+                ) VALUES (
+                    %s, %s, %s, %s,
+                    (%s::date + ((%s - 1) * interval '1 month'))::date,
+                    %s, %s, %s, %s, 0, %s, %s, 'EM_ABERTO'
+                )
+            """, (
+                id_emprestimo, cod_empresa, numero, tipo,
+                data_primeiro_vencimento, seq,
+                saldo_ini, principal, juros, total, saldo_fin, taxa
+            ))
+
+        # --- Fase 1: Carência ---
+        for m in range(1, meses_carencia + 1):
+            if modalidade_calculo == "PARCELA_FIXA":
+                juros_car = 0.0
+            else:
+                juros_car = round(saldo_atual * taxa_mensal, 2)
+            inserir_parcela(m, 'CARENCIA', saldo_atual, 0.0, juros_car, juros_car, saldo_atual, taxa_juros)
+
+        # --- Fase 2: Parcelas normais ---
+        for i in range(1, quantidade_parcelas + 1):
+            numero = meses_carencia + i
             saldo_inicial = saldo_atual
 
             if modalidade_calculo == "PARCELA_FIXA":
-                valor_principal = valor_principal_base
-                valor_juros = 0.00
-                taxa_parcela = 0.00
+                valor_principal = min(valor_principal_base, saldo_inicial)
+                valor_juros = 0.0
+                taxa_parcela = 0.0
 
-            else:
-                # Por enquanto, as demais modalidades serão tratadas como parcela fixa.
-                # Depois implementaremos PRICE, SAC e JUROS_VARIAVEIS.
-                valor_principal = valor_principal_base
-                valor_juros = 0.00
+            elif modalidade_calculo == "PRICE":
+                valor_juros = round(saldo_atual * taxa_mensal, 2)
+                valor_principal = round(pmt - valor_juros, 2)
+                if valor_principal > saldo_atual:
+                    valor_principal = round(saldo_atual, 2)
                 taxa_parcela = taxa_juros
 
-            if valor_principal > saldo_inicial:
-                valor_principal = saldo_inicial
+            elif modalidade_calculo == "SAC":
+                valor_principal = round(min(principal_sac, saldo_atual), 2)
+                valor_juros = round(saldo_atual * taxa_mensal, 2)
+                taxa_parcela = taxa_juros
 
-            valor_parcela_total = valor_principal + valor_juros
-            saldo_final = saldo_inicial - valor_principal
+            elif modalidade_calculo in ("PARCELA_INFORMADA", "JUROS_VARIAVEIS"):
+                valor_principal = 0.0
+                valor_juros = 0.0
+                taxa_parcela = taxa_juros
 
-            cur.execute("""
-                INSERT INTO financeiro_emprestimos_parcelas (
-                    id_emprestimo,
-                    cod_empresa,
-                    numero_parcela,
-                    tipo_parcela,
-                    data_vencimento,
-                    saldo_inicial,
-                    valor_principal,
-                    valor_juros,
-                    valor_parcela,
-                    valor_pago,
-                    saldo_final,
-                    taxa_juros,
-                    situacao
-                )
-                VALUES (
-                    %s,
-                    %s,
-                    %s,
-                    'NORMAL',
-                    (%s::date + ((%s - 1) * interval '1 month'))::date,
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-                    0,
-                    %s,
-                    %s,
-                    'EM_ABERTO'
-                )
-            """, (
-                id_emprestimo,
-                cod_empresa,
-                numero,
-                data_primeiro_vencimento,
-                numero,
-                saldo_inicial,
-                valor_principal,
-                valor_juros,
-                valor_parcela_total,
-                saldo_final,
-                taxa_parcela
-            ))
+            else:
+                valor_principal = min(valor_principal_base, saldo_inicial)
+                valor_juros = 0.0
+                taxa_parcela = 0.0
+
+            valor_parcela_total = round(valor_principal + valor_juros, 2)
+            saldo_final = round(saldo_inicial - valor_principal, 2)
+
+            inserir_parcela(numero, 'NORMAL', saldo_inicial, valor_principal,
+                            valor_juros, valor_parcela_total, saldo_final, taxa_parcela)
 
             saldo_atual = saldo_final
-
             if saldo_atual <= 0:
                 break
 
@@ -2732,7 +2753,8 @@ def visualizar_parcelas_emprestimo_financiamento(id_emprestimo):
                 saldo_devedor,
                 situacao,
                 observacoes,
-                ativo
+                ativo,
+                COALESCE(modalidade_calculo, 'PARCELA_FIXA') AS modalidade_calculo
             FROM financeiro_emprestimos
             WHERE id_emprestimo = %s
               AND cod_empresa = %s
@@ -2770,6 +2792,9 @@ def visualizar_parcelas_emprestimo_financiamento(id_emprestimo):
         cur.close()
         conn.close()
 
+    modalidade = contrato["modalidade_calculo"] if contrato else "PARCELA_FIXA"
+    editavel = modalidade in ("PARCELA_INFORMADA", "JUROS_VARIAVEIS")
+
     return render_template(
         "financeiro_emprestimos_parcelas.html",
         empresa_ativa=cod_empresa,
@@ -2778,7 +2803,9 @@ def visualizar_parcelas_emprestimo_financiamento(id_emprestimo):
         parcelas=parcelas,
         hoje=date.today(),
         formatar_numero_br=formatar_numero_br,
-        url_voltar=url_for("financeiro.cadastro_emprestimos_financiamentos")
+        url_voltar=url_for("financeiro.cadastro_emprestimos_financiamentos"),
+        editavel=editavel,
+        modalidade=modalidade,
     )
 
 #---------------------------------------------------------
@@ -2840,6 +2867,72 @@ def excluir_todas_parcelas_emprestimo_financiamento(id_emprestimo):
         "financeiro.visualizar_parcelas_emprestimo_financiamento",
         id_emprestimo=id_emprestimo
     ))
+
+#---------------------------------------------------------
+# EDITAR PARCELA INDIVIDUAL (PARCELA_INFORMADA / JUROS_VARIAVEIS)
+#---------------------------------------------------------
+
+@financeiro_bp.route("/emprestimos-financiamentos/parcelas/editar/<int:id_parcela>", methods=["POST"])
+def editar_parcela_emprestimo_financiamento(id_parcela):
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    def conv(v):
+        try:
+            return float((v or "0").replace(".", "").replace(",", "."))
+        except ValueError:
+            return 0.0
+
+    valor_principal = conv(request.form.get("valor_principal"))
+    valor_juros     = conv(request.form.get("valor_juros"))
+    valor_parcela   = round(valor_principal + valor_juros, 2)
+    id_emprestimo   = int(request.form.get("id_emprestimo") or 0)
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        # Busca saldo_inicial da parcela anterior para calcular saldo_final
+        cur.execute("""
+            SELECT p.saldo_inicial,
+                   (SELECT p2.saldo_final FROM financeiro_emprestimos_parcelas p2
+                    WHERE p2.id_emprestimo = p.id_emprestimo
+                      AND p2.numero_parcela < p.numero_parcela
+                      AND p2.tipo_parcela = 'NORMAL'
+                    ORDER BY p2.numero_parcela DESC LIMIT 1) AS saldo_anterior
+            FROM financeiro_emprestimos_parcelas p
+            WHERE p.id_parcela = %s AND p.id_emprestimo IN (
+                SELECT id_emprestimo FROM financeiro_emprestimos WHERE cod_empresa = %s
+            )
+        """, (id_parcela, cod_empresa))
+        row = cur.fetchone()
+        if not row:
+            return "Parcela não encontrada.", 404
+
+        saldo_ini = float(row["saldo_anterior"] or row["saldo_inicial"] or 0)
+        saldo_fin = round(saldo_ini - valor_principal, 2)
+
+        cur.execute("""
+            UPDATE financeiro_emprestimos_parcelas
+               SET valor_principal = %s,
+                   valor_juros     = %s,
+                   valor_parcela   = %s,
+                   saldo_inicial   = %s,
+                   saldo_final     = %s
+             WHERE id_parcela = %s
+        """, (valor_principal, valor_juros, valor_parcela, saldo_ini, saldo_fin, id_parcela))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return f"Erro: {str(e)}", 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return redirect(url_for("financeiro.visualizar_parcelas_emprestimo_financiamento",
+                            id_emprestimo=id_emprestimo))
+
 
 #---------------------------------------------------------
 # PAGAMENTOS DE PARCELAS DE EMPRÉSTIMOS / FINANCIAMENTOS
@@ -3237,6 +3330,13 @@ def fluxo_caixa_projetado():
     ano_aberto = (ano_sel == ano_atual)
     meses = list(range(1, 13))
 
+    meses_disponiveis = mes_atual - 1  # meses concluídos no ano
+    try:
+        qtd_meses = int(request.args.get("qtd_meses") or meses_disponiveis)
+        qtd_meses = max(1, min(qtd_meses, meses_disponiveis)) if meses_disponiveis > 0 else 1
+    except ValueError:
+        qtd_meses = meses_disponiveis or 1
+
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
@@ -3286,8 +3386,8 @@ def fluxo_caixa_projetado():
 
     # Montar MB por mês com projeção
     mb_vals = {int(r["mes"]): float(r["mb"] or 0) for r in mb_registros}
-    meses_base_mb = mes_atual - 1
-    proj_mb = (sum(mb_vals.get(m, 0) for m in range(1, mes_atual)) / meses_base_mb) if meses_base_mb > 0 else 0.0
+    mes_inicio_media = mes_atual - qtd_meses
+    proj_mb = (sum(mb_vals.get(m, 0) for m in range(mes_inicio_media, mes_atual)) / qtd_meses) if qtd_meses > 0 else 0.0
 
     mb_por_mes = {}
     for m in meses:
@@ -3324,11 +3424,10 @@ def fluxo_caixa_projetado():
 
     # Calcular projeção para meses futuros (ano aberto)
     def calcular_projecao(valores_mes):
-        meses_base = mes_atual - 1
-        if meses_base <= 0:
+        if qtd_meses <= 0:
             return 0.0
-        total = sum(valores_mes.get(m, 0) for m in range(1, mes_atual))
-        return total / meses_base
+        total = sum(valores_mes.get(m, 0) for m in range(mes_inicio_media, mes_atual))
+        return total / qtd_meses
 
     grupos = []
     for g in sorted(grupos_mapa.keys(), key=lambda x: int(x) if x.isdigit() else 999):
@@ -3399,6 +3498,8 @@ def fluxo_caixa_projetado():
         ano_sel=ano_sel,
         ano_aberto=ano_aberto,
         mes_atual=mes_atual,
+        qtd_meses=qtd_meses,
+        meses_disponiveis=meses_disponiveis,
         meses=meses,
         nomes_meses=nomes_meses,
         grupos=grupos,
@@ -3420,6 +3521,282 @@ def fluxo_caixa_projetado():
 # =========================
 # TELAS
 # =========================
+
+@financeiro_bp.route("/caixas")
+def menu_caixas():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    id_usuario = session["id_usuario"]
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global == "superusuario":
+        pode_atualizar_caixas = True
+        pode_configuracoes_caixas = True
+    else:
+        pode_atualizar_caixas = usuario_tem_permissao(
+            id_usuario, cod_empresa, "FINANCEIRO", "ATUALIZAR_CAIXAS"
+        )
+        pode_configuracoes_caixas = usuario_tem_permissao(
+            id_usuario, cod_empresa, "FINANCEIRO", "CONFIGURACOES_CAIXAS"
+        )
+
+    return render_template(
+        "menu_caixas.html",
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_empresa"),
+        pode_atualizar_caixas=pode_atualizar_caixas,
+        pode_configuracoes_caixas=pode_configuracoes_caixas,
+    )
+
+
+@financeiro_bp.route("/caixas/conferir", methods=["GET", "POST"])
+def conferir_caixas():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    id_usuario  = session["id_usuario"]
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+    hoje        = date.today()
+
+    mes_sel  = int(request.args.get("mes")  or hoje.month)
+    ano_sel  = int(request.args.get("ano")  or hoje.year)
+    area_sel = request.args.get("area", "TODOS")
+
+    import calendar as _cal
+    _, ultimo_dia = _cal.monthrange(ano_sel, mes_sel)
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        # ---- POST: salvar célula ----
+        if request.method == "POST":
+            tipo_campo   = request.form.get("tipo")
+            cod_filial_p = int(request.form.get("cod_filial") or 0)
+            data_post    = request.form.get("data")
+            def conv(v):
+                try: return float((v or "0").replace(".", "").replace(",", "."))
+                except: return 0.0
+
+            if tipo_campo == "forma":
+                id_forma = int(request.form.get("id_forma") or 0)
+                valor    = conv(request.form.get("valor"))
+                cur.execute("""
+                    INSERT INTO caixas_lancamentos (cod_empresa, cod_filial, data, id_forma, valor, atualizado_em)
+                    VALUES (%s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (cod_empresa, cod_filial, data, id_forma)
+                    DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = NOW()
+                """, (cod_empresa, cod_filial_p, data_post, id_forma, valor))
+
+            elif tipo_campo == "total_cx":
+                valor = conv(request.form.get("valor"))
+                cur.execute("""
+                    INSERT INTO caixas_total_cx (cod_empresa, cod_filial, data, valor, atualizado_em)
+                    VALUES (%s, %s, %s, %s, NOW())
+                    ON CONFLICT (cod_empresa, cod_filial, data)
+                    DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = NOW()
+                """, (cod_empresa, cod_filial_p, data_post, valor))
+
+            conn.commit()
+            return "", 204
+
+        # ---- GET: montar tabela ----
+        # Áreas e filiais permitidas
+        cur.execute("""
+            SELECT a.id_area, a.nome_area,
+                   f.cod_filial, f.nome_filial, af.ordem
+            FROM areas a
+            JOIN areas_filiais af ON af.id_area = a.id_area AND af.cod_empresa = a.cod_empresa
+            JOIN filiais f ON f.cod_filial = af.cod_filial AND f.cod_empresa = a.cod_empresa
+            WHERE a.cod_empresa = %s AND a.ativo = TRUE AND f.ativo = TRUE
+            ORDER BY a.nome_area, af.ordem, f.cod_filial
+        """, (cod_empresa,))
+        rows = cur.fetchall()
+
+        # Agrupa: areas_dict = {id_area: {nome, filiais: [{cod_filial, nome_filial}]}}
+        import collections as _col
+        areas_dict = _col.OrderedDict()
+        for r in rows:
+            ia = r["id_area"]
+            if ia not in areas_dict:
+                areas_dict[ia] = {"id_area": ia, "nome_area": r["nome_area"], "filiais": []}
+            areas_dict[ia]["filiais"].append({"cod_filial": r["cod_filial"], "nome_filial": r["nome_filial"]})
+        areas = list(areas_dict.values())
+
+        # Todas as filiais permitidas (lista plana)
+        todos_filiais = [f["cod_filial"] for a in areas for f in a["filiais"]]
+
+        cur.execute("""
+            SELECT id, nome FROM caixas_formas_recebimento
+            WHERE cod_empresa = %s AND ativo = TRUE
+            ORDER BY ordem, nome
+        """, (cod_empresa,))
+        formas = cur.fetchall()
+
+        # Parâmetros de seleção
+        area_sel   = request.args.get("area",   "TODOS")   # "TODOS" | id_area
+        filial_sel = request.args.get("filial",  "")        # "" | cod_filial
+        id_area_atual   = None
+        cod_filial_atual = None
+        editavel = False
+
+        if area_sel == "TODOS":
+            # Soma de todas as filiais
+            cods = todos_filiais
+        elif filial_sel:
+            # Filial individual dentro da área — editável
+            cod_filial_atual = int(filial_sel)
+            id_area_atual    = int(area_sel)
+            cods     = [cod_filial_atual]
+            editavel = True
+        else:
+            # Área selecionada sem filial → soma da área
+            id_area_atual = int(area_sel)
+            area_obj = areas_dict.get(id_area_atual, {})
+            cods = [f["cod_filial"] for f in area_obj.get("filiais", [])]
+
+        if editavel:
+            cur.execute("""
+                SELECT data, id_forma, valor
+                FROM caixas_lancamentos
+                WHERE cod_empresa = %s AND cod_filial = %s
+                  AND EXTRACT(MONTH FROM data) = %s AND EXTRACT(YEAR FROM data) = %s
+            """, (cod_empresa, cod_filial_atual, mes_sel, ano_sel))
+            lancs = cur.fetchall()
+
+            cur.execute("""
+                SELECT data, valor FROM caixas_total_cx
+                WHERE cod_empresa = %s AND cod_filial = %s
+                  AND EXTRACT(MONTH FROM data) = %s AND EXTRACT(YEAR FROM data) = %s
+            """, (cod_empresa, cod_filial_atual, mes_sel, ano_sel))
+            totais_cx = {r["data"]: float(r["valor"]) for r in cur.fetchall()}
+        else:
+            cur.execute("""
+                SELECT data, id_forma, SUM(valor) AS valor
+                FROM caixas_lancamentos
+                WHERE cod_empresa = %s AND cod_filial = ANY(%s)
+                  AND EXTRACT(MONTH FROM data) = %s AND EXTRACT(YEAR FROM data) = %s
+                GROUP BY data, id_forma
+            """, (cod_empresa, cods, mes_sel, ano_sel))
+            lancs = cur.fetchall()
+
+            cur.execute("""
+                SELECT data, SUM(valor) AS valor
+                FROM caixas_total_cx
+                WHERE cod_empresa = %s AND cod_filial = ANY(%s)
+                  AND EXTRACT(MONTH FROM data) = %s AND EXTRACT(YEAR FROM data) = %s
+                GROUP BY data
+            """, (cod_empresa, cods, mes_sel, ano_sel))
+            totais_cx = {r["data"]: float(r["valor"]) for r in cur.fetchall()}
+
+        import datetime as _dt
+        valores = {}
+        for l in lancs:
+            d = l["data"]
+            if d not in valores: valores[d] = {}
+            valores[d][l["id_forma"]] = float(l["valor"])
+
+        datas = [_dt.date(ano_sel, mes_sel, d) for d in range(1, ultimo_dia + 1)]
+
+    finally:
+        cur.close()
+        conn.close()
+
+    nomes_meses = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                   "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+
+    return render_template(
+        "conferir_caixas.html",
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_caixas"),
+        areas=areas,
+        area_sel=area_sel,
+        filial_sel=filial_sel,
+        id_area_atual=id_area_atual,
+        cod_filial_atual=cod_filial_atual,
+        editavel=editavel,
+        formas=formas,
+        datas=datas,
+        valores=valores,
+        totais_cx=totais_cx,
+        mes_sel=mes_sel,
+        ano_sel=ano_sel,
+        meses=list(range(1, 13)),
+        anos=list(range(hoje.year - 2, hoje.year + 2)),
+        nomes_meses=nomes_meses,
+        formatar_numero_br=formatar_numero_br,
+    )
+
+
+@financeiro_bp.route("/caixas/configuracoes", methods=["GET", "POST"])
+def configuracoes_caixas():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        if request.method == "POST":
+            acao = request.form.get("acao")
+
+            if acao == "incluir":
+                nome  = (request.form.get("nome") or "").strip().upper()
+                ordem = int(request.form.get("ordem") or 0)
+                if nome:
+                    cur.execute("""
+                        INSERT INTO caixas_formas_recebimento (cod_empresa, nome, ordem)
+                        VALUES (%s, %s, %s)
+                    """, (cod_empresa, nome, ordem))
+                    conn.commit()
+                    flash("Forma de recebimento incluída.", "success")
+
+            elif acao == "editar":
+                id_ed = request.form.get("id_editar")
+                nome  = (request.form.get("nome_editar") or "").strip().upper()
+                ordem = int(request.form.get("ordem_editar") or 0)
+                if id_ed and nome:
+                    cur.execute("""
+                        UPDATE caixas_formas_recebimento
+                        SET nome = %s, ordem = %s WHERE id = %s AND cod_empresa = %s
+                    """, (nome, ordem, id_ed, cod_empresa))
+                    conn.commit()
+                    flash("Forma de recebimento atualizada.", "success")
+
+            elif acao == "excluir":
+                id_ex = request.form.get("id_excluir")
+                if id_ex:
+                    cur.execute("""
+                        DELETE FROM caixas_formas_recebimento WHERE id = %s AND cod_empresa = %s
+                    """, (id_ex, cod_empresa))
+                    conn.commit()
+                    flash("Forma de recebimento excluída.", "success")
+
+        cur.execute("""
+            SELECT id, nome, ordem, ativo FROM caixas_formas_recebimento
+            WHERE cod_empresa = %s ORDER BY ordem, nome
+        """, (cod_empresa,))
+        formas = cur.fetchall()
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "configuracoes_caixas.html",
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_caixas"),
+        formas=formas,
+    )
+
+
 @financeiro_bp.route("/saldos")
 @permissao_obrigatoria("FINANCEIRO", "CONSULTA_SALDOS")
 def menu_saldos():

@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  h2 { font-size: 28px; font-weight: 800; margin-bottom: 6px; }
+  .empresa { font-size: 18px; margin-bottom: 20px; color: #444; }
+
+  .filtro-bar {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    padding: 16px 20px;
+  }
+  .filtro-bar label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 4px; color: #555; }
+  .filtro-bar select, .filtro-bar button { height: 38px; border-radius: 8px; border: 1px solid #ccc; padding: 0 12px; font-size: 14px; }
+  .filtro-bar button { background: #1d4ed8; color: #fff; font-weight: 700; border: none; cursor: pointer; }
+  .filtro-bar button:hover { background: #1e40af; }
+
+  .msg-ok  { background:#eef9d2; color:#2f4f00; border:1px solid #d7ef98; padding:10px 14px; border-radius:8px; margin-bottom:14px; }
+  .msg-err { background:#ffe6e6; color:#8b0000; border:1px solid #f2b6b6; padding:10px 14px; border-radius:8px; margin-bottom:14px; }
+
+  .table-wrapper { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { background: #f1f5f9; font-weight: 700; padding: 10px 12px; text-align: left; border-bottom: 2px solid #ddd; white-space: nowrap; }
+  td { padding: 9px 12px; border-bottom: 1px solid #eee; vertical-align: middle; }
+  tr:hover td { background: #f9fafb; }
+  .num { text-align: right; }
+
+  input[type=date], input[type=text], input[type=number], select.inline {
+    height: 34px; border-radius: 7px; border: 1px solid #ccc; padding: 0 10px; font-size: 14px; width: 100%;
+  }
+  .btn-incluir { background: #16a34a; color: #fff; font-weight: 700; border: none; border-radius: 8px; padding: 7px 18px; cursor: pointer; white-space: nowrap; }
+  .btn-incluir:hover { background: #15803d; }
+  .btn-excluir { background: #dc2626; color: #fff; border: none; border-radius: 6px; padding: 5px 12px; font-size: 13px; cursor: pointer; font-weight: 700; }
+  .btn-excluir:hover { background: #b91c1c; }
+
+  .total-row td { font-weight: 800; background: #f8fafc; border-top: 2px solid #ddd; }
+</style>
+
+<h2>💰 Finanças Pessoais — Lançar</h2>
+<div class="empresa">Usuário: <strong>{{ nome_usuario }}</strong></div>
+
+{% with msgs = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in msgs %}
+    <div class="{{ 'msg-ok' if cat == 'success' else 'msg-err' }}">{{ msg }}</div>
+  {% endfor %}
+{% endwith %}
+
+<!-- Filtro mês/ano -->
+<form method="get">
+  <div class="filtro-bar">
+    <div>
+      <label>Mês</label>
+      <select name="mes">
+        {% for m in meses %}
+          <option value="{{ m }}" {% if m == mes_sel %}selected{% endif %}>{{ nomes_meses[m-1] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Ano</label>
+      <select name="ano">
+        {% for a in anos %}
+          <option value="{{ a }}" {% if a == ano_sel %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>&nbsp;</label>
+      <button type="submit">Filtrar</button>
+    </div>
+  </div>
+</form>
+
+<!-- Tabela com linha de inclusão -->
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr>
+        <th>Data</th>
+        <th>Descrição</th>
+        <th class="num">Valor (R$)</th>
+        <th>Classificação</th>
+        <th>Conta Bancária</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+
+      {% for l in lancamentos %}
+      <tr data-id="{{ l.id }}" data-valor="{{ l.valor | float }}">
+        <td>{{ l.data.strftime('%d/%m/%Y') }}</td>
+        <td>{{ l.descricao }}</td>
+        <td class="num valor-cell">{{ "{:,.2f}".format(l.valor).replace(",","X").replace(".",",").replace("X",".") }}</td>
+        <td>
+          <select class="inline sel-classificacao" data-id="{{ l.id }}">
+            <option value=""{% if not l.id_classificacao %} selected{% endif %}>(Sem classificação)</option>
+            {% for c in classificacoes %}
+              <option value="{{ c.id }}"{% if c.id == l.id_classificacao %} selected{% endif %}>{{ c.nome }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>{{ l.conta_bancaria or '—' }}</td>
+        <td>
+          <button type="button" class="btn-excluir" data-id="{{ l.id }}" onclick="confirmarExclusao(this)">Excluir</button>
+        </td>
+      </tr>
+      {% endfor %}
+
+      <!-- Linha de total -->
+      <tr class="total-row" id="linha-total" {% if not lancamentos %}style="display:none"{% endif %}>
+        <td colspan="2">Total</td>
+        <td class="num" id="total-geral">
+          {{ "{:,.2f}".format(lancamentos | sum(attribute='valor'))
+             .replace(",","X").replace(".",",").replace("X",".") }}
+        </td>
+        <td colspan="3"></td>
+      </tr>
+
+      <!-- Linha de novo lançamento -->
+      <tr style="background:#f0fdf4;" id="linha-incluir">
+        <td><input type="date" id="inp-data" value="{{ hoje }}" required></td>
+        <td><input type="text" id="inp-descricao" placeholder="Descrição" required></td>
+        <td><input type="text" id="inp-valor" placeholder="0,00" style="text-align:right;" required></td>
+        <td>
+          <select id="inp-classificacao" class="inline">
+            <option value="">(Sem classificação)</option>
+            {% for c in classificacoes %}
+              <option value="{{ c.id }}">{{ c.nome }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>
+          <select id="inp-conta" class="inline">
+            <option value="">(Sem conta)</option>
+            {% for b in contas_bancarias %}
+              <option value="{{ b.id }}">{{ b.nome }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>
+          <button type="button" class="btn-incluir" id="btn-incluir" onclick="incluirLancamento()">Incluir</button>
+        </td>
+      </tr>
+
+    </tbody>
+  </table>
+</div>
+
+<!-- Modal confirmação exclusão -->
+<div id="modal-excluir" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:#fff; border-radius:14px; padding:32px 28px; max-width:400px; width:90%; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.18);">
+    <div style="font-size:20px; font-weight:800; color:#b91c1c; margin-bottom:10px;">Confirmar Exclusão</div>
+    <div style="color:#444; margin-bottom:24px;">Deseja excluir este lançamento?</div>
+    <div style="display:flex; gap:12px; justify-content:center;">
+      <button onclick="fecharModal()" style="padding:9px 22px; border-radius:8px; border:1px solid #bbb; background:#f5f5f5; font-weight:700; cursor:pointer;">Cancelar</button>
+      <button id="btn-confirmar-excluir" style="padding:9px 22px; border-radius:8px; border:none; background:#dc2626; color:#fff; font-weight:700; cursor:pointer;">Excluir</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const URL_ACAO = "{{ url_for('canivete.fp_lancar') }}?mes={{ mes_sel }}&ano={{ ano_sel }}";
+
+  /* ── utilidades ── */
+  function fmtBR(v) {
+    return parseFloat(v).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+
+  function recalcularTotal() {
+    let soma = 0;
+    document.querySelectorAll('tr[data-valor]').forEach(tr => {
+      soma += parseFloat(tr.dataset.valor) || 0;
+    });
+    const cel = document.getElementById('total-geral');
+    if (cel) cel.textContent = fmtBR(soma);
+    const linhaTotal = document.getElementById('linha-total');
+    if (linhaTotal) linhaTotal.style.display = '';
+  }
+
+  function post(dados) {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(dados)) fd.append(k, v ?? '');
+    return fetch(URL_ACAO, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: fd
+    }).then(r => r.json());
+  }
+
+  /* ── incluir ── */
+  function incluirLancamento() {
+    const data   = document.getElementById('inp-data').value;
+    const descr  = document.getElementById('inp-descricao').value.trim();
+    const valorR = document.getElementById('inp-valor').value.trim();
+    const class_ = document.getElementById('inp-classificacao').value;
+    const conta  = document.getElementById('inp-conta').value;
+
+    if (!data || !descr || !valorR) {
+      alert('Preencha data, descrição e valor.');
+      return;
+    }
+
+    const btn = document.getElementById('btn-incluir');
+    btn.disabled = true;
+
+    post({ acao:'incluir', data_lancamento:data, descricao:descr, valor:valorR,
+           id_classificacao:class_, id_conta_bancaria:conta })
+      .then(res => {
+        if (!res.ok) { alert('Erro ao incluir.'); return; }
+
+        /* monta a nova linha */
+        const tbody = document.querySelector('tbody');
+        const linhaIncluir = document.getElementById('linha-incluir');
+        const linhaTotal   = document.getElementById('linha-total');
+
+        const tr = document.createElement('tr');
+        tr.dataset.id    = res.id;
+        tr.dataset.valor = res.valor;
+        tr.innerHTML = `
+          <td>${res.data}</td>
+          <td>${res.descricao}</td>
+          <td class="num valor-cell">${fmtBR(res.valor)}</td>
+          <td>
+            <select class="inline sel-classificacao" data-id="${res.id}" onchange="classificar(this)">
+              <option value=""${!res.id_classificacao?' selected':''}>(Sem classificação)</option>
+              ${selOpts(res.id_classificacao)}
+            </select>
+          </td>
+          <td>${res.conta_bancaria}</td>
+          <td><button type="button" class="btn-excluir" data-id="${res.id}" onclick="confirmarExclusao(this)">Excluir</button></td>`;
+
+        tbody.insertBefore(tr, linhaTotal);
+        recalcularTotal();
+
+        /* limpa campos, mantém data e classificação */
+        document.getElementById('inp-descricao').value = '';
+        document.getElementById('inp-valor').value = '';
+        document.getElementById('inp-descricao').focus();
+      })
+      .catch(() => alert('Erro de comunicação.'))
+      .finally(() => { btn.disabled = false; });
+  }
+
+  /* opções do select de classificação (renderizadas pelo servidor) */
+  const CLASSIFICACOES = [
+    {% for c in classificacoes %}
+    { id: "{{ c.id }}", nome: {{ c.nome | tojson }} }{% if not loop.last %},{% endif %}
+    {% endfor %}
+  ];
+  function selOpts(selId) {
+    return CLASSIFICACOES.map(c =>
+      `<option value="${c.id}"${String(c.id) === String(selId) ? ' selected' : ''}>${c.nome}</option>`
+    ).join('');
+  }
+
+  /* ── classificar ── */
+  function classificar(sel) {
+    post({ acao:'classificar', id_lanc: sel.dataset.id, id_classificacao: sel.value });
+  }
+  /* liga evento aos selects já existentes na página */
+  document.querySelectorAll('.sel-classificacao').forEach(sel => {
+    sel.addEventListener('change', () => classificar(sel));
+  });
+
+  /* ── excluir ── */
+  let idExcluir = null;
+  const modal = document.getElementById("modal-excluir");
+
+  function confirmarExclusao(btn) {
+    idExcluir = btn.dataset.id;
+    modal.style.display = "flex";
+  }
+  function fecharModal() {
+    modal.style.display = "none";
+    idExcluir = null;
+  }
+  document.getElementById("btn-confirmar-excluir").onclick = function() {
+    if (!idExcluir) return;
+    fecharModal();
+    post({ acao:'excluir', id_excluir: idExcluir }).then(res => {
+      if (!res.ok) { alert('Erro ao excluir.'); return; }
+      const tr = document.querySelector(`tr[data-id="${idExcluir}"]`);
+      if (tr) tr.remove();
+      recalcularTotal();
+    }).catch(() => alert('Erro de comunicação.'));
+  };
+  modal.addEventListener("click", e => { if (e.target === modal) fecharModal(); });
+
+  /* ── Enter na linha de incluir ── */
+  ['inp-data','inp-descricao','inp-valor'].forEach(id => {
+    document.getElementById(id).addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); incluirLancamento(); }
+    });
+  });
+</script>
+
+{% endblock %}

@@ -244,6 +244,7 @@ def classificar_lancamentos_importados(cod_empresa_fixo, conn):
                 WHERE id_lancamento = %s
                   AND cod_empresa = %s
             """, atualizacoes)
+            conn.commit()
 
         return len(atualizacoes)
 

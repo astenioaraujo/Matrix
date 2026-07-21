@@ -192,12 +192,8 @@
         </button>
     </form>
 
-    <form method="POST" action="{{ url_for('importacoes.reclassificar_importacoes') }}">
-        <button
-            type="submit"
-            class="btn-secundario"
-            onclick="return confirm('Deseja reclassificar os lançamentos importados desta empresa?')"
-        >
+    <form method="POST" action="{{ url_for('importacoes.reclassificar_importacoes') }}" id="form-reclassificar">
+        <button type="button" class="btn-secundario" onclick="abrirModalReclassificar()">
             Reclassificar Lançamentos
         </button>
     </form>
@@ -229,12 +225,8 @@
         Mostrar Todas
     </a>
 
-    <form method="POST" action="{{ url_for('importacoes.limpar_importacoes') }}">
-        <button
-            type="submit"
-            class="btn-perigo"
-            onclick="return confirm('Deseja realmente excluir todos os lançamentos importados desta empresa?')"
-        >
+    <form method="POST" action="{{ url_for('importacoes.limpar_importacoes') }}" id="form-limpar">
+        <button type="button" class="btn-perigo" onclick="abrirModalLimpar()">
             Limpar
         </button>
     </form>
@@ -512,11 +504,54 @@
 
     window.addEventListener("click", function(e) {
         const modal = document.getElementById("modalTransferencia");
+        if (e.target === modal) fecharModalTransferencia();
+    });
 
-        if (e.target === modal) {
-            fecharModalTransferencia();
-        }
+    function abrirModalReclassificar() {
+        document.getElementById("modalReclassificar").style.display = "flex";
+    }
+    function fecharModalReclassificar() {
+        document.getElementById("modalReclassificar").style.display = "none";
+    }
+
+    function abrirModalLimpar() {
+        document.getElementById("modalLimpar").style.display = "flex";
+    }
+    function fecharModalLimpar() {
+        document.getElementById("modalLimpar").style.display = "none";
+    }
+
+    window.addEventListener("click", function(e) {
+        if (e.target === document.getElementById("modalReclassificar")) fecharModalReclassificar();
+        if (e.target === document.getElementById("modalLimpar")) fecharModalLimpar();
     });
 </script>
+
+<div class="modal-overlay" id="modalReclassificar" style="display:none;">
+    <div class="modal-confirmacao">
+        <div class="modal-titulo">Confirmar Reclassificação</div>
+        <div class="modal-texto">
+            Deseja reclassificar os lançamentos importados desta empresa?
+        </div>
+        <div class="modal-botoes">
+            <button type="button" class="modal-btn modal-btn-cancelar" onclick="fecharModalReclassificar()">Cancelar</button>
+            <button type="button" class="modal-btn modal-btn-confirmar" onclick="document.getElementById('form-reclassificar').submit()">Confirmar</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="modalLimpar" style="display:none;">
+    <div class="modal-confirmacao">
+        <div class="modal-titulo" style="color:#b91c1c;">Confirmar Limpeza</div>
+        <div class="modal-texto">
+            Deseja realmente excluir <strong>todos</strong> os lançamentos importados desta empresa?<br><br>
+            Esta ação não pode ser desfeita.
+        </div>
+        <div class="modal-botoes">
+            <button type="button" class="modal-btn modal-btn-cancelar" onclick="fecharModalLimpar()">Cancelar</button>
+            <button type="button" class="modal-btn" style="background:#dc2626; color:#fff;" onclick="document.getElementById('form-limpar').submit()">Excluir</button>
+        </div>
+    </div>
+</div>
 
 {% endblock %}

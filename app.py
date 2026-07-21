@@ -21,6 +21,7 @@ from routes.vistorias_routes import vistorias_bp
 from routes.rh_routes import rh_bp
 from routes.performances_routes import performances_bp
 from routes.treinamentos_routes import treinamentos_bp
+from routes.canivete_routes import canivete_bp
 
 
 def formatar_numero_br(valor):
@@ -56,6 +57,7 @@ app.register_blueprint(vistorias_bp, url_prefix="/vistorias")
 app.register_blueprint(rh_bp, url_prefix="/rh")
 app.register_blueprint(performances_bp, url_prefix="/performances")
 app.register_blueprint(treinamentos_bp)
+app.register_blueprint(canivete_bp)
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)

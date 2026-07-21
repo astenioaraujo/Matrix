@@ -15,16 +15,15 @@
   .tabela-container {
     margin-top: 40px;
     border: 1px solid #ccc;
-    display: block;
-    width: max-content;
-    min-width: 100%;
+    display: inline-block;
+    max-width: 100%;
+    overflow-x: auto;
     background: #fff;
   }
 
   table {
     border-collapse: collapse;
-    width: max-content;
-    min-width: 100%;
+    width: auto;
   }
 
   th, td {
@@ -97,14 +96,44 @@
 
 <h2>Resultado por Margem Bruta</h2>
 
-<form method="get" class="filtro">
-  Ano:
-  <input type="number" name="ano" value="{{ ano }}" required>
+<style>
+  .filtro-wrap {
+    display: flex; flex-direction: column; gap: 12px;
+    margin-bottom: 20px;
+  }
+  .filtro-linha {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .filtro-linha label { font-weight: 700; font-size: 13px; color: #444; }
+  .filtro-linha input[type=number] {
+    width: 90px; height: 34px; border: 1px solid #ccc; border-radius: 7px;
+    padding: 0 8px; font-size: 13px;
+  }
+  .btn-filtrar {
+    height: 34px; padding: 0 18px; background: #14114f; color: #fff;
+    border: none; border-radius: 7px; font-size: 13px; font-weight: 700; cursor: pointer;
+  }
+  .btn-filtrar:hover { background: #131249; }
 
-  Mês:
-  <input type="number" name="mes" value="{{ mes or '' }}">
+</style>
 
-  <button type="submit">Carregar</button>
+<form method="get" class="filtro-wrap" id="form-filtro">
+  <div class="filtro-linha">
+    <label>Ano:</label>
+    <input type="number" name="ano" value="{{ ano }}" required>
+    <label>Mês:</label>
+    <input type="number" name="mes" value="{{ mes or '' }}" min="1" max="12" placeholder="(todos)">
+    <label>Filial:</label>
+    <select name="filial" style="height:34px; border:1px solid #ccc; border-radius:7px; padding:0 8px; font-size:13px; min-width:220px;">
+      <option value="">(Todas)</option>
+      {% for f in todas_filiais %}
+        <option value="{{ f[0] }}" {% if filial_sel == f[0]|string %}selected{% endif %}>
+          {{ f[0] }} - {{ f[1] }}
+        </option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn-filtrar">Carregar</button>
+  </div>
 </form>
 
 <div class="tabela-container">
@@ -114,12 +143,7 @@
         <th class="col-fixa" rowspan="2">DESCRIÇÕES</th>
         <th class="col-total" rowspan="2">TOTAL</th>
         {% for f in filiais %}
-          <th>{{ f[0] }}</th>
-        {% endfor %}
-      </tr>
-      <tr>
-        {% for f in filiais %}
-          <th>{{ f[1] }}</th>
+          <th>{{ f[0] }} - {{ f[1] }}</th>
         {% endfor %}
       </tr>
     </thead>

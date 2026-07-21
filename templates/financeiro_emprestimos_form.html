@@ -326,7 +326,7 @@
                     {% if parcelas_geradas %}readonly{% endif %}>
             </div>
 
-            <div class="campo">
+            <div class="campo" id="bloco-valor-parcela">
                 <label>Valor da Parcela</label>
                 <input type="text"
                     class="campo-numero-br"
@@ -442,17 +442,20 @@
     function controlarModalidadeCalculo() {
         const modalidade = document.getElementById('modalidade_calculo');
         const blocoIndexador = document.getElementById('bloco-indexador');
-        const blocoSpread = document.getElementById('bloco-spread');
+        const blocoSpread    = document.getElementById('bloco-spread');
+        const blocoValParcela = document.getElementById('bloco-valor-parcela');
 
         if (!modalidade) return;
 
-        if (modalidade.value === 'JUROS_VARIAVEIS') {
-            blocoIndexador.style.display = 'flex';
-            blocoSpread.style.display = 'flex';
-        } else {
-            blocoIndexador.style.display = 'none';
-            blocoSpread.style.display = 'none';
-        }
+        const mod = modalidade.value;
+
+        // Indexador e spread: apenas para Juros Variáveis
+        const temIndexador = mod === 'JUROS_VARIAVEIS';
+        blocoIndexador.style.display = temIndexador ? 'flex' : 'none';
+        blocoSpread.style.display    = temIndexador ? 'flex' : 'none';
+
+        // Valor da parcela: apenas para Parcela Fixa (nos demais é calculado ou informado na tabela)
+        blocoValParcela.style.display = mod === 'PARCELA_FIXA' ? 'flex' : 'none';
     }
 
     document.addEventListener('DOMContentLoaded', function() {

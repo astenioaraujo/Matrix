@@ -1,0 +1,387 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  h2 { font-size: 28px; font-weight: 800; margin-bottom: 6px; }
+  .empresa { font-size: 18px; margin-bottom: 20px; color: #444; }
+
+  .filtro-bar {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    padding: 16px 20px;
+  }
+  .filtro-bar label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 4px; color: #555; }
+  .filtro-bar select, .filtro-bar button { height: 38px; border-radius: 8px; border: 1px solid #ccc; padding: 0 12px; font-size: 14px; }
+  .filtro-bar button { background: #0f766e; color: #fff; font-weight: 700; border: none; cursor: pointer; }
+  .filtro-bar button:hover { background: #0d6660; }
+
+  .toggle-group { display: flex; border: 1px solid #ccc; border-radius: 8px; overflow: hidden; height: 38px; }
+  .toggle-btn { flex: 1; padding: 0 16px; font-size: 14px; font-weight: 600; border: none; background: #fff; color: #555; cursor: pointer; white-space: nowrap; transition: background 0.15s, color 0.15s; }
+  .toggle-btn:first-child { border-right: 1px solid #ccc; }
+  .toggle-btn.active { background: #0f766e; color: #fff; }
+  .toggle-btn:hover:not(.active) { background: #f1f5f9; }
+
+  /* Layout principal: tabela + painel */
+  .layout-consulta { display: flex; gap: 12px; align-items: flex-start; }
+  .col-tabela { flex: 0 0 auto; min-width: 0; }
+  .col-detalhe {
+    width: 320px;
+    flex-shrink: 0;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    padding: 18px 16px;
+    display: none;
+    position: sticky;
+    top: 16px;
+  }
+  .col-detalhe.visivel { display: block; }
+
+  .detalhe-titulo {
+    font-size: 15px;
+    font-weight: 800;
+    color: #0f766e;
+    margin-bottom: 4px;
+    word-break: break-word;
+  }
+  .detalhe-subtitulo {
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 14px;
+  }
+  .detalhe-fechar {
+    float: right;
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    color: #888;
+    line-height: 1;
+    margin-top: -2px;
+  }
+  .detalhe-fechar:hover { color: #333; }
+
+  /* Tabela de detalhe */
+  .tbl-detalhe { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .tbl-detalhe th { background: #f1f5f9; font-weight: 700; padding: 7px 8px; text-align: left; border-bottom: 2px solid #ddd; white-space: nowrap; }
+  .tbl-detalhe td { padding: 7px 8px; border-bottom: 1px solid #eee; vertical-align: middle; }
+  .tbl-detalhe tr:hover td { background: #f9fafb; }
+  .tbl-detalhe .num { text-align: right; color: #dc2626; }
+  .tbl-detalhe .total-row td { font-weight: 800; background: #f8fafc; border-top: 2px solid #ddd; color: #dc2626; }
+  .tbl-detalhe .total-row td:first-child { color: #333; }
+
+  /* Tabela principal */
+  .table-wrapper { overflow-x: auto; }
+  table.principal { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.principal th { background: #f1f5f9; font-weight: 700; padding: 10px 12px; text-align: left; border-bottom: 2px solid #ddd; white-space: nowrap; }
+  table.principal td { padding: 9px 12px; border-bottom: 1px solid #eee; vertical-align: middle; }
+  table.principal tr.data-row:hover td { background: #f0fdfa; cursor: pointer; }
+  table.principal tr.data-row.ativa td { background: #ccfbf1; }
+  table.principal .num { text-align: right; }
+  table.principal .total-row td { font-weight: 800; background: #f8fafc; border-top: 2px solid #ddd; }
+
+  .btn-detalhar {
+    background: none;
+    border: 1px solid #0f766e;
+    color: #0f766e;
+    border-radius: 5px;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-detalhar:hover { background: #0f766e; color: #fff; }
+</style>
+
+<h2>💰 Finanças Pessoais — Consultar</h2>
+<div class="empresa">Usuário: <strong>{{ nome_usuario }}</strong></div>
+
+<form method="get">
+  <div class="filtro-bar">
+    <div>
+      <label>Mês</label>
+      <select name="mes">
+        {% for m in meses %}
+          <option value="{{ m }}" {% if m == mes_sel %}selected{% endif %}>{{ nomes_meses[m-1] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Ano</label>
+      <select name="ano">
+        {% for a in anos %}
+          <option value="{{ a }}" {% if a == ano_sel %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Exibir</label>
+      <div class="toggle-group">
+        <button type="submit" name="filtro" value="todos"
+                class="toggle-btn {% if filtro == 'todos' %}active{% endif %}">Todos</button>
+        <button type="submit" name="filtro" value="com_saldo"
+                class="toggle-btn {% if filtro == 'com_saldo' %}active{% endif %}">Com saldo</button>
+      </div>
+    </div>
+    <div>
+      <label>Ordenar por</label>
+      <select id="sel-ordem" onchange="ordenarTabela(this.value)">
+        <option value="classificacao">Classificação (A-Z)</option>
+        <option value="orcado">Orçado (maior → menor)</option>
+        <option value="realizado">Realizado (maior → menor)</option>
+        <option value="saldo">Saldo (maior → menor)</option>
+        <option value="extrap">Extrapolado (maior → menor)</option>
+      </select>
+    </div>
+    <div>
+      <label>&nbsp;</label>
+      <button type="submit" name="filtro" value="{{ filtro }}">Filtrar</button>
+    </div>
+  </div>
+</form>
+
+{% if totais_classificacao %}
+<div class="layout-consulta">
+
+  <!-- Coluna esquerda: totais -->
+  <div class="col-tabela">
+    <div class="table-wrapper">
+      <table class="principal">
+        <thead>
+          <tr>
+            <th>Classificação</th>
+            <th class="num">Orçado (R$)</th>
+            <th class="num">Realizado (R$)</th>
+            <th class="num">Saldo (R$)</th>
+            <th class="num">Extrapolado (R$)</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set ns_tot = namespace(saldo_sum=0, extrap_sum=0) %}
+          {% for t in totais_classificacao %}
+            {% set orcado_ef = t.realizado | float if t.ajustar_ao_real else t.orcado | float %}
+            {% set saldo_real = (t.realizado | float) - orcado_ef %}
+            {% if filtro != 'com_saldo' or saldo_real > 0 %}
+            {% set saldo_exib = saldo_real if saldo_real > 0 else 0 %}
+            {% set extrap = (-saldo_real) if saldo_real < 0 else 0 %}
+            {% set ns_tot.saldo_sum = ns_tot.saldo_sum + saldo_exib %}
+            {% set ns_tot.extrap_sum = ns_tot.extrap_sum + extrap %}
+            <tr class="data-row" onclick="detalhar('{{ t.classificacao | e }}')" data-class="{{ t.classificacao | e }}" data-orcado="{{ t.orcado | float }}" data-realizado="{{ t.realizado | float | abs }}" data-saldo="{{ saldo_exib }}" data-extrap="{{ extrap }}">
+              <td>{{ t.classificacao }}</td>
+              <td class="num">{{ "{:,.2f}".format(t.orcado).replace(",","X").replace(".",",").replace("X",".") }}</td>
+              <td class="num realizado-heat" data-valor="{{ t.realizado | float | abs }}">{{ "{:,.2f}".format(t.realizado).replace(",","X").replace(".",",").replace("X",".") }}</td>
+              <td class="num" style="color:#16a34a; font-weight:700;">
+                {{ "{:,.2f}".format(saldo_exib).replace(",","X").replace(".",",").replace("X",".") }}
+              </td>
+              <td class="num" style="color:{% if extrap > 0 %}#dc2626{% else %}#aaa{% endif %}; font-weight:{% if extrap > 0 %}700{% else %}400{% endif %};">
+                {% if extrap > 0 %}
+                  {{ "{:,.2f}".format(extrap).replace(",","X").replace(".",",").replace("X",".") }}
+                {% else %}—{% endif %}
+              </td>
+              {% set tem_lanc = t.realizado | float != 0 %}
+              <td>
+                {% if tem_lanc %}
+                  <button class="btn-detalhar" onclick="event.stopPropagation(); detalhar('{{ t.classificacao | e }}')">Detalhar</button>
+                {% endif %}
+              </td>
+            </tr>
+            {% endif %}
+          {% endfor %}
+          <tr class="total-row">
+            <td>Total Geral</td>
+            <td class="num">{{ "{:,.2f}".format(total_orcado).replace(",","X").replace(".",",").replace("X",".") }}</td>
+            <td class="num" style="color:#dc2626;">{{ "{:,.2f}".format(total).replace(",","X").replace(".",",").replace("X",".") }}</td>
+            <td class="num" style="color:#16a34a;">
+              {{ "{:,.2f}".format(ns_tot.saldo_sum).replace(",","X").replace(".",",").replace("X",".") }}
+            </td>
+            <td class="num" style="color:{% if ns_tot.extrap_sum > 0 %}#dc2626{% else %}#aaa{% endif %};">
+              {% if ns_tot.extrap_sum > 0 %}
+                {{ "{:,.2f}".format(ns_tot.extrap_sum).replace(",","X").replace(".",",").replace("X",".") }}
+              {% else %}—{% endif %}
+            </td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Coluna direita: painel de detalhe -->
+  <div class="col-detalhe" id="painel-detalhe">
+    <button class="detalhe-fechar" onclick="fecharDetalhe()" title="Fechar">✕</button>
+    <div class="detalhe-titulo" id="detalhe-titulo"></div>
+    <div class="detalhe-subtitulo" id="detalhe-subtitulo"></div>
+    <table class="tbl-detalhe">
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Descrição</th>
+          <th class="num">Valor (R$)</th>
+          <th>Conta</th>
+          <th>Classificação</th>
+        </tr>
+      </thead>
+      <tbody id="detalhe-tbody"></tbody>
+    </table>
+  </div>
+
+</div>
+{% else %}
+<p style="color:#888; font-style:italic;">Nenhuma classificação cadastrada.</p>
+{% endif %}
+
+<script>
+  const LANC = {{ lancamentos_json | safe }};
+  const CLASSIFS = [
+    { id: '', nome: '(Sem classificação)' },
+    {% for c in classificacoes_consulta %}
+    { id: '{{ c.id }}', nome: {{ c.nome | tojson }} },
+    {% endfor %}
+  ];
+
+  function fmtBR(v) {
+    return Math.abs(v).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  }
+
+  function buildSelect(idLanc, idClassAtual) {
+    const sel = document.createElement('select');
+    sel.style.cssText = 'font-size:12px;border:1px solid #ccc;border-radius:5px;padding:2px 4px;width:100%;';
+    CLASSIFS.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.nome;
+      if (c.id === idClassAtual) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener('change', function() {
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = '{{ url_for("canivete.fp_lancar") }}';
+      form.style.display = 'none';
+      const fields = {
+        acao: 'classificar',
+        id_lanc: idLanc,
+        id_classificacao: sel.value,
+        mes: '{{ mes_sel }}',
+        ano: '{{ ano_sel }}',
+        proxima_url: window.location.href,
+      };
+      Object.entries(fields).forEach(([k, v]) => {
+        const inp = document.createElement('input');
+        inp.type = 'hidden'; inp.name = k; inp.value = v;
+        form.appendChild(inp);
+      });
+      document.body.appendChild(form);
+      form.submit();
+    });
+    return sel;
+  }
+
+  let classeAtiva = null;
+
+  function detalhar(classe) {
+    if (classeAtiva === classe) { fecharDetalhe(); return; }
+    classeAtiva = classe;
+
+    document.querySelectorAll('tr.data-row').forEach(tr => {
+      tr.classList.toggle('ativa', tr.dataset.class === classe);
+    });
+
+    const lancs = LANC[classe] || [];
+    const painel = document.getElementById('painel-detalhe');
+    const tbody  = document.getElementById('detalhe-tbody');
+
+    document.getElementById('detalhe-titulo').textContent = classe;
+    tbody.innerHTML = '';
+
+    if (lancs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="color:#888;font-style:italic;text-align:center;padding:16px;">Sem lançamentos no período.</td></tr>';
+      document.getElementById('detalhe-subtitulo').textContent = 'Nenhum lançamento';
+    } else {
+      let total = 0;
+      lancs.forEach(l => {
+        total += l.valor;
+        const tr = document.createElement('tr');
+        const tdData  = document.createElement('td'); tdData.style.whiteSpace = 'nowrap'; tdData.textContent = l.data;
+        const tdDesc  = document.createElement('td'); tdDesc.textContent = l.descricao;
+        const tdVal   = document.createElement('td'); tdVal.className = 'num'; tdVal.textContent = fmtBR(l.valor);
+        const tdConta = document.createElement('td'); tdConta.style.cssText = 'white-space:nowrap;font-size:12px;color:#666'; tdConta.textContent = l.conta;
+        const tdClass = document.createElement('td');
+        tdClass.appendChild(buildSelect(l.id, l.id_classificacao));
+        tr.append(tdData, tdDesc, tdVal, tdConta, tdClass);
+        tbody.appendChild(tr);
+      });
+      const tf = document.createElement('tr');
+      tf.className = 'total-row';
+      tf.innerHTML = `<td colspan="2">Total</td><td class="num">${fmtBR(total)}</td><td colspan="2"></td>`;
+      tbody.appendChild(tf);
+      document.getElementById('detalhe-subtitulo').textContent = `${lancs.length} lançamento${lancs.length > 1 ? 's' : ''}`;
+    }
+
+    painel.classList.add('visivel');
+  }
+
+  function fecharDetalhe() {
+    classeAtiva = null;
+    document.getElementById('painel-detalhe').classList.remove('visivel');
+    document.querySelectorAll('tr.data-row').forEach(tr => tr.classList.remove('ativa'));
+  }
+
+  // Mapa de calor na coluna Realizado — 51 faixas, igual à consulta matricial
+  (function() {
+    function getColorExcel(ratio) {
+      let r, g, b;
+      if (ratio <= 0.5) {
+        const t = ratio / 0.5;
+        r = 248 + (255 - 248) * t;
+        g = 105 + (235 - 105) * t;
+        b = 107 + (132 - 107) * t;
+      } else {
+        const t = (ratio - 0.5) / 0.5;
+        r = 255 + (99  - 255) * t;
+        g = 235 + (190 - 235) * t;
+        b = 132 + (123 - 132) * t;
+      }
+      return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+    }
+
+    const cells = document.querySelectorAll('td.realizado-heat');
+    if (!cells.length) return;
+    const vals = Array.from(cells).map(c => parseFloat(c.dataset.valor) || 0);
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    cells.forEach((c, i) => {
+      let ratio = (max === min) ? 0.5 : 1 - (vals[i] - min) / (max - min);
+      ratio = Math.round(ratio * 50) / 50; // 51 faixas discretas
+      c.style.backgroundColor = getColorExcel(ratio);
+      c.style.color = '#000';
+    });
+  })();
+
+  function ordenarTabela(ordem) {
+    const tbody = document.querySelector('table tbody');
+    if (!tbody) return;
+    const rows = Array.from(tbody.querySelectorAll('tr.data-row'));
+    const totalRow = tbody.querySelector('tr.total-row');
+    rows.sort((a, b) => {
+      if (ordem === 'classificacao') {
+        return a.dataset.class.localeCompare(b.dataset.class, 'pt-BR');
+      }
+      const keys = { orcado: 'orcado', realizado: 'realizado', saldo: 'saldo', extrap: 'extrap' };
+      const key = keys[ordem];
+      return parseFloat(b.dataset[key]) - parseFloat(a.dataset[key]);
+    });
+    rows.forEach(r => tbody.insertBefore(r, totalRow));
+  }
+</script>
+
+{% endblock %}

@@ -172,6 +172,21 @@
     </div>
   </div>
 
+  {% if ano_aberto and meses_disponiveis > 0 %}
+  <!-- Meses para média -->
+  <div>
+    <span class="controle-label">Média dos últimos</span>
+    <select id="sel-qtd-meses" onchange="aplicarQtdMeses(this.value)"
+            style="height:32px; border-radius:7px; border:1px solid #bbb; padding:0 10px; font-size:13px; font-weight:600; background:#fff; cursor:pointer;">
+      {% for n in range(1, meses_disponiveis + 1) %}
+        <option value="{{ n }}" {% if n == qtd_meses %}selected{% endif %}>
+          {{ n }} {% if n == 1 %}mês{% else %}meses{% endif %}{% if n == meses_disponiveis %} (máx){% endif %}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+
   <!-- Visualização -->
   <div>
     <span class="controle-label">Visualização</span>
@@ -320,10 +335,19 @@
 <script>
   let anoAtual = {{ ano_sel }};
 
+  function getQtdMeses() {
+    const sel = document.getElementById("sel-qtd-meses");
+    return sel ? sel.value : {{ qtd_meses }};
+  }
+
   function mudarAno(delta) {
     anoAtual += delta;
     document.getElementById("ano-display").textContent = anoAtual;
-    window.location.href = "?ano=" + anoAtual;
+    window.location.href = "?ano=" + anoAtual + "&qtd_meses=" + getQtdMeses();
+  }
+
+  function aplicarQtdMeses(val) {
+    window.location.href = "?ano=" + anoAtual + "&qtd_meses=" + val;
   }
 
   const wrapper = document.getElementById("wrapper-tabela");

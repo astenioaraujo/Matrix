@@ -170,13 +170,16 @@ def reclassificar_importacoes():
     if "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
 
+    conn = get_connection()
     try:
-        total_classificados = classificar_lancamentos_importados(session["cod_empresa"])
+        total_classificados = classificar_lancamentos_importados(session["cod_empresa"], conn)
         session["mensagem_importacoes"] = (
             f"Reclassificação concluída. {total_classificados} lançamento(s) classificado(s)."
         )
     except Exception as e:
         session["erro_importacoes"] = str(e)
+    finally:
+        conn.close()
 
     return redirect(url_for("importacoes.listar_importacoes"))
 

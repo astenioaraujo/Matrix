@@ -7,6 +7,7 @@ from werkzeug.utils import secure_filename
 
 from db import get_connection
 from security_helpers import permissao_obrigatoria, usuario_tem_permissao
+from services.supabase_storage import upload_arquivo as supabase_upload, url_publica as supabase_url
 
 treinamentos_bp = Blueprint(
     "treinamentos",
@@ -974,20 +975,7 @@ def modelos_certificados():
             nome_arquivo = None
 
             if arquivo and arquivo.filename:
-                nome_seguro = secure_filename(arquivo.filename)
-                nome_arquivo = f"{cod_empresa}_{nome_seguro}"
-
-                pasta_upload = os.path.join(
-                    current_app.root_path,
-                    "static",
-                    "uploads",
-                    "certificados"
-                )
-
-                os.makedirs(pasta_upload, exist_ok=True)
-
-                caminho_arquivo = os.path.join(pasta_upload, nome_arquivo)
-                arquivo.save(caminho_arquivo)
+                nome_arquivo = supabase_upload(arquivo, arquivo.filename, cod_empresa)
 
             cur.execute("""
                 INSERT INTO modelos_certificados (
@@ -1638,10 +1626,7 @@ def gerar_certificados_pdf(id_treinamento):
 
     fundo_url = None
     if treinamento.get("arquivo_fundo"):
-        fundo_url = url_for(
-            "static",
-            filename=f"uploads/certificados/{treinamento['arquivo_fundo']}"
-        )
+        fundo_url = supabase_url(treinamento["arquivo_fundo"])
 
     return render_template(
         "certificados_impressao.html",

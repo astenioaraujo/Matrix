@@ -94,6 +94,7 @@
   .btn-vistorias { background: #0f766e; }
   .btn-performances { background: #c2410c; }
   .btn-treinamentos { background: #2563eb; }
+  .btn-canivete { background: #475569; }
 
   @media (max-width: 700px) {
     .pagina-wrap {
@@ -197,6 +198,13 @@
         <a class="btn-sistema btn-treinamentos" href="{{ url_for('treinamentos.menu_treinamentos') }}">
           <div class="btn-icone">🎓</div>
           <div>Treinamentos</div>
+        </a>
+      {% endif %}
+
+      {% if pode_canivete %}
+        <a class="btn-sistema btn-canivete" href="{{ url_for('canivete.menu_canivete') }}">
+          <div class="btn-icone">🛠️</div>
+          <div>Canivete Suíço</div>
         </a>
       {% endif %}
 
