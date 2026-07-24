@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .pagina-sub    { font-size:15px; color:#666; margin-bottom:24px; }
+
+  .badge-toast { display:none; font-size:13px; font-weight:700; position:fixed; bottom:24px; right:28px;
+    border-radius:10px; padding:12px 20px; box-shadow:0 4px 16px rgba(0,0,0,.18); z-index:9999; }
+  .badge-toast.ok  { background:#fff; color:#16a34a; border:1.5px solid #16a34a; }
+  .badge-toast.err { background:#fff; color:#dc2626; border:1.5px solid #dc2626; }
+
+  /* Import form */
+  .form-importar { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end;
+    background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:18px 20px; margin-bottom:28px; }
+  .form-campo label { display:block; font-size:12px; font-weight:700; color:#555; margin-bottom:5px; }
+  .form-campo input[type=file],
+  .form-campo input[type=date] {
+    height:38px; border-radius:8px; border:1px solid #cbd5e1; padding:0 10px;
+    font-size:14px; background:#fff; box-sizing:border-box;
+  }
+  .form-campo input[type=file] { padding:6px 10px; }
+  .form-campo.col-arquivo { flex:0 0 auto; }
+  .form-campo.col-data    { flex:0 0 160px; }
+  .btn-importar { background:#0f766e; color:#fff; border:none; border-radius:8px;
+    padding:0 22px; height:38px; font-size:14px; font-weight:700; cursor:pointer; white-space:nowrap; align-self:flex-end; }
+  .btn-importar:hover { background:#065f46; }
+
+  /* Última importação */
+  .ultima-info { font-size:13px; color:#64748b; margin-bottom:18px; }
+  .ultima-info strong { color:#0f766e; }
+
+  /* Cards por área */
+  .areas-grid { display:flex; flex-wrap:wrap; gap:20px; }
+  .area-card  { flex:1 1 340px; background:#fff; border:1px solid #e2e8f0;
+    border-radius:14px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.06); }
+  .area-header { background:#0f766e; color:#fff; padding:12px 18px; }
+  .area-header .area-nome  { font-size:16px; font-weight:800; }
+  .area-header .area-total { font-size:22px; font-weight:900; margin-top:2px; }
+  .area-tbl { width:100%; border-collapse:collapse; font-size:14px; }
+  .area-tbl th { background:#f1f5f9; color:#475569; font-weight:700; font-size:12px;
+    padding:8px 14px; text-align:left; border-bottom:1px solid #e2e8f0; }
+  .area-tbl th.r { text-align:right; }
+  .area-tbl td { padding:9px 14px; border-bottom:1px solid #f1f5f9; color:#1e293b; }
+  .area-tbl td.r { text-align:right; font-weight:600; color:#0f766e; }
+  .area-tbl tr:last-child td { border-bottom:none; }
+  .area-tbl tr:hover td { background:#f8fafc; }
+  .area-tbl .tfoot td { background:#f0fdf4; font-weight:800; color:#15803d; border-top:2px solid #86efac; }
+  .area-tbl .tfoot td.r { color:#15803d; font-size:15px; }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">Importar Cartões</div>
+  <div class="pagina-sub">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+  <form class="form-importar" method="POST" enctype="multipart/form-data">
+    <div class="form-campo col-arquivo">
+      <label>Arquivo Webportos (.xlsx)</label>
+      <input type="file" name="arquivo" accept=".xlsx" required>
+    </div>
+    <div class="form-campo col-data">
+      <label>Data de Referência</label>
+      <input type="date" name="data_referencia" value="{{ hoje }}" required>
+    </div>
+    <button type="submit" class="btn-importar">↑ Importar</button>
+  </form>
+
+  {% if ultima %}
+  <div class="ultima-info">
+    Última importação:
+    <strong>{{ ultima.data_referencia.strftime('%d/%m/%Y') }}</strong>
+    &nbsp;·&nbsp; Total:
+    <strong>R$ {{ '{:,.2f}'.format(ultima.total_geral).replace(',','X').replace('.',',').replace('X','.') }}</strong>
+    &nbsp;·&nbsp; {{ ultima.nome_arquivo }}
+  </div>
+  {% endif %}
+
+  {% if resumo_areas %}
+  <div class="areas-grid">
+    {% for area in resumo_areas %}
+    <div class="area-card">
+      <div class="area-header">
+        <div class="area-nome">{{ area.nome_area }}</div>
+        <div class="area-total">R$ {{ '{:,.2f}'.format(area.total).replace(',','X').replace('.',',').replace('X','.') }}</div>
+      </div>
+      <table class="area-tbl">
+        <thead>
+          <tr>
+            <th>Filial</th>
+            <th class="r">Saldo Devedor</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in area.filiais %}
+          <tr>
+            <td>{{ f.nome_filial or f.nome_filial_import }}</td>
+            <td class="r">R$ {{ '{:,.2f}'.format(f.saldo).replace(',','X').replace('.',',').replace('X','.') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr class="tfoot">
+            <td>Total</td>
+            <td class="r">R$ {{ '{:,.2f}'.format(area.total).replace(',','X').replace('.',',').replace('X','.') }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% endfor %}
+  </div>
+  {% elif ultima %}
+  <p style="color:#64748b; font-size:14px;">Nenhuma filial encontrada para esta importação.</p>
+  {% else %}
+  <p style="color:#94a3b8; font-size:15px; margin-top:20px;">Nenhuma importação realizada ainda. Importe um arquivo acima.</p>
+  {% endif %}
+</div>
+
+<div id="badge-toast" class="badge-toast"></div>
+
+<script>
+  {% if sucesso %}
+    mostrarToast(true, {{ sucesso|tojson }});
+  {% elif erro %}
+    mostrarToast(false, {{ erro|tojson }});
+  {% endif %}
+
+  function mostrarToast(ok, msg) {
+    const el = document.getElementById('badge-toast');
+    el.textContent = (ok ? '✔ ' : '✘ ') + msg;
+    el.className = 'badge-toast ' + (ok ? 'ok' : 'err');
+    el.style.display = 'block';
+    setTimeout(() => el.style.display = 'none', ok ? 4000 : 6000);
+  }
+</script>
+{% endblock %}

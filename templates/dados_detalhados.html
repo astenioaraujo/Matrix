@@ -25,12 +25,32 @@
   }
 
   .grid-filtros {
-    display: grid;
-    grid-template-columns: 140px 140px 140px auto;
+    display: flex;
+    flex-wrap: wrap;
     gap: 12px;
     align-items: end;
-    justify-content: start;
   }
+
+  .mes-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .btn-mes-nav {
+    background: #e5e7eb;
+    border: 1px solid #c9c9c9;
+    border-radius: 6px;
+    width: 32px;
+    height: 42px;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-mes-nav:hover { background: #d1d5db; }
 
   .campo label {
     display: block;
@@ -233,26 +253,59 @@
 <div class="card">
   <div class="pagina-titulo">Dados Detalhados</div>
 
-  <form method="GET" class="painel-filtros">
+  <form method="GET" class="painel-filtros" id="form-filtro">
     <div class="grid-filtros">
+
       <div class="campo">
         <label for="ano">Ano</label>
-        <input type="number" id="ano" name="ano" value="{{ ano }}" required>
+        <select id="ano" name="ano">
+          {% for a in anos_disp %}
+            <option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
       </div>
 
       <div class="campo">
-        <label for="mes">Mês</label>
-        <input type="number" id="mes" name="mes" value="{{ mes }}" required>
+        <label>Mês</label>
+        <div class="mes-nav">
+          <button type="button" class="btn-mes-nav" onclick="mudarMes(-1)">←</button>
+          <select id="mes" name="mes">
+            {% for m in range(1, 13) %}
+              <option value="{{ m }}" {% if m == mes %}selected{% endif %}>{{ nomes_meses[m-1] }}</option>
+            {% endfor %}
+          </select>
+          <button type="button" class="btn-mes-nav" onclick="mudarMes(1)">→</button>
+        </div>
       </div>
 
       <div class="campo">
         <label for="grupo">Grupo</label>
-        <input type="text" id="grupo" name="grupo" value="{{ grupo or 4 }}" required>
+        <select id="grupo" name="grupo" onchange="this.form.submit()">
+          {% for g_num, g_nome in grupos_disp %}
+            <option value="{{ g_num }}" {% if g_num == grupo %}selected{% endif %}>
+              {{ g_num }}{% if g_nome %} - {{ g_nome }}{% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="campo">
+        <label for="conta">Conta</label>
+        <select id="conta" name="conta">
+          <option value="">(Todas)</option>
+          {% for c_num, c_nome in contas_disp %}
+            <option value="{{ c_num }}" {% if c_num == conta_sel %}selected{% endif %}>
+              {{ c_num }} - {{ c_nome }}
+            </option>
+          {% endfor %}
+        </select>
       </div>
 
       <div>
+        <label>&nbsp;</label>
         <button type="submit" class="btn-acao btn-gerar">Carregar</button>
       </div>
+
     </div>
   </form>
 
@@ -356,5 +409,21 @@
     </div>
   {% endif %}
 </div>
+
+<script>
+  function mudarMes(delta) {
+    const selectMes = document.getElementById("mes");
+    const selectAno = document.getElementById("ano");
+    let mes = parseInt(selectMes.value, 10);
+    let ano = parseInt(selectAno.value, 10);
+    mes += delta;
+    if (mes < 1) { mes = 12; ano -= 1; }
+    if (mes > 12) { mes = 1;  ano += 1; }
+    selectMes.value = String(mes);
+    const optAno = Array.from(selectAno.options).find(o => o.value === String(ano));
+    if (optAno) selectAno.value = String(ano);
+    document.getElementById("form-filtro").submit();
+  }
+</script>
 
 {% endblock %}

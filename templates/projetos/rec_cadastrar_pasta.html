@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .pagina-sub    { font-size:15px; color:#666; margin-bottom:20px; }
+
+  .pasta-nav { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:20px; }
+  .pasta-nav label { font-weight:700; font-size:13px; color:#555; }
+  .pasta-nav select { height:36px; border-radius:8px; border:1px solid #ccc; padding:0 12px; font-size:14px; background:#fff; cursor:pointer; }
+
+  .tbl-wrap { overflow-x:auto; }
+  table.rec { border-collapse:collapse; width:100%; font-size:14px; }
+  table.rec th, table.rec td { border:1px solid #d1d5db; padding:0; white-space:nowrap; }
+  table.rec thead th { background:#14114f; color:#fff; font-weight:700; padding:9px 12px; text-align:left; position:sticky; top:0; z-index:2; }
+  table.rec thead th.th-center { text-align:center; }
+  table.rec tbody tr { background:#fff; }
+  table.rec tbody tr:nth-child(even) { background:#f9fafb; }
+  table.rec tbody tr:hover { background:#fffbea; }
+  table.rec tbody tr.sortable-ghost  { opacity:.35; background:#e0e7ff; }
+  table.rec tbody tr.sortable-chosen { box-shadow:0 4px 14px rgba(0,0,0,.18); }
+
+  td.td-handle { width:32px; text-align:center; cursor:grab; color:#9ca3af; padding:0 6px; font-size:18px; user-select:none; }
+  td.td-handle:active { cursor:grabbing; }
+  td.td-num    { width:40px; text-align:center; padding:8px 6px; color:#9ca3af; font-size:12px; font-weight:700; }
+
+  td.td-edit { padding:0; min-width:220px; }
+  td.td-edit input { width:100%; border:none; background:transparent; padding:8px 10px; font-size:14px; font-family:inherit; outline:none; box-sizing:border-box; height:38px; }
+  td.td-edit input:focus { background:#fffde7; box-shadow:inset 0 0 0 2px #facc15; }
+
+  td.td-qtd { padding:0; width:70px; }
+  td.td-qtd input { width:100%; border:none; background:transparent; padding:8px 6px; font-size:14px; font-family:inherit; outline:none; box-sizing:border-box; height:38px; text-align:center; }
+  td.td-qtd input:focus { background:#fffde7; box-shadow:inset 0 0 0 2px #facc15; }
+
+  td.td-etapas { padding:0; min-width:180px; }
+  td.td-etapas input { width:100%; border:none; background:transparent; padding:8px 10px; font-size:13px; font-family:inherit; outline:none; box-sizing:border-box; height:38px; color:#555; }
+  td.td-etapas input:focus { background:#fffde7; box-shadow:inset 0 0 0 2px #facc15; }
+
+  td.td-dia { padding:0; width:90px; }
+  td.td-dia input { width:100%; border:none; background:transparent; padding:8px 10px; font-size:14px; font-family:inherit; outline:none; box-sizing:border-box; height:38px; text-align:center; }
+  td.td-dia input:focus { background:#fffde7; box-shadow:inset 0 0 0 2px #facc15; }
+
+  td.td-acoes { width:46px; text-align:center; padding:4px; }
+  .btn-excluir-row { background:none; border:none; cursor:pointer; color:#9ca3af; font-size:17px; padding:4px 6px; border-radius:6px; }
+  .btn-excluir-row:hover { background:#fee2e2; color:#dc2626; }
+
+  .painel-nova { margin-top:18px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:16px 18px; }
+  .painel-nova .titulo-nova { font-size:14px; font-weight:800; color:#15803d; margin-bottom:12px; }
+  .nova-grid { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
+  .nova-campo label { display:block; font-size:12px; font-weight:700; color:#555; margin-bottom:4px; }
+  .nova-campo input { height:36px; border-radius:8px; border:1px solid #ccc; padding:0 10px; font-size:14px; background:#fff; box-sizing:border-box; width:100%; }
+  .nova-campo.col-desc { flex:1 1 260px; }
+  .nova-campo.col-dia  { flex:0 0 90px; }
+  .btn-add { background:#16a34a; color:#fff; border:none; border-radius:8px; padding:0 22px; height:36px; font-size:14px; font-weight:700; cursor:pointer; white-space:nowrap; align-self:flex-end; }
+  .btn-add:hover { background:#15803d; }
+  .btn-incluir-wrap { margin-top:14px; }
+
+  .badge-salvo { display:none; font-size:11px; color:#16a34a; font-weight:700; position:fixed; bottom:20px; right:24px; background:#fff; border:1px solid #16a34a; border-radius:8px; padding:8px 14px; box-shadow:0 3px 10px rgba(0,0,0,.15); z-index:999; }
+  .badge-erro  { display:none; font-size:11px; color:#dc2626; font-weight:700; position:fixed; bottom:20px; right:24px; background:#fff; border:1px solid #dc2626; border-radius:8px; padding:8px 14px; box-shadow:0 3px 10px rgba(0,0,0,.15); z-index:999; }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">Cadastrar Recorrências</div>
+  <div class="pagina-sub">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+  {% if pastas|length > 1 %}
+  <div class="pasta-nav">
+    <label>Pasta:</label>
+    <select onchange="window.location='/projetos/recorrencias-mensais/cadastrar/'+this.value">
+      {% for p in pastas %}
+        <option value="{{ p.id }}" {% if p.id == pasta.id %}selected{% endif %}>{{ p.nome }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% else %}
+  <div style="font-size:16px; font-weight:700; color:#14114f; margin-bottom:18px;">📁 {{ pasta.nome }}</div>
+  {% endif %}
+
+  <div class="tbl-wrap">
+    <table class="rec">
+      <thead>
+        <tr>
+          <th style="width:32px;"></th>
+          <th class="th-center" style="width:40px;">#</th>
+          <th>Descrição da Recorrência</th>
+          <th class="th-center" style="width:70px;" title="Quantidade de etapas (máx 7)">Etapas</th>
+          <th style="min-width:180px;">Labels das Etapas <span style="font-weight:400;font-size:11px;opacity:.7">(separadas por vírgula)</span></th>
+          <th style="width:46px;"></th>
+        </tr>
+      </thead>
+      <tbody id="tbody-modelos">
+        {% for m in modelos %}
+        <tr data-id="{{ m.id }}">
+          <td class="td-handle">⠿</td>
+          <td class="td-num">{{ loop.index }}</td>
+          <td class="td-edit">
+            <input type="text" value="{{ m.descricao }}"
+                   onblur="salvarCampo({{ m.id }},'descricao',this.value)"
+                   onkeydown="if(event.key==='Enter'){this.blur();}">
+          </td>
+          <td class="td-qtd">
+            <input type="number" min="0" max="7" value="{{ m.qtd_etapas or 0 }}"
+                   onblur="salvarCampo({{ m.id }},'qtd_etapas',this.value)"
+                   onkeydown="if(event.key==='Enter'){this.blur();}">
+          </td>
+          <td class="td-etapas">
+            <input type="text" value="{{ m.etapas or '' }}"
+                   placeholder="Ex: Planej, Exec, Rev"
+                   onblur="salvarCampo({{ m.id }},'etapas',this.value)"
+                   onkeydown="if(event.key==='Enter'){this.blur();}">
+          </td>
+          <td class="td-acoes">
+            <button class="btn-excluir-row" onclick="excluirModelo({{ m.id }},this)">✕</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="btn-incluir-wrap">
+    <button class="btn-add" onclick="abrirPainel()">＋ Incluir Recorrência</button>
+  </div>
+
+  <div class="painel-nova" id="painel-nova" style="display:none; margin-top:12px;">
+    <div class="titulo-nova">＋ Nova Recorrência</div>
+    <div class="nova-grid">
+      <div class="nova-campo col-desc">
+        <label>Descrição</label>
+        <input type="text" id="nova-desc" placeholder="Descreva a recorrência..."
+               onkeydown="if(event.key==='Enter'){adicionarModelo();}">
+      </div>
+      <div class="nova-campo" style="flex:0 0 80px;">
+        <label>Qtd. Etapas</label>
+        <input type="number" id="nova-qtd" min="0" max="7" value="0" style="text-align:center;">
+      </div>
+      <div class="nova-campo" style="flex:1 1 200px;">
+        <label>Labels <span style="font-weight:400;font-size:11px">(separadas por vírgula)</span></label>
+        <input type="text" id="nova-etapas" placeholder="Ex: Planej, Exec, Rev">
+      </div>
+      <button class="btn-add" onclick="adicionarModelo()">Adicionar</button>
+    </div>
+  </div>
+</div>
+
+<div class="badge-salvo" id="badge-salvo">✔ Salvo</div>
+<div class="badge-erro"  id="badge-erro">✘ Erro ao salvar</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
+<script>
+  const URL_BASE = "{{ url_for('projetos.rec_cadastrar_pasta', id_pasta=pasta.id) }}";
+
+  function badge(ok) {
+    const el = document.getElementById(ok ? 'badge-salvo' : 'badge-erro');
+    el.style.display = 'block'; setTimeout(() => el.style.display = 'none', 1800);
+  }
+  function post(fd) {
+    return fetch(URL_BASE, {method:'POST', body:fd})
+      .then(r => r.json()).then(j => { badge(j.ok); return j; }).catch(() => badge(false));
+  }
+  function salvarCampo(id, campo, valor) {
+    const fd = new FormData();
+    fd.append('acao','editar'); fd.append('id',id); fd.append('campo',campo); fd.append('valor',valor);
+    post(fd);
+  }
+  function excluirModelo(id, btn) {
+    if (!confirm('Excluir esta recorrência?')) return;
+    const fd = new FormData();
+    fd.append('acao','excluir'); fd.append('id',id);
+    post(fd).then(j => { if (j && j.ok) { btn.closest('tr').remove(); renumerar(); } });
+  }
+  function abrirPainel() {
+    document.getElementById('painel-nova').style.display = 'block';
+    document.getElementById('nova-desc').focus();
+  }
+  function adicionarModelo() {
+    const desc   = document.getElementById('nova-desc').value.trim();
+    const qtd    = document.getElementById('nova-qtd').value;
+    const etapas = document.getElementById('nova-etapas').value.trim();
+    if (!desc) { document.getElementById('nova-desc').focus(); return; }
+    const fd = new FormData();
+    fd.append('acao','incluir'); fd.append('descricao',desc);
+    fd.append('qtd_etapas', qtd); fd.append('etapas', etapas);
+    post(fd).then(j => {
+      if (!j || !j.ok) return;
+      const tbody = document.getElementById('tbody-modelos');
+      const num   = tbody.querySelectorAll('tr').length + 1;
+      const tr    = document.createElement('tr');
+      tr.dataset.id = j.id;
+      tr.innerHTML = `
+        <td class="td-handle">⠿</td>
+        <td class="td-num">${num}</td>
+        <td class="td-edit">
+          <input type="text" value="${esc(desc)}"
+                 onblur="salvarCampo(${j.id},'descricao',this.value)"
+                 onkeydown="if(event.key==='Enter'){this.blur();}">
+        </td>
+        <td class="td-qtd">
+          <input type="number" min="0" max="7" value="${esc(j.qtd_etapas||0)}"
+                 onblur="salvarCampo(${j.id},'qtd_etapas',this.value)"
+                 onkeydown="if(event.key==='Enter'){this.blur();}">
+        </td>
+        <td class="td-etapas">
+          <input type="text" value="${esc(j.etapas||'')}" placeholder="Ex: Planej, Exec, Rev"
+                 onblur="salvarCampo(${j.id},'etapas',this.value)"
+                 onkeydown="if(event.key==='Enter'){this.blur();}">
+        </td>
+        <td class="td-acoes">
+          <button class="btn-excluir-row" onclick="excluirModelo(${j.id},this)">✕</button>
+        </td>`;
+      tbody.appendChild(tr);
+      document.getElementById('nova-desc').value   = '';
+      document.getElementById('nova-qtd').value    = '0';
+      document.getElementById('nova-etapas').value = '';
+      document.getElementById('painel-nova').style.display = 'none';
+    });
+  }
+  function renumerar() {
+    document.querySelectorAll('#tbody-modelos tr .td-num').forEach((td,i) => td.textContent = i+1);
+  }
+  function esc(s) {
+    return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  Sortable.create(document.getElementById('tbody-modelos'), {
+    handle:'.td-handle', animation:150,
+    ghostClass:'sortable-ghost', chosenClass:'sortable-chosen',
+    onEnd: function() {
+      renumerar();
+      const ids = Array.from(document.querySelectorAll('#tbody-modelos tr')).map(tr => tr.dataset.id);
+      const fd  = new FormData();
+      fd.append('acao','reordenar'); fd.append('ids', JSON.stringify(ids));
+      post(fd);
+    }
+  });
+</script>
+{% endblock %}

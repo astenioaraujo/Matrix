@@ -1,0 +1,341 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .pagina-sub    { font-size:15px; color:#666; margin-bottom:20px; }
+
+  /* filtros */
+  .filtro-bar { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:20px; background:#fff; border:1px solid #ddd; border-radius:12px; padding:14px 18px; }
+  .filtro-bar label { display:block; font-size:12px; font-weight:700; color:#555; margin-bottom:4px; }
+  .filtro-bar select { height:36px; border-radius:7px; border:1px solid #ccc; padding:0 10px; font-size:13px; }
+  .btn-filtrar { height:36px; background:#14114f; color:#fff; font-weight:700; border:none; border-radius:7px; cursor:pointer; padding:0 18px; font-size:13px; }
+  .btn-filtrar:hover { background:#0f0d3d; }
+  .mes-nav { display:flex; align-items:center; gap:6px; }
+  .btn-mes-nav { width:38px; height:38px; border:1px solid #c7c7c7; border-radius:9px; background:#c8e6c9; color:#111; font-size:18px; font-weight:900; cursor:pointer; padding:0; }
+  .btn-mes-nav:hover { background:#a5d6a7; }
+
+  /* ações do topo */
+  .acoes-topo { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; align-items:center; }
+  .btn-carregar  { background:#1d4ed8; color:#fff; font-weight:700; border:none; border-radius:8px; padding:8px 18px; font-size:13px; cursor:pointer; }
+  .btn-carregar:hover  { background:#1e40af; }
+  .btn-recarregar { background:#0f766e; color:#fff; font-weight:700; border:none; border-radius:8px; padding:8px 18px; font-size:13px; cursor:pointer; }
+  .btn-recarregar:hover { background:#0d6660; }
+  .info-carga { font-size:13px; color:#555; }
+
+  /* toggle filtro */
+  .toggle-wrap { display:flex; align-items:center; gap:8px; margin-left:auto; }
+  .toggle-wrap span { font-size:13px; font-weight:700; color:#555; }
+  .toggle-switch { position:relative; display:inline-block; width:52px; height:28px; cursor:pointer; }
+  .toggle-switch input { opacity:0; width:0; height:0; }
+  .toggle-slider {
+    position:absolute; inset:0; background:#d1d5db; border-radius:28px; transition:.25s;
+  }
+  .toggle-slider:before {
+    content:''; position:absolute; width:20px; height:20px; left:4px; top:4px;
+    background:#fff; border-radius:50%; transition:.25s; box-shadow:0 1px 3px rgba(0,0,0,.2);
+  }
+  .toggle-switch input:checked + .toggle-slider { background:#1d4ed8; }
+  .toggle-switch input:checked + .toggle-slider:before { transform:translateX(24px); }
+
+  /* tabela */
+  .tbl-wrap { overflow-x:auto; }
+  table.exec { border-collapse:collapse; width:100%; font-size:14px; }
+  table.exec th, table.exec td { border:1px solid #d1d5db; padding:0; white-space:nowrap; }
+  table.exec thead th { background:#14114f; color:#fff; font-weight:700; padding:9px 12px; text-align:left; position:sticky; top:0; z-index:2; }
+  table.exec thead th.th-center { text-align:center; }
+  table.exec tbody tr { background:#fff; transition:background .1s; }
+  table.exec tbody tr:nth-child(even) { background:#f9fafb; }
+  table.exec tbody tr:hover { background:#fffbea; }
+  table.exec tbody tr.concluida td { background:#f0fdf4 !important; }
+  table.exec tbody tr.concluida td.td-desc { color:#6b7280; text-decoration:line-through; }
+  table.exec tbody tr.sortable-ghost  { opacity:.35; background:#e0e7ff; }
+  table.exec tbody tr.sortable-chosen { box-shadow:0 4px 14px rgba(0,0,0,.18); }
+
+  td.td-handle { width:32px; text-align:center; cursor:grab; color:#9ca3af; padding:0 6px; font-size:18px; user-select:none; }
+  td.td-handle:active { cursor:grabbing; }
+  td.td-num  { width:40px; text-align:center; padding:8px 6px; color:#9ca3af; font-size:12px; font-weight:700; }
+  td.td-desc { padding:8px 12px; min-width:280px; white-space:normal; }
+  td.td-dia  { text-align:center; padding:8px 10px; width:90px; }
+
+  td.td-etapas-exec { padding:6px 10px; white-space:nowrap; }
+  .etapa-item { display:inline-flex; flex-direction:column; align-items:center; margin-right:10px; gap:2px; }
+  .etapa-item input[type=checkbox] { width:16px; height:16px; cursor:pointer; accent-color:#1d4ed8; }
+  .etapa-label { font-size:10px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:.03em; max-width:52px; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .etapa-item input[type=checkbox]:checked + .etapa-label { color:#15803d; }
+
+  td.td-status { width:150px; padding:4px 8px; text-align:center; }
+  .sel-status {
+    width:100%; height:30px; border-radius:7px; border:1px solid #d1d5db;
+    font-size:12px; font-weight:700; cursor:pointer; padding:0 6px;
+    background:#fff; color:#374151; appearance:auto;
+  }
+  .sel-status.s-vazio    { background:#f1f5f9; color:#64748b; border-color:#cbd5e1; }
+  .sel-status.s-execucao { background:#eff6ff; color:#1d4ed8; border-color:#93c5fd; }
+  .sel-status.s-pausa    { background:#fffbeb; color:#b45309; border-color:#fcd34d; }
+  .sel-status.s-concluida { background:#f0fdf4; color:#15803d; border-color:#86efac; }
+  .sel-status.s-cancelado { background:#fef2f2; color:#991b1b; border-color:#fca5a5; }
+
+  td.td-info { padding:6px 10px; font-size:11px; color:#6b7280; white-space:normal; min-width:140px; }
+  .badge-status-ok  { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:800; background:#d1fae5; color:#065f46; }
+
+  .vazio {
+    text-align:center; padding:40px 20px; color:#9ca3af;
+    font-size:15px; background:#f9fafb; border-radius:10px; margin-top:8px;
+  }
+
+  .badge-toast { display:none; font-size:13px; font-weight:700; position:fixed; bottom:24px; right:28px; border-radius:10px; padding:12px 20px; box-shadow:0 4px 16px rgba(0,0,0,.18); z-index:9999; }
+  .badge-toast.ok  { background:#fff; color:#16a34a; border:1.5px solid #16a34a; }
+  .badge-toast.err { background:#fff; color:#dc2626; border:1.5px solid #dc2626; }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">Executar Recorrências</div>
+  <div class="pagina-sub">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+  <!-- seletor pasta + mês/ano -->
+  <form method="get" class="filtro-bar" id="form-filtro">
+    {% if pastas|length > 1 %}
+    <div>
+      <label>Pasta</label>
+      <select name="_pasta" onchange="trocarPasta(this.value)">
+        {% for p in pastas %}
+          <option value="{{ p.id }}" {% if p.id == pasta.id %}selected{% endif %}>{{ p.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% else %}
+    <div style="font-size:15px; font-weight:700; color:#14114f; align-self:center;">📁 {{ pasta.nome }}</div>
+    {% endif %}
+
+    <div>
+      <label>Mês / Ano</label>
+      <div class="mes-nav">
+        <button type="button" class="btn-mes-nav" onclick="navegarMes(-1)">←</button>
+        <select name="mes" id="sel-mes">
+          {% for i in range(1,13) %}
+            <option value="{{ i }}" {% if i == mes_sel %}selected{% endif %}>{{ nomes_meses[i-1] }}</option>
+          {% endfor %}
+        </select>
+        <select name="ano" id="sel-ano">
+          {% for a in anos_disp %}
+            <option value="{{ a }}" {% if a == ano_sel %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+        <button type="button" class="btn-mes-nav" onclick="navegarMes(1)">→</button>
+      </div>
+    </div>
+
+    <div style="align-self:flex-end;"><button type="submit" class="btn-filtrar">Filtrar</button></div>
+  </form>
+
+  <!-- ações -->
+  <div class="acoes-topo">
+    {% set total = execucoes|length %}
+    {% set concluidas = execucoes|selectattr('status','equalto','concluida')|list|length %}
+
+    {% if total == 0 %}
+      <button class="btn-carregar" onclick="carregar('carregar')">⬇ Carregar Recorrências Padrão</button>
+      <span class="info-carga">Nenhuma recorrência carregada para {{ nomes_meses[mes_sel-1] }}/{{ ano_sel }}.</span>
+    {% else %}
+      <button class="btn-recarregar" onclick="carregar('recarregar')">↺ Recarregar Padrões</button>
+      <span class="info-carga">{{ concluidas }}/{{ total }} concluídas</span>
+      <div class="toggle-wrap">
+        <span id="toggle-label">Todas</span>
+        <label class="toggle-switch" title="Mostrar só em andamento">
+          <input type="checkbox" id="toggle-andamento" onchange="filtrarAndamento(this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+        <span>Em andamento</span>
+      </div>
+    {% endif %}
+  </div>
+
+  {% if execucoes %}
+  <div class="tbl-wrap">
+    <table class="exec">
+      <thead>
+        <tr>
+          <th style="width:32px;"></th>
+          <th class="th-center" style="width:40px;">#</th>
+          <th>Descrição</th>
+          <th>Etapas</th>
+          <th class="th-center" style="width:150px;">Status</th>
+          <th>Conclusão</th>
+        </tr>
+      </thead>
+      <tbody id="tbody-exec">
+        {% for e in execucoes %}
+        <tr data-id="{{ e.id }}" class="{% if e.status == 'concluida' %}concluida{% endif %}">
+          <td class="td-handle">⠿</td>
+          <td class="td-num">{{ loop.index }}</td>
+          <td class="td-desc">{{ e.descricao }}</td>
+          <td class="td-etapas-exec">
+            {% if e.qtd_etapas and e.qtd_etapas > 0 %}
+              {% for i in range(e.qtd_etapas) %}
+                {% set label = e.etapas_lista[i] if i < e.etapas_lista|length else (i+1)|string %}
+                {% set checked = e.concluidas_lista[i] if i < e.concluidas_lista|length else false %}
+                <span class="etapa-item">
+                  <input type="checkbox"
+                    {% if checked %}checked{% endif %}
+                    onchange="marcarEtapa({{ e.id }}, {{ i }}, this.checked)">
+                  <span class="etapa-label" title="{{ label }}">{{ label }}</span>
+                </span>
+              {% endfor %}
+            {% endif %}
+          </td>
+          <td class="td-status">
+            <select class="sel-status s-{{ e.status or 'vazio' }}"
+                    onchange="alterarStatus({{ e.id }}, this)">
+              <option value=""        {% if not e.status %}selected{% endif %}>—</option>
+              <option value="execucao"{% if e.status == 'execucao' %}selected{% endif %}>▶ Em execução</option>
+              <option value="pausa"   {% if e.status == 'pausa' %}selected{% endif %}>⏸ Em pausa</option>
+              <option value="concluida"  {% if e.status == 'concluida'  %}selected{% endif %}>✔ Concluída</option>
+              <option value="cancelado" {% if e.status == 'cancelado' %}selected{% endif %}>✕ Cancelada</option>
+            </select>
+          </td>
+          <td class="td-info">
+            {% if e.status == 'concluida' %}
+              <span class="badge-status-ok">✔ Concluída</span><br>
+              {% if e.data_conclusao %}{{ e.data_conclusao.strftime('%d/%m/%Y %H:%M') }}<br>{% endif %}
+              {% if e.nome_usuario_conclusao %}{{ e.nome_usuario_conclusao }}{% endif %}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="vazio">
+    Nenhuma recorrência carregada para {{ nomes_meses[mes_sel-1] }}/{{ ano_sel }}.<br>
+    Clique em <strong>Carregar Recorrências Padrão</strong> para começar.
+  </div>
+  {% endif %}
+</div>
+
+<div id="badge-toast" class="badge-toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
+<script>
+  const URL_BASE = "{{ url_for('projetos.rec_executar_pasta', id_pasta=pasta.id, ano=ano_sel, mes=mes_sel) }}";
+
+  function mostrarToast(ok, texto) {
+    const el = document.getElementById('badge-toast');
+    el.textContent = (ok ? '✔ ' : '✘ ') + texto;
+    el.className = 'badge-toast ' + (ok ? 'ok' : 'err');
+    el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 3000);
+  }
+  function badge(ok) { mostrarToast(ok, ok ? 'Salvo' : 'Erro ao salvar'); }
+  function post(fd) {
+    return fetch(URL_BASE, {method:'POST', body:fd})
+      .then(r => r.json()).then(j => { badge(j.ok); return j; }).catch(() => badge(false));
+  }
+
+  const NOMES_MESES = {{ nomes_meses|tojson }};
+
+  function navegarMes(delta) {
+    const selMes = document.getElementById('sel-mes');
+    const selAno = document.getElementById('sel-ano');
+    let mes = parseInt(selMes.value) + delta;
+    let ano = parseInt(selAno.value);
+    if (mes < 1) { mes = 12; ano--; }
+    if (mes > 12) { mes = 1;  ano++; }
+    selMes.value = mes;
+    // garante que o ano exista no select; se não, adiciona
+    if (!Array.from(selAno.options).find(o => parseInt(o.value) === ano)) {
+      const opt = document.createElement('option');
+      opt.value = opt.textContent = ano;
+      selAno.appendChild(opt);
+    }
+    selAno.value = ano;
+    document.getElementById('form-filtro').submit();
+  }
+
+  function trocarPasta(id) {
+    const params = new URLSearchParams(window.location.search);
+    window.location = '/projetos/recorrencias-mensais/executar/' + id +
+      '?ano=' + params.get('ano') + '&mes=' + params.get('mes');
+  }
+
+  function carregar(tipo) {
+    const fd = new FormData();
+    fd.append('acao', tipo);
+    fd.append('mes',  '{{ mes_sel }}');
+    fd.append('ano',  '{{ ano_sel }}');
+    post(fd).then(j => {
+      if (j && j.ok) {
+        const msg = tipo === 'carregar'
+          ? `${j.novos} recorrência(s) carregada(s).`
+          : j.novos > 0 ? `${j.novos} nova(s) recorrência(s) adicionada(s).` : 'Nenhuma recorrência nova encontrada.';
+        mostrarToast(true, msg);
+        setTimeout(() => window.location.reload(), 1200);
+      }
+    });
+  }
+
+  function marcarEtapa(id, idx, checked) {
+    const fd = new FormData();
+    fd.append('acao', 'set_etapa');
+    fd.append('id', id);
+    fd.append('idx', idx);
+    fd.append('checked', checked ? '1' : '0');
+    post(fd);
+  }
+
+  const CLASSES = { '': 's-vazio', 'execucao': 's-execucao', 'pausa': 's-pausa', 'concluida': 's-concluida', 'cancelado': 's-cancelado' };
+
+  function alterarStatus(id, sel) {
+    const novo = sel.value;
+    const fd = new FormData();
+    fd.append('acao', 'set_status');
+    fd.append('id', id);
+    fd.append('status', novo);
+    post(fd).then(j => {
+      if (!j || !j.ok) return;
+      sel.className = 'sel-status ' + (CLASSES[novo] || 's-vazio');
+      const tr = sel.closest('tr');
+      const tdInfo = tr.querySelector('.td-info');
+      if (novo === 'concluida') {
+        tr.classList.add('concluida');
+        tdInfo.innerHTML = '<span class="badge-status-ok">✔ Concluída</span><br>Agora';
+      } else {
+        tr.classList.remove('concluida');
+        tdInfo.innerHTML = '';
+      }
+    });
+  }
+
+  function renumerar() {
+    document.querySelectorAll('#tbody-exec tr:not([style*="display: none"]) .td-num').forEach((td,i) => td.textContent = i+1);
+  }
+
+  const EM_ANDAMENTO = new Set(['', 'execucao', 'pausa']);
+
+  function filtrarAndamento(ativo) {
+    document.querySelectorAll('#tbody-exec tr').forEach(tr => {
+      const sel = tr.querySelector('.sel-status');
+      const status = sel ? sel.value : '';
+      tr.style.display = (!ativo || EM_ANDAMENTO.has(status)) ? '' : 'none';
+    });
+    renumerar();
+  }
+
+  const tbody = document.getElementById('tbody-exec');
+  if (tbody) {
+    Sortable.create(tbody, {
+      handle:'.td-handle', animation:150,
+      ghostClass:'sortable-ghost', chosenClass:'sortable-chosen',
+      onEnd: function() {
+        renumerar();
+        const ids = Array.from(tbody.querySelectorAll('tr')).map(tr => tr.dataset.id);
+        const fd  = new FormData();
+        fd.append('acao','reordenar'); fd.append('ids', JSON.stringify(ids));
+        post(fd);
+      }
+    });
+  }
+</script>
+{% endblock %}

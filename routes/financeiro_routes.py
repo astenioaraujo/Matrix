@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, sessio
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 import math
+import io
 from psycopg2.extras import RealDictCursor, execute_batch
 from db import get_connection
 from security_helpers import usuario_tem_permissao, permissao_obrigatoria
@@ -291,6 +292,7 @@ def menu_empresa():
         pode_fluxo_caixa = True
         pode_cadastros = True
         pode_emprestimos_financiamentos = True
+        pode_cr_fiado = True
 
     else:
 
@@ -345,6 +347,8 @@ def menu_empresa():
             or pode_consulta_emprestimos
         )
 
+        pode_cr_fiado = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CR_FIADO")
+
     linhas, totais = montar_dashboard(cod_empresa)
 
     return render_template(
@@ -362,7 +366,8 @@ def menu_empresa():
         pode_saldos=pode_saldos,
         pode_fluxo_caixa=pode_fluxo_caixa,
         pode_cadastros=pode_cadastros,
-        pode_emprestimos_financiamentos=pode_emprestimos_financiamentos
+        pode_emprestimos_financiamentos=pode_emprestimos_financiamentos,
+        pode_cr_fiado=pode_cr_fiado,
     )
 # =========================
 # CADASTROS
@@ -1468,44 +1473,82 @@ def dados_detalhados():
 
     ano = request.args.get("ano", type=int)
     mes = request.args.get("mes", type=int)
-    grupo = request.args.get("grupo", default=4, type=int)
+    grupo = request.args.get("grupo", type=int)
+    conta_sel = request.args.get("conta", type=int)
 
     hoje = datetime.now()
-
-    if not ano and not mes:
-        if hoje.month == 1:
-            ano = hoje.year - 1
-            mes = 12
-        else:
-            ano = hoje.year
-            mes = hoje.month - 1
-
-    elif ano and not mes:
-        if hoje.month == 1:
-            mes = 12
-        else:
-            mes = hoje.month - 1
-
-    elif mes and not ano:
-        ano = hoje.year
+    nomes_meses = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                   "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
 
     conn = get_connection()
     cur = conn.cursor()
 
     try:
+        # último mês com lançamento (padrão quando sem filtro)
+        if not ano and not mes:
+            cur.execute("""
+                SELECT ano, mes FROM lancamentos
+                WHERE cod_empresa = %s
+                ORDER BY ano DESC, mes DESC LIMIT 1
+            """, (cod_empresa,))
+            row_ult = cur.fetchone()
+            if row_ult:
+                ano, mes = row_ult[0], row_ult[1]
+            elif hoje.month == 1:
+                ano, mes = hoje.year - 1, 12
+            else:
+                ano, mes = hoje.year, hoje.month - 1
+        elif ano and not mes:
+            mes = hoje.month - 1 if hoje.month > 1 else 12
+        elif mes and not ano:
+            ano = hoje.year
+
+        # anos disponíveis
+        cur.execute("""
+            SELECT DISTINCT ano FROM lancamentos
+            WHERE cod_empresa = %s ORDER BY ano DESC
+        """, (cod_empresa,))
+        anos_disp = [r[0] for r in cur.fetchall()]
+
+        # grupos com nome
+        cur.execute("""
+            SELECT DISTINCT l.grupo, COALESCE(cg.descricao, '') AS descricao
+            FROM lancamentos l
+            LEFT JOIN contas_gerenciais cg
+                   ON cg.cod_empresa = l.cod_empresa
+                  AND cg.cod_grupo   = l.grupo
+                  AND cg.cod_conta   = 0
+            WHERE l.cod_empresa = %s
+            ORDER BY l.grupo
+        """, (cod_empresa,))
+        grupos_disp = cur.fetchall()   # [(num, descricao), ...]
+
+        if grupo is None and grupos_disp:
+            grupo = grupos_disp[0][0]
+
+        # contas disponíveis para o grupo selecionado
+        cur.execute("""
+            SELECT DISTINCT l.conta,
+                   COALESCE(NULLIF(TRIM(l.descricao_conta),''), 'SEM DESCRIÇÃO') AS nome
+            FROM lancamentos l
+            WHERE l.cod_empresa = %s AND l.grupo = %s
+            ORDER BY l.conta
+        """, (cod_empresa, grupo))
+        contas_disp = cur.fetchall()   # [(num, nome), ...]
+
         cur.execute("""
             SELECT cod_filial, nome_filial
             FROM filiais
-            WHERE cod_empresa = %s
-              AND ativo = true
+            WHERE cod_empresa = %s AND ativo = true
             ORDER BY cod_filial
         """, (cod_empresa,))
         filiais_rows = cur.fetchall()
-
         filiais = [r[0] for r in filiais_rows]
         mapa_filiais = {r[0]: r[1] for r in filiais_rows}
 
-        cur.execute("""
+        filtros_conta = [conta_sel] if conta_sel else None
+
+        query = """
             SELECT
                 conta,
                 COALESCE(NULLIF(TRIM(descricao_conta), ''), 'SEM DESCRIÇÃO') AS descricao_conta,
@@ -1513,22 +1556,20 @@ def dados_detalhados():
                 cod_filial,
                 COALESCE(SUM(valor), 0) AS total_valor
             FROM lancamentos
-            WHERE cod_empresa = %s
-              AND ano = %s
-              AND mes = %s
-              AND grupo = %s
-            GROUP BY
-                conta,
+            WHERE cod_empresa = %s AND ano = %s AND mes = %s AND grupo = %s
+        """
+        params = [cod_empresa, ano, mes, grupo]
+        if filtros_conta:
+            query += " AND conta = %s"
+            params.append(conta_sel)
+        query += """
+            GROUP BY conta,
                 COALESCE(NULLIF(TRIM(descricao_conta), ''), 'SEM DESCRIÇÃO'),
                 COALESCE(NULLIF(TRIM(historico), ''), 'SEM HISTÓRICO'),
                 cod_filial
-            ORDER BY
-                conta,
-                descricao_conta,
-                historico,
-                cod_filial
-        """, (cod_empresa, ano, mes, grupo))
-
+            ORDER BY conta, descricao_conta, historico, cod_filial
+        """
+        cur.execute(query, params)
         rows = cur.fetchall()
 
     finally:
@@ -1602,10 +1643,15 @@ def dados_detalhados():
         ano=ano,
         mes=mes,
         grupo=grupo,
+        conta_sel=conta_sel,
         filiais=filiais,
         mapa_filiais=mapa_filiais,
         dados=dados_ordenados,
         totais_gerais=totais_gerais,
+        anos_disp=anos_disp,
+        grupos_disp=grupos_disp,
+        contas_disp=contas_disp,
+        nomes_meses=nomes_meses,
         empresa_ativa=session["cod_empresa"],
         nome_empresa_ativa=session["nome_empresa"],
         url_voltar=url_for("financeiro.menu_fluxo_caixa"),
@@ -2168,6 +2214,7 @@ def menu_fluxo_caixa():
         pode_variacoes = True
         pode_margem_bruta = True
         pode_exclusoes = True
+        pode_cr_fiado = True
     else:
         pode_resultado_mb = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "RESULTADO_MB")
         pode_lancamentos = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "LANCAMENTOS")
@@ -2177,6 +2224,7 @@ def menu_fluxo_caixa():
         pode_variacoes = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "VARIACOES")
         pode_margem_bruta = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "MARGEM_BRUTA")
         pode_exclusoes = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "EXCLUSOES")
+        pode_cr_fiado = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CR_FIADO")
 
     return render_template(
         "menu_fluxo_caixa.html",
@@ -2193,6 +2241,7 @@ def menu_fluxo_caixa():
         pode_variacoes=pode_variacoes,
         pode_margem_bruta=pode_margem_bruta,
         pode_exclusoes=pode_exclusoes,
+        pode_cr_fiado=pode_cr_fiado,
     )
 #---------------------------------------------------------
 # NOVO EMPRÉSTIMOS E FINANCIAMENTOS
@@ -3601,6 +3650,16 @@ def conferir_caixas():
                     DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = NOW()
                 """, (cod_empresa, cod_filial_p, data_post, valor))
 
+            elif tipo_campo == "controle":
+                id_controle = int(request.form.get("id_controle") or 0)
+                valor       = conv(request.form.get("valor"))
+                cur.execute("""
+                    INSERT INTO caixas_controles_valores (cod_empresa, cod_filial, data, id_controle, valor, atualizado_em)
+                    VALUES (%s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (cod_empresa, cod_filial, data, id_controle)
+                    DO UPDATE SET valor = EXCLUDED.valor, atualizado_em = NOW()
+                """, (cod_empresa, cod_filial_p, data_post, id_controle, valor))
+
             conn.commit()
             return "", 204
 
@@ -3632,9 +3691,17 @@ def conferir_caixas():
 
         cur.execute("""
             SELECT id, nome FROM caixas_formas_recebimento
-            WHERE cod_empresa = %s AND ativo = TRUE
+            WHERE cod_empresa = %s
+              AND (ativo = TRUE
+                   OR EXISTS (
+                       SELECT 1 FROM caixas_lancamentos l
+                       WHERE l.id_forma = caixas_formas_recebimento.id
+                         AND l.cod_empresa = %s
+                         AND EXTRACT(MONTH FROM l.data) = %s
+                         AND EXTRACT(YEAR  FROM l.data) = %s
+                   ))
             ORDER BY ordem, nome
-        """, (cod_empresa,))
+        """, (cod_empresa, cod_empresa, mes_sel, ano_sel))
         formas = cur.fetchall()
 
         # Parâmetros de seleção
@@ -3702,6 +3769,42 @@ def conferir_caixas():
 
         datas = [_dt.date(ano_sel, mes_sel, d) for d in range(1, ultimo_dia + 1)]
 
+        # ---- Controles adicionais ----
+        cur.execute("""
+            SELECT id, nome, tipo FROM caixas_controles_adicionais
+            WHERE cod_empresa = %s
+              AND (ativo = TRUE
+                   OR EXISTS (
+                       SELECT 1 FROM caixas_controles_valores v
+                       WHERE v.id_controle = caixas_controles_adicionais.id
+                         AND v.cod_empresa = %s
+                         AND EXTRACT(MONTH FROM v.data) = %s
+                         AND EXTRACT(YEAR  FROM v.data) = %s
+                   ))
+            ORDER BY ordem
+        """, (cod_empresa, cod_empresa, mes_sel, ano_sel))
+        controles = cur.fetchall()
+
+        if editavel:
+            cur.execute("""
+                SELECT data, id_controle, valor FROM caixas_controles_valores
+                WHERE cod_empresa = %s AND cod_filial = %s
+                  AND EXTRACT(MONTH FROM data) = %s AND EXTRACT(YEAR FROM data) = %s
+            """, (cod_empresa, cod_filial_atual, mes_sel, ano_sel))
+        else:
+            cur.execute("""
+                SELECT data, id_controle, SUM(valor) AS valor FROM caixas_controles_valores
+                WHERE cod_empresa = %s AND cod_filial = ANY(%s)
+                  AND EXTRACT(MONTH FROM data) = %s AND EXTRACT(YEAR FROM data) = %s
+                GROUP BY data, id_controle
+            """, (cod_empresa, cods, mes_sel, ano_sel))
+
+        controles_valores = {}
+        for r in cur.fetchall():
+            d = r["data"]
+            if d not in controles_valores: controles_valores[d] = {}
+            controles_valores[d][r["id_controle"]] = float(r["valor"])
+
     finally:
         cur.close()
         conn.close()
@@ -3724,6 +3827,8 @@ def conferir_caixas():
         datas=datas,
         valores=valores,
         totais_cx=totais_cx,
+        controles=controles,
+        controles_valores=controles_valores,
         mes_sel=mes_sel,
         ano_sel=ano_sel,
         meses=list(range(1, 13)),
@@ -3772,17 +3877,76 @@ def configuracoes_caixas():
             elif acao == "excluir":
                 id_ex = request.form.get("id_excluir")
                 if id_ex:
-                    cur.execute("""
-                        DELETE FROM caixas_formas_recebimento WHERE id = %s AND cod_empresa = %s
-                    """, (id_ex, cod_empresa))
+                    cur.execute("SELECT COUNT(*) FROM caixas_lancamentos WHERE id_forma = %s AND cod_empresa = %s", (id_ex, cod_empresa))
+                    if cur.fetchone()["count"] > 0:
+                        flash("Esta forma possui lançamentos e não pode ser excluída. Use Inativar para ocultá-la.", "error")
+                    else:
+                        cur.execute("DELETE FROM caixas_formas_recebimento WHERE id = %s AND cod_empresa = %s", (id_ex, cod_empresa))
+                        conn.commit()
+                        flash("Forma de recebimento excluída.", "success")
+
+            elif acao == "inativar":
+                id_in = request.form.get("id_inativar")
+                if id_in:
+                    cur.execute("UPDATE caixas_formas_recebimento SET ativo = NOT ativo WHERE id = %s AND cod_empresa = %s", (id_in, cod_empresa))
                     conn.commit()
-                    flash("Forma de recebimento excluída.", "success")
+                    flash("Status da forma de recebimento alterado.", "success")
+
+            # ---- Controles adicionais ----
+            elif acao == "ctrl_incluir":
+                nome  = (request.form.get("ctrl_nome") or "").strip().upper()
+                tipo  = request.form.get("ctrl_tipo") or "INFO"
+                ordem = int(request.form.get("ctrl_ordem") or 0)
+                if nome:
+                    cur.execute("""
+                        INSERT INTO caixas_controles_adicionais (cod_empresa, nome, tipo, ordem)
+                        VALUES (%s, %s, %s, %s)
+                    """, (cod_empresa, nome, tipo, ordem))
+                    conn.commit()
+                    flash("Controle adicional incluído.", "success")
+
+            elif acao == "ctrl_editar":
+                id_ed = request.form.get("ctrl_id_editar")
+                nome  = (request.form.get("ctrl_nome_editar") or "").strip().upper()
+                tipo  = request.form.get("ctrl_tipo_editar") or "INFO"
+                ordem = int(request.form.get("ctrl_ordem_editar") or 0)
+                if id_ed and nome:
+                    cur.execute("""
+                        UPDATE caixas_controles_adicionais
+                        SET nome = %s, tipo = %s, ordem = %s WHERE id = %s AND cod_empresa = %s
+                    """, (nome, tipo, ordem, id_ed, cod_empresa))
+                    conn.commit()
+                    flash("Controle adicional atualizado.", "success")
+
+            elif acao == "ctrl_excluir":
+                id_ex = request.form.get("ctrl_id_excluir")
+                if id_ex:
+                    cur.execute("SELECT COUNT(*) FROM caixas_controles_valores WHERE id_controle = %s AND cod_empresa = %s", (id_ex, cod_empresa))
+                    if cur.fetchone()["count"] > 0:
+                        flash("Este controle possui lançamentos e não pode ser excluído. Use Inativar para ocultá-lo.", "error")
+                    else:
+                        cur.execute("DELETE FROM caixas_controles_adicionais WHERE id = %s AND cod_empresa = %s", (id_ex, cod_empresa))
+                        conn.commit()
+                        flash("Controle adicional excluído.", "success")
+
+            elif acao == "ctrl_inativar":
+                id_in = request.form.get("ctrl_id_inativar")
+                if id_in:
+                    cur.execute("UPDATE caixas_controles_adicionais SET ativo = NOT ativo WHERE id = %s AND cod_empresa = %s", (id_in, cod_empresa))
+                    conn.commit()
+                    flash("Status do controle adicional alterado.", "success")
 
         cur.execute("""
             SELECT id, nome, ordem, ativo FROM caixas_formas_recebimento
             WHERE cod_empresa = %s ORDER BY ordem, nome
         """, (cod_empresa,))
         formas = cur.fetchall()
+
+        cur.execute("""
+            SELECT id, nome, tipo, ordem, ativo FROM caixas_controles_adicionais
+            WHERE cod_empresa = %s ORDER BY ordem, nome
+        """, (cod_empresa,))
+        controles = cur.fetchall()
 
     finally:
         cur.close()
@@ -3794,6 +3958,7 @@ def configuracoes_caixas():
         nome_empresa_ativa=session["nome_empresa"],
         url_voltar=url_for("financeiro.menu_caixas"),
         formas=formas,
+        controles=controles,
     )
 
 
@@ -4878,3 +5043,850 @@ def api_lancar_valores_informados():
         conn.close()
 
     return jsonify({"ok": True, "quantidade": len(registros)})
+
+# =========================
+# CR — CONTAS A RECEBER
+# =========================
+
+@financeiro_bp.route("/cr/menu")
+def menu_cr():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+    return render_template(
+        "menu_cr.html",
+        empresa_ativa=session["cod_empresa"],
+        nome_empresa_ativa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_empresa"),
+    )
+
+
+@financeiro_bp.route("/cr/importar-fiado", methods=["GET", "POST"])
+def cr_importar_fiado():
+    return cr_fiado_impl(url_voltar=url_for("financeiro.menu_cr"))
+
+
+# =========================
+# CR - FIADO (impl)
+
+def _parse_webportos_xlsx(fileobj, data_ref):
+    """
+    Lê arquivo xlsx do Webportos.
+    Retorna (filiais, clientes):
+      filiais  → {nome_filial_upper: saldo_total}
+      clientes → [(nome_filial_upper, nome_cliente, saldo), ...]
+    Regras:
+      - 'Nota'          → Movimento <= data_ref - 1 dia
+      - 'Nota Duplicata'→ Movimento <= data_ref
+      - outros tipos    → ignorados
+    """
+    import openpyxl
+    from datetime import timedelta
+
+    limite_nota      = data_ref - timedelta(days=1)
+    limite_duplicata = data_ref
+
+    wb = openpyxl.load_workbook(fileobj, data_only=True)
+    ws = wb.active
+    filial_atual  = None
+    cliente_atual = None
+    filiais   = defaultdict(float)
+    clientes  = defaultdict(float)  # {(filial, cliente): saldo}
+
+    for row in ws.iter_rows(values_only=True):
+        cell0 = str(row[0] or "").strip()
+
+        if cell0 == "Filial:":
+            nova_filial = str(row[1] or "").strip().upper()
+            if nova_filial != filial_atual:
+                cliente_atual = None   # filial nova: reseta cliente
+            filial_atual = nova_filial
+            continue
+
+        if cell0 == "Cliente:":
+            cliente_atual = str(row[2] or "").strip()
+            continue
+
+        if not filial_atual or not cliente_atual:
+            continue
+
+        tipo = str(row[2] or "").strip()
+        if tipo not in ("Nota", "Nota Duplicata"):
+            continue
+
+        mov_raw = str(row[3] or "").strip()
+        try:
+            mov = datetime.strptime(mov_raw, "%d/%m/%Y").date()
+        except ValueError:
+            continue
+
+        if tipo == "Nota" and mov > limite_nota:
+            continue
+        if tipo == "Nota Duplicata" and mov > limite_duplicata:
+            continue
+
+        saldo = float(row[15] or 0) if len(row) > 15 else 0
+        filiais[filial_atual] += saldo
+        clientes[(filial_atual, cliente_atual)] += saldo
+
+    clientes_lista = [
+        (fil, cli, sal)
+        for (fil, cli), sal in clientes.items()
+        if sal > 0
+    ]
+    return dict(filiais), clientes_lista
+
+
+@financeiro_bp.route("/cr-fiado", methods=["GET", "POST"])
+def cr_fiado():
+    return cr_fiado_impl(url_voltar=url_for("financeiro.menu_cr"))
+
+
+def cr_fiado_impl(url_voltar):
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    erro = None
+    sucesso = None
+
+    if request.method == "POST":
+        arquivo = request.files.get("arquivo")
+        data_ref_str = request.form.get("data_referencia", "").strip()
+        try:
+            data_ref = datetime.strptime(data_ref_str, "%Y-%m-%d").date()
+        except ValueError:
+            erro = "Data inválida."
+            arquivo = None
+
+        if arquivo and not erro:
+            try:
+                conteudo = arquivo.read()
+                filiais_saldo, clientes_lista = _parse_webportos_xlsx(io.BytesIO(conteudo), data_ref)
+                total_geral = sum(filiais_saldo.values())
+
+                # Upsert importação (substitui se mesma data)
+                cur.execute("""
+                    INSERT INTO fiado_importacoes (cod_empresa, data_referencia, nome_arquivo, total_geral)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (cod_empresa, data_referencia)
+                    DO UPDATE SET nome_arquivo=EXCLUDED.nome_arquivo, total_geral=EXCLUDED.total_geral, criado_em=NOW()
+                    RETURNING id
+                """, (cod_empresa, data_ref, arquivo.filename, total_geral))
+                id_imp = cur.fetchone()["id"]
+
+                cur.execute("DELETE FROM fiado_filiais WHERE id_importacao=%s", (id_imp,))
+                for nome_fil, saldo in filiais_saldo.items():
+                    cur.execute("""
+                        INSERT INTO fiado_filiais (id_importacao, cod_empresa, nome_filial_import, saldo)
+                        VALUES (%s, %s, %s, %s)
+                    """, (id_imp, cod_empresa, nome_fil, saldo))
+
+                cur.execute("DELETE FROM fiado_clientes WHERE id_importacao=%s", (id_imp,))
+                for nome_fil, cli, sal in clientes_lista:
+                    cur.execute("""
+                        INSERT INTO fiado_clientes (id_importacao, cod_empresa, nome_filial_import, cliente, saldo)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, (id_imp, cod_empresa, nome_fil, cli, sal))
+
+                conn.commit()
+                sucesso = f"Importação de {data_ref.strftime('%d/%m/%Y')} salva — {len(filiais_saldo)} filiais, {len(clientes_lista)} clientes, total R$ {total_geral:,.2f}."
+            except Exception as e:
+                conn.rollback()
+                erro = f"Erro ao processar arquivo: {e}"
+
+    # Busca última importação
+    cur.execute("""
+        SELECT id, data_referencia, nome_arquivo, total_geral, criado_em
+        FROM fiado_importacoes WHERE cod_empresa=%s
+        ORDER BY data_referencia DESC LIMIT 1
+    """, (cod_empresa,))
+    ultima = cur.fetchone()
+
+    resumo_areas = []
+    if ultima:
+        # Busca filiais da importação com mapeamento de área
+        cur.execute("""
+            SELECT ff.nome_filial_import, ff.saldo,
+                   a.id_area, a.nome_area,
+                   f.nome_filial
+            FROM fiado_filiais ff
+            LEFT JOIN filiais f
+                ON UPPER(f.nome_filial_importacao) = ff.nome_filial_import
+               AND f.cod_empresa = ff.cod_empresa
+            LEFT JOIN areas_filiais af ON af.cod_filial = f.cod_filial AND af.cod_empresa = ff.cod_empresa
+            LEFT JOIN areas a ON a.id_area = af.id_area AND a.cod_empresa = ff.cod_empresa
+            WHERE ff.id_importacao = %s
+            ORDER BY a.id_area NULLS LAST, ff.nome_filial_import
+        """, (ultima["id"],))
+        rows = cur.fetchall()
+
+        # Agrupar por área
+        por_area = defaultdict(list)
+        sem_area = []
+        for r in rows:
+            if r["id_area"]:
+                por_area[(r["id_area"], r["nome_area"])].append(r)
+            else:
+                sem_area.append(r)
+
+        for (id_area, nome_area), filiais in sorted(por_area.items()):
+            total_area = sum(f["saldo"] for f in filiais)
+            resumo_areas.append({
+                "nome_area": nome_area,
+                "filiais": filiais,
+                "total": total_area,
+            })
+        if sem_area:
+            resumo_areas.append({
+                "nome_area": "Sem Área",
+                "filiais": sem_area,
+                "total": sum(f["saldo"] for f in sem_area),
+            })
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "cr_fiado.html",
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_voltar,
+        ultima=ultima,
+        resumo_areas=resumo_areas,
+        erro=erro,
+        sucesso=sucesso,
+        hoje=date.today().isoformat(),
+    )
+
+@financeiro_bp.route("/cr/consultas")
+def cr_consultas():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    data_sel_str = request.args.get("data_referencia", "")
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    # Todas as datas disponíveis
+    cur.execute("""
+        SELECT id, data_referencia, total_geral
+        FROM fiado_importacoes
+        WHERE cod_empresa = %s
+        ORDER BY data_referencia
+    """, (cod_empresa,))
+    importacoes = cur.fetchall()
+
+    datas = [r["data_referencia"] for r in importacoes]
+    ids_por_data = {r["data_referencia"]: r["id"] for r in importacoes}
+
+    # Data selecionada (default: mais recente)
+    data_sel = None
+    if data_sel_str:
+        try:
+            data_sel = datetime.strptime(data_sel_str, "%Y-%m-%d").date()
+        except ValueError:
+            pass
+    if data_sel is None and datas:
+        data_sel = datas[-1]
+
+    # Busca áreas e filiais do sistema
+    cur.execute("""
+        SELECT a.id_area, a.nome_area,
+               f.nome_filial_importacao AS nome_import,
+               f.nome_filial,
+               af.ordem
+        FROM areas a
+        JOIN areas_filiais af ON af.id_area = a.id_area AND af.cod_empresa = a.cod_empresa
+        JOIN filiais f ON f.cod_filial = af.cod_filial AND f.cod_empresa = af.cod_empresa
+        WHERE a.cod_empresa = %s AND a.ativo = TRUE
+        ORDER BY a.id_area, af.ordem
+    """, (cod_empresa,))
+    mapa_filiais = cur.fetchall()
+
+    # Para cada filial, busca saldo em todas as importações
+    # Retorna {nome_import_upper: {data: saldo}}
+    if importacoes:
+        ids_todos = [r["id"] for r in importacoes]
+        cur.execute("""
+            SELECT ff.id_importacao, fi.data_referencia,
+                   UPPER(ff.nome_filial_import) AS nome_import,
+                   ff.saldo
+            FROM fiado_filiais ff
+            JOIN fiado_importacoes fi ON fi.id = ff.id_importacao
+            WHERE ff.id_importacao = ANY(%s)
+        """, (ids_todos,))
+        rows_saldo = cur.fetchall()
+    else:
+        rows_saldo = []
+
+    # Monta pivot: {nome_import_upper: {data: saldo}}
+    pivot = defaultdict(lambda: defaultdict(float))
+    for r in rows_saldo:
+        pivot[r["nome_import"]][r["data_referencia"]] += float(r["saldo"])
+
+    # Monta resumo por área com linha por filial e colunas = datas
+    resumo_areas = []
+    for id_area in sorted(set(f["id_area"] for f in mapa_filiais)):
+        filiais_area = [f for f in mapa_filiais if f["id_area"] == id_area]
+        nome_area = filiais_area[0]["nome_area"]
+        linhas = []
+        total_por_data = defaultdict(float)
+        for f in filiais_area:
+            nome_up = (f["nome_import"] or "").upper()
+            saldos = {d: pivot[nome_up].get(d, None) for d in datas}
+            for d, v in saldos.items():
+                if v:
+                    total_por_data[d] += v
+            linhas.append({
+                "nome": f["nome_filial"],
+                "saldos": saldos,
+                "saldo_sel": pivot[nome_up].get(data_sel) if data_sel else None,
+            })
+        resumo_areas.append({
+            "nome_area": nome_area,
+            "filiais": linhas,
+            "total_por_data": dict(total_por_data),
+            "total_sel": sum(total_por_data.get(data_sel, 0) for _ in [1]) if data_sel else 0,
+        })
+        # recalc total_sel corretamente
+        resumo_areas[-1]["total_sel"] = total_por_data.get(data_sel, 0) if data_sel else 0
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "cr_consultas.html",
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_cr"),
+        datas=datas,
+        data_sel=data_sel,
+        resumo_areas=resumo_areas,
+        hoje=date.today().isoformat(),
+    )
+
+@financeiro_bp.route("/cr/variacoes")
+def cr_variacoes():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    hoje = date.today()
+
+    data_ini_str = request.args.get("data_ini", (hoje - timedelta(days=30)).isoformat())
+    data_fin_str = request.args.get("data_fin", hoje.isoformat())
+    filtro_area  = request.args.get("area", "todas")
+
+    try:
+        data_ini = datetime.strptime(data_ini_str, "%Y-%m-%d").date()
+        data_fin = datetime.strptime(data_fin_str, "%Y-%m-%d").date()
+    except ValueError:
+        data_ini = hoje - timedelta(days=30)
+        data_fin = hoje
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+
+    # Áreas e filiais do sistema, na ordem definida
+    cur.execute("""
+        SELECT a.id_area, a.nome_area,
+               f.nome_filial_importacao AS nome_import,
+               f.nome_filial,
+               af.ordem
+        FROM areas a
+        JOIN areas_filiais af ON af.id_area = a.id_area AND af.cod_empresa = a.cod_empresa
+        JOIN filiais f ON f.cod_filial = af.cod_filial AND f.cod_empresa = af.cod_empresa
+        WHERE a.cod_empresa = %s AND a.ativo = TRUE
+        ORDER BY a.id_area, af.ordem
+    """, (cod_empresa,))
+    todas_filiais = cur.fetchall()
+
+    # IDs de área disponíveis
+    ids_area = sorted(set(f["id_area"] for f in todas_filiais))
+
+    # Aplica filtro de área
+    if filtro_area != "todas":
+        try:
+            id_area_sel = int(filtro_area)
+            todas_filiais = [f for f in todas_filiais if f["id_area"] == id_area_sel]
+        except ValueError:
+            pass
+
+    # Importações no período
+    cur.execute("""
+        SELECT id, data_referencia
+        FROM fiado_importacoes
+        WHERE cod_empresa = %s AND data_referencia BETWEEN %s AND %s
+        ORDER BY data_referencia
+    """, (cod_empresa, data_ini, data_fin))
+    importacoes = cur.fetchall()
+    datas = [r["data_referencia"] for r in importacoes]
+    ids_imp = [r["id"] for r in importacoes]
+
+    # Saldos por importação
+    pivot = defaultdict(lambda: defaultdict(float))  # {data: {nome_import_upper: saldo}}
+    if ids_imp:
+        cur.execute("""
+            SELECT fi.data_referencia,
+                   UPPER(ff.nome_filial_import) AS nome_import,
+                   ff.saldo
+            FROM fiado_filiais ff
+            JOIN fiado_importacoes fi ON fi.id = ff.id_importacao
+            WHERE ff.id_importacao = ANY(%s)
+        """, (ids_imp,))
+        for r in cur.fetchall():
+            pivot[r["data_referencia"]][r["nome_import"]] += float(r["saldo"])
+
+    cur.close()
+    conn.close()
+
+    # Monta estrutura de áreas com filiais
+    areas = []
+    por_id = defaultdict(list)
+    for f in todas_filiais:
+        por_id[f["id_area"]].append(f)
+
+    for id_area in sorted(por_id):
+        filiais_area = por_id[id_area]
+        nome_area    = filiais_area[0]["nome_area"]
+        nomes_import = [(f["nome_filial"], (f["nome_import"] or "").upper()) for f in filiais_area]
+        areas.append({
+            "id_area":    id_area,
+            "nome_area":  nome_area,
+            "filiais":    nomes_import,   # [(nome_exib, nome_import_upper), ...]
+        })
+
+    return render_template(
+        "cr_variacoes.html",
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_cr"),
+        datas=datas,
+        areas=areas,
+        ids_area=ids_area,
+        pivot=pivot,          # {data: {nome_import_upper: saldo}}
+        filtro_area=filtro_area,
+        data_ini=data_ini,
+        data_fin=data_fin,
+        hoje=hoje.isoformat(),
+    )
+
+@financeiro_bp.route("/cr/por-filial-cliente")
+def cr_por_filial_cliente():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+
+    # Última importação
+    cur.execute("""
+        SELECT id, data_referencia, total_geral
+        FROM fiado_importacoes
+        WHERE cod_empresa = %s
+        ORDER BY data_referencia DESC LIMIT 1
+    """, (cod_empresa,))
+    ultima = cur.fetchone()
+
+    areas = []
+    if ultima:
+        # Áreas e filiais na ordem do sistema
+        cur.execute("""
+            SELECT a.id_area, a.nome_area,
+                   f.nome_filial_importacao AS nome_import,
+                   f.nome_filial,
+                   af.ordem
+            FROM areas a
+            JOIN areas_filiais af ON af.id_area = a.id_area AND af.cod_empresa = a.cod_empresa
+            JOIN filiais f ON f.cod_filial = af.cod_filial AND f.cod_empresa = af.cod_empresa
+            WHERE a.cod_empresa = %s AND a.ativo = TRUE
+            ORDER BY a.id_area, af.ordem
+        """, (cod_empresa,))
+        mapa = cur.fetchall()
+
+        # Clientes da última importação
+        cur.execute("""
+            SELECT UPPER(nome_filial_import) AS nome_import, cliente, saldo
+            FROM fiado_clientes
+            WHERE id_importacao = %s AND saldo > 0
+            ORDER BY nome_filial_import, saldo DESC
+        """, (ultima["id"],))
+        rows_cli = cur.fetchall()
+
+        # Agrupa clientes por filial
+        cli_por_filial = defaultdict(list)
+        for r in rows_cli:
+            cli_por_filial[r["nome_import"]].append({
+                "cliente": r["cliente"],
+                "saldo":   float(r["saldo"]),
+            })
+
+        # Monta estrutura por área
+        por_area = defaultdict(list)
+        for f in mapa:
+            por_area[f["id_area"]].append(f)
+
+        for id_area in sorted(por_area):
+            filiais_area = por_area[id_area]
+            filiais_out  = []
+            for f in filiais_area:
+                nome_up  = (f["nome_import"] or "").upper()
+                clientes = cli_por_filial.get(nome_up, [])
+                if not clientes:
+                    continue
+                total_fil = sum(c["saldo"] for c in clientes)
+                filiais_out.append({
+                    "nome":     f["nome_filial"],
+                    "clientes": clientes,
+                    "total":    total_fil,
+                })
+            if filiais_out:
+                areas.append({
+                    "nome_area": filiais_area[0]["nome_area"],
+                    "filiais":   filiais_out,
+                })
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "cr_por_filial_cliente.html",
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_cr"),
+        ultima=ultima,
+        areas=areas,
+    )
+
+
+# =========================
+# CR — POR CLIENTE (ranking geral)
+# =========================
+
+@financeiro_bp.route("/cr/por-cliente")
+def cr_por_cliente():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+
+    cur.execute("""
+        SELECT id, data_referencia, total_geral
+        FROM fiado_importacoes
+        WHERE cod_empresa = %s
+        ORDER BY data_referencia DESC LIMIT 1
+    """, (cod_empresa,))
+    ultima = cur.fetchone()
+
+    clientes = []
+    if ultima:
+        # Mapa nome_filial_import → nome_filial amigável
+        cur.execute("""
+            SELECT UPPER(f.nome_filial_importacao) AS nome_import, f.nome_filial
+            FROM filiais f
+            WHERE f.cod_empresa = %s
+        """, (cod_empresa,))
+        mapa_filial = {r["nome_import"]: r["nome_filial"] for r in cur.fetchall()}
+
+        cur.execute("""
+            SELECT UPPER(nome_filial_import) AS nome_import, cliente, saldo
+            FROM fiado_clientes
+            WHERE id_importacao = %s AND saldo > 0
+            ORDER BY saldo DESC
+        """, (ultima["id"],))
+        for r in cur.fetchall():
+            clientes.append({
+                "cliente":      r["cliente"],
+                "nome_filial":  mapa_filial.get(r["nome_import"], r["nome_import"].title()),
+                "saldo":        float(r["saldo"]),
+            })
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "cr_por_cliente.html",
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_cr"),
+        ultima=ultima,
+        clientes=clientes,
+    )
+
+
+# =========================
+# CR — CARTÕES
+# =========================
+
+def _parse_cartoes_xlsx(fileobj, data_ref):
+    """
+    Lê xlsx de Movimentação de Cartões.
+    - Filial: col[0]="Filial:", nome em col[2]
+    - Linhas de detalhe: col[13] numérico = linha válida, col[12]=Total Líquido
+    - Sem filtro de data (igual ao VBA ResumirCartoes)
+    Retorna {nome_filial_upper: total_liquido}
+    """
+    import openpyxl
+
+    wb = openpyxl.load_workbook(fileobj, data_only=True)
+    ws = wb.active
+    filial_atual = None
+    filiais = defaultdict(float)
+
+    for row in ws.iter_rows(values_only=True):
+        c0 = str(row[0] or "").strip()
+        if c0 == "Filial:":
+            filial_atual = str(row[2] or "").strip().upper()
+            continue
+        if not filial_atual:
+            continue
+        # col[1] = administradora não vazia (VBA: admin <> "")
+        admin = str(row[1] or "").strip()
+        if not admin:
+            continue
+        # col[12] = Total Líquido
+        liquido = row[12] if len(row) > 12 else None
+        if not isinstance(liquido, (int, float)) or liquido == 0:
+            continue
+        filiais[filial_atual] += float(liquido)
+
+    return dict(filiais)
+
+
+@financeiro_bp.route("/cr/cartoes/importar", methods=["GET", "POST"])
+def cartoes_importar():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    erro = sucesso = None
+
+    if request.method == "POST":
+        arquivo = request.files.get("arquivo")
+        data_ref_str = request.form.get("data_referencia", "").strip()
+        try:
+            data_ref = datetime.strptime(data_ref_str, "%Y-%m-%d").date()
+        except ValueError:
+            erro = "Data inválida."
+            arquivo = None
+
+        if arquivo and not erro:
+            try:
+                conteudo = arquivo.read()
+                filiais_saldo = _parse_cartoes_xlsx(io.BytesIO(conteudo), data_ref)
+                total_geral = sum(filiais_saldo.values())
+
+                cur.execute("""
+                    INSERT INTO cartoes_importacoes (cod_empresa, data_referencia, nome_arquivo, total_geral)
+                    VALUES (%s,%s,%s,%s)
+                    ON CONFLICT (cod_empresa, data_referencia)
+                    DO UPDATE SET nome_arquivo=EXCLUDED.nome_arquivo, total_geral=EXCLUDED.total_geral, criado_em=NOW()
+                    RETURNING id
+                """, (cod_empresa, data_ref, arquivo.filename, total_geral))
+                id_imp = cur.fetchone()["id"]
+
+                cur.execute("DELETE FROM cartoes_filiais WHERE id_importacao=%s", (id_imp,))
+                for nome, saldo in filiais_saldo.items():
+                    cur.execute("""
+                        INSERT INTO cartoes_filiais (id_importacao, cod_empresa, nome_filial_import, saldo)
+                        VALUES (%s,%s,%s,%s)
+                    """, (id_imp, cod_empresa, nome, saldo))
+                conn.commit()
+                sucesso = f"Importação de {data_ref.strftime('%d/%m/%Y')} salva — {len(filiais_saldo)} filiais, total R$ {total_geral:,.2f}."
+            except Exception as e:
+                conn.rollback()
+                erro = f"Erro ao processar arquivo: {e}"
+
+    cur.execute("""
+        SELECT id, data_referencia, nome_arquivo, total_geral
+        FROM cartoes_importacoes WHERE cod_empresa=%s
+        ORDER BY data_referencia DESC LIMIT 1
+    """, (cod_empresa,))
+    ultima = cur.fetchone()
+
+    resumo_areas = []
+    if ultima:
+        cur.execute("""
+            SELECT cf.nome_filial_import, cf.saldo,
+                   a.id_area, a.nome_area, f.nome_filial
+            FROM cartoes_filiais cf
+            LEFT JOIN filiais f ON UPPER(f.nome_filial_importacao)=cf.nome_filial_import AND f.cod_empresa=cf.cod_empresa
+            LEFT JOIN areas_filiais af ON af.cod_filial=f.cod_filial AND af.cod_empresa=cf.cod_empresa
+            LEFT JOIN areas a ON a.id_area=af.id_area AND a.cod_empresa=cf.cod_empresa
+            WHERE cf.id_importacao=%s
+            ORDER BY a.id_area NULLS LAST, cf.nome_filial_import
+        """, (ultima["id"],))
+        rows = cur.fetchall()
+        por_area = defaultdict(list)
+        sem_area = []
+        for r in rows:
+            if r["id_area"]:
+                por_area[(r["id_area"], r["nome_area"])].append(r)
+            else:
+                sem_area.append(r)
+        for (id_area, nome_area), filiais in sorted(por_area.items()):
+            total_area = sum(float(f["saldo"]) for f in filiais)
+            resumo_areas.append({"nome_area": nome_area, "filiais": filiais, "total": total_area})
+        if sem_area:
+            resumo_areas.append({"nome_area": "Sem Área", "filiais": sem_area, "total": sum(float(f["saldo"]) for f in sem_area)})
+
+    cur.close(); conn.close()
+    return render_template("cartoes_importar.html",
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_cr"),
+        ultima=ultima, resumo_areas=resumo_areas,
+        erro=erro, sucesso=sucesso, hoje=date.today().isoformat())
+
+
+@financeiro_bp.route("/cr/cartoes/consultar")
+def cartoes_consultar():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    data_sel_str = request.args.get("data_referencia", "")
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    cur.execute("SELECT id, data_referencia, total_geral FROM cartoes_importacoes WHERE cod_empresa=%s ORDER BY data_referencia", (cod_empresa,))
+    importacoes = cur.fetchall()
+    datas = [r["data_referencia"] for r in importacoes]
+    ids_todos = [r["id"] for r in importacoes]
+
+    data_sel = None
+    if data_sel_str:
+        try: data_sel = datetime.strptime(data_sel_str, "%Y-%m-%d").date()
+        except ValueError: pass
+    if data_sel is None and datas:
+        data_sel = datas[-1]
+
+    cur.execute("""
+        SELECT a.id_area, a.nome_area,
+               f.nome_filial_importacao AS nome_import, f.nome_filial, af.ordem
+        FROM areas a
+        JOIN areas_filiais af ON af.id_area=a.id_area AND af.cod_empresa=a.cod_empresa
+        JOIN filiais f ON f.cod_filial=af.cod_filial AND f.cod_empresa=af.cod_empresa
+        WHERE a.cod_empresa=%s AND a.ativo=TRUE ORDER BY a.id_area, af.ordem
+    """, (cod_empresa,))
+    mapa = cur.fetchall()
+
+    pivot = defaultdict(lambda: defaultdict(float))
+    if ids_todos:
+        cur.execute("""
+            SELECT fi.data_referencia, UPPER(cf.nome_filial_import) AS nome_import, cf.saldo
+            FROM cartoes_filiais cf JOIN cartoes_importacoes fi ON fi.id=cf.id_importacao
+            WHERE cf.id_importacao=ANY(%s)
+        """, (ids_todos,))
+        for r in cur.fetchall():
+            pivot[r["data_referencia"]][r["nome_import"]] += float(r["saldo"])
+
+    resumo_areas = []
+    for id_area in sorted(set(f["id_area"] for f in mapa)):
+        filiais_area = [f for f in mapa if f["id_area"] == id_area]
+        linhas = []
+        total_por_data = defaultdict(float)
+        for f in filiais_area:
+            nome_up = (f["nome_import"] or "").upper()
+            saldos = {d: pivot[d].get(nome_up) for d in datas}
+            for d, v in saldos.items():
+                if v: total_por_data[d] += v
+            linhas.append({"nome": f["nome_filial"], "saldos": saldos, "saldo_sel": pivot[data_sel].get(nome_up) if data_sel else None})
+        resumo_areas.append({"nome_area": filiais_area[0]["nome_area"], "filiais": linhas,
+            "total_por_data": dict(total_por_data), "total_sel": total_por_data.get(data_sel, 0) if data_sel else 0})
+
+    cur.close(); conn.close()
+    return render_template("cartoes_consultar.html",
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_cr"),
+        datas=datas, data_sel=data_sel, resumo_areas=resumo_areas,
+        hoje=date.today().isoformat())
+
+
+@financeiro_bp.route("/cr/cartoes/variacoes")
+def cartoes_variacoes():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    hoje = date.today()
+    data_ini_str = request.args.get("data_ini", (hoje - timedelta(days=30)).isoformat())
+    data_fin_str = request.args.get("data_fin", hoje.isoformat())
+    filtro_area  = request.args.get("area", "todas")
+    try:
+        data_ini = datetime.strptime(data_ini_str, "%Y-%m-%d").date()
+        data_fin = datetime.strptime(data_fin_str, "%Y-%m-%d").date()
+    except ValueError:
+        data_ini = hoje - timedelta(days=30); data_fin = hoje
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    cur.execute("""
+        SELECT a.id_area, a.nome_area, f.nome_filial_importacao AS nome_import, f.nome_filial, af.ordem
+        FROM areas a
+        JOIN areas_filiais af ON af.id_area=a.id_area AND af.cod_empresa=a.cod_empresa
+        JOIN filiais f ON f.cod_filial=af.cod_filial AND f.cod_empresa=af.cod_empresa
+        WHERE a.cod_empresa=%s AND a.ativo=TRUE ORDER BY a.id_area, af.ordem
+    """, (cod_empresa,))
+    todas_filiais = cur.fetchall()
+    ids_area = sorted(set(f["id_area"] for f in todas_filiais))
+    if filtro_area != "todas":
+        try:
+            id_a = int(filtro_area)
+            todas_filiais = [f for f in todas_filiais if f["id_area"] == id_a]
+        except ValueError: pass
+
+    cur.execute("""
+        SELECT id, data_referencia FROM cartoes_importacoes
+        WHERE cod_empresa=%s AND data_referencia BETWEEN %s AND %s ORDER BY data_referencia
+    """, (cod_empresa, data_ini, data_fin))
+    importacoes = cur.fetchall()
+    datas = [r["data_referencia"] for r in importacoes]
+    ids_imp = [r["id"] for r in importacoes]
+
+    pivot = defaultdict(lambda: defaultdict(float))
+    if ids_imp:
+        cur.execute("""
+            SELECT fi.data_referencia, UPPER(cf.nome_filial_import) AS nome_import, cf.saldo
+            FROM cartoes_filiais cf JOIN cartoes_importacoes fi ON fi.id=cf.id_importacao
+            WHERE cf.id_importacao=ANY(%s)
+        """, (ids_imp,))
+        for r in cur.fetchall():
+            pivot[r["data_referencia"]][r["nome_import"]] += float(r["saldo"])
+
+    areas = []
+    por_id = defaultdict(list)
+    for f in todas_filiais: por_id[f["id_area"]].append(f)
+    for id_area in sorted(por_id):
+        fl = por_id[id_area]
+        areas.append({"id_area": id_area, "nome_area": fl[0]["nome_area"],
+                      "filiais": [(f["nome_filial"], (f["nome_import"] or "").upper()) for f in fl]})
+
+    cur.close(); conn.close()
+    return render_template("cartoes_variacoes.html",
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_cr"),
+        datas=datas, areas=areas, ids_area=ids_area,
+        pivot=pivot, filtro_area=filtro_area,
+        data_ini=data_ini, data_fin=data_fin, hoje=hoje.isoformat())

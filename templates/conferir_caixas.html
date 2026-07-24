@@ -61,6 +61,21 @@
   table.caixas thead th.col-total   { background:#1d4ed8; }
   table.caixas thead th.col-totalcx { background:#166534; }
   table.caixas thead th.col-faltas  { background:#7f1d1d; }
+  table.caixas thead th.col-sep     { background:#e5e7eb; width:8px; padding:0; border:1px solid #bbb; }
+  table.caixas thead th.col-ctrl-header { background:#374151; letter-spacing:.05em; }
+  table.caixas thead th.col-ctrl-info    { background:#4b5563; }
+  table.caixas thead th.col-ctrl-receita { background:#166534; }
+  table.caixas thead th.col-ctrl-despesa { background:#7f1d1d; }
+
+  td.td-sep { background:#e5e7eb !important; width:8px; padding:0; border:1px solid #bbb !important; }
+  td.td-ctrl { text-align:right; padding:0; }
+  td.td-ctrl input {
+    width:100%; height:32px; border:none; background:transparent;
+    text-align:right; padding:0 8px; font-size:13px; font-family:Arial,sans-serif;
+    outline:none; box-sizing:border-box;
+  }
+  td.td-ctrl input:focus { background:#fffde7; box-shadow:inset 0 0 0 2px #facc15; }
+  td.td-ctrl-ro { text-align:right; padding:6px 8px; color:#333; }
   table.caixas tbody td { background:#fff; }
   table.caixas tbody tr:nth-child(even) td { background:#f9f9f9; }
   table.caixas tbody tr:hover td { background:#fffbea; }
@@ -107,10 +122,9 @@
 <div class="pagina-titulo">Conferir Caixas</div>
 <div class="empresa"><strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}</div>
 
-<!-- Filtros mês/ano -->
+<!-- Filtros mês/ano/área -->
 <form method="get" id="form-filtro">
-  <input type="hidden" name="area"   value="{{ area_sel }}">
-  <input type="hidden" name="filial" value="{{ filial_sel }}">
+  <input type="hidden" name="filial" value="">
   <div class="filtro-bar">
     <div>
       <label>Mês</label>
@@ -124,35 +138,45 @@
         {% for a in anos %}<option value="{{ a }}" {% if a == ano_sel %}selected{% endif %}>{{ a }}</option>{% endfor %}
       </select>
     </div>
+    <div>
+      <label>Área</label>
+      <select name="area" onchange="this.form.submit()">
+        <option value="TODOS" {% if area_sel == 'TODOS' %}selected{% endif %}>Todas as Áreas</option>
+        {% for a in areas %}
+          <option value="{{ a.id_area }}" {% if area_sel == a.id_area|string %}selected{% endif %}>{{ a.nome_area }}</option>
+        {% endfor %}
+      </select>
+    </div>
     <div><label>&nbsp;</label><button type="submit">Filtrar</button></div>
   </div>
 </form>
 
-<!-- Nível 1: TODOS + Áreas -->
 {% macro qs(a, f) %}mes={{ mes_sel }}&ano={{ ano_sel }}&area={{ a }}&filial={{ f }}{% endmacro %}
 
-<div class="nav-areas">
-  <a href="?{{ qs('TODOS','') }}" class="nav-tab {% if area_sel=='TODOS' %}ativa{% endif %}">TODOS</a>
-  {% for a in areas %}
-    <a href="?{{ qs(a.id_area,'') }}"
-       class="nav-tab {% if area_sel==a.id_area|string and not filial_sel %}area-ativa{% elif area_sel==a.id_area|string %}area-ativa{% endif %}">
-      {{ a.nome_area }}
-    </a>
-  {% endfor %}
-</div>
-
-<!-- Nível 2: Filiais da área selecionada -->
+<!-- Navegação de postos dentro da área selecionada -->
 {% if area_sel != 'TODOS' %}
   {% for a in areas %}{% if a.id_area|string == area_sel %}
-    {% set filiais_area = a.filiais %}
-    {# Monta lista navegável: [área-total] + filiais #}
-    {% set nav_list = [{'key':'', 'label': a.nome_area ~ ' (Total)'}] %}
-    {% for f in filiais_area %}{% set nav_list = nav_list + [{'key': f.cod_filial|string, 'label': f.nome_filial}] %}{% endfor %}
 
+    {# índice atual: 0=TOTAL, 1..N=filiais #}
     {% set idx = namespace(v=0) %}
-    {% for item in nav_list %}{% if item.key == filial_sel %}{% set idx.v = loop.index0 %}{% endif %}{% endfor %}
-    {% set prev_key = nav_list[idx.v - 1].key if idx.v > 0 else None %}
-    {% set next_key = nav_list[idx.v + 1].key if idx.v < nav_list|length - 1 else None %}
+    {% if filial_sel %}
+      {% for f in a.filiais %}
+        {% if f.cod_filial|string == filial_sel %}{% set idx.v = loop.index %}{% endif %}
+      {% endfor %}
+    {% endif %}
+    {% set total_tabs = a.filiais|length + 1 %}
+
+    {# chaves anterior / próxima #}
+    {% if idx.v == 0 %}
+      {% set prev_key = None %}
+      {% set next_key = a.filiais[0].cod_filial|string if a.filiais else None %}
+    {% elif idx.v == total_tabs - 1 %}
+      {% set prev_key = a.filiais[idx.v - 2].cod_filial|string if idx.v >= 2 else '' %}
+      {% set next_key = None %}
+    {% else %}
+      {% set prev_key = a.filiais[idx.v - 2].cod_filial|string if idx.v >= 2 else '' %}
+      {% set next_key = a.filiais[idx.v].cod_filial|string %}
+    {% endif %}
 
     <div class="nav-filiais">
       <span class="nav-filiais-label">{{ a.nome_area }}:</span>
@@ -163,10 +187,13 @@
         <span class="nav-seta off">&#8592;</span>
       {% endif %}
 
-      {% for item in nav_list %}
-        <a href="?{{ qs(area_sel, item.key) }}"
-           class="nav-tab {% if item.key == filial_sel %}filial-ativa{% endif %}">
-          {{ item.label }}
+      <a href="?{{ qs(area_sel, '') }}"
+         class="nav-tab {% if not filial_sel %}filial-ativa{% endif %}">TOTAL</a>
+
+      {% for f in a.filiais %}
+        <a href="?{{ qs(area_sel, f.cod_filial) }}"
+           class="nav-tab {% if f.cod_filial|string == filial_sel %}filial-ativa{% endif %}">
+          {{ f.nome_filial }}
         </a>
       {% endfor %}
 
@@ -195,7 +222,22 @@
         <th class="col-total">TOTAL</th>
         <th class="col-totalcx">TOTAL CX</th>
         <th class="col-faltas">FALTAS</th>
+        {% if controles %}
+          <th class="col-sep"></th>
+          <th class="col-ctrl-header" colspan="{{ controles|length }}">CONTROLES ADICIONAIS</th>
+        {% endif %}
       </tr>
+      {% if controles %}
+      <tr>
+        <th></th>
+        {% for f in formas %}<th></th>{% endfor %}
+        <th></th><th></th><th></th>
+        <th class="col-sep"></th>
+        {% for c in controles %}
+          <th class="col-ctrl-{{ c.tipo|lower }}">{{ c.nome }}</th>
+        {% endfor %}
+      </tr>
+      {% endif %}
     </thead>
     <tbody>
       {% set hoje_dt = datas[0].__class__.today() %}
@@ -256,6 +298,23 @@
           {% else %}
             <td class="td-faltas zero">—</td>
           {% endif %}
+
+          {% if controles %}
+            <td class="td-sep"></td>
+            {% set cvals = controles_valores.get(d, {}) %}
+            {% for c in controles %}
+              {% set cv = cvals.get(c.id, 0)|float %}
+              {% if editavel %}
+              <td class="td-ctrl">
+                <input type="text" class="cel-ctrl" data-controle="{{ c.id }}"
+                       value="{{ '{:,.2f}'.format(cv).replace(',','X').replace('.',',').replace('X','.') if cv else '' }}"
+                       placeholder="0,00" onblur="salvarControle(this)">
+              </td>
+              {% else %}
+              <td class="td-ctrl-ro">{{ '{:,.2f}'.format(cv).replace(',','X').replace('.',',').replace('X','.') if cv else '—' }}</td>
+              {% endif %}
+            {% endfor %}
+          {% endif %}
         </tr>
       {% endfor %}
 
@@ -275,6 +334,14 @@
           {% elif fg < -0.005 %}({{ '{:,.2f}'.format(-fg).replace(',','X').replace('.',',').replace('X','.') }})
           {% else %}—{% endif %}
         </td>
+        {% if controles %}
+          <td class="td-sep" style="background:#14114f !important;"></td>
+          {% for c in controles %}
+            {% set sc = namespace(v=0) %}
+            {% for d in datas %}{% set sc.v = sc.v + (controles_valores.get(d,{}).get(c.id,0)|float) %}{% endfor %}
+            <td>{{ '{:,.2f}'.format(sc.v).replace(',','X').replace('.',',').replace('X','.') if sc.v else '—' }}</td>
+          {% endfor %}
+        {% endif %}
       </tr>
     </tbody>
   </table>
@@ -339,7 +406,16 @@
     fetch(URL_SALVAR,{method:'POST',body:fd}).then(r=>badge(r.ok)).catch(()=>badge(false));
   }
 
-  document.querySelectorAll('input.cel-forma,input.cel-totalcx').forEach(inp=>{
+  function salvarControle(inp) {
+    const {data,filial}=rowInfo(inp);
+    const v=parseBR(inp.value); inp.value=v?fmtBR(v):'';
+    const fd=new FormData();
+    fd.append('tipo','controle'); fd.append('cod_filial',filial);
+    fd.append('data',data); fd.append('id_controle',inp.dataset.controle); fd.append('valor',v);
+    fetch(URL_SALVAR,{method:'POST',body:fd}).then(r=>badge(r.ok)).catch(()=>badge(false));
+  }
+
+  document.querySelectorAll('input.cel-forma,input.cel-totalcx,input.cel-ctrl').forEach(inp=>{
     inp.addEventListener('focus',function(){
       const v=parseBR(this.value); this.value=v?v.toFixed(2).replace('.',','):''; this.select();
     });

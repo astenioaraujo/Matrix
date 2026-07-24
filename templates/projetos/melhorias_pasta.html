@@ -1,0 +1,412 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .pagina-sub    { font-size:15px; color:#666; margin-bottom:20px; }
+
+  .pasta-nav { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:20px; }
+  .pasta-nav label { font-weight:700; font-size:13px; color:#555; }
+  .pasta-nav select { height:36px; border-radius:8px; border:1px solid #ccc; padding:0 12px; font-size:14px; background:#fff; cursor:pointer; }
+
+  /* grid */
+  .tbl-wrap { overflow-x:auto; }
+  table.mc { border-collapse:collapse; width:100%; font-size:14px; }
+  table.mc th, table.mc td { border:1px solid #d1d5db; padding:0; white-space:nowrap; }
+  table.mc thead th { background:#14114f; color:#fff; font-weight:700; padding:9px 12px; text-align:left; position:sticky; top:0; z-index:2; }
+  table.mc thead th.th-center { text-align:center; }
+  table.mc tbody tr { background:#fff; }
+  table.mc tbody tr:nth-child(even) { background:#f9fafb; }
+  table.mc tbody tr:hover { background:#fffbea; }
+  table.mc tbody tr.sortable-ghost  { opacity:.35; background:#e0e7ff; }
+  table.mc tbody tr.sortable-chosen { box-shadow:0 4px 14px rgba(0,0,0,.18); }
+
+  /* grid concluídas */
+  table.mc-conc thead th { background:#15803d; }
+
+  td.td-handle { width:32px; text-align:center; cursor:grab; color:#9ca3af; padding:0 6px; font-size:18px; user-select:none; }
+  td.td-handle:active { cursor:grabbing; }
+  td.td-num    { width:40px; text-align:center; padding:8px 6px; color:#9ca3af; font-size:12px; font-weight:700; }
+
+  td.td-edit { padding:0; }
+  td.td-edit input { width:100%; border:none; background:transparent; padding:8px 10px; font-size:14px; font-family:inherit; outline:none; box-sizing:border-box; height:38px; }
+  td.td-edit input:focus { background:#fffde7; box-shadow:inset 0 0 0 2px #facc15; }
+  td.td-edit.col-meta    { min-width:280px; white-space:normal; }
+  td.td-edit.col-impacto { min-width:180px; white-space:normal; }
+
+  td.td-prazo { padding:0; width:130px; }
+  td.td-prazo input[type=date] { width:100%; border:none; background:transparent; padding:8px 10px; font-size:14px; font-family:inherit; outline:none; box-sizing:border-box; }
+  td.td-prazo input:focus { background:#fffde7; box-shadow:inset 0 0 0 2px #facc15; }
+
+  td.td-status { padding:4px 6px; width:160px; text-align:center; }
+  .sel-status { width:100%; height:30px; border-radius:7px; border:1px solid #d1d5db; font-size:13px; font-weight:700; cursor:pointer; padding:0 6px; background:#fff; appearance:auto; }
+  .sel-status.s-vazio     { background:#f1f5f9; color:#64748b; }
+  .sel-status.s-andamento { background:#dbeafe; color:#1d4ed8; border-color:#93c5fd; }
+  .sel-status.s-pausado   { background:#fef9c3; color:#92400e; border-color:#fde047; }
+  .sel-status.s-concluido { background:#d1fae5; color:#065f46; border-color:#6ee7b7; }
+
+  td.td-conc-data { padding:6px 10px; width:120px; font-size:12px; color:#15803d; font-weight:700; white-space:nowrap; }
+
+  td.td-acoes { width:46px; text-align:center; padding:4px; }
+  .btn-excluir-row { background:none; border:none; cursor:pointer; color:#9ca3af; font-size:17px; padding:4px 6px; border-radius:6px; }
+  .btn-excluir-row:hover { background:#fee2e2; color:#dc2626; }
+
+  /* painel nova meta */
+  .painel-nova { margin-top:18px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:16px 18px; }
+  .painel-nova .titulo-nova { font-size:14px; font-weight:800; color:#15803d; margin-bottom:12px; }
+  .nova-grid { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
+  .nova-campo label { display:block; font-size:12px; font-weight:700; color:#555; margin-bottom:4px; }
+  .nova-campo input, .nova-campo select { height:36px; border-radius:8px; border:1px solid #ccc; padding:0 10px; font-size:14px; background:#fff; box-sizing:border-box; width:100%; }
+  .nova-campo.col-meta    { flex:1 1 260px; }
+  .nova-campo.col-prazo   { flex:0 0 140px; }
+  .nova-campo.col-status  { flex:0 0 160px; }
+  .nova-campo.col-impacto { flex:1 1 180px; }
+  .btn-add { background:#16a34a; color:#fff; border:none; border-radius:8px; padding:0 22px; height:36px; font-size:14px; font-weight:700; cursor:pointer; white-space:nowrap; align-self:flex-end; }
+  .btn-add:hover { background:#15803d; }
+
+  /* bloco concluídas */
+  .conc-header { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin:36px 0 12px; }
+  .conc-titulo { font-size:18px; font-weight:800; color:#15803d; }
+  .filtro-conc { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .filtro-conc label { font-size:12px; font-weight:700; color:#555; }
+  .filtro-conc select { height:32px; border-radius:7px; border:1px solid #ccc; padding:0 8px; font-size:13px; background:#fff; }
+  .btn-nav-mes { width:30px; height:30px; border:1px solid #c7c7c7; border-radius:7px; background:#e8f5e9; color:#15803d; font-size:16px; font-weight:900; cursor:pointer; padding:0; line-height:1; }
+  .btn-nav-mes:hover { background:#c8e6c9; }
+  .btn-filtrar-conc { height:32px; background:#15803d; color:#fff; font-weight:700; border:none; border-radius:7px; cursor:pointer; padding:0 14px; font-size:13px; }
+  .btn-filtrar-conc:hover { background:#166534; }
+
+  /* badge salvo */
+  .badge-salvo { display:none; font-size:11px; color:#16a34a; font-weight:700; position:fixed; bottom:20px; right:24px; background:#fff; border:1px solid #16a34a; border-radius:8px; padding:8px 14px; box-shadow:0 3px 10px rgba(0,0,0,.15); z-index:999; }
+  .badge-erro  { display:none; font-size:11px; color:#dc2626; font-weight:700; position:fixed; bottom:20px; right:24px; background:#fff; border:1px solid #dc2626; border-radius:8px; padding:8px 14px; box-shadow:0 3px 10px rgba(0,0,0,.15); z-index:999; }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">Melhorias Contínuas</div>
+  <div class="pagina-sub">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+  {% if pastas|length > 1 %}
+  <div class="pasta-nav">
+    <label>Pasta:</label>
+    <select onchange="window.location='/projetos/melhorias-continuas/'+this.value">
+      {% for p in pastas %}
+        <option value="{{ p.id }}" {% if p.id == pasta.id %}selected{% endif %}>{{ p.nome }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% else %}
+  <div style="font-size:16px; font-weight:700; color:#14114f; margin-bottom:18px;">📁 {{ pasta.nome }}</div>
+  {% endif %}
+
+  <!-- ── GRID ATIVAS ── -->
+  <div class="tbl-wrap">
+    <table class="mc">
+      <thead>
+        <tr>
+          <th style="width:32px;"></th>
+          <th class="th-center" style="width:40px;">#</th>
+          <th>Meta / Descrição</th>
+          <th class="th-center" style="width:160px;">Status</th>
+          <th>Impacto</th>
+          <th class="th-center" style="width:130px;">Prazo</th>
+          <th style="width:46px;"></th>
+        </tr>
+      </thead>
+      <tbody id="tbody-itens">
+        {% for item in itens %}
+        <tr data-id="{{ item.id }}">
+          <td class="td-handle" title="Arrastar">⠿</td>
+          <td class="td-num">{{ loop.index }}</td>
+          <td class="td-edit col-meta">
+            <input type="text" value="{{ item.meta }}"
+                   onblur="salvarCampo({{ item.id }},'meta',this.value)"
+                   onkeydown="if(event.key==='Enter'){this.blur();}">
+          </td>
+          <td class="td-status">
+            {% set sc = {'':'s-vazio','EM_ANDAMENTO':'s-andamento','PAUSADO':'s-pausado','CONCLUIDO':'s-concluido'} %}
+            <select class="sel-status {{ sc.get(item.status or '', 's-vazio') }}"
+                    onchange="alterarStatus({{ item.id }}, this)">
+              <option value=""            {% if not item.status              %}selected{% endif %}>—</option>
+              <option value="EM_ANDAMENTO"{% if item.status=='EM_ANDAMENTO'  %}selected{% endif %}>▶ Em Andamento</option>
+              <option value="PAUSADO"     {% if item.status=='PAUSADO'       %}selected{% endif %}>⏸ Pausado</option>
+              <option value="CONCLUIDO"   {% if item.status=='CONCLUIDO'     %}selected{% endif %}>✔ Concluído</option>
+            </select>
+          </td>
+          <td class="td-edit col-impacto">
+            <input type="text" value="{{ item.impacto or '' }}"
+                   onblur="salvarCampo({{ item.id }},'impacto',this.value)"
+                   onkeydown="if(event.key==='Enter'){this.blur();}">
+          </td>
+          <td class="td-prazo">
+            <input type="date" value="{{ item.prazo.strftime('%Y-%m-%d') if item.prazo else '' }}"
+                   onchange="salvarCampo({{ item.id }},'prazo',this.value)">
+          </td>
+          <td class="td-acoes">
+            <button class="btn-excluir-row" onclick="excluirItem({{ item.id }},this)">✕</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div style="margin-top:14px;">
+    <button class="btn-add" onclick="abrirPainel()">＋ Incluir Meta</button>
+  </div>
+
+  <div class="painel-nova" id="painel-nova" style="display:none; margin-top:12px;">
+    <div class="titulo-nova">＋ Nova Meta</div>
+    <div class="nova-grid">
+      <div class="nova-campo col-meta">
+        <label>Meta / Descrição</label>
+        <input type="text" id="nova-meta" placeholder="Descreva a meta..."
+               onkeydown="if(event.key==='Enter'){adicionarItem();}">
+      </div>
+      <div class="nova-campo col-prazo">
+        <label>Prazo</label>
+        <input type="date" id="nova-prazo">
+      </div>
+      <div class="nova-campo col-status">
+        <label>Status</label>
+        <select id="nova-status">
+          <option value="">—</option>
+          <option value="EM_ANDAMENTO">▶ Em Andamento</option>
+          <option value="PAUSADO">⏸ Pausado</option>
+          <option value="CONCLUIDO">✔ Concluído</option>
+        </select>
+      </div>
+      <div class="nova-campo col-impacto">
+        <label>Impacto</label>
+        <input type="text" id="nova-impacto" placeholder="Impacto esperado..."
+               onkeydown="if(event.key==='Enter'){adicionarItem();}">
+      </div>
+      <button class="btn-add" onclick="adicionarItem()">Adicionar</button>
+    </div>
+  </div>
+
+  <!-- ── BLOCO CONCLUÍDAS ── -->
+  <div class="conc-header">
+    <div class="conc-titulo">✔ Concluídas</div>
+    <form method="GET" id="form-conc" class="filtro-conc">
+      <label>Mês</label>
+      <button type="button" class="btn-nav-mes" onclick="navMes(-1)">←</button>
+      <select name="fil_mes" id="fil-mes">
+        <option value="">Todos</option>
+        {% for i in range(1,13) %}
+          <option value="{{ i }}" {% if fil_mes == i|string %}selected{% endif %}>
+            {{ ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][i-1] }}
+          </option>
+        {% endfor %}
+      </select>
+      <button type="button" class="btn-nav-mes" onclick="navMes(1)">→</button>
+
+      <label style="margin-left:6px;">Ano</label>
+      <select name="fil_ano" id="fil-ano">
+        <option value="">Todos</option>
+        {% for a in range(ano_atual - 3, ano_atual + 2) %}
+          <option value="{{ a }}" {% if fil_ano == a|string %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+
+      <button type="submit" class="btn-filtrar-conc">Filtrar</button>
+    </form>
+  </div>
+
+  <div class="tbl-wrap">
+    <table class="mc mc-conc">
+      <thead>
+        <tr>
+          <th style="width:32px;"></th>
+          <th class="th-center" style="width:40px;">#</th>
+          <th>Meta / Descrição</th>
+          <th class="th-center" style="width:120px;">Concluída em</th>
+          <th>Impacto</th>
+          <th class="th-center" style="width:130px;">Prazo</th>
+          <th style="width:46px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in concluidas %}
+        <tr data-id="{{ item.id }}">
+          <td class="td-handle" title="Arrastar">⠿</td>
+          <td class="td-num">{{ loop.index }}</td>
+          <td class="td-edit col-meta">
+            <input type="text" value="{{ item.meta }}"
+                   onblur="salvarCampo({{ item.id }},'meta',this.value)"
+                   onkeydown="if(event.key==='Enter'){this.blur();}">
+          </td>
+          <td class="td-conc-data">
+            {{ item.data_conclusao.strftime('%d/%m/%Y') if item.data_conclusao else '—' }}
+          </td>
+          <td class="td-edit col-impacto">
+            <input type="text" value="{{ item.impacto or '' }}"
+                   onblur="salvarCampo({{ item.id }},'impacto',this.value)"
+                   onkeydown="if(event.key==='Enter'){this.blur();}">
+          </td>
+          <td class="td-prazo">
+            <input type="date" value="{{ item.prazo.strftime('%Y-%m-%d') if item.prazo else '' }}"
+                   onchange="salvarCampo({{ item.id }},'prazo',this.value)">
+          </td>
+          <td class="td-acoes">
+            <button class="btn-excluir-row" onclick="excluirItemConc({{ item.id }},this)">✕</button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="text-align:center;color:#9ca3af;padding:18px;font-size:14px;">
+          Nenhuma meta concluída no período selecionado.
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="badge-salvo" id="badge-salvo">✔ Salvo</div>
+<div class="badge-erro"  id="badge-erro">✘ Erro ao salvar</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
+<script>
+  const URL_BASE = "{{ url_for('projetos.melhorias_pasta', id_pasta=pasta.id) }}";
+  const STATUS_CLASS = {'':'s-vazio','EM_ANDAMENTO':'s-andamento','PAUSADO':'s-pausado','CONCLUIDO':'s-concluido'};
+
+  function badge(ok) {
+    const el = document.getElementById(ok ? 'badge-salvo' : 'badge-erro');
+    el.style.display = 'block'; setTimeout(() => el.style.display = 'none', 1800);
+  }
+  function post(fd) {
+    return fetch(URL_BASE, {method:'POST', body:fd})
+      .then(r => r.json()).then(j => { badge(j.ok); return j; }).catch(() => badge(false));
+  }
+  function salvarCampo(id, campo, valor) {
+    const fd = new FormData();
+    fd.append('acao','editar'); fd.append('id',id); fd.append('campo',campo); fd.append('valor',valor);
+    post(fd);
+  }
+
+  function alterarStatus(id, sel) {
+    const novo = sel.value;
+    sel.className = 'sel-status ' + (STATUS_CLASS[novo] || 's-vazio');
+    const fd = new FormData();
+    fd.append('acao','editar'); fd.append('id',id); fd.append('campo','status'); fd.append('valor',novo);
+    post(fd).then(j => {
+      if (j && j.ok && novo === 'CONCLUIDO') {
+        // remove do grid de cima e recarrega página para aparecer em baixo
+        const tr = sel.closest('tr');
+        tr.style.transition = 'opacity .4s';
+        tr.style.opacity = '0';
+        setTimeout(() => { tr.remove(); renumerar(); window.location.reload(); }, 500);
+      }
+    });
+  }
+
+  function excluirItem(id, btn) {
+    if (!confirm('Excluir esta melhoria?')) return;
+    const fd = new FormData();
+    fd.append('acao','excluir'); fd.append('id',id);
+    post(fd).then(j => { if (j && j.ok) { btn.closest('tr').remove(); renumerar(); } });
+  }
+  function excluirItemConc(id, btn) {
+    if (!confirm('Excluir esta melhoria concluída?')) return;
+    const fd = new FormData();
+    fd.append('acao','excluir'); fd.append('id',id);
+    post(fd).then(j => { if (j && j.ok) btn.closest('tr').remove(); });
+  }
+
+  function adicionarItem() {
+    const meta    = document.getElementById('nova-meta').value.trim();
+    const prazo   = document.getElementById('nova-prazo').value;
+    const status  = document.getElementById('nova-status').value;
+    const impacto = document.getElementById('nova-impacto').value.trim();
+    if (!meta) { document.getElementById('nova-meta').focus(); return; }
+    const fd = new FormData();
+    fd.append('acao','incluir'); fd.append('meta',meta); fd.append('prazo',prazo);
+    fd.append('status',status); fd.append('impacto',impacto);
+    post(fd).then(j => {
+      if (!j || !j.ok) return;
+      const tbody = document.getElementById('tbody-itens');
+      const num   = tbody.querySelectorAll('tr').length + 1;
+      const tr    = document.createElement('tr');
+      tr.dataset.id = j.id;
+      const sc = STATUS_CLASS[status] || 's-vazio';
+      const statusLabel = {'':'—','EM_ANDAMENTO':'▶ Em Andamento','PAUSADO':'⏸ Pausado','CONCLUIDO':'✔ Concluído'};
+      tr.innerHTML = `
+        <td class="td-handle">⠿</td>
+        <td class="td-num">${num}</td>
+        <td class="td-edit col-meta">
+          <input type="text" value="${esc(meta)}"
+                 onblur="salvarCampo(${j.id},'meta',this.value)"
+                 onkeydown="if(event.key==='Enter'){this.blur();}">
+        </td>
+        <td class="td-status">
+          <select class="sel-status ${sc}" onchange="alterarStatus(${j.id},this)">
+            <option value=""${!status?' selected':''}>—</option>
+            <option value="EM_ANDAMENTO"${status==='EM_ANDAMENTO'?' selected':''}>▶ Em Andamento</option>
+            <option value="PAUSADO"${status==='PAUSADO'?' selected':''}>⏸ Pausado</option>
+            <option value="CONCLUIDO"${status==='CONCLUIDO'?' selected':''}>✔ Concluído</option>
+          </select>
+        </td>
+        <td class="td-edit col-impacto">
+          <input type="text" value="${esc(impacto)}"
+                 onblur="salvarCampo(${j.id},'impacto',this.value)"
+                 onkeydown="if(event.key==='Enter'){this.blur();}">
+        </td>
+        <td class="td-prazo">
+          <input type="date" value="${esc(prazo)}"
+                 onchange="salvarCampo(${j.id},'prazo',this.value)">
+        </td>
+        <td class="td-acoes">
+          <button class="btn-excluir-row" onclick="excluirItem(${j.id},this)">✕</button>
+        </td>`;
+      tbody.appendChild(tr);
+      document.getElementById('nova-meta').value    = '';
+      document.getElementById('nova-prazo').value   = '';
+      document.getElementById('nova-status').value  = '';
+      document.getElementById('nova-impacto').value = '';
+      document.getElementById('painel-nova').style.display = 'none';
+    });
+  }
+
+  function renumerar() {
+    document.querySelectorAll('#tbody-itens tr .td-num').forEach((td,i) => td.textContent = i+1);
+  }
+  function abrirPainel() {
+    document.getElementById('painel-nova').style.display = 'block';
+    document.getElementById('nova-meta').focus();
+  }
+  function esc(s) {
+    return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // Navegação de mês
+  const MESES = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  function navMes(delta) {
+    const selMes = document.getElementById('fil-mes');
+    const selAno = document.getElementById('fil-ano');
+    let mes = parseInt(selMes.value || '0') + delta;
+    let ano = parseInt(selAno.value || '{{ ano_atual }}');
+    if (mes < 1) { mes = 12; ano--; }
+    if (mes > 12) { mes = 1;  ano++; }
+    selMes.value = mes;
+    // garante ano no select
+    if (!Array.from(selAno.options).find(o => parseInt(o.value) === ano)) {
+      const opt = document.createElement('option');
+      opt.value = opt.textContent = ano;
+      selAno.appendChild(opt);
+    }
+    selAno.value = ano;
+    document.getElementById('form-conc').submit();
+  }
+
+  Sortable.create(document.getElementById('tbody-itens'), {
+    handle:'.td-handle', animation:150,
+    ghostClass:'sortable-ghost', chosenClass:'sortable-chosen',
+    onEnd: function() {
+      renumerar();
+      const ids = Array.from(document.querySelectorAll('#tbody-itens tr')).map(tr => tr.dataset.id);
+      const fd  = new FormData();
+      fd.append('acao','reordenar'); fd.append('ids', JSON.stringify(ids));
+      post(fd);
+    }
+  });
+</script>
+{% endblock %}

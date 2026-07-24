@@ -22,6 +22,7 @@ from routes.rh_routes import rh_bp
 from routes.performances_routes import performances_bp
 from routes.treinamentos_routes import treinamentos_bp
 from routes.canivete_routes import canivete_bp
+from routes.projetos_routes import projetos_bp
 
 
 def formatar_numero_br(valor):
@@ -58,6 +59,7 @@ app.register_blueprint(rh_bp, url_prefix="/rh")
 app.register_blueprint(performances_bp, url_prefix="/performances")
 app.register_blueprint(treinamentos_bp)
 app.register_blueprint(canivete_bp)
+app.register_blueprint(projetos_bp)
 
 if __name__ == "__main__":
     app.run(debug=True, port=5001)

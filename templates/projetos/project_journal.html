@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .pagina-sub    { font-size:15px; color:#666; margin-bottom:24px; }
+
+  /* Formulário de novo registro */
+  .form-journal {
+    background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px;
+    padding:20px 24px; margin-bottom:28px;
+  }
+  .form-journal h3 { font-size:14px; font-weight:700; color:#374151; margin:0 0 14px; text-transform:uppercase; letter-spacing:.05em; }
+  .form-row { display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+  .form-row .campo-data  { flex:0 0 150px; }
+  .form-row .campo-desc  { flex:1 1 300px; }
+  .form-row label { display:block; font-size:12px; font-weight:700; color:#555; margin-bottom:5px; }
+  .form-row input[type=date],
+  .form-row textarea {
+    width:100%; border:1px solid #cbd5e1; border-radius:8px;
+    padding:8px 10px; font-size:14px; background:#fff; box-sizing:border-box;
+    font-family:inherit;
+  }
+  .form-row textarea { resize:vertical; min-height:72px; }
+  .btn-incluir {
+    background:#1d4ed8; color:#fff; border:none; border-radius:8px;
+    padding:0 22px; height:38px; font-size:14px; font-weight:700;
+    cursor:pointer; align-self:flex-end; white-space:nowrap;
+  }
+  .btn-incluir:hover { background:#1e40af; }
+
+  /* Toast */
+  .toast { padding:10px 16px; border-radius:8px; margin-bottom:16px; font-size:14px; font-weight:600; }
+  .toast-ok  { background:#dcfce7; color:#166534; border:1px solid #86efac; }
+  .toast-err { background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; }
+
+  /* Grid de registros */
+  table.jnl { border-collapse:collapse; width:100%; font-size:14px; }
+  table.jnl th, table.jnl td { border:1px solid #e2e8f0; padding:10px 14px; vertical-align:top; }
+  table.jnl thead th {
+    background:#1d4ed8; color:#fff; font-weight:700; font-size:12px;
+    text-align:left; white-space:nowrap;
+  }
+  table.jnl tbody tr:nth-child(even) { background:#f8fafc; }
+  table.jnl tbody tr:hover td { background:#eff6ff !important; }
+  table.jnl td.td-data  { white-space:nowrap; font-weight:700; color:#1d4ed8; width:110px; }
+  table.jnl td.td-desc  { color:#1e293b; white-space:pre-wrap; word-break:break-word; }
+  table.jnl td.td-acoes { width:90px; text-align:center; white-space:nowrap; }
+
+  .btn-edit, .btn-del {
+    border:none; border-radius:6px; padding:4px 10px;
+    font-size:12px; font-weight:700; cursor:pointer;
+  }
+  .btn-edit { background:#e0e7ff; color:#1d4ed8; margin-right:4px; }
+  .btn-edit:hover { background:#c7d2fe; }
+  .btn-del  { background:#fee2e2; color:#991b1b; }
+  .btn-del:hover { background:#fecaca; }
+
+  /* Modal de edição */
+  .modal-overlay {
+    display:none; position:fixed; inset:0;
+    background:rgba(0,0,0,0.4); z-index:1000;
+    align-items:center; justify-content:center;
+  }
+  .modal-overlay.ativo { display:flex; }
+  .modal-box {
+    background:#fff; border-radius:14px; padding:28px 32px;
+    width:560px; max-width:95vw; box-shadow:0 20px 60px rgba(0,0,0,0.2);
+  }
+  .modal-box h3 { margin:0 0 18px; font-size:16px; font-weight:800; color:#1d4ed8; }
+  .modal-campo { margin-bottom:14px; }
+  .modal-campo label { display:block; font-size:12px; font-weight:700; color:#555; margin-bottom:5px; }
+  .modal-campo input[type=date],
+  .modal-campo textarea {
+    width:100%; border:1px solid #cbd5e1; border-radius:8px;
+    padding:8px 10px; font-size:14px; background:#fff; box-sizing:border-box;
+    font-family:inherit;
+  }
+  .modal-campo textarea { resize:vertical; min-height:100px; }
+  .modal-acoes { display:flex; gap:10px; justify-content:flex-end; margin-top:18px; }
+  .btn-salvar  { background:#1d4ed8; color:#fff; border:none; border-radius:8px; padding:0 22px; height:38px; font-size:14px; font-weight:700; cursor:pointer; }
+  .btn-salvar:hover { background:#1e40af; }
+  .btn-cancelar { background:#e5e7eb; color:#374151; border:none; border-radius:8px; padding:0 18px; height:38px; font-size:14px; font-weight:600; cursor:pointer; }
+  .btn-cancelar:hover { background:#d1d5db; }
+
+  .sem-dados { color:#94a3b8; font-size:15px; margin-top:20px; }
+  .tbl-wrap  { overflow-x:auto; }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">Project Journal</div>
+  <div class="pagina-sub">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+  {% if sucesso %}<div class="toast toast-ok">{{ sucesso }}</div>{% endif %}
+  {% if erro    %}<div class="toast toast-err">{{ erro }}</div>{% endif %}
+
+  <!-- Formulário de inclusão -->
+  <div class="form-journal">
+    <h3>Novo Registro</h3>
+    <form method="POST">
+      <input type="hidden" name="acao" value="incluir">
+      <div class="form-row">
+        <div class="campo-data">
+          <label>Data</label>
+          <input type="date" name="data" value="{{ hoje }}" required>
+        </div>
+        <div class="campo-desc">
+          <label>Descrição</label>
+          <textarea name="descricao" placeholder="Descreva a atividade..." required></textarea>
+        </div>
+        <button type="submit" class="btn-incluir">+ Adicionar</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Grid de registros -->
+  {% if registros %}
+  <div class="tbl-wrap">
+    <table class="jnl">
+      <thead>
+        <tr>
+          <th style="width:110px">Data</th>
+          <th>Descrição</th>
+          <th style="width:90px">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in registros %}
+        <tr>
+          <td class="td-data">{{ r.data.strftime('%d/%m/%Y') }}</td>
+          <td class="td-desc">{{ r.descricao }}</td>
+          <td class="td-acoes">
+            <button type="button" class="btn-edit"
+              data-id="{{ r.id }}"
+              data-data="{{ r.data.isoformat() }}"
+              data-desc="{{ r.descricao | e }}"
+              onclick="abrirEditBtn(this)">
+              Editar
+            </button>
+            <form method="POST" style="display:inline"
+              onsubmit="return confirm('Excluir este registro?')">
+              <input type="hidden" name="acao" value="excluir">
+              <input type="hidden" name="id"   value="{{ r.id }}">
+              <button type="submit" class="btn-del">✕</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="sem-dados">Nenhum registro ainda. Adicione o primeiro acima.</p>
+  {% endif %}
+</div>
+
+<!-- Modal de edição -->
+<div class="modal-overlay" id="modal-edit">
+  <div class="modal-box">
+    <h3>Editar Registro</h3>
+    <form method="POST" id="form-edit">
+      <input type="hidden" name="acao" value="editar">
+      <input type="hidden" name="id"   id="edit-id">
+      <div class="modal-campo">
+        <label>Data</label>
+        <input type="date" name="data" id="edit-data" required>
+      </div>
+      <div class="modal-campo">
+        <label>Descrição</label>
+        <textarea name="descricao" id="edit-desc" required></textarea>
+      </div>
+      <div class="modal-acoes">
+        <button type="button" class="btn-cancelar" onclick="fecharEdit()">Cancelar</button>
+        <button type="submit" class="btn-salvar">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function abrirEditBtn(btn) {
+  document.getElementById('edit-id').value   = btn.dataset.id;
+  document.getElementById('edit-data').value = btn.dataset.data;
+  document.getElementById('edit-desc').value = btn.dataset.desc;
+  document.getElementById('modal-edit').classList.add('ativo');
+}
+function fecharEdit() {
+  document.getElementById('modal-edit').classList.remove('ativo');
+}
+document.getElementById('modal-edit').addEventListener('click', function(e) {
+  if (e.target === this) fecharEdit();
+});
+</script>
+{% endblock %}

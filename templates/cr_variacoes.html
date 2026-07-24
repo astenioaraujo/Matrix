@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .pagina-sub    { font-size:15px; color:#666; margin-bottom:20px; }
+
+  /* Filtros */
+  .filtro-bar { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap;
+    background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px;
+    padding:16px 20px; margin-bottom:24px; }
+  .filtro-campo label { display:block; font-size:12px; font-weight:700; color:#555; margin-bottom:5px; }
+  .filtro-campo input[type=date],
+  .filtro-campo select {
+    height:36px; border-radius:8px; border:1px solid #cbd5e1;
+    padding:0 10px; font-size:14px; background:#fff; box-sizing:border-box;
+  }
+  .btn-filtrar { background:#14114f; color:#fff; border:none; border-radius:8px;
+    padding:0 20px; height:36px; font-size:14px; font-weight:700; cursor:pointer; }
+  .btn-filtrar:hover { background:#0d0a3a; }
+
+  /* Tabela */
+  .tbl-wrap { overflow-x:auto; margin-top:4px; }
+  table.var { border-collapse:collapse; width:auto; font-size:13px; }
+  table.var th, table.var td { border:1px solid #e2e8f0; padding:6px 10px; white-space:nowrap; }
+
+  /* Cabeçalho principal (área) */
+  table.var thead tr.th-area th {
+    background:#14114f; color:#fff; font-weight:800; font-size:12px;
+    text-align:center; border-color:#0d0a3a;
+  }
+  table.var thead tr.th-area th.th-data { background:#374151; }
+  table.var thead tr.th-area th.th-total-geral { background:#1e3a5f; }
+
+  /* Cabeçalho de filiais */
+  table.var thead tr.th-filiais th {
+    background:#1e3a5f; color:#fff; font-weight:700; font-size:12px;
+    text-align:right; border-color:#163050;
+  }
+  table.var thead tr.th-filiais th:first-child { text-align:left; }
+  table.var thead tr.th-filiais th.th-subtotal { background:#1d4ed8; }
+  table.var thead tr.th-filiais th.th-total-geral { background:#0f2944; }
+
+  /* Linhas de dados */
+  table.var tbody tr:nth-child(even) { background:#f8fafc; }
+  table.var tbody tr:hover td { background:#fffbea !important; }
+  table.var tbody td { text-align:right; color:#1e293b; }
+  table.var tbody td:first-child { text-align:left; font-weight:600; color:#374151; }
+  table.var tbody td.td-subtotal {
+    font-weight:700; color:#1d4ed8; background:#eff6ff;
+  }
+  table.var tbody td.td-total-geral {
+    font-weight:800; color:#0f2944; background:#dbeafe;
+  }
+
+  /* Separadores entre grupos */
+  .col-sep { border-left:4px solid #94a3b8 !important; }
+
+  /* Sem dados */
+  .sem-dados { color:#94a3b8; font-size:15px; margin-top:20px; }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">CR — Variações Fiado</div>
+  <div class="pagina-sub">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+  <form class="filtro-bar" method="GET">
+    <div class="filtro-campo">
+      <label>Data inicial</label>
+      <input type="date" name="data_ini" value="{{ data_ini.isoformat() }}">
+    </div>
+    <div class="filtro-campo">
+      <label>Data final</label>
+      <input type="date" name="data_fin" value="{{ data_fin.isoformat() }}">
+    </div>
+    <div class="filtro-campo">
+      <label>Área</label>
+      <select name="area">
+        <option value="todas" {% if filtro_area == 'todas' %}selected{% endif %}>Todas</option>
+        {% for area in areas %}
+          <option value="{{ area.id_area }}"
+            {% if filtro_area == area.id_area|string %}selected{% endif %}>
+            {{ area.nome_area }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn-filtrar">Consultar</button>
+  </form>
+
+  {% if datas and areas %}
+  <div class="tbl-wrap">
+    <table class="var" id="tbl-var">
+      <thead>
+        {# Linha 1: grupos de área #}
+        <tr class="th-area">
+          <th class="th-data" rowspan="2">Data</th>
+          {% for area in areas %}
+            <th colspan="{{ area.filiais|length + 1 }}"
+                {% if not loop.first %}class="col-sep"{% endif %}>{{ area.nome_area }}</th>
+          {% endfor %}
+          <th class="th-total-geral col-sep" rowspan="2">Total Geral</th>
+        </tr>
+        {# Linha 2: filiais + subtotal por área #}
+        <tr class="th-filiais">
+          {% for area in areas %}
+            {% set area_i = loop.index0 %}
+            {% for nome_fil, _ in area.filiais %}
+              <th class="{% if loop.first and area_i > 0 %}col-sep{% endif %}">{{ nome_fil }}</th>
+            {% endfor %}
+            <th class="th-subtotal">{{ area.nome_area.split(' - ')[0] if ' - ' in area.nome_area else area.nome_area }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in datas %}
+        <tr>
+          <td>{{ d.strftime('%d/%m/%Y') }}</td>
+          {% set total_geral = namespace(v=0) %}
+          {% for area in areas %}
+            {% set area_i = loop.index0 %}
+            {% set subtotal = namespace(v=0) %}
+            {% for nome_fil, nome_imp in area.filiais %}
+              {% set val = pivot.get(d, {}).get(nome_imp, 0) %}
+              {% set subtotal.v = subtotal.v + val %}
+              <td class="td-filial {% if loop.first and area_i > 0 %}col-sep{% endif %}" data-val="{{ val }}">
+                {% if val %}{{ '{:,.2f}'.format(val).replace(',','X').replace('.',',').replace('X','.') }}
+                {% else %}—{% endif %}
+              </td>
+            {% endfor %}
+            {% set total_geral.v = total_geral.v + subtotal.v %}
+            <td class="td-subtotal">
+              {% if subtotal.v %}{{ '{:,.2f}'.format(subtotal.v).replace(',','X').replace('.',',').replace('X','.') }}
+              {% else %}—{% endif %}
+            </td>
+          {% endfor %}
+          <td class="td-total-geral col-sep">
+            {% if total_geral.v %}{{ '{:,.2f}'.format(total_geral.v).replace(',','X').replace('.',',').replace('X','.') }}
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% elif not datas %}
+  <p class="sem-dados">Nenhuma importação encontrada para o período selecionado.</p>
+  {% endif %}
+</div>
+
+<script>
+// Mapa de calor por coluna — apenas células td-filial
+// Cada coluna tem seu próprio min/max
+
+function getColorExcel(ratio) {
+  let r, g, b;
+  if (ratio <= 0.5) {
+    const t = ratio / 0.5;
+    r = 248 + (255 - 248) * t;
+    g = 105 + (235 - 105) * t;
+    b = 107 + (132 - 107) * t;
+  } else {
+    const t = (ratio - 0.5) / 0.5;
+    r = 255 + (99  - 255) * t;
+    g = 235 + (190 - 235) * t;
+    b = 132 + (123 - 132) * t;
+  }
+  return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+}
+
+(function() {
+  const tbl = document.getElementById('tbl-var');
+  if (!tbl) return;
+
+  const tbody = tbl.querySelector('tbody');
+  const rows  = Array.from(tbody.querySelectorAll('tr'));
+  if (!rows.length) return;
+
+  // Descobre quantas colunas td-filial existem na 1ª linha
+  const firstRow = rows[0];
+  const allCells = Array.from(firstRow.querySelectorAll('td'));
+
+  // Índices das células td-filial (excluindo data, subtotal, total-geral)
+  const filialIndices = [];
+  allCells.forEach((td, i) => {
+    if (td.classList.contains('td-filial')) filialIndices.push(i);
+  });
+
+  // Para cada coluna filial, coleta valores e aplica calor
+  filialIndices.forEach(colIdx => {
+    const celulas = rows.map(tr => tr.querySelectorAll('td')[colIdx]).filter(Boolean);
+    const valores = celulas.map(td => {
+      const v = parseFloat((td.dataset.val || '').replace(',', '.'));
+      return isNaN(v) || v === 0 ? null : v;
+    });
+    const nums = valores.filter(v => v !== null);
+    if (nums.length < 2) return;
+
+    const min = Math.min(...nums);
+    const max = Math.max(...nums);
+
+    celulas.forEach((td, i) => {
+      if (valores[i] === null) return;
+      let ratio = (valores[i] - min) / ((max - min) || 1);
+      ratio = Math.round(ratio * 50) / 50;
+      td.style.background = getColorExcel(1 - ratio); // invertido: maior fiado = vermelho
+    });
+  });
+})();
+</script>
+{% endblock %}

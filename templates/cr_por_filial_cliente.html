@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .pagina-sub    { font-size:15px; color:#666; margin-bottom:24px; }
+
+  /* Cabeçalho de área */
+  .area-titulo {
+    font-size:14px; font-weight:800; color:#fff;
+    background:#14114f; padding:10px 16px;
+    border-radius:10px 10px 0 0; margin-top:28px;
+  }
+
+  /* Cabeçalho de filial */
+  .filial-titulo {
+    font-size:13px; font-weight:700; color:#fff;
+    background:#1e3a5f; padding:7px 14px;
+    border-top:2px solid #14114f;
+  }
+
+  /* Tabela de clientes */
+  table.cli { border-collapse:collapse; width:auto; font-size:13px; }
+  table.cli th, table.cli td { border:1px solid #e2e8f0; padding:6px 14px; white-space:nowrap; }
+  table.cli { table-layout:fixed; width:710px; }
+  table.cli col.col-num    { width:40px; }
+  table.cli col.col-nome   { width:550px; }
+  table.cli col.col-saldo  { width:120px; }
+  table.cli thead th {
+    background:#f1f5f9; color:#475569; font-weight:700; font-size:12px; text-align:left;
+    overflow:hidden; text-overflow:ellipsis;
+  }
+  table.cli thead th.r { text-align:right; }
+  table.cli tbody tr:nth-child(even) { background:#f8fafc; }
+  table.cli tbody tr:hover td { background:#fffbea !important; }
+  table.cli tbody td { color:#1e293b; }
+  table.cli tbody td.r { text-align:right; }
+  table.cli tfoot td {
+    font-weight:800; color:#14114f; background:#e0e7ff;
+    border-top:2px solid #6366f1; text-align:right;
+  }
+  table.cli tfoot td:first-child { text-align:left; }
+
+  .tbl-wrap { overflow-x:auto; }
+  .sem-dados { color:#94a3b8; font-size:15px; margin-top:20px; }
+  .ultima-info { font-size:13px; color:#64748b; margin-bottom:20px; }
+  .ultima-info strong { color:#14114f; }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">CR — Por Filial e Cliente</div>
+  <div class="pagina-sub">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+  {% if ultima %}
+  <div class="ultima-info">
+    Referência: <strong>{{ ultima.data_referencia.strftime('%d/%m/%Y') }}</strong>
+    &nbsp;·&nbsp; Total geral:
+    <strong>R$ {{ '{:,.2f}'.format(ultima.total_geral).replace(',','X').replace('.',',').replace('X','.') }}</strong>
+  </div>
+  {% endif %}
+
+  {% if areas %}
+    {% set total_geral = namespace(v=0) %}
+    {% for area in areas %}
+    <div class="area-titulo">{{ area.nome_area }}</div>
+
+      {% for filial in area.filiais %}
+      {% set total_geral.v = total_geral.v + filial.total %}
+      <div class="filial-titulo">{{ filial.nome }}</div>
+      <div class="tbl-wrap">
+        <table class="cli" data-filial="{{ loop.index }}">
+          <colgroup>
+            <col class="col-num">
+            <col class="col-nome">
+            <col class="col-saldo">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Cliente</th>
+              <th class="r">Saldo Devedor</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in filial.clientes %}
+            <tr>
+              <td style="color:#9ca3af;font-size:11px;font-weight:700;">{{ loop.index }}</td>
+              <td>{{ c.cliente }}</td>
+              <td class="r td-saldo" data-val="{{ c.saldo }}">
+                R$ {{ '{:,.2f}'.format(c.saldo).replace(',','X').replace('.',',').replace('X','.') }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="2">Total {{ filial.nome }}</td>
+              <td>R$ {{ '{:,.2f}'.format(filial.total).replace(',','X').replace('.',',').replace('X','.') }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {% endfor %}
+
+    {% endfor %}
+
+    <div style="margin-top:28px; display:flex; justify-content:flex-end;">
+      <table class="cli" style="width:710px;">
+        <colgroup>
+          <col class="col-num">
+          <col class="col-nome">
+          <col class="col-saldo">
+        </colgroup>
+        <tfoot>
+          <tr>
+            <td colspan="2" style="font-size:15px;">TOTAL GERAL</td>
+            <td style="font-size:15px;">R$ {{ '{:,.2f}'.format(total_geral.v).replace(',','X').replace('.',',').replace('X','.') }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+  {% elif ultima %}
+  <p class="sem-dados">Nenhum dado de cliente encontrado. Reimporte o arquivo pela tela <a href="{{ url_for('financeiro.cr_importar_fiado') }}">Importar Fiado</a>.</p>
+  {% else %}
+  <p class="sem-dados">Nenhuma importação realizada ainda. <a href="{{ url_for('financeiro.cr_importar_fiado') }}">Importar Fiado</a>.</p>
+  {% endif %}
+</div>
+
+<script>
+// Mapa de calor por filial (por tabela): vermelho=maior dívida, verde=menor
+// 51 faixas, mesmo padrão do matricial — mas INVERTIDO (maior=vermelho)
+
+function getColorExcel(ratio) {
+  // ratio=0 → verde (menor dívida), ratio=1 → vermelho (maior dívida)
+  // invertemos: ratio_inv = 1 - ratio → entra na função normal onde 0=vermelho, 1=verde
+  const r_inv = 1 - ratio;
+  let r, g, b;
+  if (r_inv <= 0.5) {
+    const t = r_inv / 0.5;
+    r = 248 + (255 - 248) * t;
+    g = 105 + (235 - 105) * t;
+    b = 107 + (132 - 107) * t;
+  } else {
+    const t = (r_inv - 0.5) / 0.5;
+    r = 255 + (99  - 255) * t;
+    g = 235 + (190 - 235) * t;
+    b = 132 + (123 - 132) * t;
+  }
+  return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+}
+
+document.querySelectorAll('table.cli').forEach(tbl => {
+  const celulas = Array.from(tbl.querySelectorAll('tbody td.td-saldo'));
+  const valores = celulas.map(td => parseFloat(td.dataset.val) || 0);
+  const min = Math.min(...valores);
+  const max = Math.max(...valores);
+  if (max === min) return;
+  celulas.forEach((td, i) => {
+    let ratio = (valores[i] - min) / (max - min);
+    ratio = Math.round(ratio * 50) / 50;
+    td.style.background = getColorExcel(ratio);
+  });
+});
+</script>
+{% endblock %}

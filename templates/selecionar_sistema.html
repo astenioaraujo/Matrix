@@ -95,6 +95,7 @@
   .btn-performances { background: #c2410c; }
   .btn-treinamentos { background: #2563eb; }
   .btn-canivete { background: #475569; }
+  .btn-projetos { background: #b45309; }
 
   @media (max-width: 700px) {
     .pagina-wrap {
@@ -205,6 +206,13 @@
         <a class="btn-sistema btn-canivete" href="{{ url_for('canivete.menu_canivete') }}">
           <div class="btn-icone">🛠️</div>
           <div>Canivete Suíço</div>
+        </a>
+      {% endif %}
+
+      {% if pode_projetos %}
+        <a class="btn-sistema btn-projetos" href="{{ url_for('projetos.menu_projetos') }}">
+          <div class="btn-icone">📋</div>
+          <div>Projetos</div>
         </a>
       {% endif %}
 

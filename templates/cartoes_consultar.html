@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .pagina-sub    { font-size:15px; color:#666; margin-bottom:20px; }
+
+  /* Seletor de data */
+  .filtro-bar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:24px; }
+  .filtro-bar label { font-size:13px; font-weight:700; color:#475569; }
+  .filtro-bar select { height:36px; border-radius:8px; border:1px solid #cbd5e1;
+    padding:0 12px; font-size:14px; background:#fff; cursor:pointer; }
+  .btn-filtrar { background:#0f766e; color:#fff; border:none; border-radius:8px;
+    padding:0 18px; height:36px; font-size:14px; font-weight:700; cursor:pointer; }
+  .btn-filtrar:hover { background:#0d0a3a; }
+
+  /* Bloco por área */
+  .area-bloco { margin-bottom:36px; }
+  .area-titulo {
+    font-size:15px; font-weight:800; color:#fff; background:#0f766e;
+    padding:10px 16px; border-radius:10px 10px 0 0; margin-bottom:0;
+  }
+
+  /* Tabela horizontal */
+  .tbl-wrap { overflow-x:auto; }
+  table.cr { border-collapse:collapse; width:auto; font-size:13px; }
+  table.cr th, table.cr td { border:1px solid #e2e8f0; padding:7px 12px; white-space:nowrap; }
+  table.cr thead th {
+    background:#065f46; color:#fff; font-weight:700; text-align:right;
+    position:sticky; top:0; z-index:2;
+  }
+  table.cr thead th:first-child { text-align:left; min-width:160px; }
+  table.cr thead th.th-sel { background:#0d9488; }
+  table.cr tbody tr:nth-child(even) { background:#f8fafc; }
+  table.cr tbody tr:hover td { background:#fffbea; }
+  table.cr tbody td { color:#1e293b; text-align:right; }
+  table.cr tbody td:first-child { text-align:left; font-weight:500; }
+  table.cr tbody td.td-sel { background:#f0fdfa; font-weight:700; color:#0d9488; }
+  table.cr tfoot td {
+    background:#f0fdf4; font-weight:800; color:#15803d;
+    border-top:2px solid #86efac; text-align:right;
+  }
+  table.cr tfoot td:first-child { text-align:left; }
+  table.cr tfoot td.td-sel { background:#d1fae5; color:#15803d; font-size:14px; }
+
+  /* Vazio */
+  .sem-dados { color:#94a3b8; font-size:15px; margin-top:20px; }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">CR — Consultar Cartões</div>
+  <div class="pagina-sub">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+  {% if datas %}
+  <form class="filtro-bar" method="GET">
+    <label>Data de referência:</label>
+    <select name="data_referencia">
+      {% for d in datas|reverse %}
+        <option value="{{ d.isoformat() }}" {% if d == data_sel %}selected{% endif %}>
+          {{ d.strftime('%d/%m/%Y') }}
+        </option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn-filtrar">Consultar</button>
+  </form>
+
+  {% for area in resumo_areas %}
+  <div class="area-bloco">
+    <div class="area-titulo">
+      {{ area.nome_area }}
+      {% if data_sel %}
+        &nbsp;·&nbsp; {{ data_sel.strftime('%d/%m/%Y') }}:
+        <strong>R$ {{ '{:,.2f}'.format(area.total_sel).replace(',','X').replace('.',',').replace('X','.') }}</strong>
+      {% endif %}
+    </div>
+    <div class="tbl-wrap">
+      <table class="cr">
+        <thead>
+          <tr>
+            <th>Filial</th>
+            {% for d in datas %}
+              <th {% if d == data_sel %}class="th-sel"{% endif %}>
+                {{ d.strftime('%d/%m/%y') }}
+              </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in area.filiais %}
+          {% set tem_valor = f.saldos.values()|select|list|length > 0 %}
+          {% if tem_valor %}
+          <tr>
+            <td>{{ f.nome }}</td>
+            {% for d in datas %}
+              <td {% if d == data_sel %}class="td-sel"{% endif %}>
+                {% if f.saldos[d] %}
+                  R$ {{ '{:,.2f}'.format(f.saldos[d]).replace(',','X').replace('.',',').replace('X','.') }}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+            {% endfor %}
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>Total</td>
+            {% for d in datas %}
+              <td {% if d == data_sel %}class="td-sel"{% endif %}>
+                {% if area.total_por_data.get(d) %}
+                  R$ {{ '{:,.2f}'.format(area.total_por_data[d]).replace(',','X').replace('.',',').replace('X','.') }}
+                {% else %}—{% endif %}
+              </td>
+            {% endfor %}
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  {% endfor %}
+
+  {% if resumo_areas and datas %}
+  <div class="area-bloco">
+    <div class="area-titulo" style="background:#065f46;">
+      Total Geral
+      {% if data_sel %}
+        &nbsp;·&nbsp; {{ data_sel.strftime('%d/%m/%Y') }}:
+        <strong>R$ {{ '{:,.2f}'.format(resumo_areas|sum(attribute='total_sel')).replace(',','X').replace('.',',').replace('X','.') }}</strong>
+      {% endif %}
+    </div>
+    <div class="tbl-wrap">
+      <table class="cr">
+        <thead>
+          <tr>
+            <th>Área</th>
+            {% for d in datas %}
+              <th {% if d == data_sel %}class="th-sel"{% endif %}>{{ d.strftime('%d/%m/%y') }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for area in resumo_areas %}
+          <tr>
+            <td>{{ area.nome_area }}</td>
+            {% for d in datas %}
+              <td {% if d == data_sel %}class="td-sel"{% endif %}>
+                {% if area.total_por_data.get(d) %}
+                  R$ {{ '{:,.2f}'.format(area.total_por_data[d]).replace(',','X').replace('.',',').replace('X','.') }}
+                {% else %}—{% endif %}
+              </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>Total</td>
+            {% for d in datas %}
+              {% set total_d = namespace(v=0) %}
+              {% for area in resumo_areas %}
+                {% set total_d.v = total_d.v + area.total_por_data.get(d, 0) %}
+              {% endfor %}
+              <td {% if d == data_sel %}class="td-sel"{% endif %}>
+                {% if total_d.v %}
+                  R$ {{ '{:,.2f}'.format(total_d.v).replace(',','X').replace('.',',').replace('X','.') }}
+                {% else %}—{% endif %}
+              </td>
+            {% endfor %}
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% else %}
+  <p class="sem-dados">Nenhuma importação encontrada. Importe um arquivo em <a href="{{ url_for('financeiro.cartoes_importar') }}">Importar Fiado</a>.</p>
+  {% endif %}
+</div>
+{% endblock %}
