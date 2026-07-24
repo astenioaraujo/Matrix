@@ -347,7 +347,7 @@ def menu_empresa():
             or pode_consulta_emprestimos
         )
 
-        pode_cr_fiado = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CR_FIADO")
+        pode_cr_fiado = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CR_MENU")
 
     linhas, totais = montar_dashboard(cod_empresa)
 
@@ -2224,7 +2224,7 @@ def menu_fluxo_caixa():
         pode_variacoes = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "VARIACOES")
         pode_margem_bruta = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "MARGEM_BRUTA")
         pode_exclusoes = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "EXCLUSOES")
-        pode_cr_fiado = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CR_FIADO")
+        pode_cr_fiado = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CR_MENU")
 
     return render_template(
         "menu_fluxo_caixa.html",
@@ -5054,17 +5054,84 @@ def menu_cr():
         return redirect(url_for("auth.index"))
     if "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
+    id_usuario  = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+    if tipo_global == "superusuario":
+        pode_fiado   = True
+        pode_cartoes = True
+    else:
+        pode_fiado   = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CR_FIADO_MENU")
+        pode_cartoes = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CR_CARTOES_MENU")
     return render_template(
         "menu_cr.html",
         empresa_ativa=session["cod_empresa"],
         nome_empresa_ativa=session.get("nome_empresa", ""),
         url_voltar=url_for("financeiro.menu_empresa"),
+        pode_fiado=pode_fiado,
+        pode_cartoes=pode_cartoes,
+    )
+
+
+@financeiro_bp.route("/cr/menu-fiado")
+def menu_cr_fiado():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+    id_usuario  = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+    if tipo_global == "superusuario":
+        pode_importar = pode_consultar = pode_variacoes = pode_por_filial = pode_por_cliente = True
+    else:
+        pode_importar   = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_IMPORTAR")
+        pode_consultar  = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_CONSULTAR")
+        pode_variacoes  = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_VARIACOES")
+        pode_por_filial = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_POR_FILIAL_CLIENTE")
+        pode_por_cliente= usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_POR_CLIENTE")
+    return render_template(
+        "menu_cr_fiado.html",
+        empresa_ativa=session["cod_empresa"],
+        nome_empresa_ativa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_cr"),
+        pode_importar=pode_importar,
+        pode_consultar=pode_consultar,
+        pode_variacoes=pode_variacoes,
+        pode_por_filial=pode_por_filial,
+        pode_por_cliente=pode_por_cliente,
+    )
+
+
+@financeiro_bp.route("/cr/menu-cartoes")
+def menu_cr_cartoes():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+    id_usuario  = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+    if tipo_global == "superusuario":
+        pode_importar = pode_consultar = pode_variacoes = True
+    else:
+        pode_importar  = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CARTOES_IMPORTAR")
+        pode_consultar = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CARTOES_CONSULTAR")
+        pode_variacoes = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CARTOES_VARIACOES")
+    return render_template(
+        "menu_cr_cartoes.html",
+        empresa_ativa=session["cod_empresa"],
+        nome_empresa_ativa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_cr"),
+        pode_importar=pode_importar,
+        pode_consultar=pode_consultar,
+        pode_variacoes=pode_variacoes,
     )
 
 
 @financeiro_bp.route("/cr/importar-fiado", methods=["GET", "POST"])
 def cr_importar_fiado():
-    return cr_fiado_impl(url_voltar=url_for("financeiro.menu_cr"))
+    return cr_fiado_impl(url_voltar=url_for("financeiro.menu_cr_fiado"))
 
 
 # =========================
@@ -5140,7 +5207,7 @@ def _parse_webportos_xlsx(fileobj, data_ref):
 
 @financeiro_bp.route("/cr-fiado", methods=["GET", "POST"])
 def cr_fiado():
-    return cr_fiado_impl(url_voltar=url_for("financeiro.menu_cr"))
+    return cr_fiado_impl(url_voltar=url_for("financeiro.menu_cr_fiado"))
 
 
 def cr_fiado_impl(url_voltar):
@@ -5367,7 +5434,7 @@ def cr_consultas():
     return render_template(
         "cr_consultas.html",
         nome_empresa=session.get("nome_empresa", ""),
-        url_voltar=url_for("financeiro.menu_cr"),
+        url_voltar=url_for("financeiro.menu_cr_fiado"),
         datas=datas,
         data_sel=data_sel,
         resumo_areas=resumo_areas,
@@ -5470,7 +5537,7 @@ def cr_variacoes():
     return render_template(
         "cr_variacoes.html",
         nome_empresa=session.get("nome_empresa", ""),
-        url_voltar=url_for("financeiro.menu_cr"),
+        url_voltar=url_for("financeiro.menu_cr_fiado"),
         datas=datas,
         areas=areas,
         ids_area=ids_area,
@@ -5565,7 +5632,7 @@ def cr_por_filial_cliente():
     return render_template(
         "cr_por_filial_cliente.html",
         nome_empresa=session.get("nome_empresa", ""),
-        url_voltar=url_for("financeiro.menu_cr"),
+        url_voltar=url_for("financeiro.menu_cr_fiado"),
         ultima=ultima,
         areas=areas,
     )
@@ -5621,7 +5688,7 @@ def cr_por_cliente():
     return render_template(
         "cr_por_cliente.html",
         nome_empresa=session.get("nome_empresa", ""),
-        url_voltar=url_for("financeiro.menu_cr"),
+        url_voltar=url_for("financeiro.menu_cr_fiado"),
         ultima=ultima,
         clientes=clientes,
     )
@@ -5750,7 +5817,7 @@ def cartoes_importar():
     cur.close(); conn.close()
     return render_template("cartoes_importar.html",
         nome_empresa=session.get("nome_empresa", ""),
-        url_voltar=url_for("financeiro.menu_cr"),
+        url_voltar=url_for("financeiro.menu_cr_cartoes"),
         ultima=ultima, resumo_areas=resumo_areas,
         erro=erro, sucesso=sucesso, hoje=date.today().isoformat())
 
@@ -5816,7 +5883,7 @@ def cartoes_consultar():
     cur.close(); conn.close()
     return render_template("cartoes_consultar.html",
         nome_empresa=session.get("nome_empresa", ""),
-        url_voltar=url_for("financeiro.menu_cr"),
+        url_voltar=url_for("financeiro.menu_cr_cartoes"),
         datas=datas, data_sel=data_sel, resumo_areas=resumo_areas,
         hoje=date.today().isoformat())
 
@@ -5886,7 +5953,7 @@ def cartoes_variacoes():
     cur.close(); conn.close()
     return render_template("cartoes_variacoes.html",
         nome_empresa=session.get("nome_empresa", ""),
-        url_voltar=url_for("financeiro.menu_cr"),
+        url_voltar=url_for("financeiro.menu_cr_cartoes"),
         datas=datas, areas=areas, ids_area=ids_area,
         pivot=pivot, filtro_area=filtro_area,
         data_ini=data_ini, data_fin=data_fin, hoje=hoje.isoformat())

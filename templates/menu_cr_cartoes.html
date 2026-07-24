@@ -16,24 +16,25 @@
     display: flex; align-items: center; justify-content: center;
     height: 60px; border-radius: 12px; text-decoration: none;
     font-weight: 600; font-size: 16px; color: #fff;
-    background: #14114f; border: 1px solid #14114f;
+    background: #0f766e; border: 1px solid #0f766e;
     box-shadow: 0 3px 8px rgba(0,0,0,0.15);
     transition: all 0.2s ease; text-align: center; padding: 0 10px;
   }
-  .menu-botoes a:hover { transform: translateY(-2px); background: #0d0a3a; border-color: #0d0a3a; }
-  .menu-botoes a.btn-cartao { background: #0f766e; border-color: #0f766e; }
-  .menu-botoes a.btn-cartao:hover { background: #065f46; border-color: #065f46; }
+  .menu-botoes a:hover { transform: translateY(-2px); background: #065f46; border-color: #065f46; }
 </style>
 
-<div class="pagina-titulo">CR — Contas a Receber</div>
+<div class="pagina-titulo">CR — Cartões</div>
 <div class="empresa"><strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}</div>
 
 <div class="menu-botoes">
-  {% if pode_fiado %}
-  <a href="{{ url_for('financeiro.menu_cr_fiado') }}">Fiado</a>
+  {% if pode_importar %}
+  <a href="{{ url_for('financeiro.cartoes_importar') }}">Importar Cartões</a>
   {% endif %}
-  {% if pode_cartoes %}
-  <a class="btn-cartao" href="{{ url_for('financeiro.menu_cr_cartoes') }}">Cartões</a>
+  {% if pode_consultar %}
+  <a href="{{ url_for('financeiro.cartoes_consultar') }}">Consultar</a>
+  {% endif %}
+  {% if pode_variacoes %}
+  <a href="{{ url_for('financeiro.cartoes_variacoes') }}">Variações</a>
   {% endif %}
 </div>
 
