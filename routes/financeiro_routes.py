@@ -5156,26 +5156,27 @@ def _parse_webportos_xlsx(fileobj, data_ref):
       - 'Nota Duplicata'→ Movimento <= data_ref
       - outros tipos    → ignorados
     """
-    import openpyxl
+    import pandas as pd
     from datetime import timedelta
+    import gc
 
     limite_nota      = data_ref - timedelta(days=1)
     limite_duplicata = data_ref
 
-    def cel(row, idx):
-        return str(row[idx] or "").strip() if len(row) > idx else ""
+    df = pd.read_excel(fileobj, header=None, dtype=str, keep_default_na=False, engine='openpyxl')
+    rows = df.values.tolist()
+    del df
+    gc.collect()
 
-    wb = openpyxl.load_workbook(fileobj, data_only=True)
-    ws = wb.active
+    def cel(row, idx):
+        return str(row[idx] or "").strip() if len(row) > idx and row[idx] is not None else ""
+
     filial_atual  = None
     cliente_atual = None
     filiais   = defaultdict(float)
     clientes  = defaultdict(float)
 
-    for row in ws.iter_rows(values_only=True):
-        if not row or all(v is None for v in row):
-            continue
-
+    for row in rows:
         cell0 = cel(row, 0)
 
         if cell0 == "Filial:":
@@ -5207,14 +5208,14 @@ def _parse_webportos_xlsx(fileobj, data_ref):
         if tipo == "Nota Duplicata" and mov > limite_duplicata:
             continue
 
-        saldo = float(row[15] or 0) if len(row) > 15 else 0
+        try:
+            saldo = float(cel(row, 15) or 0)
+        except (ValueError, TypeError):
+            saldo = 0.0
         filiais[filial_atual] += saldo
         clientes[(filial_atual, cliente_atual)] += saldo
 
-    wb.close()
-    del wb, ws
-
-    import gc
+    del rows
     gc.collect()
 
     clientes_lista = [
