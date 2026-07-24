@@ -347,7 +347,11 @@ def menu_empresa():
             or pode_consulta_emprestimos
         )
 
-        pode_cr_fiado = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CR_MENU")
+        pode_cr_fiado = (
+            usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CR_MENU") or
+            usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CR_FIADO_MENU") or
+            usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CR_CARTOES_MENU")
+        )
 
     linhas, totais = montar_dashboard(cod_empresa)
 
@@ -2224,7 +2228,11 @@ def menu_fluxo_caixa():
         pode_variacoes = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "VARIACOES")
         pode_margem_bruta = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "MARGEM_BRUTA")
         pode_exclusoes = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "EXCLUSOES")
-        pode_cr_fiado = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CR_MENU")
+        pode_cr_fiado = (
+            usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CR_MENU") or
+            usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CR_FIADO_MENU") or
+            usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CR_CARTOES_MENU")
+        )
 
     return render_template(
         "menu_fluxo_caixa.html",
