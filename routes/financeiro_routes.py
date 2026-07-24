@@ -5162,41 +5162,41 @@ def _parse_webportos_xlsx(fileobj, data_ref):
     limite_nota      = data_ref - timedelta(days=1)
     limite_duplicata = data_ref
 
+    def cel(row, idx):
+        return str(row[idx] or "").strip() if len(row) > idx else ""
+
     wb = openpyxl.load_workbook(fileobj, data_only=True)
     ws = wb.active
     filial_atual  = None
     cliente_atual = None
     filiais   = defaultdict(float)
-    clientes  = defaultdict(float)  # {(filial, cliente): saldo}
+    clientes  = defaultdict(float)
 
     for row in ws.iter_rows(values_only=True):
-        if not row:
+        if not row or all(v is None for v in row):
             continue
 
-        cell0 = str(row[0] or "").strip()
+        cell0 = cel(row, 0)
 
         if cell0 == "Filial:":
-            nova_filial = str(row[1] or "").strip().upper() if len(row) > 1 else ""
+            nova_filial = cel(row, 1).upper()
             if nova_filial != filial_atual:
                 cliente_atual = None
             filial_atual = nova_filial
             continue
 
         if cell0 == "Cliente:":
-            cliente_atual = str(row[2] or "").strip() if len(row) > 2 else ""
+            cliente_atual = cel(row, 2)
             continue
 
         if not filial_atual or not cliente_atual:
             continue
 
-        if len(row) < 4:
-            continue
-
-        tipo = str(row[2] or "").strip()
+        tipo = cel(row, 2)
         if tipo not in ("Nota", "Nota Duplicata"):
             continue
 
-        mov_raw = str(row[3] or "").strip()
+        mov_raw = cel(row, 3)
         try:
             mov = datetime.strptime(mov_raw, "%d/%m/%Y").date()
         except ValueError:
@@ -5212,6 +5212,10 @@ def _parse_webportos_xlsx(fileobj, data_ref):
         clientes[(filial_atual, cliente_atual)] += saldo
 
     wb.close()
+    del wb, ws
+
+    import gc
+    gc.collect()
 
     clientes_lista = [
         (fil, cli, sal)
