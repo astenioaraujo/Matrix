@@ -5156,67 +5156,123 @@ def _parse_webportos_xlsx(fileobj, data_ref):
       - 'Nota Duplicata'→ Movimento <= data_ref
       - outros tipos    → ignorados
     """
-    import pandas as pd
+    import zipfile
+    import xml.etree.ElementTree as ET
     from datetime import timedelta
-    import gc
 
     limite_nota      = data_ref - timedelta(days=1)
     limite_duplicata = data_ref
 
-    df = pd.read_excel(fileobj, header=None, dtype=str, keep_default_na=False, engine='openpyxl')
-    rows = df.values.tolist()
-    del df
-    gc.collect()
+    NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 
-    def cel(row, idx):
-        return str(row[idx] or "").strip() if len(row) > idx and row[idx] is not None else ""
+    def col_idx(ref):
+        # "A1" → 0, "B1" → 1, "P1" → 15
+        letters = ''.join(c for c in ref if c.isalpha())
+        n = 0
+        for c in letters.upper():
+            n = n * 26 + (ord(c) - 64)
+        return n - 1
 
     filial_atual  = None
     cliente_atual = None
     filiais   = defaultdict(float)
     clientes  = defaultdict(float)
 
-    for row in rows:
-        cell0 = cel(row, 0)
+    with zipfile.ZipFile(fileobj) as zf:
+        # 1. Carrega tabela de strings compartilhadas
+        shared = []
+        if 'xl/sharedStrings.xml' in zf.namelist():
+            with zf.open('xl/sharedStrings.xml') as f:
+                for _, elem in ET.iterparse(f, events=('end',)):
+                    if elem.tag == f'{{{NS}}}si':
+                        text = ''.join(t.text or '' for t in elem.iter(f'{{{NS}}}t'))
+                        shared.append(text)
+                        elem.clear()
 
-        if cell0 == "Filial:":
-            nova_filial = cel(row, 1).upper()
-            if nova_filial != filial_atual:
-                cliente_atual = None
-            filial_atual = nova_filial
-            continue
-
-        if cell0 == "Cliente:":
-            cliente_atual = cel(row, 2)
-            continue
-
-        if not filial_atual or not cliente_atual:
-            continue
-
-        tipo = cel(row, 2)
-        if tipo not in ("Nota", "Nota Duplicata"):
-            continue
-
-        mov_raw = cel(row, 3)
+        # 2. Determina qual sheet é a ativa via workbook.xml
+        ws_path = 'xl/worksheets/sheet1.xml'
         try:
-            mov = datetime.strptime(mov_raw, "%d/%m/%Y").date()
-        except ValueError:
-            continue
+            with zf.open('xl/workbook.xml') as f:
+                tree = ET.parse(f)
+                sheets = tree.findall(f'.//{{{NS}}}sheet')
+                if sheets:
+                    rid = sheets[0].get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id', 'rId1')
+            with zf.open('xl/_rels/workbook.xml.rels') as f:
+                tree = ET.parse(f)
+                for rel in tree.getroot():
+                    if rel.get('Id') == rid:
+                        target = rel.get('Target', 'worksheets/sheet1.xml')
+                        ws_path = f"xl/{target.lstrip('/')}"
+                        break
+        except Exception:
+            pass
 
-        if tipo == "Nota" and mov > limite_nota:
-            continue
-        if tipo == "Nota Duplicata" and mov > limite_duplicata:
-            continue
+        # 3. Faz streaming da planilha linha a linha
+        with zf.open(ws_path) as f:
+            row_data = {}
+            cur_col  = 0
+            cur_type = ''
+            cur_val  = None
 
-        try:
-            saldo = float(cel(row, 15) or 0)
-        except (ValueError, TypeError):
-            saldo = 0.0
-        filiais[filial_atual] += saldo
-        clientes[(filial_atual, cliente_atual)] += saldo
+            for event, elem in ET.iterparse(f, events=('start', 'end')):
+                tag = elem.tag
 
-    del rows
-    gc.collect()
+                if event == 'start':
+                    if tag == f'{{{NS}}}row':
+                        row_data = {}
+                    elif tag == f'{{{NS}}}c':
+                        cur_col  = col_idx(elem.get('r', 'A1'))
+                        cur_type = elem.get('t', '')
+                        cur_val  = None
+
+                elif event == 'end':
+                    if tag == f'{{{NS}}}v':
+                        raw = elem.text or ''
+                        if cur_type == 's':
+                            try:
+                                cur_val = shared[int(raw)]
+                            except (IndexError, ValueError):
+                                cur_val = raw
+                        else:
+                            cur_val = raw
+                        row_data[cur_col] = cur_val
+
+                    elif tag == f'{{{NS}}}row':
+                        def g(idx):
+                            return str(row_data.get(idx) or '').strip()
+
+                        c0 = g(0)
+
+                        if c0 == 'Filial:':
+                            nova = g(1).upper()
+                            if nova != filial_atual:
+                                cliente_atual = None
+                            filial_atual = nova
+
+                        elif c0 == 'Cliente:':
+                            cliente_atual = g(2)
+
+                        elif filial_atual and cliente_atual:
+                            tipo = g(2)
+                            if tipo in ('Nota', 'Nota Duplicata'):
+                                try:
+                                    mov = datetime.strptime(g(3), '%d/%m/%Y').date()
+                                except ValueError:
+                                    mov = None
+                                if mov:
+                                    if tipo == 'Nota' and mov > limite_nota:
+                                        pass
+                                    elif tipo == 'Nota Duplicata' and mov > limite_duplicata:
+                                        pass
+                                    else:
+                                        try:
+                                            saldo = float(g(15) or 0)
+                                        except ValueError:
+                                            saldo = 0.0
+                                        filiais[filial_atual] += saldo
+                                        clientes[(filial_atual, cliente_atual)] += saldo
+
+                        elem.clear()
 
     clientes_lista = [
         (fil, cli, sal)
