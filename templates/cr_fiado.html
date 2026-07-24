@@ -48,6 +48,10 @@
   .area-tbl tr:hover td { background:#f8fafc; }
   .area-tbl .tfoot td { background:#f0fdf4; font-weight:800; color:#15803d; border-top:2px solid #86efac; }
   .area-tbl .tfoot td.r { color:#15803d; font-size:15px; }
+
+  .total-geral-box { margin-top:28px; display:flex; flex-direction:column; gap:12px; }
+  .tg-label { font-size:22px; font-weight:700; color:#1e293b; text-transform:uppercase; letter-spacing:.06em; }
+  .tg-valor { color:#1e293b; font-size:32px; font-weight:900; }
 </style>
 
 <div class="card">
@@ -71,7 +75,7 @@
     Última importação:
     <strong>{{ ultima.data_referencia.strftime('%d/%m/%Y') }}</strong>
     &nbsp;·&nbsp; Total:
-    <strong>R$ {{ '{:,.2f}'.format(ultima.total_geral).replace(',','X').replace('.',',').replace('X','.') }}</strong>
+    <strong>{{ '{:,.2f}'.format(ultima.total_geral).replace(',','X').replace('.',',').replace('X','.') }}</strong>
     &nbsp;·&nbsp; {{ ultima.nome_arquivo }}
   </div>
   {% endif %}
@@ -82,7 +86,7 @@
     <div class="area-card">
       <div class="area-header">
         <div class="area-nome">{{ area.nome_area }}</div>
-        <div class="area-total">R$ {{ '{:,.2f}'.format(area.total).replace(',','X').replace('.',',').replace('X','.') }}</div>
+        <div class="area-total">{{ '{:,.2f}'.format(area.total).replace(',','X').replace('.',',').replace('X','.') }}</div>
       </div>
       <table class="area-tbl">
         <thead>
@@ -95,19 +99,25 @@
           {% for f in area.filiais %}
           <tr>
             <td>{{ f.nome_filial or f.nome_filial_import }}</td>
-            <td class="r">R$ {{ '{:,.2f}'.format(f.saldo).replace(',','X').replace('.',',').replace('X','.') }}</td>
+            <td class="r">{{ '{:,.2f}'.format(f.saldo).replace(',','X').replace('.',',').replace('X','.') }}</td>
           </tr>
           {% endfor %}
         </tbody>
         <tfoot>
           <tr class="tfoot">
             <td>Total</td>
-            <td class="r">R$ {{ '{:,.2f}'.format(area.total).replace(',','X').replace('.',',').replace('X','.') }}</td>
+            <td class="r">{{ '{:,.2f}'.format(area.total).replace(',','X').replace('.',',').replace('X','.') }}</td>
           </tr>
         </tfoot>
       </table>
     </div>
     {% endfor %}
+  </div>
+  {% set tg = namespace(v=0) %}
+  {% for area in resumo_areas %}{% set tg.v = tg.v + area.total %}{% endfor %}
+  <div class="total-geral-box">
+    <span class="tg-label">Total Geral</span>
+    <span class="tg-valor">{{ '{:,.2f}'.format(tg.v).replace(',','X').replace('.',',').replace('X','.') }}</span>
   </div>
   {% elif ultima %}
   <p style="color:#64748b; font-size:14px;">Nenhuma filial encontrada para esta importação.</p>

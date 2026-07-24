@@ -205,7 +205,7 @@ function getColorExcel(ratio) {
       if (valores[i] === null) return;
       let ratio = (valores[i] - min) / ((max - min) || 1);
       ratio = Math.round(ratio * 50) / 50;
-      td.style.background = getColorExcel(ratio);
+      td.style.background = getColorExcel(1 - ratio);
     });
   });
 })();

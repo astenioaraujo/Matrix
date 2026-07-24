@@ -5170,20 +5170,26 @@ def _parse_webportos_xlsx(fileobj, data_ref):
     clientes  = defaultdict(float)  # {(filial, cliente): saldo}
 
     for row in ws.iter_rows(values_only=True):
+        if not row:
+            continue
+
         cell0 = str(row[0] or "").strip()
 
         if cell0 == "Filial:":
-            nova_filial = str(row[1] or "").strip().upper()
+            nova_filial = str(row[1] or "").strip().upper() if len(row) > 1 else ""
             if nova_filial != filial_atual:
-                cliente_atual = None   # filial nova: reseta cliente
+                cliente_atual = None
             filial_atual = nova_filial
             continue
 
         if cell0 == "Cliente:":
-            cliente_atual = str(row[2] or "").strip()
+            cliente_atual = str(row[2] or "").strip() if len(row) > 2 else ""
             continue
 
         if not filial_atual or not cliente_atual:
+            continue
+
+        if len(row) < 4:
             continue
 
         tipo = str(row[2] or "").strip()
@@ -5204,6 +5210,8 @@ def _parse_webportos_xlsx(fileobj, data_ref):
         saldo = float(row[15] or 0) if len(row) > 15 else 0
         filiais[filial_atual] += saldo
         clientes[(filial_atual, cliente_atual)] += saldo
+
+    wb.close()
 
     clientes_lista = [
         (fil, cli, sal)
@@ -5244,6 +5252,7 @@ def cr_fiado_impl(url_voltar):
             try:
                 conteudo = arquivo.read()
                 filiais_saldo, clientes_lista = _parse_webportos_xlsx(io.BytesIO(conteudo), data_ref)
+                del conteudo
                 total_geral = sum(filiais_saldo.values())
 
                 # Upsert importação (substitui se mesma data)
@@ -5257,18 +5266,16 @@ def cr_fiado_impl(url_voltar):
                 id_imp = cur.fetchone()["id"]
 
                 cur.execute("DELETE FROM fiado_filiais WHERE id_importacao=%s", (id_imp,))
-                for nome_fil, saldo in filiais_saldo.items():
-                    cur.execute("""
-                        INSERT INTO fiado_filiais (id_importacao, cod_empresa, nome_filial_import, saldo)
-                        VALUES (%s, %s, %s, %s)
-                    """, (id_imp, cod_empresa, nome_fil, saldo))
+                cur.executemany(
+                    "INSERT INTO fiado_filiais (id_importacao, cod_empresa, nome_filial_import, saldo) VALUES (%s,%s,%s,%s)",
+                    [(id_imp, cod_empresa, nome_fil, saldo) for nome_fil, saldo in filiais_saldo.items()]
+                )
 
                 cur.execute("DELETE FROM fiado_clientes WHERE id_importacao=%s", (id_imp,))
-                for nome_fil, cli, sal in clientes_lista:
-                    cur.execute("""
-                        INSERT INTO fiado_clientes (id_importacao, cod_empresa, nome_filial_import, cliente, saldo)
-                        VALUES (%s, %s, %s, %s, %s)
-                    """, (id_imp, cod_empresa, nome_fil, cli, sal))
+                cur.executemany(
+                    "INSERT INTO fiado_clientes (id_importacao, cod_empresa, nome_filial_import, cliente, saldo) VALUES (%s,%s,%s,%s,%s)",
+                    [(id_imp, cod_empresa, nome_fil, cli, sal) for nome_fil, cli, sal in clientes_lista]
+                )
 
                 conn.commit()
                 sucesso = f"Importação de {data_ref.strftime('%d/%m/%Y')} salva — {len(filiais_saldo)} filiais, {len(clientes_lista)} clientes, total R$ {total_geral:,.2f}."
