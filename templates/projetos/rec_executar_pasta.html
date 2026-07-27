@@ -79,11 +79,28 @@
 
   td.td-info { padding:6px 10px; font-size:11px; color:#6b7280; white-space:normal; min-width:140px; }
   .badge-status-ok  { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:800; background:#d1fae5; color:#065f46; }
+  .badge-cancelada  { display:inline-block; padding:2px 9px; border-radius:999px; font-size:11px; font-weight:800; background:#fee2e2; color:#991b1b; }
 
   .vazio {
     text-align:center; padding:40px 20px; color:#9ca3af;
     font-size:15px; background:#f9fafb; border-radius:10px; margin-top:8px;
   }
+
+  /* grid de finalizadas */
+  .sec-finalizadas { margin-top:36px; }
+  .sec-finalizadas h3 { font-size:16px; font-weight:800; color:#374151; margin-bottom:10px; }
+  table.exec-fin { border-collapse:collapse; width:100%; font-size:14px; }
+  table.exec-fin th, table.exec-fin td { border:1px solid #d1d5db; padding:0; white-space:nowrap; }
+  table.exec-fin thead th { background:#15803d; color:#fff; font-weight:700; padding:9px 12px; text-align:left; }
+  table.exec-fin thead th.th-center { text-align:center; }
+  table.exec-fin tbody tr { background:#fff; }
+  table.exec-fin tbody tr:nth-child(even) { background:#f9fafb; }
+  table.exec-fin tbody tr.cancelada td { background:#fef2f2 !important; }
+  table.exec-fin td.td-num  { width:40px; text-align:center; padding:8px 6px; color:#9ca3af; font-size:12px; font-weight:700; }
+  table.exec-fin td.td-desc { padding:8px 12px; min-width:280px; white-space:normal; color:#6b7280; text-decoration:line-through; }
+  table.exec-fin td.td-desc.cancelada { text-decoration:none; color:#991b1b; }
+  table.exec-fin td.td-info { padding:6px 10px; font-size:11px; color:#6b7280; white-space:normal; min-width:140px; }
+  table.exec-fin td.td-etapas-exec { padding:6px 10px; white-space:nowrap; }
 
   .badge-toast { display:none; font-size:13px; font-weight:700; position:fixed; bottom:24px; right:28px; border-radius:10px; padding:12px 20px; box-shadow:0 4px 16px rgba(0,0,0,.18); z-index:9999; }
   .badge-toast.ok  { background:#fff; color:#16a34a; border:1.5px solid #16a34a; }
@@ -141,18 +158,11 @@
     {% else %}
       <button class="btn-recarregar" onclick="carregar('recarregar')">↺ Recarregar Padrões</button>
       <span class="info-carga">{{ concluidas }}/{{ total }} concluídas</span>
-      <div class="toggle-wrap">
-        <span id="toggle-label">Todas</span>
-        <label class="toggle-switch" title="Mostrar só em andamento">
-          <input type="checkbox" id="toggle-andamento" onchange="filtrarAndamento(this.checked)">
-          <span class="toggle-slider"></span>
-        </label>
-        <span>Em andamento</span>
-      </div>
     {% endif %}
   </div>
 
-  {% if execucoes %}
+  <!-- GRID ATIVO -->
+  {% if execucoes_ativas %}
   <div class="tbl-wrap">
     <table class="exec">
       <thead>
@@ -166,8 +176,8 @@
         </tr>
       </thead>
       <tbody id="tbody-exec">
-        {% for e in execucoes %}
-        <tr data-id="{{ e.id }}" class="{% if e.status == 'concluida' %}concluida{% endif %}">
+        {% for e in execucoes_ativas %}
+        <tr data-id="{{ e.id }}">
           <td class="td-handle">⠿</td>
           <td class="td-num">{{ loop.index }}</td>
           <td class="td-desc">{{ e.descricao }}</td>
@@ -188,29 +198,83 @@
           <td class="td-status">
             <select class="sel-status s-{{ e.status or 'vazio' }}"
                     onchange="alterarStatus({{ e.id }}, this)">
-              <option value=""        {% if not e.status %}selected{% endif %}>—</option>
-              <option value="execucao"{% if e.status == 'execucao' %}selected{% endif %}>▶ Em execução</option>
-              <option value="pausa"   {% if e.status == 'pausa' %}selected{% endif %}>⏸ Em pausa</option>
-              <option value="concluida"  {% if e.status == 'concluida'  %}selected{% endif %}>✔ Concluída</option>
-              <option value="cancelado" {% if e.status == 'cancelado' %}selected{% endif %}>✕ Cancelada</option>
+              <option value=""         {% if not e.status %}selected{% endif %}>—</option>
+              <option value="execucao" {% if e.status == 'execucao' %}selected{% endif %}>▶ Em execução</option>
+              <option value="pausa"    {% if e.status == 'pausa' %}selected{% endif %}>⏸ Em pausa</option>
+              <option value="concluida"{% if e.status == 'concluida' %}selected{% endif %}>✔ Concluída</option>
+              <option value="cancelado"{% if e.status == 'cancelado' %}selected{% endif %}>✕ Cancelada</option>
             </select>
           </td>
-          <td class="td-info">
-            {% if e.status == 'concluida' %}
-              <span class="badge-status-ok">✔ Concluída</span><br>
-              {% if e.data_conclusao %}{{ e.data_conclusao.strftime('%d/%m/%Y %H:%M') }}<br>{% endif %}
-              {% if e.nome_usuario_conclusao %}{{ e.nome_usuario_conclusao }}{% endif %}
-            {% endif %}
-          </td>
+          <td class="td-info"></td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  {% else %}
+  {% elif execucoes|length == 0 %}
   <div class="vazio">
     Nenhuma recorrência carregada para {{ nomes_meses[mes_sel-1] }}/{{ ano_sel }}.<br>
     Clique em <strong>Carregar Recorrências Padrão</strong> para começar.
+  </div>
+  {% else %}
+  <div class="vazio">Todas as recorrências foram concluídas ou canceladas.</div>
+  {% endif %}
+
+  <!-- GRID FINALIZADAS -->
+  {% if execucoes_finalizadas %}
+  <div class="sec-finalizadas">
+    <h3>Concluídas e Canceladas — {{ execucoes_finalizadas|length }}</h3>
+    <div class="tbl-wrap">
+      <table class="exec-fin">
+        <thead>
+          <tr>
+            <th class="th-center" style="width:40px;">#</th>
+            <th>Descrição</th>
+            <th>Etapas</th>
+            <th class="th-center" style="width:130px;">Status</th>
+            <th>Conclusão</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in execucoes_finalizadas %}
+          <tr class="{{ 'cancelada' if e.status == 'cancelado' else '' }}">
+            <td class="td-num">{{ loop.index }}</td>
+            <td class="td-desc {{ 'cancelada' if e.status == 'cancelado' else '' }}">{{ e.descricao }}</td>
+            <td class="td-etapas-exec">
+              {% if e.qtd_etapas and e.qtd_etapas > 0 %}
+                {% for i in range(e.qtd_etapas) %}
+                  {% set label = e.etapas_lista[i] if i < e.etapas_lista|length else (i+1)|string %}
+                  {% set checked = e.concluidas_lista[i] if i < e.concluidas_lista|length else false %}
+                  <span class="etapa-item">
+                    <input type="checkbox" disabled {% if checked %}checked{% endif %}>
+                    <span class="etapa-label" title="{{ label }}">{{ label }}</span>
+                  </span>
+                {% endfor %}
+              {% endif %}
+            </td>
+            <td class="td-status">
+              <select class="sel-status s-{{ e.status }}" onchange="alterarStatus({{ e.id }}, this)">
+                <option value=""         {% if not e.status %}selected{% endif %}>—</option>
+                <option value="execucao" {% if e.status == 'execucao' %}selected{% endif %}>▶ Em execução</option>
+                <option value="pausa"    {% if e.status == 'pausa' %}selected{% endif %}>⏸ Em pausa</option>
+                <option value="concluida"{% if e.status == 'concluida' %}selected{% endif %}>✔ Concluída</option>
+                <option value="cancelado"{% if e.status == 'cancelado' %}selected{% endif %}>✕ Cancelada</option>
+              </select>
+            </td>
+            <td class="td-info">
+              {% if e.status == 'concluida' %}
+                <span class="badge-status-ok">✔ Concluída</span><br>
+                {% if e.data_conclusao %}{{ e.data_conclusao.strftime('%d/%m/%Y %H:%M') }}<br>{% endif %}
+                {% if e.nome_usuario_conclusao %}{{ e.nome_usuario_conclusao }}{% endif %}
+              {% elif e.status == 'cancelado' %}
+                <span class="badge-cancelada">✕ Cancelada</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
   {% endif %}
 </div>
@@ -287,6 +351,8 @@
 
   const CLASSES = { '': 's-vazio', 'execucao': 's-execucao', 'pausa': 's-pausa', 'concluida': 's-concluida', 'cancelado': 's-cancelado' };
 
+  const FINALIZADOS = new Set(['concluida', 'cancelado']);
+
   function alterarStatus(id, sel) {
     const novo = sel.value;
     const fd = new FormData();
@@ -295,16 +361,13 @@
     fd.append('status', novo);
     post(fd).then(j => {
       if (!j || !j.ok) return;
-      sel.className = 'sel-status ' + (CLASSES[novo] || 's-vazio');
-      const tr = sel.closest('tr');
-      const tdInfo = tr.querySelector('.td-info');
-      if (novo === 'concluida') {
-        tr.classList.add('concluida');
-        tdInfo.innerHTML = '<span class="badge-status-ok">✔ Concluída</span><br>Agora';
-      } else {
-        tr.classList.remove('concluida');
-        tdInfo.innerHTML = '';
+      // se mudou para finalizado ou saiu de finalizado → recarrega para mover entre grids
+      if (FINALIZADOS.has(novo) || FINALIZADOS.has(sel.dataset.prev || '')) {
+        setTimeout(() => window.location.reload(), 600);
+        return;
       }
+      sel.className = 'sel-status ' + (CLASSES[novo] || 's-vazio');
+      sel.dataset.prev = novo;
     });
   }
 

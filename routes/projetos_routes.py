@@ -513,6 +513,10 @@ def rec_executar_pasta(id_pasta):
                 e["etapas_lista"]     = []
                 e["concluidas_lista"] = []
 
+        STATUS_FINALIZADOS = {"concluida", "cancelado"}
+        execucoes_ativas      = [e for e in execucoes if (e["status"] or "") not in STATUS_FINALIZADOS]
+        execucoes_finalizadas = [e for e in execucoes if (e["status"] or "") in STATUS_FINALIZADOS]
+
         pastas = _pastas_rec(cur, cod_empresa)
 
         # anos disponíveis (atual ± 2)
@@ -530,6 +534,8 @@ def rec_executar_pasta(id_pasta):
         pasta=pasta,
         pastas=pastas,
         execucoes=execucoes,
+        execucoes_ativas=execucoes_ativas,
+        execucoes_finalizadas=execucoes_finalizadas,
         ano_sel=ano_sel,
         mes_sel=mes_sel,
         anos_disp=anos_disp,

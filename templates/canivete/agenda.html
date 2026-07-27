@@ -1,0 +1,437 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+* { box-sizing: border-box; }
+
+.ag-wrap { max-width: 900px; margin: 0 auto; padding: 0 8px 60px; }
+
+/* cabeçalho */
+.ag-header {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 16px; flex-wrap: wrap;
+}
+.ag-titulo { font-size: 22px; font-weight: 800; color: #14114f; flex: 1; }
+.ag-ref-pick { height: 34px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 10px; font-size: 13px; }
+
+/* nome do feriado */
+.ag-feriado-tag {
+  font-size: 8px; font-weight: 700; color: #dc2626;
+  text-transform: uppercase; letter-spacing: .04em;
+  position: absolute; bottom: 3px; left: 3px; z-index: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 90%;
+}
+
+/* rótulo de mês dentro da grade */
+.ag-mes-tag {
+  font-size: 9px; font-weight: 800; color: #dc2626;
+  text-transform: uppercase; letter-spacing: .06em;
+  background: #f5f0c8; border-radius: 4px;
+  padding: 1px 5px;
+  position: absolute; top: 3px; left: 3px; z-index: 1;
+}
+.ag-btn {
+  background: #14114f; color: #fff; border: none; border-radius: 8px;
+  font-size: 16px; font-weight: 700; cursor: pointer; padding: 6px 14px; line-height: 1;
+}
+.ag-btn:hover { background: #0d0a3a; }
+.ag-btn.hoje-btn { background: #475569; font-size: 12px; }
+.ag-btn.hoje-btn:hover { background: #334155; }
+
+/* grade */
+.ag-grade {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+/* cabeçalho de dia da semana */
+.ag-grade thead th {
+  font-size: 12px; font-weight: 800; color: #94a3b8;
+  text-align: center; padding: 4px 0 6px;
+  text-transform: uppercase; letter-spacing: .06em;
+  border-bottom: 2px solid #e2e8f0;
+}
+.ag-grade thead th.fim-semana { color: #cbd5e1; }
+
+/* célula de dia */
+.ag-cell {
+  vertical-align: top;
+  border-left: 2px solid #c8c49a;
+  border-right: 2px solid #c8c49a;
+  border-top: 3px solid #b8b47e;
+  border-bottom: 3px solid #b8b47e;
+  padding: 0;
+  background: #e8e29a;
+  position: relative;
+}
+.ag-cell.vazio { background: #eee9b8; }
+.ag-cell.primeiro-dia { background: #d4cc72; }
+.ag-cell.feriado { background: #fee2e2; }
+.ag-cell.feriado .ag-num { color: #dc2626; }
+/* linha grossa entre sexta (col 5) e sábado (col 6) */
+.ag-grade tbody td:nth-child(5) { border-right: 4px solid #94a3b8; }
+/* linha separadora de mês */
+tr.sep-mes-spacer td { height: 20px; background: #f4f4f4; border: none; padding: 0; }
+.ag-cell.hoje-cell { background: #fffde7; }
+.ag-cell.hoje-cell .ag-num { color: #1d4ed8; font-size: 14px; }
+
+/* número do dia */
+.ag-num {
+  display: flex; align-items: center; justify-content: flex-end;
+  width: 100%;
+  font-size: 12px; font-weight: 700; color: #dc2626;
+  padding: 4px 6px 0 0;
+}
+.ag-cell.fim-semana-cell .ag-num { color: #94a3b8; }
+
+/* bloco de turno dentro da célula */
+.ag-turno {
+  font-size: 11px;
+  padding: 2px 4px 4px;
+  position: relative;
+  height: 56px;
+  overflow: hidden;
+}
+.ag-turno + .ag-turno {
+  border-top: 1px solid #94a3b8;
+}
+.ag-turno.concluido { background: #e2e8f0; opacity: .7; }
+.ag-cell.dia-concluido { background: #cbd5e1 !important; }
+.ag-cell.dia-concluido .ag-num { color: #64748b; }
+
+.ag-turno-label {
+  font-size: 9px; font-weight: 800; color: #94a3b8;
+  text-transform: uppercase; letter-spacing: .05em;
+  display: flex; align-items: center; gap: 2px;
+}
+.ag-turno-label .lbl-ico { font-size: 9px; }
+
+/* textarea inline */
+.ag-inp {
+  width: 100%; border: none; outline: none; resize: none;
+  font-size: 13px; line-height: 1.4; color: #1e293b;
+  background: transparent; font-family: inherit; font-weight: 700;
+  height: 40px; text-align: center;
+  padding-top: 11px;
+}
+
+/* ações discretas */
+.ag-acoes {
+  display: flex; gap: 2px; position: absolute;
+  top: 2px; right: 2px; opacity: 0;
+  transition: opacity .15s;
+}
+.ag-turno:hover .ag-acoes { opacity: 1; }
+.ag-ac-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: 11px; color: #94a3b8; padding: 1px 2px; line-height: 1;
+}
+.ag-ac-btn:hover { color: #14114f; }
+.ag-ac-btn.on { color: #16a34a; }
+
+/* botão noturno */
+.ag-noturno-add {
+  display: block; width: 100%; text-align: center;
+  font-size: 10px; color: #cbd5e1; background: none; border: none;
+  cursor: pointer; padding: 2px 0 3px;
+}
+.ag-noturno-add:hover { color: #64748b; }
+
+/* slots */
+.ag-slot-linha {
+  display: flex; gap: 3px; align-items: center;
+  font-size: 10px; color: #374151; margin-bottom: 1px;
+}
+.ag-slot-hora { color: #6366f1; font-weight: 700; min-width: 36px; }
+
+/* MODAL */
+.ag-modal-bg {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45);
+  z-index: 1000; align-items: center; justify-content: center;
+}
+.ag-modal-bg.open { display: flex; }
+.ag-modal {
+  background: #fff; border-radius: 16px; padding: 20px;
+  width: min(400px, 96vw); max-height: 80vh; overflow-y: auto;
+  box-shadow: 0 8px 40px rgba(0,0,0,.25);
+}
+.ag-modal h3 { font-size: 15px; font-weight: 800; margin: 0 0 14px; color: #14114f; }
+.ag-slot-row { display: flex; gap: 6px; align-items: center; margin-bottom: 5px; }
+.ag-slot-inp-hora {
+  width: 58px; height: 30px; border: 1px solid #cbd5e1; border-radius: 6px;
+  font-size: 12px; text-align: center; padding: 0 4px;
+}
+.ag-slot-inp-tar {
+  flex: 1; height: 30px; border: 1px solid #cbd5e1; border-radius: 6px;
+  font-size: 12px; padding: 0 8px;
+}
+.ag-slot-del { background: none; border: none; cursor: pointer; color: #f87171; font-size: 16px; }
+.ag-slot-add-btn { font-size: 12px; color: #6366f1; background: none; border: none; cursor: pointer; font-weight: 700; }
+.ag-modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+.ag-save { background: #14114f; color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.ag-cancel { background: #e2e8f0; color: #374151; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+
+@media (max-width: 600px) {
+  .ag-num { width: 20px; height: 20px; font-size: 10px; }
+  .ag-inp { font-size: 10px; }
+  .ag-turno { min-height: 22px; }
+}
+</style>
+
+<div class="ag-wrap">
+
+  <!-- CABEÇALHO -->
+  <div class="ag-header">
+    <div class="ag-titulo">📅 Agenda</div>
+    <input type="date" class="ag-ref-pick" value="{{ ref }}" onchange="ir(this.value)">
+    <button class="ag-btn hoje-btn" onclick="ir('{{ hoje_ref }}')">Hoje</button>
+  </div>
+
+  <!-- GRADE MENSAL -->
+  <table class="ag-grade">
+    <thead>
+      <tr>
+        {% for d in dias_pt %}
+        <th class="{{ 'fim-semana' if loop.index0 >= 5 else '' }}">{{ d }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+    {% for semana in semanas %}
+      {% set nova_semana_tem_mes_novo = semana | selectattr('day', 'equalto', 1) | list | length > 0 %}
+      {% if nova_semana_tem_mes_novo and not loop.first %}
+      <tr class="sep-mes-spacer"><td colspan="7"></td></tr>
+      {% endif %}
+      <tr>
+      {% for dia in semana %}
+        {% if dia is none %}
+        <td class="ag-cell vazio"></td>
+        {% else %}
+        {% set d = dia.isoformat() %}
+        {% set e_hoje = (d == hoje) %}
+        {% set fim_sem = (loop.index0 >= 5) %}
+        {% set manha   = blocos.get((d,'manha'),   {'conteudo':'','quebrado':False,'slots':[],'concluido':False}) %}
+        {% set tarde   = blocos.get((d,'tarde'),   {'conteudo':'','quebrado':False,'slots':[],'concluido':False}) %}
+        {% set noturno = blocos.get((d,'noturno'), None) %}
+
+        {% set ambos_conc = manha.concluido and tarde.concluido %}
+        {% set nome_feriado = feriados.get(d, '') %}
+        {% set e_feriado = (nome_feriado != '') and not e_hoje and not ambos_conc %}
+        {% set e_primeiro = (dia.day == 1) and not e_hoje and not ambos_conc and not e_feriado %}
+        <td class="ag-cell {{ 'hoje-cell' if e_hoje else '' }} {{ 'fim-semana-cell' if fim_sem else '' }} {{ 'dia-concluido' if ambos_conc else '' }} {{ 'feriado' if e_feriado else '' }} {{ 'primeiro-dia' if e_primeiro else '' }}"
+            id="dia-{{ d }}">
+
+          {% if dia.day == 1 %}
+          <div class="ag-mes-tag">{{ meses_pt[dia.month-1] }} {{ dia.year }}</div>
+          {% endif %}
+          {% if nome_feriado %}
+          <div class="ag-feriado-tag">{{ nome_feriado }}</div>
+          {% endif %}
+          <span class="ag-num">{{ dia.day }}</span>
+
+          <!-- MANHÃ -->
+          <div class="ag-turno {{ 'concluido' if manha.concluido else '' }}"
+               id="turno-{{ d }}-manha">
+            <div class="ag-turno-label">
+              <span class="ag-acoes">
+                <button class="ag-ac-btn" title="Horários" onclick="abrirModal('{{ d }}','manha')">⚙</button>
+                <button class="ag-ac-btn {{ 'on' if manha.concluido else '' }}"
+                  id="chk-{{ d }}-manha"
+                  onclick="toggleConc('{{ d }}','manha',this)">✔</button>
+              </span>
+            </div>
+            {% if manha.quebrado and manha.slots %}
+              {% for s in manha.slots %}
+              <div class="ag-slot-linha">
+                <span class="ag-slot-hora">{{ s.hora }}</span>
+                <span>{{ s.tarefa }}</span>
+              </div>
+              {% endfor %}
+            {% else %}
+            <textarea class="ag-inp" id="txt-{{ d }}-manha"
+              rows="2"
+              onblur="salvar('{{ d }}','manha',this.value)">{{ manha.conteudo }}</textarea>
+            {% endif %}
+          </div>
+
+          <!-- TARDE -->
+          <div class="ag-turno {{ 'concluido' if tarde.concluido else '' }}"
+               id="turno-{{ d }}-tarde">
+            <div class="ag-turno-label">
+              <span class="ag-acoes">
+                <button class="ag-ac-btn" title="Horários" onclick="abrirModal('{{ d }}','tarde')">⚙</button>
+                <button class="ag-ac-btn {{ 'on' if tarde.concluido else '' }}"
+                  id="chk-{{ d }}-tarde"
+                  onclick="toggleConc('{{ d }}','tarde',this)">✔</button>
+              </span>
+            </div>
+            {% if tarde.quebrado and tarde.slots %}
+              {% for s in tarde.slots %}
+              <div class="ag-slot-linha">
+                <span class="ag-slot-hora">{{ s.hora }}</span>
+                <span>{{ s.tarefa }}</span>
+              </div>
+              {% endfor %}
+            {% else %}
+            <textarea class="ag-inp" id="txt-{{ d }}-tarde"
+              rows="2"
+              onblur="salvar('{{ d }}','tarde',this.value)">{{ tarde.conteudo }}</textarea>
+            {% endif %}
+          </div>
+
+          <!-- NOTURNO -->
+          {% if noturno %}
+          <div class="ag-turno {{ 'concluido' if noturno.concluido else '' }}"
+               id="turno-{{ d }}-noturno">
+            <div class="ag-turno-label">
+              <span class="lbl-ico">🌙</span><span>N</span>
+              <span class="ag-acoes">
+                <button class="ag-ac-btn" onclick="abrirModal('{{ d }}','noturno')">⚙</button>
+                <button class="ag-ac-btn {{ 'on' if noturno.concluido else '' }}"
+                  id="chk-{{ d }}-noturno"
+                  onclick="toggleConc('{{ d }}','noturno',this)">✔</button>
+              </span>
+            </div>
+            {% if noturno.quebrado and noturno.slots %}
+              {% for s in noturno.slots %}
+              <div class="ag-slot-linha">
+                <span class="ag-slot-hora">{{ s.hora }}</span>
+                <span>{{ s.tarefa }}</span>
+              </div>
+              {% endfor %}
+            {% else %}
+            <textarea class="ag-inp" id="txt-{{ d }}-noturno"
+              rows="2"
+              onblur="salvar('{{ d }}','noturno',this.value)">{{ noturno.conteudo }}</textarea>
+            {% endif %}
+          </div>
+          {% else %}
+          <button class="ag-noturno-add" id="nadd-{{ d }}"
+            onclick="addNoturno('{{ d }}')">＋</button>
+          {% endif %}
+
+        </td>
+        {% endif %}
+      {% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+</div>
+
+<!-- MODAL DE HORÁRIOS -->
+<div class="ag-modal-bg" id="modal-bg">
+  <div class="ag-modal">
+    <h3 id="modal-titulo">⚙ Horários</h3>
+    <div id="modal-slots"></div>
+    <button class="ag-slot-add-btn" onclick="addSlot()">＋ Adicionar horário</button>
+    <div class="ag-modal-footer">
+      <button class="ag-cancel" onclick="fecharModal()">Cancelar</button>
+      <button class="ag-save" onclick="salvarModal()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const URL_SALVAR = "{{ url_for('canivete.agenda_salvar') }}";
+const URL_CONCLUIR = "{{ url_for('canivete.agenda_concluir') }}";
+const URL_SLOTS  = "{{ url_for('canivete.agenda_salvar_slots') }}";
+const TURNOS_PT  = {manha:'Manhã', tarde:'Tarde', noturno:'Noturno'};
+
+function post(url, params) {
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(params)) fd.append(k, v);
+  return fetch(url, {method:'POST', body:fd}).then(r => r.json()).catch(() => ({ok:false}));
+}
+function ir(ref) { window.location = "{{ url_for('canivete.agenda') }}?ref=" + ref; }
+
+function salvar(data, turno, conteudo) {
+  post(URL_SALVAR, {data, turno, conteudo});
+}
+
+function toggleConc(data, turno, btn) {
+  const on = !btn.classList.contains('on');
+  btn.classList.toggle('on', on);
+  document.getElementById('turno-' + data + '-' + turno)
+    .classList.toggle('concluido', on);
+  // pinta célula inteira se manhã E tarde concluídas
+  const chkM = document.getElementById('chk-' + data + '-manha');
+  const chkT = document.getElementById('chk-' + data + '-tarde');
+  const ambos = chkM?.classList.contains('on') && chkT?.classList.contains('on');
+  document.getElementById('dia-' + data)?.classList.toggle('dia-concluido', ambos);
+  post(URL_CONCLUIR, {data, turno, concluido: on ? '1' : '0'});
+}
+
+function addNoturno(data) {
+  const btn = document.getElementById('nadd-' + data);
+  btn.outerHTML = `
+    <div class="ag-turno" id="turno-${data}-noturno">
+      <div class="ag-turno-label">
+        <span class="lbl-ico">🌙</span><span>N</span>
+        <span class="ag-acoes">
+          <button class="ag-ac-btn" onclick="abrirModal('${data}','noturno')">⚙</button>
+          <button class="ag-ac-btn" id="chk-${data}-noturno"
+            onclick="toggleConc('${data}','noturno',this)">✔</button>
+        </span>
+      </div>
+      <textarea class="ag-inp" id="txt-${data}-noturno" rows="2"
+        onblur="salvar('${data}','noturno',this.value)"></textarea>
+    </div>`;
+}
+
+// ── MODAL ────────────────────────────────────────────────────
+let _md = '', _mt = '';
+
+function abrirModal(data, turno) {
+  _md = data; _mt = turno;
+  document.getElementById('modal-titulo').textContent = '⚙ Horários — ' + TURNOS_PT[turno];
+  const cont = document.getElementById('modal-slots');
+  cont.innerHTML = '';
+  const slotEls = document.querySelectorAll(`#turno-${data}-${turno} .ag-slot-linha`);
+  if (slotEls.length > 0) {
+    slotEls.forEach(el => {
+      const hora   = el.querySelector('.ag-slot-hora')?.textContent.trim() || '';
+      const tarefa = el.querySelectorAll('span')[1]?.textContent.trim() || '';
+      addSlot(hora, tarefa);
+    });
+  } else {
+    addSlot();
+  }
+  document.getElementById('modal-bg').classList.add('open');
+}
+
+function fecharModal() {
+  document.getElementById('modal-bg').classList.remove('open');
+}
+
+function addSlot(hora='', tarefa='') {
+  const div = document.createElement('div');
+  div.className = 'ag-slot-row';
+  div.innerHTML = `
+    <input class="ag-slot-inp-hora" type="time" value="${hora}">
+    <input class="ag-slot-inp-tar" type="text" placeholder="Tarefa / compromisso" value="${tarefa}">
+    <button class="ag-slot-del" onclick="this.closest('.ag-slot-row').remove()">×</button>`;
+  document.getElementById('modal-slots').appendChild(div);
+}
+
+function salvarModal() {
+  const rows = document.querySelectorAll('#modal-slots .ag-slot-row');
+  const slots = [];
+  rows.forEach(r => {
+    const hora   = r.querySelector('.ag-slot-inp-hora').value.trim();
+    const tarefa = r.querySelector('.ag-slot-inp-tar').value.trim();
+    if (hora || tarefa) slots.push({hora, tarefa});
+  });
+  post(URL_SLOTS, {data: _md, turno: _mt, slots: JSON.stringify(slots)})
+    .then(() => window.location.reload());
+  fecharModal();
+}
+
+document.getElementById('modal-bg').addEventListener('click', e => {
+  if (e.target === e.currentTarget) fecharModal();
+});
+</script>
+{% endblock %}

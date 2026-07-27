@@ -47,6 +47,7 @@ def menu_canivete():
         nome_empresa=session.get("nome_empresa"),
         url_voltar=url_for("sistema.selecionar_sistema"),
         pode_financas_pessoais=_tem_perm(id_usuario, cod_empresa, "FINANCAS_PESSOAIS_MENU"),
+        pode_agenda=_tem_perm(id_usuario, cod_empresa, "AGENDA"),
     )
 
 
@@ -481,3 +482,232 @@ def fp_configuracoes():
         classificacoes=classificacoes,
         contas_bancarias=contas_bancarias,
     )
+
+
+# -----------------------------------------------------------
+# AGENDA PESSOAL
+# -----------------------------------------------------------
+
+import json as _json_agenda
+from datetime import date, timedelta
+
+DIAS_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+            "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+
+
+def _easter(ano: int) -> date:
+    """Algoritmo de Meeus/Jones/Butcher para a Páscoa."""
+    a = ano % 19
+    b, c = divmod(ano, 100)
+    d, e = divmod(b, 4)
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = divmod(c, 4)
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month, day = divmod(114 + h + l - 7 * m, 31)
+    return date(ano, month, day + 1)
+
+
+_FERIADOS_FIXOS = {
+    (1, 1): "Ano Novo", (4, 21): "Tiradentes", (5, 1): "Trab.",
+    (9, 7): "Independência", (10, 12): "N. Sra. Aparecida",
+    (11, 2): "Finados", (11, 15): "Proclamação", (11, 20): "Consciência Negra",
+    (12, 25): "Natal",
+}
+
+def _feriados(anos) -> dict:
+    """Retorna dict {data_iso: nome_abreviado} de feriados nacionais brasileiros."""
+    feriados = {}
+    for ano in anos:
+        for (m, d), nome in _FERIADOS_FIXOS.items():
+            feriados[date(ano, m, d).isoformat()] = nome
+        pascoa = _easter(ano)
+        feriados[(pascoa - timedelta(days=48)).isoformat()] = "Carnaval"
+        feriados[(pascoa - timedelta(days=47)).isoformat()] = "Carnaval"
+        feriados[(pascoa - timedelta(days=2)).isoformat()]  = "Sexta Santa"
+        feriados[pascoa.isoformat()]                        = "Páscoa"
+        feriados[(pascoa + timedelta(days=60)).isoformat()] = "Corpus Christi"
+    return feriados
+
+
+@canivete_bp.route("/agenda")
+def agenda():
+    r = _checar_login()
+    if r:
+        return r
+    id_usuario = session["id_usuario"]
+
+    hoje = date.today()
+    ref_str = request.args.get("ref", hoje.isoformat())
+    try:
+        ref = date.fromisoformat(ref_str)
+    except ValueError:
+        ref = hoje
+
+    # início: segunda da semana anterior à ref
+    inicio = ref - timedelta(days=ref.weekday()) - timedelta(weeks=1)
+    # fim: ~6 meses à frente (26 semanas)
+    fim = inicio + timedelta(weeks=26) - timedelta(days=1)
+
+    # montar lista de semanas contínuas
+    semanas = []
+    cur_seg = inicio
+    while cur_seg <= fim:
+        semanas.append([cur_seg + timedelta(days=i) for i in range(7)])
+        cur_seg += timedelta(weeks=1)
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("""
+        SELECT data, turno, conteudo, quebrado, slots, concluido
+        FROM agenda_blocos
+        WHERE id_usuario=%s AND data BETWEEN %s AND %s
+    """, (id_usuario, inicio, fim))
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+
+    blocos = {}
+    for r2 in rows:
+        key = (r2["data"].isoformat(), r2["turno"])
+        try:
+            slots = _json_agenda.loads(r2["slots"] or "[]") if isinstance(r2["slots"], str) else (r2["slots"] or [])
+        except Exception:
+            slots = []
+        blocos[key] = {
+            "conteudo":  r2["conteudo"] or "",
+            "quebrado":  r2["quebrado"],
+            "slots":     slots,
+            "concluido": r2["concluido"],
+        }
+
+    prev_ref = (ref - timedelta(weeks=4)).isoformat()
+    next_ref = (ref + timedelta(weeks=4)).isoformat()
+
+    anos_range = set(range(inicio.year, fim.year + 1))
+    feriados = _feriados(anos_range)
+
+    return render_template(
+        "canivete/agenda.html",
+        semanas=semanas,
+        blocos=blocos,
+        hoje=hoje.isoformat(),
+        ref=ref.isoformat(),
+        prev_ref=prev_ref,
+        next_ref=next_ref,
+        hoje_ref=hoje.isoformat(),
+        dias_pt=DIAS_PT, meses_pt=MESES_PT,
+        feriados=feriados,
+        url_voltar=url_for("canivete.menu_canivete"),
+    )
+
+
+@canivete_bp.route("/agenda/salvar", methods=["POST"])
+def agenda_salvar():
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+
+    data_str = request.form.get("data", "")
+    turno    = request.form.get("turno", "")
+    conteudo = request.form.get("conteudo", "")
+
+    if turno not in ("manha", "tarde", "noturno") or not data_str:
+        return jsonify({"ok": False, "erro": "parâmetros inválidos"})
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("""
+        INSERT INTO agenda_blocos (id_usuario, data, turno, conteudo)
+        VALUES (%s,%s,%s,%s)
+        ON CONFLICT (id_usuario, data, turno)
+        DO UPDATE SET conteudo=%s, atualizado_em=NOW()
+    """, (id_usuario, data_str, turno, conteudo, conteudo))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True})
+
+
+@canivete_bp.route("/agenda/concluir", methods=["POST"])
+def agenda_concluir():
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+
+    data_str  = request.form.get("data", "")
+    turno     = request.form.get("turno", "")
+    concluido = request.form.get("concluido") == "1"
+
+    if turno not in ("manha", "tarde", "noturno") or not data_str:
+        return jsonify({"ok": False})
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("""
+        INSERT INTO agenda_blocos (id_usuario, data, turno, concluido)
+        VALUES (%s,%s,%s,%s)
+        ON CONFLICT (id_usuario, data, turno)
+        DO UPDATE SET concluido=%s, atualizado_em=NOW()
+    """, (id_usuario, data_str, turno, concluido, concluido))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True})
+
+
+@canivete_bp.route("/agenda/quebrar", methods=["POST"])
+def agenda_quebrar():
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+
+    data_str = request.form.get("data", "")
+    turno    = request.form.get("turno", "")
+    quebrado = request.form.get("quebrado") == "1"
+
+    if turno not in ("manha", "tarde", "noturno") or not data_str:
+        return jsonify({"ok": False})
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("""
+        INSERT INTO agenda_blocos (id_usuario, data, turno, quebrado)
+        VALUES (%s,%s,%s,%s)
+        ON CONFLICT (id_usuario, data, turno)
+        DO UPDATE SET quebrado=%s, atualizado_em=NOW()
+    """, (id_usuario, data_str, turno, quebrado, quebrado))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True})
+
+
+@canivete_bp.route("/agenda/salvar-slots", methods=["POST"])
+def agenda_salvar_slots():
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+
+    data_str  = request.form.get("data", "")
+    turno     = request.form.get("turno", "")
+    slots_str = request.form.get("slots", "[]")
+
+    try:
+        slots = _json_agenda.loads(slots_str)
+    except Exception:
+        return jsonify({"ok": False, "erro": "slots inválidos"})
+
+    if turno not in ("manha", "tarde", "noturno") or not data_str:
+        return jsonify({"ok": False})
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("""
+        INSERT INTO agenda_blocos (id_usuario, data, turno, quebrado, slots)
+        VALUES (%s,%s,%s,TRUE,%s)
+        ON CONFLICT (id_usuario, data, turno)
+        DO UPDATE SET quebrado=TRUE, slots=%s, atualizado_em=NOW()
+    """, (id_usuario, data_str, turno, _json_agenda.dumps(slots), _json_agenda.dumps(slots)))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True})

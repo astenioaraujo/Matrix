@@ -5091,13 +5091,14 @@ def menu_cr_fiado():
     cod_empresa = str(session["cod_empresa"]).strip()
     tipo_global = str(session.get("tipo_global") or "").strip().lower()
     if tipo_global == "superusuario":
-        pode_importar = pode_consultar = pode_variacoes = pode_por_filial = pode_por_cliente = True
+        pode_importar = pode_consultar = pode_variacoes = pode_por_filial = pode_por_filial_cli = pode_por_cliente = True
     else:
-        pode_importar   = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_IMPORTAR")
-        pode_consultar  = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_CONSULTAR")
-        pode_variacoes  = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_VARIACOES")
-        pode_por_filial = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_POR_FILIAL_CLIENTE")
-        pode_por_cliente= usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_POR_CLIENTE")
+        pode_importar      = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_IMPORTAR")
+        pode_consultar     = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_CONSULTAR")
+        pode_variacoes     = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_VARIACOES")
+        pode_por_filial    = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_POR_FILIAL")
+        pode_por_filial_cli= usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_POR_FILIAL_CLIENTE")
+        pode_por_cliente   = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_POR_CLIENTE")
     return render_template(
         "menu_cr_fiado.html",
         empresa_ativa=session["cod_empresa"],
@@ -5107,6 +5108,7 @@ def menu_cr_fiado():
         pode_consultar=pode_consultar,
         pode_variacoes=pode_variacoes,
         pode_por_filial=pode_por_filial,
+        pode_por_filial_cli=pode_por_filial_cli,
         pode_por_cliente=pode_por_cliente,
     )
 
@@ -5233,8 +5235,19 @@ def _parse_webportos_xlsx(fileobj, data_ref):
                                 cur_val = shared[int(raw)]
                             except (IndexError, ValueError):
                                 cur_val = raw
+                        elif cur_type == 'inlineStr':
+                            pass  # handled by <t> below
                         else:
                             cur_val = raw
+                        row_data[cur_col] = cur_val
+
+                    elif tag == f'{{{NS}}}t' and cur_type == 'inlineStr':
+                        cur_val = elem.text or ''
+                        row_data[cur_col] = cur_val
+
+                    elif tag == f'{{{NS}}}is':
+                        # inline string: concatena todos os <t> dentro de <is>
+                        cur_val = ''.join(t.text or '' for t in elem.iter(f'{{{NS}}}t'))
                         row_data[cur_col] = cur_val
 
                     elif tag == f'{{{NS}}}row':
@@ -5244,13 +5257,14 @@ def _parse_webportos_xlsx(fileobj, data_ref):
                         c0 = g(0)
 
                         if c0 == 'Filial:':
-                            nova = g(1).upper()
+                            # nome da filial pode estar em col B(1) ou C(2)
+                            nova = (g(1) or g(2)).upper()
                             if nova != filial_atual:
                                 cliente_atual = None
                             filial_atual = nova
 
                         elif c0 == 'Cliente:':
-                            cliente_atual = g(2)
+                            cliente_atual = g(2) or g(1)
 
                         elif filial_atual and cliente_atual:
                             tipo = g(2)
@@ -5311,6 +5325,7 @@ def cr_fiado_impl(url_voltar):
 
         if arquivo and not erro:
             try:
+                import traceback
                 conteudo = arquivo.read()
                 filiais_saldo, clientes_lista = _parse_webportos_xlsx(io.BytesIO(conteudo), data_ref)
                 del conteudo
@@ -5342,7 +5357,7 @@ def cr_fiado_impl(url_voltar):
                 sucesso = f"Importação de {data_ref.strftime('%d/%m/%Y')} salva — {len(filiais_saldo)} filiais, {len(clientes_lista)} clientes, total R$ {total_geral:,.2f}."
             except Exception as e:
                 conn.rollback()
-                erro = f"Erro ao processar arquivo: {e}"
+                erro = f"Erro ao processar arquivo: {e} || {traceback.format_exc()}"
 
     # Busca última importação
     cur.execute("""
@@ -5711,6 +5726,82 @@ def cr_por_filial_cliente():
         url_voltar=url_for("financeiro.menu_cr_fiado"),
         ultima=ultima,
         areas=areas,
+    )
+
+
+# =========================
+# CR — POR FILIAL (ranking)
+# =========================
+
+@financeiro_bp.route("/cr/por-filial")
+def cr_por_filial():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    filtro_area = request.args.get("area", "")  # "" = todas
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+
+    # última importação
+    cur.execute("""
+        SELECT id, data_referencia, total_geral
+        FROM fiado_importacoes WHERE cod_empresa=%s
+        ORDER BY data_referencia DESC LIMIT 1
+    """, (cod_empresa,))
+    ultima = cur.fetchone()
+
+    filiais = []
+    areas   = []
+
+    if ultima:
+        # todas as áreas para o filtro
+        cur.execute("""
+            SELECT DISTINCT a.id_area, a.nome_area
+            FROM fiado_filiais ff
+            JOIN filiais f ON UPPER(f.nome_filial_importacao) = ff.nome_filial_import
+                          AND f.cod_empresa = ff.cod_empresa
+            JOIN areas_filiais af ON af.cod_filial = f.cod_filial AND af.cod_empresa = f.cod_empresa
+            JOIN areas a ON a.id_area = af.id_area AND a.cod_empresa = f.cod_empresa
+            WHERE ff.id_importacao = %s
+            ORDER BY a.nome_area
+        """, (ultima["id"],))
+        areas = cur.fetchall()
+
+        area_filter = ""
+        if filtro_area:
+            area_filter = "AND a.id_area = %(area)s"
+
+        cur.execute(f"""
+            SELECT
+                f.cod_filial,
+                COALESCE(f.nome_filial, ff.nome_filial_import) AS nome_filial,
+                ff.saldo,
+                a.id_area,
+                a.nome_area
+            FROM fiado_filiais ff
+            LEFT JOIN filiais f ON UPPER(f.nome_filial_importacao) = ff.nome_filial_import
+                               AND f.cod_empresa = ff.cod_empresa
+            LEFT JOIN areas_filiais af ON af.cod_filial = f.cod_filial AND af.cod_empresa = f.cod_empresa
+            LEFT JOIN areas a ON a.id_area = af.id_area AND a.cod_empresa = f.cod_empresa
+            WHERE ff.id_importacao = %(id_imp)s
+            {area_filter}
+            ORDER BY ff.saldo DESC
+        """, {"id_imp": ultima["id"], "area": filtro_area or None})
+        filiais = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return render_template(
+        "cr_por_filial.html",
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_cr_fiado"),
+        ultima=ultima,
+        filiais=filiais,
+        areas=areas,
+        filtro_area=filtro_area,
     )
 
 

@@ -62,6 +62,12 @@
     </a>
   {% endif %}
 
+  {% if pode_agenda %}
+    <a class="menu-card" style="background:#1d4ed8;" href="{{ url_for('canivete.agenda') }}">
+      📅 Agenda
+    </a>
+  {% endif %}
+
 </div>
 
 {% endblock %}

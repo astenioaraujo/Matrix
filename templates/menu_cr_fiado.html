@@ -37,6 +37,9 @@
   <a href="{{ url_for('financeiro.cr_variacoes') }}">Variações</a>
   {% endif %}
   {% if pode_por_filial %}
+  <a href="{{ url_for('financeiro.cr_por_filial') }}">Filiais — Ordem Decrescente</a>
+  {% endif %}
+  {% if pode_por_filial_cli %}
   <a href="{{ url_for('financeiro.cr_por_filial_cliente') }}">Por Filial e Cliente</a>
   {% endif %}
   {% if pode_por_cliente %}

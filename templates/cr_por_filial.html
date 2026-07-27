@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .pagina-sub    { font-size:15px; color:#666; margin-bottom:20px; }
+  .ultima-info   { font-size:13px; color:#64748b; margin-bottom:20px; }
+  .ultima-info strong { color:#14114f; }
+
+  /* filtro */
+  .filtro-bar { display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap;
+    background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px;
+    padding:14px 18px; margin-bottom:24px; }
+  .filtro-bar label { display:block; font-size:12px; font-weight:700; color:#555; margin-bottom:4px; }
+  .filtro-bar select { height:36px; border-radius:7px; border:1px solid #cbd5e1;
+    padding:0 10px; font-size:13px; min-width:180px; }
+  .btn-filtrar { height:36px; background:#14114f; color:#fff; font-weight:700;
+    border:none; border-radius:7px; cursor:pointer; padding:0 18px; font-size:13px; }
+  .btn-filtrar:hover { background:#0d0a3a; }
+
+  /* tabela */
+  .tbl-wrap { overflow-x:auto; }
+  table.pf { border-collapse:collapse; font-size:13px; table-layout:fixed; width:640px; }
+  table.pf col.col-num    { width:50px; }
+  table.pf col.col-cod    { width:80px; }
+  table.pf col.col-nome   { width:340px; }
+  table.pf col.col-saldo  { width:160px; }
+
+  table.pf th, table.pf td { border:1px solid #e2e8f0; padding:7px 12px; }
+  table.pf thead th {
+    background:#14114f; color:#fff; font-weight:700; font-size:12px;
+    text-align:left; white-space:nowrap;
+  }
+  table.pf thead th.r { text-align:right; }
+  table.pf tbody tr:nth-child(even) { background:#f8fafc; }
+  table.pf tbody tr:hover td { background:#fffbea !important; }
+  table.pf tbody td { color:#1e293b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  table.pf tbody td.r { text-align:right; }
+  table.pf tbody td.td-num   { color:#9ca3af; font-size:11px; font-weight:700; text-align:center; }
+  table.pf tbody td.td-cod   { color:#475569; font-size:12px; font-weight:700; }
+  table.pf tbody td.td-saldo { font-weight:700; }
+
+  table.pf tfoot td {
+    font-weight:800; color:#14114f; background:#e0e7ff;
+    border-top:2px solid #6366f1; padding:8px 12px;
+  }
+  table.pf tfoot td.r { text-align:right; }
+
+  .sem-dados { color:#94a3b8; font-size:15px; margin-top:20px; }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">CR — Por Filial</div>
+  <div class="pagina-sub">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+  {% if ultima %}
+  <div class="ultima-info">
+    Referência: <strong>{{ ultima.data_referencia.strftime('%d/%m/%Y') }}</strong>
+    &nbsp;·&nbsp; {{ filiais|length }} filiais
+  </div>
+  {% endif %}
+
+  <!-- filtro de área -->
+  <form method="get" class="filtro-bar">
+    <div>
+      <label>Área</label>
+      <select name="area">
+        <option value="">Todas as áreas</option>
+        {% for a in areas %}
+        <option value="{{ a.id_area }}" {% if filtro_area|string == a.id_area|string %}selected{% endif %}>
+          {{ a.nome_area }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn-filtrar">Filtrar</button>
+  </form>
+
+  {% if filiais %}
+  <div class="tbl-wrap">
+    <table class="pf">
+      <colgroup>
+        <col class="col-num">
+        <col class="col-cod">
+        <col class="col-nome">
+        <col class="col-saldo">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Cód.</th>
+          <th>Filial</th>
+          <th class="r">Saldo Devedor</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in filiais %}
+        <tr>
+          <td class="td-num">{{ loop.index }}</td>
+          <td class="td-cod">{{ f.cod_filial or '—' }}</td>
+          <td title="{{ f.nome_filial }}">{{ f.nome_filial }}</td>
+          <td class="r td-saldo" data-val="{{ f.saldo }}">
+            {{ '{:,.2f}'.format(f.saldo).replace(',','X').replace('.',',').replace('X','.') }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3">Total — {{ filiais|length }} filiais</td>
+          <td class="r">
+            {% set total = namespace(v=0) %}
+            {% for f in filiais %}{% set total.v = total.v + f.saldo %}{% endfor %}
+            {{ '{:,.2f}'.format(total.v).replace(',','X').replace('.',',').replace('X','.') }}
+          </td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  {% elif ultima %}
+  <p class="sem-dados">Nenhuma filial encontrada para o filtro selecionado.</p>
+  {% else %}
+  <p class="sem-dados">Nenhuma importação realizada ainda.
+    <a href="{{ url_for('financeiro.cr_importar_fiado') }}">Importar Fiado</a>.
+  </p>
+  {% endif %}
+</div>
+
+<script>
+// Mapa de calor — maior saldo = vermelho, menor = verde (51 faixas)
+function getColorExcel(ratio) {
+  let r, g, b;
+  if (ratio <= 0.5) {
+    const t = ratio / 0.5;
+    r = 248 + (255 - 248) * t; g = 105 + (235 - 105) * t; b = 107 + (132 - 107) * t;
+  } else {
+    const t = (ratio - 0.5) / 0.5;
+    r = 255 + (99  - 255) * t; g = 235 + (190 - 235) * t; b = 132 + (123 - 132) * t;
+  }
+  return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+}
+
+const celulas = Array.from(document.querySelectorAll('tbody td.td-saldo'));
+const valores = celulas.map(td => parseFloat(td.dataset.val) || 0);
+const min = Math.min(...valores), max = Math.max(...valores);
+if (max !== min) {
+  celulas.forEach((td, i) => {
+    let ratio = (valores[i] - min) / (max - min);
+    ratio = Math.round(ratio * 50) / 50;  // 51 faixas
+    td.style.background = getColorExcel(1 - ratio);  // maior = vermelho
+  });
+}
+</script>
+{% endblock %}
