@@ -72,8 +72,14 @@
 .ag-cell.feriado .ag-num { color: #dc2626; }
 /* linha grossa entre sexta (col 5) e sábado (col 6) */
 .ag-grade tbody td:nth-child(5) { border-right: 4px solid #94a3b8; }
-/* linha separadora de mês */
-tr.sep-mes-spacer td { height: 20px; background: #f4f4f4; border: none; padding: 0; }
+/* linha separadora de mês com nomes dos dias */
+tr.sep-mes-spacer td {
+  background: #f4f4f4; border: none;
+  font-size: 12px; font-weight: 800; color: #94a3b8;
+  text-align: center; text-transform: uppercase; letter-spacing: .06em;
+  padding: 10px 0 4px;
+}
+tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
 .ag-cell.hoje-cell { background: #fffde7; }
 .ag-cell.hoje-cell .ag-num { color: #1d4ed8; font-size: 14px; }
 
@@ -91,15 +97,15 @@ tr.sep-mes-spacer td { height: 20px; background: #f4f4f4; border: none; padding:
   font-size: 11px;
   padding: 2px 4px 4px;
   position: relative;
-  height: 56px;
-  overflow: hidden;
+  min-height: 100px;
 }
 .ag-turno + .ag-turno {
   border-top: 1px solid #94a3b8;
 }
-.ag-turno.concluido { background: #e2e8f0; opacity: .7; }
-.ag-cell.dia-concluido { background: #cbd5e1 !important; }
-.ag-cell.dia-concluido .ag-num { color: #64748b; }
+.ag-turno.concluido { background: #64748b; opacity: .85; }
+.ag-cell.dia-concluido { background: #64748b !important; }
+.ag-cell.dia-concluido .ag-num { color: #e2e8f0; }
+.ag-cell.manha-concluida .ag-num { background: #64748b; }
 
 .ag-turno-label {
   font-size: 9px; font-weight: 800; color: #94a3b8;
@@ -111,10 +117,10 @@ tr.sep-mes-spacer td { height: 20px; background: #f4f4f4; border: none; padding:
 /* textarea inline */
 .ag-inp {
   width: 100%; border: none; outline: none; resize: none;
-  font-size: 13px; line-height: 1.4; color: #1e293b;
+  font-size: 15px; line-height: 1.5; color: #1e293b;
   background: transparent; font-family: inherit; font-weight: 700;
-  height: 40px; text-align: center;
-  padding-top: 11px;
+  text-align: center; padding: 8px 4px 4px;
+  display: block;
 }
 
 /* ações discretas */
@@ -202,7 +208,11 @@ tr.sep-mes-spacer td { height: 20px; background: #f4f4f4; border: none; padding:
     {% for semana in semanas %}
       {% set nova_semana_tem_mes_novo = semana | selectattr('day', 'equalto', 1) | list | length > 0 %}
       {% if nova_semana_tem_mes_novo and not loop.first %}
-      <tr class="sep-mes-spacer"><td colspan="7"></td></tr>
+      <tr class="sep-mes-spacer">
+        {% for d in dias_pt %}
+        <td class="{{ 'fim-semana' if loop.index0 >= 5 else '' }}">{{ d }}</td>
+        {% endfor %}
+      </tr>
       {% endif %}
       <tr>
       {% for dia in semana %}
@@ -220,7 +230,7 @@ tr.sep-mes-spacer td { height: 20px; background: #f4f4f4; border: none; padding:
         {% set nome_feriado = feriados.get(d, '') %}
         {% set e_feriado = (nome_feriado != '') and not e_hoje and not ambos_conc %}
         {% set e_primeiro = (dia.day == 1) and not e_hoje and not ambos_conc and not e_feriado %}
-        <td class="ag-cell {{ 'hoje-cell' if e_hoje else '' }} {{ 'fim-semana-cell' if fim_sem else '' }} {{ 'dia-concluido' if ambos_conc else '' }} {{ 'feriado' if e_feriado else '' }} {{ 'primeiro-dia' if e_primeiro else '' }}"
+        <td class="ag-cell {{ 'hoje-cell' if e_hoje else '' }} {{ 'fim-semana-cell' if fim_sem else '' }} {{ 'dia-concluido' if ambos_conc else '' }} {{ 'manha-concluida' if manha.concluido and not ambos_conc else '' }} {{ 'feriado' if e_feriado else '' }} {{ 'primeiro-dia' if e_primeiro else '' }}"
             id="dia-{{ d }}">
 
           {% if dia.day == 1 %}
@@ -251,7 +261,7 @@ tr.sep-mes-spacer td { height: 20px; background: #f4f4f4; border: none; padding:
               {% endfor %}
             {% else %}
             <textarea class="ag-inp" id="txt-{{ d }}-manha"
-              rows="2"
+              rows="3"
               onblur="salvar('{{ d }}','manha',this.value)">{{ manha.conteudo }}</textarea>
             {% endif %}
           </div>
@@ -276,7 +286,7 @@ tr.sep-mes-spacer td { height: 20px; background: #f4f4f4; border: none; padding:
               {% endfor %}
             {% else %}
             <textarea class="ag-inp" id="txt-{{ d }}-tarde"
-              rows="2"
+              rows="3"
               onblur="salvar('{{ d }}','tarde',this.value)">{{ tarde.conteudo }}</textarea>
             {% endif %}
           </div>
@@ -303,7 +313,7 @@ tr.sep-mes-spacer td { height: 20px; background: #f4f4f4; border: none; padding:
               {% endfor %}
             {% else %}
             <textarea class="ag-inp" id="txt-{{ d }}-noturno"
-              rows="2"
+              rows="3"
               onblur="salvar('{{ d }}','noturno',this.value)">{{ noturno.conteudo }}</textarea>
             {% endif %}
           </div>
@@ -336,6 +346,19 @@ tr.sep-mes-spacer td { height: 20px; background: #f4f4f4; border: none; padding:
 </div>
 
 <script>
+function ajustarPaddingTextarea(ta) {
+  const linhas = (ta.value.match(/\n/g) || []).length + 1;
+  // rows=3, line-height≈1.5, font=15px → altura total ≈ 68px, 1 linha ≈ 23px
+  ta.style.paddingTop = linhas === 1 ? '23px' : '4px';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.ag-inp').forEach(ta => {
+    ajustarPaddingTextarea(ta);
+    ta.addEventListener('input', () => ajustarPaddingTextarea(ta));
+  });
+});
+
 const URL_SALVAR = "{{ url_for('canivete.agenda_salvar') }}";
 const URL_CONCLUIR = "{{ url_for('canivete.agenda_concluir') }}";
 const URL_SLOTS  = "{{ url_for('canivete.agenda_salvar_slots') }}";
@@ -357,11 +380,14 @@ function toggleConc(data, turno, btn) {
   btn.classList.toggle('on', on);
   document.getElementById('turno-' + data + '-' + turno)
     .classList.toggle('concluido', on);
-  // pinta célula inteira se manhã E tarde concluídas
   const chkM = document.getElementById('chk-' + data + '-manha');
   const chkT = document.getElementById('chk-' + data + '-tarde');
-  const ambos = chkM?.classList.contains('on') && chkT?.classList.contains('on');
-  document.getElementById('dia-' + data)?.classList.toggle('dia-concluido', ambos);
+  const mConc = chkM?.classList.contains('on');
+  const tConc = chkT?.classList.contains('on');
+  const ambos = mConc && tConc;
+  const cell  = document.getElementById('dia-' + data);
+  cell?.classList.toggle('dia-concluido', ambos);
+  cell?.classList.toggle('manha-concluida', mConc && !ambos);
   post(URL_CONCLUIR, {data, turno, concluido: on ? '1' : '0'});
 }
 
@@ -377,7 +403,7 @@ function addNoturno(data) {
             onclick="toggleConc('${data}','noturno',this)">✔</button>
         </span>
       </div>
-      <textarea class="ag-inp" id="txt-${data}-noturno" rows="2"
+      <textarea class="ag-inp" id="txt-${data}-noturno" rows="3"
         onblur="salvar('${data}','noturno',this.value)"></textarea>
     </div>`;
 }
