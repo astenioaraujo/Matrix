@@ -567,7 +567,24 @@ def agenda():
         WHERE id_usuario=%s AND data BETWEEN %s AND %s
     """, (id_usuario, inicio, fim))
     rows = cur.fetchall()
+
+    # tarefas recorrentes (uma por semana)
+    cur.execute("""
+        SELECT semana_inicio, itens
+        FROM agenda_recorrentes
+        WHERE id_usuario=%s AND semana_inicio BETWEEN %s AND %s
+    """, (id_usuario, inicio, fim))
+    rec_rows = cur.fetchall()
     cur.close(); conn.close()
+
+    recorrentes = {}
+    for r3 in rec_rows:
+        raw = r3["itens"]
+        try:
+            itens = _json_agenda.loads(raw) if isinstance(raw, str) else (raw or [])
+        except Exception:
+            itens = []
+        recorrentes[r3["semana_inicio"].isoformat()] = itens
 
     blocos = {}
     for r2 in rows:
@@ -600,8 +617,37 @@ def agenda():
         hoje_ref=hoje.isoformat(),
         dias_pt=DIAS_PT, meses_pt=MESES_PT,
         feriados=feriados,
+        recorrentes=recorrentes,
         url_voltar=url_for("canivete.menu_canivete"),
     )
+
+
+@canivete_bp.route("/agenda/recorrente/salvar", methods=["POST"])
+def agenda_recorrente_salvar():
+    """Salva a lista completa de itens da semana: [{texto, concluido}, ...]"""
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+
+    semana = request.form.get("semana", "")
+    try:
+        itens = _json_agenda.loads(request.form.get("itens", "[]"))
+    except Exception:
+        itens = []
+
+    payload = _json_agenda.dumps(itens)
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("""
+        INSERT INTO agenda_recorrentes (id_usuario, semana_inicio, itens)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (id_usuario, semana_inicio)
+        DO UPDATE SET itens = EXCLUDED.itens
+    """, (id_usuario, semana, payload))
+    conn.commit()
+    cur.close(); conn.close()
+    return jsonify({"ok": True})
 
 
 @canivete_bp.route("/agenda/salvar", methods=["POST"])

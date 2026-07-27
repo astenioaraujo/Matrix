@@ -5,7 +5,7 @@
 <style>
 * { box-sizing: border-box; }
 
-.ag-wrap { max-width: 900px; margin: 0 auto; padding: 0 8px 60px; }
+.ag-wrap { max-width: 1180px; margin: 0; padding: 0 8px 60px; }
 
 /* cabeçalho */
 .ag-header {
@@ -72,6 +72,51 @@
 .ag-cell.feriado .ag-num { color: #dc2626; }
 /* linha grossa entre sexta (col 5) e sábado (col 6) */
 .ag-grade tbody td:nth-child(5) { border-right: 4px solid #94a3b8; }
+/* ── COLUNA RECORRENTES ── */
+.col-gap { width: 24px; background: #f4f4f4 !important; border: none !important; padding: 0 !important; }
+.ag-grade thead th { width: 10.85%; }
+.ag-grade th.th-rec {
+  color: #1d4ed8; font-weight: 800; width: 21.7%;
+}
+tr.sep-mes-spacer td.td-rec-label { color: #1d4ed8; }
+
+.ag-rec {
+  vertical-align: top;
+  background: #dbeafe;
+  border-left: 2px solid #93c5fd;
+  border-right: 2px solid #93c5fd;
+  border-top: 3px solid #60a5fa;
+  border-bottom: 3px solid #60a5fa;
+  padding: 4px 5px; position: relative;
+}
+
+/* uma linha = check + texto */
+.ag-rec-linha { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; }
+.ag-rec-chk {
+  background: none; border: none; cursor: pointer;
+  font-size: 11px; color: #93c5fd; padding: 0 2px; line-height: 1;
+  flex-shrink: 0;
+}
+.ag-rec-chk:hover { color: #1d4ed8; }
+.ag-rec-chk.on { color: #475569; }
+.ag-rec-txt {
+  flex: 1; min-width: 0;
+  border: none; outline: none; background: transparent;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  color: #1e3a8a; padding: 2px 0;
+}
+.ag-rec-txt::placeholder { color: #93c5fd; font-weight: 500; }
+/* linha concluída */
+.ag-rec-linha.feito .ag-rec-txt { color: #64748b; text-decoration: line-through; }
+.ag-rec-linha.feito { background: #cbd5e1; border-radius: 4px; }
+
+.ag-rec-add {
+  display: block; width: 100%; text-align: center;
+  font-size: 11px; color: #93c5fd; background: none; border: none;
+  cursor: pointer; padding: 2px 0;
+}
+.ag-rec-add:hover { color: #1d4ed8; }
+
 /* linha separadora de mês com nomes dos dias */
 tr.sep-mes-spacer td {
   background: #f4f4f4; border: none;
@@ -80,8 +125,15 @@ tr.sep-mes-spacer td {
   padding: 10px 0 4px;
 }
 tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
-.ag-cell.hoje-cell { background: #fffde7; }
-.ag-cell.hoje-cell .ag-num { color: #1d4ed8; font-size: 14px; }
+.ag-cell.hoje-cell { background: #dc2626; }
+.ag-cell.hoje-cell .ag-num { color: #fff; font-size: 14px; }
+.ag-cell.hoje-cell .ag-inp { color: #fff; }
+.ag-cell.hoje-cell .ag-turno-label { color: #fecaca; }
+.ag-cell.hoje-cell .ag-slot-linha { color: #fff; }
+.ag-cell.hoje-cell .ag-slot-hora { color: #fecaca; }
+.ag-cell.hoje-cell .ag-noturno-add { color: #fca5a5; }
+.ag-cell.hoje-cell .ag-ac-btn { color: #fecaca; }
+.ag-cell.hoje-cell .ag-ac-btn:hover { color: #fff; }
 
 /* número do dia */
 .ag-num {
@@ -100,8 +152,11 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
   min-height: 100px;
 }
 .ag-turno + .ag-turno {
-  border-top: 1px solid #94a3b8;
+  border-top: 1px dashed #94a3b8;
 }
+/* turno noturno: altura só do conteúdo */
+.ag-turno.turno-noturno { min-height: 0; }
+.ag-turno.turno-noturno .ag-inp { padding: 2px 4px; }
 .ag-turno.concluido { background: #64748b; opacity: .85; }
 .ag-cell.dia-concluido { background: #64748b !important; }
 .ag-cell.dia-concluido .ag-num { color: #e2e8f0; }
@@ -202,6 +257,8 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
         {% for d in dias_pt %}
         <th class="{{ 'fim-semana' if loop.index0 >= 5 else '' }}">{{ d }}</th>
         {% endfor %}
+        <th class="col-gap"></th>
+        <th class="th-rec">Recorrentes</th>
       </tr>
     </thead>
     <tbody>
@@ -212,6 +269,8 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
         {% for d in dias_pt %}
         <td class="{{ 'fim-semana' if loop.index0 >= 5 else '' }}">{{ d }}</td>
         {% endfor %}
+        <td class="col-gap"></td>
+        <td class="td-rec-label">Recorrentes</td>
       </tr>
       {% endif %}
       <tr>
@@ -293,7 +352,7 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
 
           <!-- NOTURNO -->
           {% if noturno %}
-          <div class="ag-turno {{ 'concluido' if noturno.concluido else '' }}"
+          <div class="ag-turno turno-noturno {{ 'concluido' if noturno.concluido else '' }}"
                id="turno-{{ d }}-noturno">
             <div class="ag-turno-label">
               <span class="lbl-ico">🌙</span><span>N</span>
@@ -313,7 +372,7 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
               {% endfor %}
             {% else %}
             <textarea class="ag-inp" id="txt-{{ d }}-noturno"
-              rows="3"
+              rows="1"
               onblur="salvar('{{ d }}','noturno',this.value)">{{ noturno.conteudo }}</textarea>
             {% endif %}
           </div>
@@ -325,6 +384,23 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
         </td>
         {% endif %}
       {% endfor %}
+
+        {# ── COLUNA RECORRENTES ── #}
+        {% set sem_ini = semana[0].isoformat() %}
+        {% set itens = recorrentes.get(sem_ini, []) %}
+        <td class="col-gap"></td>
+        <td class="ag-rec" id="rec-{{ sem_ini }}" data-semana="{{ sem_ini }}">
+          {% for it in itens %}
+          <div class="ag-rec-linha {{ 'feito' if it.concluido else '' }}">
+            <button class="ag-rec-chk {{ 'on' if it.concluido else '' }}"
+              onclick="toggleRecLinha(this)">✔</button>
+            <input class="ag-rec-txt" type="text" value="{{ it.texto }}"
+              onblur="salvarRec('{{ sem_ini }}')"
+              onkeydown="recKeydown(event, this)">
+          </div>
+          {% endfor %}
+          <button class="ag-rec-add" onclick="addRecLinha('{{ sem_ini }}')">＋</button>
+        </td>
       </tr>
     {% endfor %}
     </tbody>
@@ -347,6 +423,8 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
 
 <script>
 function ajustarPaddingTextarea(ta) {
+  // noturno tem altura própria — não centraliza
+  if (ta.closest('.turno-noturno')) return;
   const linhas = (ta.value.match(/\n/g) || []).length + 1;
   // rows=3, line-height≈1.5, font=15px → altura total ≈ 68px, 1 linha ≈ 23px
   ta.style.paddingTop = linhas === 1 ? '23px' : '4px';
@@ -358,6 +436,64 @@ document.addEventListener('DOMContentLoaded', () => {
     ta.addEventListener('input', () => ajustarPaddingTextarea(ta));
   });
 });
+
+const URL_REC_SALVAR = "{{ url_for('canivete.agenda_recorrente_salvar') }}";
+
+/* Lê o estado atual da célula e envia ao servidor */
+function salvarRec(semana) {
+  const cel = document.getElementById('rec-' + semana);
+  if (!cel) return;
+  const itens = [];
+  cel.querySelectorAll('.ag-rec-linha').forEach(l => {
+    const texto = l.querySelector('.ag-rec-txt').value.trim();
+    const concluido = l.querySelector('.ag-rec-chk').classList.contains('on');
+    if (texto) itens.push({texto, concluido});
+  });
+  post(URL_REC_SALVAR, {semana, itens: JSON.stringify(itens)});
+}
+
+/* Marca/desmarca uma linha individual */
+function toggleRecLinha(btn) {
+  const linha = btn.closest('.ag-rec-linha');
+  const on = !btn.classList.contains('on');
+  btn.classList.toggle('on', on);
+  linha.classList.toggle('feito', on);
+  salvarRec(btn.closest('.ag-rec').dataset.semana);
+}
+
+/* Adiciona uma linha em branco e foca nela */
+function addRecLinha(semana, focar = true) {
+  const cel = document.getElementById('rec-' + semana);
+  const div = document.createElement('div');
+  div.className = 'ag-rec-linha';
+  div.innerHTML = `
+    <button class="ag-rec-chk" onclick="toggleRecLinha(this)">✔</button>
+    <input class="ag-rec-txt" type="text"
+      onblur="salvarRec('${semana}')"
+      onkeydown="recKeydown(event, this)">`;
+  cel.insertBefore(div, cel.querySelector('.ag-rec-add'));
+  if (focar) div.querySelector('.ag-rec-txt').focus();
+  return div;
+}
+
+/* Enter cria nova linha; Backspace em linha vazia remove */
+function recKeydown(ev, inp) {
+  const semana = inp.closest('.ag-rec').dataset.semana;
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    salvarRec(semana);
+    addRecLinha(semana);
+  } else if (ev.key === 'Backspace' && inp.value === '') {
+    ev.preventDefault();
+    const linha = inp.closest('.ag-rec-linha');
+    const anterior = linha.previousElementSibling;
+    linha.remove();
+    salvarRec(semana);
+    if (anterior && anterior.classList.contains('ag-rec-linha')) {
+      anterior.querySelector('.ag-rec-txt').focus();
+    }
+  }
+}
 
 const URL_SALVAR = "{{ url_for('canivete.agenda_salvar') }}";
 const URL_CONCLUIR = "{{ url_for('canivete.agenda_concluir') }}";
@@ -394,7 +530,7 @@ function toggleConc(data, turno, btn) {
 function addNoturno(data) {
   const btn = document.getElementById('nadd-' + data);
   btn.outerHTML = `
-    <div class="ag-turno" id="turno-${data}-noturno">
+    <div class="ag-turno turno-noturno" id="turno-${data}-noturno">
       <div class="ag-turno-label">
         <span class="lbl-ico">🌙</span><span>N</span>
         <span class="ag-acoes">
@@ -403,7 +539,7 @@ function addNoturno(data) {
             onclick="toggleConc('${data}','noturno',this)">✔</button>
         </span>
       </div>
-      <textarea class="ag-inp" id="txt-${data}-noturno" rows="3"
+      <textarea class="ag-inp" id="txt-${data}-noturno" rows="1"
         onblur="salvar('${data}','noturno',this.value)"></textarea>
     </div>`;
 }
