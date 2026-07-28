@@ -489,6 +489,8 @@ def fp_configuracoes():
 # -----------------------------------------------------------
 
 import json as _json_agenda
+import calendar as _calendar_mod
+import re as _re_agenda
 from datetime import date, timedelta
 
 DIAS_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
@@ -533,6 +535,119 @@ def _feriados(anos) -> dict:
     return feriados
 
 
+def _primeira_seg_do_mes(ano: int, mes: int) -> date:
+    """
+    Segunda-feira da 1ª semana do mês.
+    A semana que contém o dia 1 só conta como 1ª semana se o dia 1 cair
+    entre segunda e quarta. De quinta em diante, a 1ª semana é a seguinte.
+    """
+    d1 = date(ano, mes, 1)
+    seg = d1 - timedelta(days=d1.weekday())
+    if d1.weekday() >= 3:          # quinta, sexta, sábado ou domingo
+        seg += timedelta(weeks=1)
+    return seg
+
+
+def _mes_seguinte(ano: int, mes: int):
+    return (ano + 1, 1) if mes == 12 else (ano, mes + 1)
+
+
+def _total_semanas_do_mes(ano: int, mes: int) -> int:
+    """
+    Quantas semanas o mês tem. A última linha só conta como semana própria
+    se tiver pelo menos 2 dias do mês — ou seja, se o mês seguinte começar
+    de quarta em diante. Caso contrário aquela linha pertence só ao mês novo.
+    """
+    ini = _primeira_seg_do_mes(ano, mes)
+    ultimo = date(ano, mes, _calendar_mod.monthrange(ano, mes)[1])
+    seg_ultimo = ultimo - timedelta(days=ultimo.weekday())
+
+    dias_no_ultimo = (ultimo - max(seg_ultimo, date(ano, mes, 1))).days + 1
+    semanas_ate = (seg_ultimo - ini).days // 7
+    return semanas_ate + 1 if dias_no_ultimo >= 2 else semanas_ate
+
+
+def _semanas_do_row(seg: date):
+    """
+    Devolve [(indice, total), ...] para cada mês de que esta linha faz parte.
+    Uma linha de virada participa dos dois meses: pode ser a última semana
+    de um (S5) e a primeira do seguinte (S1).
+    """
+    dom = seg + timedelta(days=6)          # domingo da mesma linha
+    ant = date(seg.year - 1, 12, 1) if seg.month == 1 else date(seg.year, seg.month - 1, 1)
+
+    candidatos = []
+    for ano, mes in [(ant.year, ant.month), (seg.year, seg.month), (dom.year, dom.month)]:
+        if (ano, mes) not in candidatos:
+            candidatos.append((ano, mes))
+
+    resultado = []
+    for ano, mes in candidatos:
+        ini = _primeira_seg_do_mes(ano, mes)
+        if ini > seg:
+            continue
+        total  = _total_semanas_do_mes(ano, mes)
+        indice = (seg - ini).days // 7 + 1
+        if 1 <= indice <= total:
+            resultado.append((indice, total))
+    return resultado
+
+
+def _indice_principal(seg: date) -> int:
+    """Índice da semana no mês que tem mais dias nesta linha (usado como padrão)."""
+    dias = [seg + timedelta(days=i) for i in range(7)]
+    meses = {}
+    for d in dias:
+        meses[(d.year, d.month)] = meses.get((d.year, d.month), 0) + 1
+    ano, mes = max(meses, key=lambda k: meses[k])
+    ini = _primeira_seg_do_mes(ano, mes)
+    if ini > seg:
+        return 1
+    return (seg - ini).days // 7 + 1
+
+
+def _semana_efetiva(codigo: str, total: int):
+    """
+    Converte um código S1..S5 no índice real da semana.
+    Códigos além do total de semanas do mês caem na última semana.
+    Devolve None para códigos que não sejam do tipo S.
+    """
+    c = (codigo or "").strip().upper()
+    if len(c) == 2 and c[0] == "S" and c[1].isdigit() and 1 <= int(c[1]) <= 5:
+        return min(int(c[1]), total)
+    return None
+
+
+def _codigo_casa_linha(codigo: str, dias, pares) -> bool:
+    """
+    Diz se a tarefa deve aparecer nesta linha da agenda.
+
+    S1..S5  — semana do mês (ver _semana_efetiva).
+    D1..D31 — dia do mês: aparece na semana que contém aquele dia.
+              Se o mês não tiver o dia (D31 em fevereiro), o código é
+              preservado e a tarefa cai na semana do último dia do mês.
+    Branco  — não repete.
+    """
+    c = (codigo or "").strip().upper()
+    if not c:
+        return False
+
+    if c[0] == "D":
+        try:
+            n = int(c[1:])
+        except ValueError:
+            return False
+        for ano, mes in {(d.year, d.month) for d in dias}:
+            ultimo = _calendar_mod.monthrange(ano, mes)[1]
+            alvo   = min(n, ultimo)        # D31 em fevereiro vira o dia 28/29
+            if any(d.year == ano and d.month == mes and d.day == alvo
+                   for d in dias):
+                return True
+        return False
+
+    return any(_semana_efetiva(c, total) == indice for indice, total in pares)
+
+
 @canivete_bp.route("/agenda")
 def agenda():
     r = _checar_login()
@@ -547,8 +662,8 @@ def agenda():
     except ValueError:
         ref = hoje
 
-    # início: segunda da semana anterior à ref
-    inicio = ref - timedelta(days=ref.weekday()) - timedelta(weeks=1)
+    # início: segunda da semana que contém ref
+    inicio = ref - timedelta(days=ref.weekday())
     # fim: ~6 meses à frente (26 semanas)
     fim = inicio + timedelta(weeks=26) - timedelta(days=1)
 
@@ -570,21 +685,58 @@ def agenda():
 
     # tarefas recorrentes (uma por semana)
     cur.execute("""
-        SELECT semana_inicio, itens
-        FROM agenda_recorrentes
-        WHERE id_usuario=%s AND semana_inicio BETWEEN %s AND %s
+        SELECT id, texto, codigo, ordem, semana_inicio, semana_fim
+        FROM agenda_rec_tarefas
+        WHERE id_usuario=%s
+        ORDER BY ordem, id
+    """, (id_usuario,))
+    tarefas = cur.fetchall()
+
+    cur.execute("""
+        SELECT e.id_tarefa, e.semana_inicio, e.concluido
+        FROM agenda_rec_execucoes e
+        JOIN agenda_rec_tarefas t ON t.id = e.id_tarefa
+        WHERE t.id_usuario=%s AND e.semana_inicio BETWEEN %s AND %s
     """, (id_usuario, inicio, fim))
-    rec_rows = cur.fetchall()
+    execs = {
+        (e["id_tarefa"], e["semana_inicio"].isoformat()): e["concluido"]
+        for e in cur.fetchall()
+    }
     cur.close(); conn.close()
 
-    recorrentes = {}
-    for r3 in rec_rows:
-        raw = r3["itens"]
-        try:
-            itens = _json_agenda.loads(raw) if isinstance(raw, str) else (raw or [])
-        except Exception:
-            itens = []
-        recorrentes[r3["semana_inicio"].isoformat()] = itens
+    # distribuir as tarefas nas semanas certas de cada mês
+    recorrentes  = {}
+    indice_semana = {}
+    for sem in semanas:
+        seg = sem[0]
+        chave = seg.isoformat()
+        indice_semana[chave] = _indice_principal(seg)
+
+        pares = _semanas_do_row(seg)
+        linha = []
+        for t in tarefas:
+            ini_t = t["semana_inicio"]
+            fim_t = t["semana_fim"]
+
+            if ini_t and seg < ini_t:
+                continue                       # ainda não nasceu
+            if fim_t and seg > fim_t:
+                continue                       # já parou de repetir
+
+            # aparece sempre na semana onde foi criada
+            mostra = (ini_t == seg)
+            # e nas semanas seguintes que casam com o código
+            if not mostra and seg > (ini_t or seg):
+                mostra = _codigo_casa_linha(t["codigo"], sem, pares)
+
+            if mostra:
+                linha.append({
+                    "id":        t["id"],
+                    "texto":     t["texto"] or "",
+                    "codigo":    t["codigo"] or "",
+                    "concluido": execs.get((t["id"], chave), False),
+                })
+        recorrentes[chave] = linha
 
     blocos = {}
     for r2 in rows:
@@ -611,6 +763,7 @@ def agenda():
         semanas=semanas,
         blocos=blocos,
         hoje=hoje.isoformat(),
+        semana_atual=(hoje - timedelta(days=hoje.weekday())).isoformat(),
         ref=ref.isoformat(),
         prev_ref=prev_ref,
         next_ref=next_ref,
@@ -618,33 +771,162 @@ def agenda():
         dias_pt=DIAS_PT, meses_pt=MESES_PT,
         feriados=feriados,
         recorrentes=recorrentes,
+        indice_semana=indice_semana,
         url_voltar=url_for("canivete.menu_canivete"),
     )
 
 
-@canivete_bp.route("/agenda/recorrente/salvar", methods=["POST"])
-def agenda_recorrente_salvar():
-    """Salva a lista completa de itens da semana: [{texto, concluido}, ...]"""
+_RE_CODIGO = _re_agenda.compile(r"^(S[1-5]|D(?:[1-9]|[12][0-9]|3[01]))$")
+
+ERRO_CODIGO = ("Código inválido. Use S1–S5 para semana do mês "
+               "ou D1–D31 para dia do mês. Em branco não repete.")
+
+
+def _norm_codigo(codigo: str):
+    """
+    Devolve (codigo, erro).
+    Branco é válido e significa "não repete". Formato inválido devolve erro.
+    """
+    c = (codigo or "").strip().upper().replace(" ", "")
+    if not c:
+        return "", None
+    if _RE_CODIGO.match(c):
+        return c, None
+    return None, ERRO_CODIGO
+
+
+@canivete_bp.route("/agenda/recorrente/criar", methods=["POST"])
+def agenda_recorrente_criar():
+    """Cria uma tarefa recorrente e devolve o id."""
     r = _checar_login()
     if r:
         return jsonify({"ok": False}), 401
     id_usuario = session["id_usuario"]
 
+    texto  = request.form.get("texto", "")
     semana = request.form.get("semana", "")
-    try:
-        itens = _json_agenda.loads(request.form.get("itens", "[]"))
-    except Exception:
-        itens = []
+    codigo, erro = _norm_codigo(request.form.get("codigo", ""))
+    if erro:
+        return jsonify({"ok": False, "erro": erro}), 400
 
-    payload = _json_agenda.dumps(itens)
     conn = get_connection()
     cur  = conn.cursor()
     cur.execute("""
-        INSERT INTO agenda_recorrentes (id_usuario, semana_inicio, itens)
-        VALUES (%s, %s, %s)
-        ON CONFLICT (id_usuario, semana_inicio)
-        DO UPDATE SET itens = EXCLUDED.itens
-    """, (id_usuario, semana, payload))
+        INSERT INTO agenda_rec_tarefas (id_usuario, texto, codigo, semana_inicio, ordem)
+        VALUES (%s, %s, %s, %s,
+                COALESCE((SELECT MAX(ordem)+1 FROM agenda_rec_tarefas WHERE id_usuario=%s), 0))
+        RETURNING id
+    """, (id_usuario, texto, codigo, semana, id_usuario))
+    novo_id = cur.fetchone()[0]
+    conn.commit()
+    cur.close(); conn.close()
+    return jsonify({"ok": True, "id": novo_id, "codigo": codigo})
+
+
+@canivete_bp.route("/agenda/recorrente/salvar", methods=["POST"])
+def agenda_recorrente_salvar():
+    """
+    Atualiza texto e código de uma tarefa recorrente.
+
+    Mudar o código vale da semana editada para a frente: a série antiga é
+    encerrada na semana anterior e nasce uma nova a partir daqui. Assim o
+    passado fica intacto. Código em branco simplesmente para de repetir.
+    """
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+
+    id_tarefa = request.form.get("id", "")
+    texto     = request.form.get("texto", "")
+    semana    = request.form.get("semana", "")
+    codigo, erro = _norm_codigo(request.form.get("codigo", ""))
+    if erro:
+        return jsonify({"ok": False, "erro": erro}), 400
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("""
+        SELECT codigo, semana_inicio FROM agenda_rec_tarefas
+        WHERE id=%s AND id_usuario=%s
+    """, (id_tarefa, id_usuario))
+    atual = cur.fetchone()
+    if not atual:
+        cur.close(); conn.close()
+        return jsonify({"ok": False}), 404
+
+    try:
+        seg = date.fromisoformat(semana)
+    except ValueError:
+        seg = atual["semana_inicio"]
+
+    mudou_codigo = (atual["codigo"] or "") != codigo
+    novo_id = None
+
+    if mudou_codigo and atual["semana_inicio"] and seg > atual["semana_inicio"]:
+        # encerra a série antiga na semana anterior e abre uma nova aqui
+        cur.execute("""
+            UPDATE agenda_rec_tarefas SET texto=%s, semana_fim=%s
+            WHERE id=%s AND id_usuario=%s
+        """, (texto, seg - timedelta(weeks=1), id_tarefa, id_usuario))
+        cur.execute("""
+            INSERT INTO agenda_rec_tarefas
+                (id_usuario, texto, codigo, semana_inicio, ordem)
+            VALUES (%s, %s, %s, %s,
+                    COALESCE((SELECT MAX(ordem)+1 FROM agenda_rec_tarefas
+                              WHERE id_usuario=%s), 0))
+            RETURNING id
+        """, (id_usuario, texto, codigo, seg, id_usuario))
+        novo_id = cur.fetchone()["id"]
+    else:
+        cur.execute("""
+            UPDATE agenda_rec_tarefas SET texto=%s, codigo=%s
+            WHERE id=%s AND id_usuario=%s
+        """, (texto, codigo, id_tarefa, id_usuario))
+
+    conn.commit()
+    cur.close(); conn.close()
+    return jsonify({"ok": True, "codigo": codigo,
+                    "recarregar": mudou_codigo, "novo_id": novo_id})
+
+
+@canivete_bp.route("/agenda/recorrente/excluir", methods=["POST"])
+def agenda_recorrente_excluir():
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("DELETE FROM agenda_rec_tarefas WHERE id=%s AND id_usuario=%s",
+                (request.form.get("id", ""), id_usuario))
+    conn.commit()
+    cur.close(); conn.close()
+    return jsonify({"ok": True})
+
+
+@canivete_bp.route("/agenda/recorrente/concluir", methods=["POST"])
+def agenda_recorrente_concluir():
+    """Marca/desmarca a execução de uma tarefa numa semana específica."""
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+
+    id_tarefa = request.form.get("id", "")
+    semana    = request.form.get("semana", "")
+    concluido = request.form.get("concluido", "0") == "1"
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("""
+        INSERT INTO agenda_rec_execucoes (id_tarefa, semana_inicio, concluido)
+        SELECT %s, %s, %s
+        WHERE EXISTS (SELECT 1 FROM agenda_rec_tarefas WHERE id=%s AND id_usuario=%s)
+        ON CONFLICT (id_tarefa, semana_inicio)
+        DO UPDATE SET concluido = EXCLUDED.concluido
+    """, (id_tarefa, semana, concluido, id_tarefa, id_usuario))
     conn.commit()
     cur.close(); conn.close()
     return jsonify({"ok": True})

@@ -12,7 +12,12 @@
   display: flex; align-items: center; gap: 8px;
   margin-bottom: 16px; flex-wrap: wrap;
 }
-.ag-titulo { font-size: 22px; font-weight: 800; color: #14114f; flex: 1; }
+.ag-titulo { font-size: 22px; font-weight: 800; color: #14114f; margin-right: 6px; }
+.ag-seta-cima {
+  background: none; border: none; cursor: pointer;
+  font-size: 11px; color: #cbd5e1; padding: 4px 6px; line-height: 1;
+}
+.ag-seta-cima:hover { color: #475569; }
 .ag-ref-pick { height: 34px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 10px; font-size: 13px; }
 
 /* nome do feriado */
@@ -90,6 +95,16 @@ tr.sep-mes-spacer td.td-rec-label { color: #1d4ed8; }
   padding: 4px 5px; position: relative;
 }
 
+/* semana passada — mesmo cinza dos dias concluídos */
+.ag-rec.rec-passada { background: #64748b; }
+.ag-rec.rec-passada .ag-rec-txt { color: #e2e8f0; }
+.ag-rec.rec-passada .ag-rec-txt::placeholder { color: #94a3b8; }
+.ag-rec.rec-passada .ag-rec-chk { color: #94a3b8; }
+.ag-rec.rec-passada .ag-rec-chk.on { color: #cbd5e1; }
+.ag-rec.rec-passada .ag-rec-add { color: #94a3b8; }
+.ag-rec.rec-passada .ag-rec-linha.feito { background: #475569; }
+.ag-rec.rec-passada .ag-rec-linha.feito .ag-rec-txt { color: #cbd5e1; }
+
 /* uma linha = check + texto */
 .ag-rec-linha { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; }
 .ag-rec-chk {
@@ -106,6 +121,18 @@ tr.sep-mes-spacer td.td-rec-label { color: #1d4ed8; }
   color: #1e3a8a; padding: 2px 0;
 }
 .ag-rec-txt::placeholder { color: #93c5fd; font-weight: 500; }
+/* código da semana (S1..S5) */
+.ag-rec-cod {
+  width: 30px; flex-shrink: 0;
+  border: none; outline: none; background: transparent;
+  font-family: inherit; font-size: 11px; font-weight: 800;
+  color: #60a5fa; text-align: center; text-transform: uppercase;
+  padding: 2px 0; border-radius: 3px;
+}
+.ag-rec-cod:focus { background: #bfdbfe; color: #1d4ed8; }
+.ag-rec-cod.erro { background: #fecaca; color: #b91c1c; }
+.ag-rec.rec-passada .ag-rec-cod { color: #94a3b8; }
+.ag-rec.rec-passada .ag-rec-cod:focus { background: #475569; color: #e2e8f0; }
 /* linha concluída */
 .ag-rec-linha.feito .ag-rec-txt { color: #64748b; text-decoration: line-through; }
 .ag-rec-linha.feito { background: #cbd5e1; border-radius: 4px; }
@@ -248,6 +275,10 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
     <div class="ag-titulo">📅 Agenda</div>
     <input type="date" class="ag-ref-pick" value="{{ ref }}" onchange="ir(this.value)">
     <button class="ag-btn hoje-btn" onclick="ir('{{ hoje_ref }}')">Hoje</button>
+    <button class="ag-seta-cima" title="Voltar uma semana"
+      onclick="moverSemana(-1)">▲</button>
+    <button class="ag-seta-cima" title="Avançar uma semana"
+      onclick="moverSemana(1)">▼</button>
   </div>
 
   <!-- GRADE MENSAL -->
@@ -389,14 +420,20 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
         {% set sem_ini = semana[0].isoformat() %}
         {% set itens = recorrentes.get(sem_ini, []) %}
         <td class="col-gap"></td>
-        <td class="ag-rec" id="rec-{{ sem_ini }}" data-semana="{{ sem_ini }}">
+        <td class="ag-rec {{ 'rec-passada' if sem_ini < semana_atual else '' }}"
+            id="rec-{{ sem_ini }}" data-semana="{{ sem_ini }}"
+            data-indice="{{ indice_semana.get(sem_ini, 1) }}">
           {% for it in itens %}
-          <div class="ag-rec-linha {{ 'feito' if it.concluido else '' }}">
+          <div class="ag-rec-linha {{ 'feito' if it.concluido else '' }}"
+               data-id="{{ it.id }}" data-codigo="{{ it.codigo }}"
+               data-texto="{{ it.texto }}">
             <button class="ag-rec-chk {{ 'on' if it.concluido else '' }}"
               onclick="toggleRecLinha(this)">✔</button>
             <input class="ag-rec-txt" type="text" value="{{ it.texto }}"
-              onblur="salvarRec('{{ sem_ini }}')"
-              onkeydown="recKeydown(event, this)">
+              onblur="salvarRec(this)" onkeydown="recKeydown(event, this)">
+            <input class="ag-rec-cod" type="text" maxlength="3" value="{{ it.codigo }}"
+              title="S1–S5: semana do mês · D1–D31: dia do mês · em branco não repete."
+              onblur="salvarRec(this)">
           </div>
           {% endfor %}
           <button class="ag-rec-add" onclick="addRecLinha('{{ sem_ini }}')">＋</button>
@@ -437,42 +474,104 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-const URL_REC_SALVAR = "{{ url_for('canivete.agenda_recorrente_salvar') }}";
+const URL_REC_CRIAR    = "{{ url_for('canivete.agenda_recorrente_criar') }}";
+const URL_REC_SALVAR   = "{{ url_for('canivete.agenda_recorrente_salvar') }}";
+const URL_REC_EXCLUIR  = "{{ url_for('canivete.agenda_recorrente_excluir') }}";
+const URL_REC_CONCLUIR = "{{ url_for('canivete.agenda_recorrente_concluir') }}";
 
-/* Lê o estado atual da célula e envia ao servidor */
-function salvarRec(semana) {
-  const cel = document.getElementById('rec-' + semana);
-  if (!cel) return;
-  const itens = [];
-  cel.querySelectorAll('.ag-rec-linha').forEach(l => {
-    const texto = l.querySelector('.ag-rec-txt').value.trim();
-    const concluido = l.querySelector('.ag-rec-chk').classList.contains('on');
-    if (texto) itens.push({texto, concluido});
-  });
-  post(URL_REC_SALVAR, {semana, itens: JSON.stringify(itens)});
+/* Recarrega só quando o foco já saiu da célula, para não interromper
+   quem está passando do texto para o código. */
+function recarregarQuandoSairDaCelula(cel) {
+  setTimeout(() => {
+    if (!cel.contains(document.activeElement)) window.location.reload();
+    else cel.dataset.pendente = '1';       // tenta de novo no próximo blur
+  }, 200);
 }
 
-/* Marca/desmarca uma linha individual */
+/* Salva texto e código da tarefa. A tarefa vale para todos os meses.
+   Depois de salvar recarrega, senão a repetição nas semanas seguintes
+   só apareceria num refresh manual. */
+function salvarRec(campo) {
+  const linha  = campo.closest('.ag-rec-linha');
+  const cel    = campo.closest('.ag-rec');
+  const semana = cel.dataset.semana;
+  const texto  = linha.querySelector('.ag-rec-txt').value.trim();
+  const codEl  = linha.querySelector('.ag-rec-cod');
+  const codigo = codEl.value.trim().toUpperCase();
+
+  // se a criação ainda está em voo, espera por ela
+  const pronto = linha._criando || Promise.resolve();
+
+  pronto.then(() => {
+    const id = linha.dataset.id;
+    if (!id) return;
+    if (!texto) { excluirRec(linha); return; }
+
+    const mudouTexto  = texto  !== (linha.dataset.texto  || '');
+    const mudouCodigo = codigo !== (linha.dataset.codigo || '');
+    if (!mudouTexto && !mudouCodigo && !cel.dataset.pendente) return;
+
+    return post(URL_REC_SALVAR, {id, texto, codigo, semana}).then(res => {
+      if (!res) return;
+      if (!res.ok) {                       // código inválido: avisa e desfaz
+        codEl.value = linha.dataset.codigo || '';
+        codEl.classList.add('erro');
+        alert(res.erro || 'Não foi possível salvar.');
+        codEl.focus();
+        setTimeout(() => codEl.classList.remove('erro'), 2000);
+        return;
+      }
+      codEl.value = res.codigo;
+      linha.dataset.codigo = res.codigo;
+      linha.dataset.texto  = texto;
+      recarregarQuandoSairDaCelula(cel);
+    });
+  });
+}
+
+function excluirRec(linha) {
+  const id  = linha.dataset.id;
+  const cel = linha.closest('.ag-rec');
+  linha.remove();
+  if (id) post(URL_REC_EXCLUIR, {id}).then(() => recarregarQuandoSairDaCelula(cel));
+}
+
+/* Marca/desmarca a execução desta tarefa NESTA semana */
 function toggleRecLinha(btn) {
-  const linha = btn.closest('.ag-rec-linha');
+  const linha  = btn.closest('.ag-rec-linha');
+  const semana = btn.closest('.ag-rec').dataset.semana;
+  const id     = linha.dataset.id;
+  if (!id) return;
   const on = !btn.classList.contains('on');
   btn.classList.toggle('on', on);
   linha.classList.toggle('feito', on);
-  salvarRec(btn.closest('.ag-rec').dataset.semana);
+  post(URL_REC_CONCLUIR, {id, semana, concluido: on ? '1' : '0'});
 }
 
-/* Adiciona uma linha em branco e foca nela */
-function addRecLinha(semana, focar = true) {
-  const cel = document.getElementById('rec-' + semana);
-  const div = document.createElement('div');
+/* Nova tarefa — sugere S1; em branco significa "não repete" */
+function addRecLinha(semana) {
+  const cel    = document.getElementById('rec-' + semana);
+  const codigo = 'S1';
+  const div    = document.createElement('div');
   div.className = 'ag-rec-linha';
   div.innerHTML = `
     <button class="ag-rec-chk" onclick="toggleRecLinha(this)">✔</button>
     <input class="ag-rec-txt" type="text"
-      onblur="salvarRec('${semana}')"
-      onkeydown="recKeydown(event, this)">`;
+      onblur="salvarRec(this)" onkeydown="recKeydown(event, this)">
+    <input class="ag-rec-cod" type="text" maxlength="3" value="${codigo}"
+      title="S1–S5: semana do mês · D1–D31: dia do mês · em branco não repete." onblur="salvarRec(this)">`;
   cel.insertBefore(div, cel.querySelector('.ag-rec-add'));
-  if (focar) div.querySelector('.ag-rec-txt').focus();
+
+  // guarda a promessa: se o usuário digitar e sair antes da resposta,
+  // salvarRec espera a criação terminar em vez de perder o texto
+  div._criando = post(URL_REC_CRIAR, {texto: '', codigo, semana}).then(res => {
+    if (res && res.id) {
+      div.dataset.id = res.id;
+      div.dataset.codigo = res.codigo;
+      div.dataset.texto = '';
+    }
+  });
+  div.querySelector('.ag-rec-txt').focus();
   return div;
 }
 
@@ -481,14 +580,13 @@ function recKeydown(ev, inp) {
   const semana = inp.closest('.ag-rec').dataset.semana;
   if (ev.key === 'Enter') {
     ev.preventDefault();
-    salvarRec(semana);
+    inp.blur();
     addRecLinha(semana);
   } else if (ev.key === 'Backspace' && inp.value === '') {
     ev.preventDefault();
-    const linha = inp.closest('.ag-rec-linha');
+    const linha    = inp.closest('.ag-rec-linha');
     const anterior = linha.previousElementSibling;
-    linha.remove();
-    salvarRec(semana);
+    excluirRec(linha);
     if (anterior && anterior.classList.contains('ag-rec-linha')) {
       anterior.querySelector('.ag-rec-txt').focus();
     }
@@ -506,6 +604,13 @@ function post(url, params) {
   return fetch(url, {method:'POST', body:fd}).then(r => r.json()).catch(() => ({ok:false}));
 }
 function ir(ref) { window.location = "{{ url_for('canivete.agenda') }}?ref=" + ref; }
+
+/* move n semanas a partir da referência atual (n negativo = voltar) */
+function moverSemana(n) {
+  const d = new Date("{{ ref }}" + "T12:00:00");
+  d.setDate(d.getDate() + n * 7);
+  ir(d.toISOString().slice(0, 10));
+}
 
 function salvar(data, turno, conteudo) {
   post(URL_SALVAR, {data, turno, conteudo});
