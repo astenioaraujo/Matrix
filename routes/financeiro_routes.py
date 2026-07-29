@@ -5320,6 +5320,42 @@ def _parse_webportos_xlsx(fileobj, data_ref):
     return dict(filiais), clientes_lista
 
 
+def _mapa_filiais_cadastro(cur, cod_empresa, nomes_arquivo):
+    """
+    Liga cada nome de filial vindo do arquivo ao nome gravado em
+    filiais.nome_filial_importacao.
+
+    O cadastro pode estar propositalmente truncado (para casar com outras
+    rotinas de importação, cujo arquivo traz o nome cortado). Por isso
+    aceitamos que o nome cadastrado seja PREFIXO do nome do arquivo.
+
+    Vence sempre a correspondência mais longa. Isso é essencial: há
+    cadastros em que um nome é prefixo de outro ("BONITO I" x "BONITO II"),
+    e um prefixo ingênuo jogaria o saldo de BONITO II dentro de BONITO I.
+
+    Devolve {nome_do_arquivo: nome_do_cadastro}. Nomes sem correspondência
+    ficam iguais a si mesmos, e seguem aparecendo como filial sem área.
+    """
+    cur.execute("""
+        SELECT DISTINCT UPPER(nome_filial_importacao) AS nome
+        FROM filiais
+        WHERE cod_empresa = %s
+          AND COALESCE(nome_filial_importacao, '') <> ''
+    """, (cod_empresa,))
+    # do mais longo para o mais curto: o primeiro que casar é o melhor
+    cadastros = sorted((r["nome"] for r in cur.fetchall()), key=len, reverse=True)
+
+    mapa = {}
+    for nome in nomes_arquivo:
+        alvo = nome
+        for cadastro in cadastros:
+            if nome == cadastro or nome.startswith(cadastro):
+                alvo = cadastro
+                break
+        mapa[nome] = alvo
+    return mapa
+
+
 @financeiro_bp.route("/cr-fiado", methods=["GET", "POST"])
 def cr_fiado():
     return cr_fiado_impl(url_voltar=url_for("financeiro.menu_cr_fiado"))
@@ -5353,6 +5389,20 @@ def cr_fiado_impl(url_voltar):
                 conteudo = arquivo.read()
                 filiais_saldo, clientes_lista = _parse_webportos_xlsx(io.BytesIO(conteudo), data_ref)
                 del conteudo
+
+                # Converte os nomes do arquivo para os nomes do cadastro antes
+                # de gravar; assim todas as consultas seguintes casam por
+                # igualdade, sem precisar repetir a regra de prefixo.
+                mapa = _mapa_filiais_cadastro(cur, cod_empresa, filiais_saldo.keys())
+                agrupado = defaultdict(float)
+                for nome_fil, saldo in filiais_saldo.items():
+                    agrupado[mapa.get(nome_fil, nome_fil)] += saldo
+                filiais_saldo = dict(agrupado)
+                clientes_lista = [
+                    (mapa.get(nome_fil, nome_fil), cli, sal)
+                    for nome_fil, cli, sal in clientes_lista
+                ]
+
                 total_geral = sum(filiais_saldo.values())
 
                 # Upsert importação (substitui se mesma data)
