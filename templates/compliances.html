@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .painel {
+    max-width: 900px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 22px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 24px;
+  }
+
+  .painel h3 {
+    margin-top: 0;
+    margin-bottom: 16px;
+    font-size: 22px;
+  }
+
+  label {
+    font-weight: 700;
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  input[type="text"] {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #cfcfcf;
+    border-radius: 10px;
+    font-size: 15px;
+    box-sizing: border-box;
+    margin-bottom: 16px;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 220px;
+    padding: 10px 12px;
+    border: 1px solid #cfcfcf;
+    border-radius: 10px;
+    font-size: 15px;
+    font-family: inherit;
+    box-sizing: border-box;
+    margin-bottom: 16px;
+    resize: vertical;
+  }
+
+  .btn {
+    height: 42px;
+    padding: 0 18px;
+    border-radius: 10px;
+    border: none;
+    background: #876A50;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn:hover {
+    background: #755840;
+  }
+
+  .lista-compliances {
+    max-width: 900px;
+  }
+
+  .compliance-item {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 14px;
+    padding: 16px 20px;
+    margin-bottom: 14px;
+  }
+
+  .compliance-item summary {
+    cursor: pointer;
+    font-size: 18px;
+    font-weight: 700;
+    list-style: none;
+  }
+
+  .compliance-item summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .compliance-item summary::before {
+    content: "▸ ";
+    color: #876A50;
+  }
+
+  .compliance-item[open] summary::before {
+    content: "▾ ";
+  }
+
+  .compliance-corpo {
+    margin-top: 16px;
+    border-top: 1px solid #eee;
+    padding-top: 16px;
+  }
+
+  .status-ativo {
+    color: #18703b;
+    font-weight: 800;
+    font-size: 13px;
+  }
+
+  .status-inativo {
+    color: #9b1c1c;
+    font-weight: 800;
+    font-size: 13px;
+  }
+
+  .checkbox-linha {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .checkbox-linha input {
+    width: auto;
+  }
+
+  .vazio {
+    padding: 18px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    color: #666;
+    max-width: 900px;
+  }
+</style>
+
+<div class="pagina-titulo">Cadastro de Compliance</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="painel">
+  <h3>Nova compliance</h3>
+
+  <form method="POST" action="{{ url_for('compliance.compliances') }}">
+    <label>Título</label>
+    <input type="text" name="titulo" placeholder="Ex.: Política Antissuborno, Código de Conduta..." required>
+
+    <label>Descrição</label>
+    <textarea name="descricao" placeholder="Cole aqui o texto da compliance." required></textarea>
+
+    <button type="submit" class="btn">Cadastrar</button>
+  </form>
+</div>
+
+{% if compliances %}
+  <div class="lista-compliances">
+    {% for c in compliances %}
+      <details class="compliance-item">
+        <summary>
+          {{ c.titulo }}
+          {% if c.ativo %}
+            <span class="status-ativo">Ativa</span>
+          {% else %}
+            <span class="status-inativo">Inativa</span>
+          {% endif %}
+        </summary>
+
+        <div class="compliance-corpo">
+          <form method="POST" action="{{ url_for('compliance.editar_compliance', id_compliance=c.id) }}">
+            <label>Título</label>
+            <input type="text" name="titulo" value="{{ c.titulo }}" required>
+
+            <label>Descrição</label>
+            <textarea name="descricao" required>{{ c.descricao }}</textarea>
+
+            <div class="checkbox-linha">
+              <input type="checkbox" name="ativo" id="ativo_{{ c.id }}" {% if c.ativo %}checked{% endif %}>
+              <label for="ativo_{{ c.id }}" style="margin-bottom: 0;">Ativa</label>
+            </div>
+
+            <button type="submit" class="btn">Salvar</button>
+          </form>
+        </div>
+      </details>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="vazio">
+    Nenhuma compliance cadastrada ainda.
+  </div>
+{% endif %}
+
+{% endblock %}

@@ -543,7 +543,14 @@
     }
     const campo = modo === "banco" ? "saldo_banco" : "saldo_sistema";
     const valor = linha[campo][fid] || 0;
-    return `<td class="valor"><input type="text" class="input-valor" data-tipo="${tipo}" data-campo="${campo}" data-data="${dataStr}" data-cod-filial="${fid}" data-id-item="${linha.id_item}" value="${formatarBR(valor)}" ${editavel ? "" : "readonly"}></td>`;
+    // No modo sistema o valor é espelho e não aceita edição:
+    //  - estoques e recebíveis, sempre;
+    //  - contas bancárias, só as marcadas como "Espelhar no Sistema" no cadastro.
+    const ehEspelho = modo === "sistema" &&
+      (tipo === "recebivel" || (tipo === "bancario" && linha.espelhar_sistema));
+    const soLeitura = !editavel || ehEspelho;
+    const dica = ehEspelho ? ' title="Espelho do lado Bancos — edite em Bancos"' : "";
+    return `<td class="valor"><input type="text" class="input-valor" data-tipo="${tipo}" data-campo="${campo}" data-data="${dataStr}" data-cod-filial="${fid}" data-id-item="${linha.id_item}" value="${formatarBR(valor)}"${dica} ${soLeitura ? "readonly" : ""}></td>`;
   }
 
   function celulaTotalLinha(linha, modo) {

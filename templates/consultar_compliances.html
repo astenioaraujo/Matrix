@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .painel-busca {
+    max-width: 900px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 18px 22px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 24px;
+    display: flex;
+    gap: 14px;
+    align-items: end;
+  }
+
+  .painel-busca label {
+    font-weight: 700;
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  .painel-busca input {
+    padding: 10px 12px;
+    border: 1px solid #cfcfcf;
+    border-radius: 10px;
+    font-size: 15px;
+    width: 320px;
+  }
+
+  .btn {
+    height: 42px;
+    padding: 0 18px;
+    border-radius: 10px;
+    border: none;
+    background: #7D4820;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn:hover {
+    background: #693d1a;
+  }
+
+  .lista-compliances {
+    max-width: 900px;
+  }
+
+  .compliance-item {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 14px;
+    padding: 16px 20px;
+    margin-bottom: 14px;
+  }
+
+  .compliance-item summary {
+    cursor: pointer;
+    font-size: 18px;
+    font-weight: 700;
+    list-style: none;
+  }
+
+  .compliance-item summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .compliance-item summary::before {
+    content: "▸ ";
+    color: #7D4820;
+  }
+
+  .compliance-item[open] summary::before {
+    content: "▾ ";
+  }
+
+  .compliance-corpo {
+    margin-top: 16px;
+    border-top: 1px solid #eee;
+    padding-top: 16px;
+    white-space: pre-wrap;
+    line-height: 1.5;
+    color: #333;
+  }
+
+  .vazio {
+    padding: 18px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    color: #666;
+    max-width: 900px;
+  }
+</style>
+
+<div class="pagina-titulo">Consultar Compliance</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<form method="GET" action="{{ url_for('compliance.consultar_compliances') }}" class="painel-busca">
+  <div>
+    <label>Buscar</label>
+    <input type="text" name="busca" value="{{ busca }}" placeholder="Título ou texto da descrição">
+  </div>
+  <button type="submit" class="btn">Buscar</button>
+</form>
+
+{% if compliances %}
+  <div class="lista-compliances">
+    {% for c in compliances %}
+      <details class="compliance-item">
+        <summary>{{ c.titulo }}</summary>
+        <div class="compliance-corpo">{{ c.descricao }}</div>
+      </details>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="vazio">
+    Nenhuma compliance encontrada.
+  </div>
+{% endif %}
+
+{% endblock %}

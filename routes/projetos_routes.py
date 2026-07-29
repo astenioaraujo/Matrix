@@ -694,24 +694,41 @@ def project_journal():
             if not id_reg or not data_str or not descricao:
                 erro = "Dados incompletos."
             else:
+                # só edita no mesmo dia em que o registro foi criado — vale
+                # inclusive para lançamento retroativo feito hoje.
+                # A condição vai no próprio UPDATE para não depender do form.
                 cur.execute("""
                     UPDATE project_journal
                     SET data=%s, descricao=%s, atualizado_em=NOW()
                     WHERE id=%s AND cod_empresa=%s
+                      AND criado_em::date = CURRENT_DATE
                 """, (data_str, descricao, id_reg, cod_empresa))
                 conn.commit()
-                sucesso = "Registro atualizado."
+                if cur.rowcount:
+                    sucesso = "Registro atualizado."
+                else:
+                    erro = "Só é possível editar registros criados hoje."
 
         elif acao == "excluir":
             id_reg = request.form.get("id")
             if id_reg:
-                cur.execute("DELETE FROM project_journal WHERE id=%s AND cod_empresa=%s",
-                            (id_reg, cod_empresa))
+                # só apaga no mesmo dia em que o registro foi criado
+                cur.execute("""
+                    DELETE FROM project_journal
+                    WHERE id=%s AND cod_empresa=%s
+                      AND criado_em::date = CURRENT_DATE
+                """, (id_reg, cod_empresa))
                 conn.commit()
-                sucesso = "Registro excluído."
+                if cur.rowcount:
+                    sucesso = "Registro excluído."
+                else:
+                    erro = "Só é possível excluir registros criados hoje."
 
+        # 'editavel' vem do banco, no mesmo critério usado no UPDATE/DELETE:
+        # calcular em Python usaria o fuso da máquina, que difere do UTC do banco
         cur.execute("""
-            SELECT id, data, descricao, criado_em
+            SELECT id, data, descricao, criado_em,
+                   (criado_em::date = CURRENT_DATE) AS editavel
             FROM project_journal
             WHERE cod_empresa = %s
             ORDER BY data DESC, criado_em DESC

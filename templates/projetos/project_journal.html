@@ -26,7 +26,8 @@
   .btn-incluir {
     background:#1d4ed8; color:#fff; border:none; border-radius:8px;
     padding:0 22px; height:38px; font-size:14px; font-weight:700;
-    cursor:pointer; align-self:flex-end; white-space:nowrap;
+    cursor:pointer; white-space:nowrap;
+    width:100%; margin-top:10px;
   }
   .btn-incluir:hover { background:#1e40af; }
 
@@ -104,12 +105,12 @@
         <div class="campo-data">
           <label>Data</label>
           <input type="date" name="data" value="{{ hoje }}" required>
+          <button type="submit" class="btn-incluir">+ Adicionar</button>
         </div>
         <div class="campo-desc">
           <label>Descrição</label>
           <textarea name="descricao" placeholder="Descreva a atividade..." required></textarea>
         </div>
-        <button type="submit" class="btn-incluir">+ Adicionar</button>
       </div>
     </form>
   </div>
@@ -131,6 +132,7 @@
           <td class="td-data">{{ r.data.strftime('%d/%m/%Y') }}</td>
           <td class="td-desc">{{ r.descricao }}</td>
           <td class="td-acoes">
+            {% if r.editavel %}
             <button type="button" class="btn-edit"
               data-id="{{ r.id }}"
               data-data="{{ r.data.isoformat() }}"
@@ -144,6 +146,7 @@
               <input type="hidden" name="id"   value="{{ r.id }}">
               <button type="submit" class="btn-del">✕</button>
             </form>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}

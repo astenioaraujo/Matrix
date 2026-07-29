@@ -170,7 +170,7 @@
   </div>
   <table>
     <thead>
-      <tr><th style="width:90px">Ordem</th><th>Banco</th><th>Apelido</th><th style="width:70px">Ativo</th><th style="width:150px">Ações</th></tr>
+      <tr><th style="width:90px">Ordem</th><th>Banco</th><th>Apelido</th><th style="width:110px" title="Copia o saldo para o lado Sistema e bloqueia a digitação lá">Espelhar no Sistema</th><th style="width:70px">Ativo</th><th style="width:150px">Ações</th></tr>
     </thead>
     <tbody id="corpoContas"></tbody>
   </table>
@@ -293,6 +293,7 @@
       <td><input type="number" class="input-ordem" value="${c ? c.ordem : 10}"></td>
       <td><input type="text" class="input-banco" value="${c ? escapeHtml(c.banco) : ''}" placeholder="Nome do banco"></td>
       <td><input type="text" class="input-apelido" value="${c && c.apelido ? escapeHtml(c.apelido) : ''}" placeholder="Opcional"></td>
+      <td class="col-ativo"><input type="checkbox" class="input-espelhar" title="Copia o saldo para o lado Sistema e bloqueia a digitação lá" ${(c && c.espelhar_sistema) ? "checked" : ""}></td>
       <td class="col-ativo"><input type="checkbox" class="input-ativo" ${(!c || c.ativo) ? "checked" : ""}></td>
       <td class="col-acoes">
         <button type="button" class="btn-mini">Salvar</button>
@@ -323,6 +324,7 @@
       apelido: tr.querySelector(".input-apelido").value.trim(),
       ordem: Number(tr.querySelector(".input-ordem").value || 10),
       ativo: tr.querySelector(".input-ativo").checked,
+      espelhar_sistema: tr.querySelector(".input-espelhar").checked,
     };
     if (!payload.banco) {
       mostrarStatus("statusContas", "Informe o banco.", true);

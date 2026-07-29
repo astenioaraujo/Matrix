@@ -1200,6 +1200,7 @@ def consultar_funcionarios():
     nome_empresa = session.get("nome_empresa", "")
 
     filial_sel = (request.args.get("cod_filial") or "").strip()
+    cargo_sel = (request.args.get("id_cargo") or "").strip()
     somente_ativos = (request.args.get("somente_ativos") or "S").strip().upper()
 
     conn = get_connection()
@@ -1217,12 +1218,25 @@ def consultar_funcionarios():
         """, (cod_empresa,))
         filiais = cur.fetchall() or []
 
+        cur.execute("""
+            SELECT id, descricao
+            FROM cargos
+            WHERE cod_empresa = %s
+              AND ativo = TRUE
+            ORDER BY descricao
+        """, (cod_empresa,))
+        cargos = cur.fetchall() or []
+
         filtros = ["f.cod_empresa = %s"]
         params = [cod_empresa]
 
         if filial_sel:
             filtros.append("f.cod_filial = %s")
             params.append(int(filial_sel))
+
+        if cargo_sel:
+            filtros.append("f.id_cargo = %s")
+            params.append(int(cargo_sel))
 
         if somente_ativos == "S":
             filtros.append("f.ativo = TRUE")
@@ -1280,6 +1294,7 @@ def consultar_funcionarios():
     except Exception as e:
         flash(f"Erro ao consultar funcionários: {e}", "error")
         filiais = []
+        cargos = []
         funcionarios = []
         totais_filial = {}
 
@@ -1292,9 +1307,11 @@ def consultar_funcionarios():
         cod_empresa=cod_empresa,
         nome_empresa=nome_empresa,
         filiais=filiais,
+        cargos=cargos,
         funcionarios=funcionarios,
         totais_filial=totais_filial,
         filial_sel=filial_sel,
+        cargo_sel=cargo_sel,
         somente_ativos=somente_ativos,
         url_voltar=url_for("rh.menu_rh"),
         texto_voltar="← Voltar",

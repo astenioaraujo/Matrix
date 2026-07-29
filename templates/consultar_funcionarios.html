@@ -168,6 +168,19 @@
       </div>
 
       <div>
+        <label>Cargo</label>
+        <select name="id_cargo">
+          <option value="">Todos os cargos</option>
+          {% for cargo in cargos %}
+            <option value="{{ cargo.id }}"
+              {% if cargo_sel|string == cargo.id|string %}selected{% endif %}>
+              {{ cargo.descricao }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
         <label>Situação</label>
         <select name="somente_ativos">
           <option value="S" {% if somente_ativos == 'S' %}selected{% endif %}>

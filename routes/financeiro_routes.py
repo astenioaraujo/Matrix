@@ -3580,6 +3580,8 @@ def fluxo_caixa_projetado():
 # =========================
 
 @financeiro_bp.route("/caixas")
+@permissao_obrigatoria("FINANCEIRO", "MENU_CAIXAS",
+                       redirecionar_para="financeiro.menu_empresa")
 def menu_caixas():
     if "id_usuario" not in session or "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
@@ -3610,6 +3612,8 @@ def menu_caixas():
 
 
 @financeiro_bp.route("/caixas/conferir", methods=["GET", "POST"])
+@permissao_obrigatoria("FINANCEIRO", "ATUALIZAR_CAIXAS",
+                       redirecionar_para="financeiro.menu_caixas")
 def conferir_caixas():
     if "id_usuario" not in session or "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
@@ -3847,6 +3851,8 @@ def conferir_caixas():
 
 
 @financeiro_bp.route("/caixas/configuracoes", methods=["GET", "POST"])
+@permissao_obrigatoria("FINANCEIRO", "CONFIGURACOES_CAIXAS",
+                       redirecionar_para="financeiro.menu_caixas")
 def configuracoes_caixas():
     if "id_usuario" not in session or "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
@@ -4147,7 +4153,7 @@ def api_listar_contas_bancarias():
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
         cur.execute("""
-            SELECT id_conta_bancaria, banco, apelido, ordem, ativo
+            SELECT id_conta_bancaria, banco, apelido, ordem, ativo, espelhar_sistema
             FROM contas_bancarias
             WHERE cod_empresa = %s
             ORDER BY ordem, banco
@@ -4169,6 +4175,7 @@ def api_criar_conta_bancaria():
     banco = (dados.get("banco") or "").strip()
     apelido = (dados.get("apelido") or "").strip() or None
     ordem = dados.get("ordem", 10)
+    espelhar_sistema = bool(dados.get("espelhar_sistema", False))
 
     if not banco:
         return jsonify({"ok": False, "erro": "Informe o banco."}), 400
@@ -4177,10 +4184,10 @@ def api_criar_conta_bancaria():
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
         cur.execute("""
-            INSERT INTO contas_bancarias (cod_empresa, banco, apelido, ordem)
-            VALUES (%s, %s, %s, %s)
-            RETURNING id_conta_bancaria, banco, apelido, ordem, ativo
-        """, (cod_empresa, banco, apelido, ordem))
+            INSERT INTO contas_bancarias (cod_empresa, banco, apelido, ordem, espelhar_sistema)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id_conta_bancaria, banco, apelido, ordem, ativo, espelhar_sistema
+        """, (cod_empresa, banco, apelido, ordem, espelhar_sistema))
         conta = cur.fetchone()
         conn.commit()
     except Exception as e:
@@ -4203,6 +4210,7 @@ def api_alterar_conta_bancaria(id_conta_bancaria):
     apelido = (dados.get("apelido") or "").strip() or None
     ordem = dados.get("ordem", 10)
     ativo = bool(dados.get("ativo", True))
+    espelhar_sistema = bool(dados.get("espelhar_sistema", False))
 
     if not banco:
         return jsonify({"ok": False, "erro": "Informe o banco."}), 400
@@ -4212,10 +4220,11 @@ def api_alterar_conta_bancaria(id_conta_bancaria):
     try:
         cur.execute("""
             UPDATE contas_bancarias
-            SET banco = %s, apelido = %s, ordem = %s, ativo = %s, atualizado_em = NOW()
+            SET banco = %s, apelido = %s, ordem = %s, ativo = %s,
+                espelhar_sistema = %s, atualizado_em = NOW()
             WHERE id_conta_bancaria = %s AND cod_empresa = %s
-            RETURNING id_conta_bancaria, banco, apelido, ordem, ativo
-        """, (banco, apelido, ordem, ativo, id_conta_bancaria, cod_empresa))
+            RETURNING id_conta_bancaria, banco, apelido, ordem, ativo, espelhar_sistema
+        """, (banco, apelido, ordem, ativo, espelhar_sistema, id_conta_bancaria, cod_empresa))
         conta = cur.fetchone()
 
         if not conta:
@@ -4771,7 +4780,7 @@ def api_consultar_saldos():
         data_inicio_extendida = data_inicio - timedelta(days=1)
 
         cur.execute("""
-            SELECT id_conta_bancaria, banco, apelido, ordem
+            SELECT id_conta_bancaria, banco, apelido, ordem, espelhar_sistema
             FROM contas_bancarias
             WHERE cod_empresa = %s AND ativo = TRUE
             ORDER BY ordem, banco
@@ -4888,6 +4897,13 @@ def api_lancar_saldos_bancarios():
     try:
         filiais_ok = cod_filiais_permitidas_lancamento(cur, cod_empresa)
 
+        # contas marcadas no cadastro para espelhar o saldo no lado do sistema
+        cur.execute("""
+            SELECT id_conta_bancaria FROM contas_bancarias
+            WHERE cod_empresa = %s AND espelhar_sistema = TRUE
+        """, (cod_empresa,))
+        contas_espelhadas = {linha[0] for linha in cur.fetchall()}
+
         registros = []
         for item in lancamentos:
             try:
@@ -4900,6 +4916,11 @@ def api_lancar_saldos_bancarios():
 
             if cod_filial not in filiais_ok:
                 return jsonify({"ok": False, "erro": f"Filial {cod_filial} não permitida para este usuário."}), 403
+
+            # nas contas marcadas o lado do sistema é espelho do banco;
+            # forçado aqui para valer também em chamadas diretas à API
+            if id_conta_bancaria in contas_espelhadas:
+                saldo_sistema = saldo_banco
 
             registros.append((cod_empresa, cod_filial, data_lancamento, id_conta_bancaria, saldo_banco, saldo_sistema, id_usuario))
 
@@ -4956,9 +4977,12 @@ def api_lancar_saldos_recebiveis():
                 cod_filial = int(item["cod_filial"])
                 id_indicador_recebivel = int(item["id_indicador_recebivel"])
                 valor_banco = float(item.get("valor_banco") or 0)
-                valor_sistema = float(item.get("valor_sistema") or 0)
+                # Estoques e recebíveis são iguais nos dois lados: o valor do
+                # sistema espelha o do banco. Forçado aqui para valer também
+                # em chamadas diretas à API, não só na tela.
+                valor_sistema = valor_banco
             except (KeyError, TypeError, ValueError):
-                return jsonify({"ok": False, "erro": "Lançamento inválido: informe cod_filial, id_indicador_recebivel, valor_banco e valor_sistema."}), 400
+                return jsonify({"ok": False, "erro": "Lançamento inválido: informe cod_filial, id_indicador_recebivel e valor_banco."}), 400
 
             if cod_filial not in filiais_ok:
                 return jsonify({"ok": False, "erro": f"Filial {cod_filial} não permitida para este usuário."}), 403
