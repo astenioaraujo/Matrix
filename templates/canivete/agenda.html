@@ -154,22 +154,15 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
   text-align: left; padding-left: 2px;
 }
 .sep-dia-nome { display: block; }
-.ag-cell.hoje-cell { background: #dc2626; }
-.ag-cell.hoje-cell .ag-num { color: #fff; font-size: 14px; }
-.ag-cell.hoje-cell .ag-inp { color: #fff; }
-.ag-cell.hoje-cell .ag-turno-label { color: #fecaca; }
-.ag-cell.hoje-cell .ag-slot-linha { color: #fff; }
-.ag-cell.hoje-cell .ag-slot-hora { color: #fecaca; }
-.ag-cell.hoje-cell .ag-noturno-add { color: #fca5a5; }
-.ag-cell.hoje-cell .ag-ac-btn { color: #fecaca; }
-.ag-cell.hoje-cell .ag-ac-btn:hover { color: #fff; }
+/* hoje: fundo igual ao das demais células; só o número fica destacado */
+.ag-cell.hoje-cell .ag-num { color: #1d4ed8; font-size: 15px; }
 
 /* número do dia */
+/* fora do fluxo: assim o bloco da manhã começa no topo da célula e o X
+   de meio expediente cobre também a faixa do número do dia */
 .ag-num {
-  display: flex; align-items: center; justify-content: flex-end;
-  width: 100%;
+  position: absolute; top: 3px; right: 6px; z-index: 1;
   font-size: 12px; font-weight: 700; color: #dc2626;
-  padding: 4px 6px 0 0;
 }
 .ag-cell.fim-semana-cell .ag-num { color: #94a3b8; }
 
@@ -180,16 +173,38 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
   position: relative;
   min-height: 100px;
 }
+/* a manhã absorve a faixa do número: mesma área útil da tarde (100px)
+   mais o espaço do número, para o texto não colidir com ele */
+.ag-turno.turno-manha { min-height: 120px; padding-top: 20px; }
 .ag-turno + .ag-turno {
   border-top: 1px dashed #94a3b8;
 }
 /* turno noturno: altura só do conteúdo */
 .ag-turno.turno-noturno { min-height: 0; }
 .ag-turno.turno-noturno .ag-inp { padding: 2px 4px; }
-.ag-turno.concluido { background: #64748b; opacity: .85; }
-.ag-cell.dia-concluido { background: #64748b !important; }
-.ag-cell.dia-concluido .ag-num { color: #e2e8f0; }
-.ag-cell.manha-concluida .ag-num { background: #64748b; }
+/* ── Marcação de concluído: X riscando o quadrado ──
+   O fundo continua amarelo; quem sinaliza a conclusão é o X.
+   Feito em SVG com preserveAspectRatio="none" para as linhas irem de canto
+   a canto mesmo em blocos que não são quadrados (um gradiente CSS traçaria
+   uma reta perpendicular ao eixo, e não a diagonal real). */
+.ag-turno.concluido {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' viewBox='0 0 100 100'%3E%3Cpath d='M0 0 L100 100 M100 0 L0 100' stroke='%23dc2626' stroke-width='2.5' vector-effect='non-scaling-stroke' opacity='0.85'/%3E%3C/svg%3E");
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+}
+
+/* dia inteiro concluído: um único X vermelho cobrindo a célula toda,
+   e os X de cada turno saem de cena */
+.ag-cell.dia-concluido .ag-turno.concluido { background-image: none; }
+.ag-cell.dia-concluido::after {
+  content: "";
+  position: absolute; inset: 0;
+  pointer-events: none;                 /* não bloqueia digitar nem clicar */
+  z-index: 2;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' viewBox='0 0 100 100'%3E%3Cpath d='M0 0 L100 100 M100 0 L0 100' stroke='%23dc2626' stroke-width='2.5' vector-effect='non-scaling-stroke' opacity='0.85'/%3E%3C/svg%3E");
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+}
 
 .ag-turno-label {
   font-size: 9px; font-weight: 800; color: #94a3b8;
@@ -361,7 +376,7 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
           <span class="ag-num">{{ dia.day }}</span>
 
           <!-- MANHÃ -->
-          <div class="ag-turno {{ 'concluido' if manha.concluido else '' }}"
+          <div class="ag-turno turno-manha {{ 'concluido' if manha.concluido else '' }}"
                id="turno-{{ d }}-manha">
             <div class="ag-turno-label">
               <span class="ag-acoes">
