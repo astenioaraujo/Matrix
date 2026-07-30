@@ -105,6 +105,29 @@
         .topo-info strong {
         color: #ffffff;
         }
+
+        /* Atalho para a Agenda — mesmo espírito dos ícones de idioma do
+           macOS: um símbolo discreto, sem texto, que salta direto para lá */
+        .btn-atalho-agenda {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.18);
+        text-decoration: none;
+        font-size: 16px;
+        line-height: 1;
+        transition: 0.2s ease;
+        }
+
+        .btn-atalho-agenda:hover {
+        background: rgba(255,255,255,0.18);
+        border-color: rgba(255,255,255,0.32);
+        transform: translateY(-1px);
+        }
     
         .container {
         flex: 1 0 auto;
@@ -344,6 +367,12 @@
             <div class="topo-info">
               🏢 <strong>{{ session.get("nome_empresa") }}</strong>
             </div>
+          {% endif %}
+
+          {% if pode_atalho_agenda %}
+            <a href="{{ url_for('canivete.agenda') }}" class="btn-atalho-agenda" title="Ir para a Agenda">
+              📅
+            </a>
           {% endif %}
 
           <a href="{{ url_for('auth.trocar_empresa') }}" class="btn btn-secondary">

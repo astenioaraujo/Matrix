@@ -61,5 +61,30 @@ app.register_blueprint(treinamentos_bp)
 app.register_blueprint(canivete_bp)
 app.register_blueprint(projetos_bp)
 
+
+@app.context_processor
+def _injetar_atalho_agenda():
+    """
+    Disponibiliza `pode_atalho_agenda` para toda página que estende base.html,
+    para mostrar o ícone de atalho da Agenda na barra superior.
+    """
+    from flask import session
+
+    id_usuario = session.get("id_usuario")
+    cod_empresa = session.get("cod_empresa")
+    if not id_usuario or not cod_empresa:
+        return {"pode_atalho_agenda": False}
+
+    if str(session.get("tipo_global") or "").strip().lower() == "superusuario":
+        return {"pode_atalho_agenda": True}
+
+    try:
+        from security_helpers import usuario_tem_permissao
+        pode = usuario_tem_permissao(id_usuario, str(cod_empresa).strip(), "CANIVETE", "AGENDA")
+    except Exception:
+        pode = False
+    return {"pode_atalho_agenda": pode}
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
