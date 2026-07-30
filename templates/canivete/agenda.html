@@ -163,6 +163,7 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
 .ag-num {
   position: absolute; top: 3px; right: 6px; z-index: 1;
   font-size: 12px; font-weight: 700; color: #dc2626;
+  pointer-events: none;       /* é só rótulo: não rouba o clique dos ícones */
 }
 .ag-cell.fim-semana-cell .ag-num { color: #94a3b8; }
 
@@ -227,7 +228,11 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
   display: flex; gap: 2px; position: absolute;
   top: 2px; right: 2px; opacity: 0;
   transition: opacity .15s;
+  z-index: 3;                 /* acima do número do dia */
 }
+/* na manhã o canto direito é do número do dia, então os ícones vão para a
+   esquerda para não ficarem embaixo dele */
+.ag-turno.turno-manha .ag-acoes { right: auto; left: 4px; }
 .ag-turno:hover .ag-acoes { opacity: 1; }
 .ag-ac-btn {
   background: none; border: none; cursor: pointer;
@@ -386,18 +391,17 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
                   onclick="toggleConc('{{ d }}','manha',this)">✔</button>
               </span>
             </div>
-            {% if manha.quebrado and manha.slots %}
+            {% if manha.slots %}
               {% for s in manha.slots %}
               <div class="ag-slot-linha">
                 <span class="ag-slot-hora">{{ s.hora }}</span>
                 <span>{{ s.tarefa }}</span>
               </div>
               {% endfor %}
-            {% else %}
+            {% endif %}
             <textarea class="ag-inp" id="txt-{{ d }}-manha"
               rows="3"
               onblur="salvar('{{ d }}','manha',this.value)">{{ manha.conteudo }}</textarea>
-            {% endif %}
           </div>
 
           <!-- TARDE -->
@@ -411,18 +415,17 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
                   onclick="toggleConc('{{ d }}','tarde',this)">✔</button>
               </span>
             </div>
-            {% if tarde.quebrado and tarde.slots %}
+            {% if tarde.slots %}
               {% for s in tarde.slots %}
               <div class="ag-slot-linha">
                 <span class="ag-slot-hora">{{ s.hora }}</span>
                 <span>{{ s.tarefa }}</span>
               </div>
               {% endfor %}
-            {% else %}
+            {% endif %}
             <textarea class="ag-inp" id="txt-{{ d }}-tarde"
               rows="3"
               onblur="salvar('{{ d }}','tarde',this.value)">{{ tarde.conteudo }}</textarea>
-            {% endif %}
           </div>
 
           <!-- NOTURNO -->
@@ -438,18 +441,17 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
                   onclick="toggleConc('{{ d }}','noturno',this)">✔</button>
               </span>
             </div>
-            {% if noturno.quebrado and noturno.slots %}
+            {% if noturno.slots %}
               {% for s in noturno.slots %}
               <div class="ag-slot-linha">
                 <span class="ag-slot-hora">{{ s.hora }}</span>
                 <span>{{ s.tarefa }}</span>
               </div>
               {% endfor %}
-            {% else %}
+            {% endif %}
             <textarea class="ag-inp" id="txt-{{ d }}-noturno"
               rows="1"
               onblur="salvar('{{ d }}','noturno',this.value)">{{ noturno.conteudo }}</textarea>
-            {% endif %}
           </div>
           {% else %}
           <button class="ag-noturno-add" id="nadd-{{ d }}"
@@ -504,8 +506,14 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
 
 <script>
 function ajustarPaddingTextarea(ta) {
-  // noturno tem altura própria — não centraliza
-  if (ta.closest('.turno-noturno')) return;
+  const turno = ta.closest('.ag-turno');
+  // noturno tem altura própria; com horários acima o texto já começa
+  // deslocado — nos dois casos não faz sentido centralizar
+  if (!turno || turno.classList.contains('turno-noturno')
+      || turno.querySelector('.ag-slot-linha')) {
+    ta.style.paddingTop = '4px';
+    return;
+  }
   const linhas = (ta.value.match(/\n/g) || []).length + 1;
   // rows=3, line-height≈1.5, font=15px → altura total ≈ 68px, 1 linha ≈ 23px
   ta.style.paddingTop = linhas === 1 ? '23px' : '4px';
