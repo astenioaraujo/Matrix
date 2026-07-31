@@ -60,11 +60,53 @@
     min-width:96px; box-sizing:border-box;
   }
   table.caixas thead th.col-data { min-width:110px; }
+
+  /* ── Abrir/fechar colunas de forma de recebimento ──────────────────────
+     O checkbox mora dentro do cabeçalho, encostado à esquerda, e o nome da
+     forma fica centralizado no espaço que sobra. */
+  table.caixas thead th[data-col] { position:relative; padding-left:24px; }
+  .chk-col {
+    position:absolute; left:6px; top:50%; transform:translateY(-50%);
+    width:13px; height:13px; margin:0; cursor:pointer; accent-color:#fff;
+  }
+  .chk-col:disabled { cursor:not-allowed; opacity:.4; }
+
+  /* Coluna fechada: vira uma tira fina que segura só o checkbox. O conteúdo
+     de todas as células daquela coluna some (cabeçalho, dias, total e
+     legenda), senão o texto vazaria por cima da coluna vizinha. */
+  .col-fechada {
+    width:24px !important; min-width:24px !important; max-width:24px !important;
+    padding:0 !important; overflow:hidden;
+  }
+  td.col-fechada { background:#eef2f7 !important; font-size:0 !important; }
+  th.col-fechada .th-nome { display:none !important; }
+  /* qualquer filho da célula fechada some — input, tracinho, span de
+     detalhe. Sem isto o tracinho da linha de total vaza, porque tem
+     font-size próprio e ignora o font-size:0 da célula. */
+  td.col-fechada * { display:none !important; }
+  th.col-fechada { padding-left:0 !important; }
+  th.col-fechada .chk-col { position:static; transform:none; display:block; margin:0 auto; }
+
   table.caixas thead th.col-total   { background:#1d4ed8; }
   table.caixas thead th.col-totalcx { background:#166534; }
   table.caixas thead th.col-faltas  { background:#7f1d1d; }
   table.caixas thead th.col-sep     { background:#e5e7eb; width:8px; min-width:8px; padding:0; border:1px solid #bbb; }
-  table.caixas thead th.col-ctrl-header { background:#374151; letter-spacing:.05em; }
+  /* Título de cada bloco, na linha acima do cabeçalho: texto preto solto,
+     sem fundo e sem borda, alinhado à esquerda em cima da DATA do bloco.
+     Só a linha de nomes de coluna é sticky — esta rola junto com a página,
+     senão as duas grudariam no topo uma por cima da outra. */
+  table.caixas thead tr.linha-titulo-bloco th {
+    position:static;
+    background:#fff;
+    border:none;
+    color:#000;
+    font-size:15px;
+    font-weight:700;
+    letter-spacing:.04em;
+    text-align:left;
+    padding:2px 0 6px 3px;
+    min-width:0;
+  }
   table.caixas thead th.col-ctrl-info    { background:#4b5563; }
   table.caixas thead th.col-ctrl-receita { background:#166534; }
   table.caixas thead th.col-ctrl-despesa { background:#7f1d1d; }
@@ -153,6 +195,120 @@
 
   .badge-salvo { display:none; font-size:11px; color:#16a34a; font-weight:700; position:fixed; bottom:20px; right:24px; background:#fff; border:1px solid #16a34a; border-radius:8px; padding:8px 14px; box-shadow:0 3px 10px rgba(0,0,0,.15); z-index:999; }
   .badge-erro  { display:none; font-size:11px; color:#dc2626; font-weight:700; position:fixed; bottom:20px; right:24px; background:#fff; border:1px solid #dc2626; border-radius:8px; padding:8px 14px; box-shadow:0 3px 10px rgba(0,0,0,.15); z-index:999; }
+
+  /* ── Botões "editar" e "visualizar" (abrem os painéis abaixo da grade) ── */
+  th.col-editar, td.td-editar {
+    width:48px; min-width:48px; padding:0 !important; text-align:center;
+  }
+  .btn-editar-dia, .btn-visualizar-dia {
+    background:none; border:1px solid #cbd5e1; border-radius:5px;
+    width:20px; height:20px; line-height:1; font-size:11px; color:#64748b;
+    cursor:pointer; padding:0; vertical-align:middle;
+  }
+  .btn-editar-dia { margin-right:3px; }
+  .btn-editar-dia:hover { background:#eef2ff; border-color:#6366f1; color:#4338ca; }
+  .btn-visualizar-dia:hover { background:#f0fdf4; border-color:#16a34a; color:#166534; }
+
+  /* olho verde: neste dia algum item recebeu mais de um lançamento, ou seja,
+     o valor da célula é uma soma. Mesmo critério da chave "só com
+     detalhamento" do painel de visualização. */
+  .btn-visualizar-dia.tem-soma {
+    background:#dcfce7; border-color:#16a34a; color:#15803d; font-weight:700;
+  }
+  .btn-visualizar-dia.tem-soma:hover { background:#bbf7d0; }
+
+  /* ── Bloqueios de digitação ───────────────────────────────────────────
+     Dia fora do prazo (só ontem, anteontem e o dia anterior são digitáveis)
+     ou célula cujo valor é soma de um detalhamento. Nos dois casos o input
+     fica readonly; aqui é só o aviso visual. */
+  td.td-travada { background:#f1f5f9 !important; }
+  input.cel-travada {
+    background:transparent; color:#94a3b8; cursor:not-allowed;
+  }
+  tr.dia-travado td.td-data { color:#94a3b8; }
+  .btn-editar-dia:disabled {
+    opacity:.3; cursor:not-allowed; background:none; border-color:#e2e8f0;
+  }
+  .btn-editar-dia:disabled:hover { background:none; border-color:#e2e8f0; color:#64748b; }
+
+  /* célula cujo valor vem de um detalhamento (soma de várias linhas) */
+  td.tem-detalhe { box-shadow: inset 3px 0 0 #6366f1; }
+
+  /* ── Painel de detalhamento (abre abaixo da grade) ──
+     Fundo cinza no painel inteiro, para destacar dos cartões brancos de
+     cada seção e das caixas de texto (também brancas) — sem isso tudo
+     ficava da mesma cor e não dava pra ver onde clicar. Sem altura máxima:
+     o painel estica até o fim do conteúdo, não rola por dentro. */
+  #painel-detalhe {
+    display:none; margin-top:18px; background:#e2e8f0; border:1px solid #cbd5e1;
+    border-radius:12px; padding:18px 22px; max-width:900px;
+  }
+  #painel-detalhe.aberto { display:block; }
+  .pd-cabecalho { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .pd-titulo { font-size:16px; font-weight:800; color:#14114f; }
+  .pd-fechar { background:#fff; border:1px solid #cbd5e1; border-radius:7px; width:30px; height:30px; cursor:pointer; font-size:14px; color:#555; }
+  .pd-fechar:hover { background:#f1f5f9; }
+  .pd-secoes { padding-right:4px; }
+
+  .pd-secao { background:#fff; border:1px solid #cbd5e1; border-radius:10px; padding:10px 14px; margin-bottom:10px; box-shadow:0 1px 2px rgba(0,0,0,.05); }
+  .pd-secao-titulo {
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:13px; font-weight:800; color:#374151; margin-bottom:8px;
+    text-transform:uppercase; letter-spacing:.03em;
+  }
+  .pd-secao-sub { font-size:12px; font-weight:700; color:#16a34a; }
+  .pd-linha { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
+  .pd-linha input[type=text].pd-obs {
+    flex:1; height:32px; border:1px solid #94a3b8; border-radius:7px; padding:0 10px; font-size:13px; background:#fff;
+  }
+  .pd-linha input[type=text].pd-val {
+    width:110px; height:32px; border:1px solid #94a3b8; border-radius:7px; padding:0 10px; font-size:13px; text-align:right; background:#fff;
+  }
+  .pd-linha input:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 2px #e0e7ff; }
+  .pd-btn-add, .pd-btn-del {
+    background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px;
+    width:28px; height:28px; cursor:pointer; font-size:14px; color:#555; flex-shrink:0;
+  }
+  .pd-btn-add:hover { background:#eef2ff; border-color:#6366f1; color:#4338ca; }
+  .pd-btn-del:hover { background:#fef2f2; border-color:#f87171; color:#b91c1c; }
+  .pd-sep-controles { font-size:12px; font-weight:800; color:#7f1d1d; text-transform:uppercase; letter-spacing:.05em; margin:16px 0 8px; padding-top:12px; border-top:2px solid #cbd5e1; }
+
+  /* ── Painel de visualização (só leitura, mais simples/sem tanto "frame") ── */
+  #painel-visualizar {
+    display:none; margin-top:18px; background:#f8fafc; border:1px solid #e2e8f0;
+    border-radius:12px; padding:16px 20px; max-width:640px;
+  }
+  #painel-visualizar.aberto { display:block; }
+  .pv-cabecalho { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+  .pv-titulo-grupo { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  .pv-titulo { font-size:15px; font-weight:800; color:#14114f; }
+  .pv-filtro { display:flex; align-items:center; gap:7px; }
+  .pv-filtro-label { font-size:12px; font-weight:600; color:#555; }
+  .pv-switch { position:relative; display:inline-block; width:34px; height:19px; flex-shrink:0; }
+  .pv-switch input { opacity:0; width:0; height:0; }
+  .pv-switch-trilho {
+    position:absolute; cursor:pointer; inset:0; background:#cbd5e1;
+    border-radius:19px; transition:.15s;
+  }
+  .pv-switch-trilho::before {
+    content:""; position:absolute; width:15px; height:15px; left:2px; bottom:2px;
+    background:#fff; border-radius:50%; transition:.15s;
+  }
+  .pv-switch input:checked + .pv-switch-trilho { background:#4338ca; }
+  .pv-switch input:checked + .pv-switch-trilho::before { transform:translateX(15px); }
+  .pv-vazio { font-size:13px; color:#888; padding:10px 2px; }
+  .pv-linha {
+    display:flex; justify-content:space-between; align-items:baseline;
+    padding:6px 2px; border-bottom:1px solid #e5e7eb; font-size:13px;
+  }
+  .pv-linha:last-child { border-bottom:none; }
+  .pv-nome { font-weight:700; color:#374151; }
+  .pv-valor { font-weight:700; color:#166534; }
+  .pv-sublinha {
+    display:flex; justify-content:space-between; padding:2px 2px 2px 14px;
+    font-size:12px; color:#64748b;
+  }
+  .pv-sep-controles { font-size:11px; font-weight:800; color:#7f1d1d; text-transform:uppercase; letter-spacing:.05em; margin:14px 0 4px; padding-top:10px; border-top:2px solid #e2e8f0; }
 </style>
 
 <div class="pagina-titulo">Conferir Caixas</div>
@@ -264,30 +420,45 @@
 <div class="tbl-wrapper">
   <table class="caixas {{ 'tbl-editavel' if editavel else 'tbl-total' }}">
     <thead>
+      <!-- Título de cada bloco, fora do cabeçalho de colunas: texto solto,
+           alinhado à esquerda, começando em cima da DATA do próprio bloco. -->
+      <tr class="linha-titulo-bloco">
+        <th colspan="{{ 1 + (1 if editavel else 0) + formas|length + 3 }}">CONTROLES</th>
+        {% if controles %}
+          <th></th>
+          <th colspan="{{ 1 + controles|length }}">CONTROLES ADICIONAIS</th>
+        {% endif %}
+      </tr>
+      <!-- Linha única de nomes de coluna: os dois blocos seguem o mesmo
+           padrão, com o nome de cada coluna na mesma altura da DATA. -->
       <tr>
         <th class="col-data">DATA</th>
-        {% for f in formas %}<th>{{ f.nome }}</th>{% endfor %}
+        {% if editavel %}<th class="col-editar"></th>{% endif %}
+        {% for f in formas %}
+          {% set fechada = f.id in colunas_fechadas %}
+          {% set travada = f.id in formas_com_valor %}
+          <th data-col="{{ f.id }}" class="{{ 'col-fechada' if fechada else '' }}">
+            {% if editavel %}
+              <input type="checkbox" class="chk-col" {% if not fechada %}checked{% endif %}
+                     {% if travada %}disabled{% endif %}
+                     data-forma="{{ f.id }}"
+                     title="{% if travada %}{{ f.nome }} tem valor lançado no mês — não pode ser fechada{% else %}Abrir/fechar a coluna {{ f.nome }}{% endif %}"
+                     onchange="alternarColuna({{ f.id }}, this.checked)">
+            {% endif %}
+            <span class="th-nome">{{ f.nome }}</span>
+          </th>
+        {% endfor %}
         <th class="col-total">TOTAL</th>
         <th class="col-totalcx">TOTAL CX</th>
-        <th class="col-faltas">FALTAS</th>
+        <th class="col-faltas">FALTAS / SOBRAS</th>
         {% if controles %}
           <th class="col-sep"></th>
           <th class="col-data">DATA</th>
-          <th class="col-ctrl-header" colspan="{{ controles|length }}">CONTROLES ADICIONAIS</th>
+          {% for c in controles %}
+            <th class="col-ctrl-{{ c.tipo|lower }}">{{ c.nome }}</th>
+          {% endfor %}
         {% endif %}
       </tr>
-      {% if controles %}
-      <tr>
-        <th></th>
-        {% for f in formas %}<th></th>{% endfor %}
-        <th></th><th></th><th></th>
-        <th class="col-sep"></th>
-        <th class="col-data"></th>
-        {% for c in controles %}
-          <th class="col-ctrl-{{ c.tipo|lower }}">{{ c.nome }}</th>
-        {% endfor %}
-      </tr>
-      {% endif %}
     </thead>
     <tbody>
       {% set tot_total   = namespace(v=0) %}
@@ -302,32 +473,59 @@
         {% set tot_total.v   = tot_total.v   + soma.v %}
         {% set tot_totalcx.v = tot_totalcx.v + tcx %}
 
+        {# Só ontem, anteontem e o dia anterior a esse aceitam digitação. #}
+        {% set dia_editavel = edicao_ini <= d <= edicao_fim %}
+
         <tr data-data="{{ d.strftime('%Y-%m-%d') }}"
             data-filial="{{ cod_filial_atual or '' }}"
-            class="{% if d == dia_processando %}dia-processando{% endif %}">
+            class="{% if d == dia_processando %}dia-processando{% endif %} {% if not dia_editavel %}dia-travado{% endif %}">
 
           <td class="td-data {% if d == hoje %}hoje{% endif %}">{{ data_cell(d) }}</td>
 
+          {% if editavel %}
+          <td class="td-editar">
+            <button type="button" class="btn-editar-dia"
+              {% if not dia_editavel %}disabled{% endif %}
+              onclick="abrirDetalhe('{{ d.strftime('%Y-%m-%d') }}')"
+              title="{% if dia_editavel %}Detalhar os valores deste dia{% else %}Fora do prazo de digitação{% endif %}">✎</button>
+            {% set tem_soma = d.strftime('%Y-%m-%d') in dias_com_soma %}
+            <button type="button" class="btn-visualizar-dia {{ 'tem-soma' if tem_soma else '' }}"
+              onclick="abrirVisualizar('{{ d.strftime('%Y-%m-%d') }}')"
+              title="{% if tem_soma %}Este dia tem item com mais de um lançamento (soma){% else %}Ver o detalhamento deste dia{% endif %}">👁</button>
+          </td>
+          {% endif %}
+
           {% for f in formas %}
             {% set v = vals.get(f.id, 0)|float %}
+            {% set tem_det = (d.strftime('%Y-%m-%d'), f.id) in com_detalhe_forma %}
+            {% set fechada = f.id in colunas_fechadas %}
+            {# Trava a célula quando o dia está fora do prazo ou quando o valor
+               é soma de um detalhamento (só o painel de detalhe pode mudar). #}
+            {% set cel_travada = (not dia_editavel) or tem_det %}
             {% if editavel %}
-            <td class="td-valor">
-              <input type="text" class="cel-forma" data-forma="{{ f.id }}"
+            <td class="td-valor {{ 'tem-detalhe' if tem_det else '' }} {{ 'td-travada' if cel_travada else '' }} {{ 'col-fechada' if fechada else '' }}" data-col="{{ f.id }}">
+              <input type="text" class="cel-forma {{ 'cel-travada' if cel_travada else '' }}" data-forma="{{ f.id }}"
                      value="{{ '{:,.2f}'.format(v).replace(',','X').replace('.',',').replace('X','.') if v else '' }}"
-                     placeholder="0,00" onblur="salvarCelula(this)">
+                     placeholder="{{ '' if cel_travada else '0,00' }}"
+                     {% if cel_travada %}readonly tabindex="-1"
+                     title="{% if not dia_editavel %}Fora do prazo de digitação{% else %}Valor vem de um detalhamento (soma) — altere pelo ✎{% endif %}"{% endif %}
+                     onblur="salvarCelula(this)">
             </td>
             {% else %}
-            <td class="td-readonly">{{ money(v) }}</td>
+            <td class="td-readonly {{ 'tem-detalhe' if tem_det else '' }} {{ 'col-fechada' if fechada else '' }}" data-col="{{ f.id }}">{{ money(v) }}</td>
             {% endif %}
           {% endfor %}
 
           <td class="td-total" data-total="{{ soma.v }}">{{ money(soma.v) }}</td>
 
           {% if editavel %}
-          <td class="td-totalcx">
-            <input type="text" class="cel-totalcx"
+          <td class="td-totalcx {{ 'td-travada' if not dia_editavel else '' }}">
+            <input type="text" class="cel-totalcx {{ 'cel-travada' if not dia_editavel else '' }}"
                    value="{{ '{:,.2f}'.format(tcx).replace(',','X').replace('.',',').replace('X','.') if tcx else '' }}"
-                   placeholder="0,00" onblur="salvarTotalCx(this)">
+                   placeholder="{{ '' if not dia_editavel else '0,00' }}"
+                   {% if not dia_editavel %}readonly tabindex="-1"
+                   title="Fora do prazo de digitação"{% endif %}
+                   onblur="salvarTotalCx(this)">
           </td>
           {% else %}
           <td class="td-totalcx-ro">{{ money(tcx) }}</td>
@@ -347,14 +545,19 @@
             {% set cvals = controles_valores.get(d, {}) %}
             {% for c in controles %}
               {% set cv = cvals.get(c.id, 0)|float %}
+              {% set tem_det_c = (d.strftime('%Y-%m-%d'), c.id) in com_detalhe_controle %}
+              {% set cel_travada_c = (not dia_editavel) or tem_det_c %}
               {% if editavel %}
-              <td class="td-ctrl">
-                <input type="text" class="cel-ctrl" data-controle="{{ c.id }}"
+              <td class="td-ctrl {{ 'tem-detalhe' if tem_det_c else '' }} {{ 'td-travada' if cel_travada_c else '' }}" data-col-ctrl="{{ c.id }}">
+                <input type="text" class="cel-ctrl {{ 'cel-travada' if cel_travada_c else '' }}" data-controle="{{ c.id }}"
                        value="{{ '{:,.2f}'.format(cv).replace(',','X').replace('.',',').replace('X','.') if cv else '' }}"
-                       placeholder="0,00" onblur="salvarControle(this)">
+                       placeholder="{{ '' if cel_travada_c else '0,00' }}"
+                       {% if cel_travada_c %}readonly tabindex="-1"
+                       title="{% if not dia_editavel %}Fora do prazo de digitação{% else %}Valor vem de um detalhamento (soma) — altere pelo ✎{% endif %}"{% endif %}
+                       onblur="salvarControle(this)">
               </td>
               {% else %}
-              <td class="td-ctrl-ro">{{ money(cv) }}</td>
+              <td class="td-ctrl-ro {{ 'tem-detalhe' if tem_det_c else '' }}" data-col-ctrl="{{ c.id }}">{{ money(cv) }}</td>
               {% endif %}
             {% endfor %}
           {% endif %}
@@ -365,10 +568,11 @@
       {% set fg = tot_total.v - tot_totalcx.v %}
       <tr class="linha-total">
         <td class="td-data">TOTAL</td>
+        {% if editavel %}<td></td>{% endif %}
         {% for f in formas %}
           {% set sf = namespace(v=0) %}
           {% for d in datas %}{% set sf.v = sf.v + (valores.get(d,{}).get(f.id,0)|float) %}{% endfor %}
-          <td>{{ money(sf.v) }}</td>
+          <td data-col="{{ f.id }}" class="{{ 'col-fechada' if f.id in colunas_fechadas else '' }}">{{ money(sf.v) }}</td>
         {% endfor %}
         <td>{{ money(tot_total.v) }}</td>
         <td>{{ money(tot_totalcx.v) }}</td>
@@ -392,10 +596,11 @@
            pra saber qual coluna é qual -->
       <tr class="linha-legenda">
         <td class="td-data">Data</td>
-        {% for f in formas %}<td>{{ f.nome }}</td>{% endfor %}
+        {% if editavel %}<td></td>{% endif %}
+        {% for f in formas %}<td data-col="{{ f.id }}" class="{{ 'col-fechada' if f.id in colunas_fechadas else '' }}">{{ f.nome }}</td>{% endfor %}
         <td>Total</td>
         <td>Total Cx</td>
-        <td>Faltas</td>
+        <td>Faltas / Sobras</td>
         {% if controles %}
           <td class="td-sep"></td>
           <td class="td-data">Data</td>
@@ -407,11 +612,51 @@
 </div>
 {% endif %}
 
+{% if editavel %}
+<!-- PAINEL DE DETALHAMENTO — abre abaixo da grade ao clicar em "editar" -->
+<div id="painel-detalhe">
+  <div class="pd-cabecalho">
+    <div class="pd-titulo" id="pd-titulo">Detalhamento</div>
+    <button type="button" class="pd-fechar" onclick="fecharDetalhe()">✕</button>
+  </div>
+  <div class="pd-secoes" id="pd-secoes"></div>
+</div>
+
+<!-- PAINEL DE VISUALIZAÇÃO — só leitura, mostra apenas o que tem valor -->
+<div id="painel-visualizar">
+  <div class="pv-cabecalho">
+    <div class="pv-titulo-grupo">
+      <div class="pv-titulo" id="pv-titulo">Visualizar</div>
+      <div class="pv-filtro">
+        <label class="pv-switch">
+          <input type="checkbox" id="pv-chk-so-detalhados" checked
+                 onchange="alternarFiltroVisualizar(this.checked)">
+          <span class="pv-switch-trilho"></span>
+        </label>
+        <span class="pv-filtro-label">Só com detalhamento (soma)</span>
+      </div>
+    </div>
+    <button type="button" class="pd-fechar" onclick="fecharVisualizar()">✕</button>
+  </div>
+  <div id="pv-secoes"></div>
+</div>
+{% endif %}
+
 <div class="badge-salvo" id="badge-salvo">✔ Salvo</div>
 <div class="badge-erro"  id="badge-erro">✘ Erro ao salvar</div>
 
 <script>
   const URL_SALVAR = "{{ url_for('financeiro.conferir_caixas') }}";
+  {% if editavel %}
+  const URL_DETALHE        = "{{ url_for('financeiro.api_caixas_detalhe') }}";
+  const URL_DETALHE_SALVAR = "{{ url_for('financeiro.api_caixas_detalhe_salvar') }}";
+  const FILIAL_ATUAL = {{ cod_filial_atual or 0 }};
+  const URL_COLUNA_VISIVEL = "{{ url_for('financeiro.api_caixas_coluna_visivel') }}";
+  const MES_ATUAL = {{ mes_sel }};
+  const ANO_ATUAL = {{ ano_sel }};
+  const FORMAS_JS    = {{ formas | tojson }};
+  const CONTROLES_JS = {{ controles | tojson }};
+  {% endif %}
 
   function parseBR(v) { return parseFloat((v||'0').replace(/\./g,'').replace(',','.')) || 0; }
   function fmtBR(v) {
@@ -446,7 +691,42 @@
     else{tdF.classList.add('zero');tdF.textContent='—';}
   }
 
+  /* Abre/fecha uma coluna de forma de recebimento inteira e grava a escolha
+     para esta filial. Coluna com valor lançado no mês vem com o checkbox
+     desabilitado, então nem chega aqui. */
+  function alternarColuna(idForma, mostrar) {
+    document.querySelectorAll(`[data-col="${idForma}"]`).forEach(el => {
+      el.classList.toggle('col-fechada', !mostrar);
+    });
+
+    const fd = new FormData();
+    fd.append('cod_filial', FILIAL_ATUAL);
+    fd.append('id_forma', idForma);
+    fd.append('visivel', mostrar ? '1' : '0');
+    fd.append('mes', MES_ATUAL); fd.append('ano', ANO_ATUAL);
+
+    fetch(URL_COLUNA_VISIVEL, { method:'POST', body:fd })
+      .then(r => r.json())
+      .then(res => {
+        if (res.ok) { badge(true); return; }
+        // servidor recusou: desfaz na tela pra não mentir pro usuário
+        const chk = document.querySelector(`.chk-col[data-forma="${idForma}"]`);
+        if (chk) chk.checked = !mostrar;
+        document.querySelectorAll(`[data-col="${idForma}"]`).forEach(el => {
+          el.classList.toggle('col-fechada', mostrar);
+        });
+        alert(res.erro || 'Não foi possível gravar.');
+      })
+      .catch(() => badge(false));
+  }
+
+  /* Célula travada (dia fora do prazo ou valor que é soma de detalhamento)
+     não dispara gravação. O servidor recusa de qualquer jeito; isto evita
+     o request inútil e o badge de erro. */
+  function travada(inp) { return inp.readOnly || inp.classList.contains('cel-travada'); }
+
   function salvarCelula(inp) {
+    if (travada(inp)) return;
     const {data,filial}=rowInfo(inp);
     const v=parseBR(inp.value); inp.value=v?fmtBR(v):'';
     recalcTotal(inp.closest('tr'));
@@ -456,6 +736,7 @@
     fetch(URL_SALVAR,{method:'POST',body:fd}).then(r=>badge(r.ok)).catch(()=>badge(false));
   }
   function salvarTotalCx(inp) {
+    if (travada(inp)) return;
     const {data,filial}=rowInfo(inp);
     const v=parseBR(inp.value); inp.value=v?fmtBR(v):'';
     recalcFalta(inp.closest('tr'));
@@ -466,6 +747,7 @@
   }
 
   function salvarControle(inp) {
+    if (travada(inp)) return;
     const {data,filial}=rowInfo(inp);
     const v=parseBR(inp.value); inp.value=v?fmtBR(v):'';
     const fd=new FormData();
@@ -476,12 +758,299 @@
 
   document.querySelectorAll('input.cel-forma,input.cel-totalcx,input.cel-ctrl').forEach(inp=>{
     inp.addEventListener('focus',function(){
+      if (travada(this)) { this.blur(); return; }
       const v=parseBR(this.value); this.value=v?v.toFixed(2).replace('.',','):''; this.select();
     });
     inp.addEventListener('keydown',function(e){
       if(e.key==='Enter'){e.preventDefault();this.blur();}
     });
   });
+
+  {% if editavel %}
+  /* ── PAINEL DE DETALHAMENTO ─────────────────────────────────────────────
+     Quebra o valor de uma célula (forma de recebimento ou controle
+     adicional) em várias linhas de observação+valor. A soma das linhas
+     vira o valor mostrado na grade — mesmo espírito de uma fórmula de
+     Excel, mas guardado no banco em vez de numa célula de planilha. */
+  let pdDataAtual = null;
+
+  function escapeHtml(s) {
+    return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function linhaDetalheHtml(tipo, idItem, idLinha, observacao, valor) {
+    return `
+      <div class="pd-linha" data-id="${idLinha || ''}">
+        <input type="text" class="pd-obs" placeholder="Observação" value="${escapeHtml(observacao)}"
+          onblur="salvarLinhaDetalhe(this)" onkeydown="detalheKeydown(event,this)">
+        <input type="text" class="pd-val" placeholder="0,00"
+          value="${valor ? valor.toFixed(2).replace('.',',') : ''}"
+          onfocus="this.select()" onblur="salvarLinhaDetalhe(this)" onkeydown="detalheKeydown(event,this)">
+        <button type="button" class="pd-btn-add" onclick="adicionarLinhaDetalhe(this)" title="Nova linha">＋</button>
+        <button type="button" class="pd-btn-del" onclick="removerLinhaDetalhe(this)" title="Remover linha">✕</button>
+      </div>`;
+  }
+
+  function montarSecaoDetalhe(tipo, idItem, nome, linhas) {
+    const subtotal = linhas.reduce((s,l) => s + l.valor, 0);
+    const linhasHtml = linhas.length
+      ? linhas.map(l => linhaDetalheHtml(tipo, idItem, l.id, l.observacao, l.valor)).join('')
+      : linhaDetalheHtml(tipo, idItem, null, '', 0);
+    return `
+      <div class="pd-secao" data-tipo="${tipo}" data-item="${idItem}">
+        <div class="pd-secao-titulo">
+          <span>${escapeHtml(nome)}</span>
+          <span class="pd-secao-sub" data-subtotal>${subtotal ? fmtBR(subtotal) : ''}</span>
+        </div>
+        <div class="pd-linhas">${linhasHtml}</div>
+      </div>`;
+  }
+
+  async function carregarDetalhe(dataStr) {
+    const cont = document.getElementById('pd-secoes');
+    cont.innerHTML = '<div style="color:#888;font-size:13px;">Carregando…</div>';
+    try {
+      const resp = await fetch(`${URL_DETALHE}?cod_filial=${FILIAL_ATUAL}&data=${dataStr}`);
+      const j = await resp.json();
+      if (!j.ok) { cont.innerHTML = '<div style="color:#b91c1c;font-size:13px;">Erro ao carregar.</div>'; return; }
+
+      let html = FORMAS_JS.map(f => montarSecaoDetalhe('forma', f.id, f.nome, j.forma[f.id] || [])).join('');
+      if (CONTROLES_JS.length) {
+        html += '<div class="pd-sep-controles">Controles adicionais</div>';
+        html += CONTROLES_JS.map(c => montarSecaoDetalhe('controle', c.id, c.nome, j.controle[c.id] || [])).join('');
+      }
+      cont.innerHTML = html;
+    } catch (e) {
+      cont.innerHTML = '<div style="color:#b91c1c;font-size:13px;">Erro ao carregar.</div>';
+    }
+  }
+
+  function abrirDetalhe(dataStr) {
+    /* Dia fora do prazo não abre o painel — o botão já vem desabilitado,
+       isto cobre chamada por outro caminho. */
+    const btnDia = document.querySelector(`tr[data-data="${dataStr}"] .btn-editar-dia`);
+    if (btnDia && btnDia.disabled) return;
+
+    pdDataAtual = dataStr;
+    const [ano, mes, dia] = dataStr.split('-');
+    document.getElementById('pd-titulo').textContent = `Detalhamento — ${dia}/${mes}/${ano}`;
+    const painel = document.getElementById('painel-detalhe');
+    painel.classList.add('aberto');
+    painel.scrollIntoView({ behavior:'smooth', block:'start' });
+    carregarDetalhe(dataStr);
+  }
+
+  function fecharDetalhe() {
+    document.getElementById('painel-detalhe').classList.remove('aberto');
+    pdDataAtual = null;
+  }
+
+  /* ── PAINEL DE VISUALIZAÇÃO ──────────────────────────────────────────────
+     Só leitura: lista formas/controles que tiveram valor naquele dia (pula
+     os zerados). Quando o item tem detalhamento, mostra as linhas
+     (observação + valor); quando não tem, mostra só o valor total.
+     A chave "só com detalhamento" filtra pra só os itens com MAIS DE UMA
+     linha lançada (a soma delas é que forma o total) — não é o mesmo que
+     "tem observação", um item pode ter uma linha só com observação e não
+     conta como soma. */
+  let pvItens = null; // { formas:[{nome,total,linhas}], controles:[...] }
+  let pvSoDetalhados = true; // a tela abre já filtrando só os que são soma
+
+  function pvLinhaHtml(nome, total, linhas) {
+    const temSublinhas = linhas && linhas.length > 0;
+    let sub = '';
+    if (temSublinhas) {
+      sub = linhas.map(l => `
+        <div class="pv-sublinha">
+          <span>${escapeHtml(l.observacao) || '<span style="color:#cbd5e1">(sem observação)</span>'}</span>
+          <span>${fmtBR(l.valor)}</span>
+        </div>`).join('');
+    }
+    return `
+      <div class="pv-linha">
+        <span class="pv-nome">${escapeHtml(nome)}</span>
+        <span class="pv-valor">${fmtBR(total)}</span>
+      </div>
+      ${sub}`;
+  }
+
+  function renderizarVisualizar() {
+    const cont = document.getElementById('pv-secoes');
+    if (!pvItens) return;
+
+    const passaFiltro = item => !pvSoDetalhados || item.linhas.length > 1;
+
+    const formasVisiveis    = pvItens.formas.filter(passaFiltro);
+    const controlesVisiveis = pvItens.controles.filter(passaFiltro);
+
+    if (!formasVisiveis.length && !controlesVisiveis.length) {
+      cont.innerHTML = `<div class="pv-vazio">${pvSoDetalhados ? 'Nenhum item com detalhamento (soma) neste dia.' : 'Nenhum valor preenchido neste dia.'}</div>`;
+      return;
+    }
+
+    const html     = formasVisiveis.map(it => pvLinhaHtml(it.nome, it.total, it.linhas)).join('');
+    const htmlCtrl = controlesVisiveis.map(it => pvLinhaHtml(it.nome, it.total, it.linhas)).join('');
+    cont.innerHTML = html + (htmlCtrl ? '<div class="pv-sep-controles">Controles adicionais</div>' + htmlCtrl : '');
+  }
+
+  function alternarFiltroVisualizar(soDetalhados) {
+    pvSoDetalhados = soDetalhados;
+    renderizarVisualizar();
+  }
+
+  async function carregarVisualizar(dataStr) {
+    const cont = document.getElementById('pv-secoes');
+    cont.innerHTML = '<div class="pv-vazio">Carregando…</div>';
+    try {
+      const resp = await fetch(`${URL_DETALHE}?cod_filial=${FILIAL_ATUAL}&data=${dataStr}`);
+      const j = await resp.json();
+      if (!j.ok) { cont.innerHTML = '<div class="pv-vazio">Erro ao carregar.</div>'; return; }
+
+      const tr = document.querySelector(`tr[data-data="${dataStr}"]`);
+
+      const montarItens = (lista, mapaLinhas, seletor, atributo) => lista.map(x => {
+        const linhas = mapaLinhas[x.id] || [];
+        let total = linhas.reduce((s,l)=>s+l.valor,0);
+        if (!linhas.length && tr) {
+          const inp = tr.querySelector(`${seletor}[${atributo}="${x.id}"]`);
+          if (inp) total = parseBR(inp.value);
+        }
+        return { nome: x.nome, total, linhas };
+      }).filter(it => it.total);
+
+      pvItens = {
+        formas:    montarItens(FORMAS_JS,    j.forma,    'input.cel-forma', 'data-forma'),
+        controles: montarItens(CONTROLES_JS, j.controle, 'input.cel-ctrl',  'data-controle'),
+      };
+      renderizarVisualizar();
+    } catch (e) {
+      cont.innerHTML = '<div class="pv-vazio">Erro ao carregar.</div>';
+    }
+  }
+
+  function abrirVisualizar(dataStr) {
+    const [ano, mes, dia] = dataStr.split('-');
+    document.getElementById('pv-titulo').textContent = `Visualizar — ${dia}/${mes}/${ano}`;
+    const painel = document.getElementById('painel-visualizar');
+    painel.classList.add('aberto');
+    painel.scrollIntoView({ behavior:'smooth', block:'start' });
+    carregarVisualizar(dataStr);
+  }
+
+  function fecharVisualizar() {
+    document.getElementById('painel-visualizar').classList.remove('aberto');
+  }
+
+  function garantirLinhaVazia(secao) {
+    if (!secao.querySelector('.pd-linha')) {
+      secao.querySelector('.pd-linhas').insertAdjacentHTML('beforeend',
+        linhaDetalheHtml(secao.dataset.tipo, secao.dataset.item, null, '', 0));
+    }
+  }
+
+  /* Reflete o novo total na célula correspondente da grade (e recalcula
+     TOTAL/FALTAS da linha, se for uma forma de recebimento) */
+  function atualizarCelulaGrade(secao, tipo, idItem, total) {
+    const subEl = secao.querySelector('[data-subtotal]');
+    if (subEl) subEl.textContent = total ? fmtBR(total) : '';
+    const temLinhas = secao.querySelectorAll('.pd-linha[data-id]:not([data-id=""])').length > 0;
+
+    if (!pdDataAtual) return;
+    const tr = document.querySelector(`tr[data-data="${pdDataAtual}"]`);
+    if (!tr) return;
+    const seletor = tipo === 'forma'
+      ? `input.cel-forma[data-forma="${idItem}"]`
+      : `input.cel-ctrl[data-controle="${idItem}"]`;
+    const inp = tr.querySelector(seletor);
+    if (!inp) return;
+    inp.value = total ? fmtBR(total) : '';
+    inp.closest('td').classList.toggle('tem-detalhe', temLinhas);
+
+    /* Passou a ter detalhamento: a célula vira soma e trava na hora, sem
+       precisar recarregar. Deixou de ter: destrava (o dia é editável, senão
+       o ✎ nem teria aberto). */
+    inp.readOnly = temLinhas;
+    inp.classList.toggle('cel-travada', temLinhas);
+    inp.closest('td').classList.toggle('td-travada', temLinhas);
+    inp.title = temLinhas ? 'Valor vem de um detalhamento (soma) — altere pelo ✎' : '';
+
+    if (tipo === 'forma') recalcTotal(tr);
+  }
+
+  function salvarLinhaDetalhe(campo) {
+    const linha = campo.closest('.pd-linha');
+    const secao = campo.closest('.pd-secao');
+    const tipo  = secao.dataset.tipo;
+    const idItem = secao.dataset.item;
+    const obsEl = linha.querySelector('.pd-obs');
+    const valEl = linha.querySelector('.pd-val');
+    const observacao = obsEl.value.trim();
+    const valor = parseBR(valEl.value);
+    valEl.value = valor ? valor.toFixed(2).replace('.',',') : '';
+
+    const fd = new FormData();
+    fd.append('tipo', tipo); fd.append('cod_filial', FILIAL_ATUAL);
+    fd.append('data', pdDataAtual); fd.append('id_item', idItem);
+    fd.append('id_linha', linha.dataset.id || '');
+    fd.append('observacao', observacao); fd.append('valor', valor);
+
+    fetch(URL_DETALHE_SALVAR, { method:'POST', body:fd })
+      .then(r => r.json())
+      .then(res => {
+        badge(!!res.ok);
+        if (!res.ok) return;
+        if (res.id && !linha.dataset.id) linha.dataset.id = res.id;
+        if (!observacao && !valor && linha.dataset.id) {
+          // ficou em branco: o servidor apagou a linha — some com ela aqui também
+          linha.remove();
+          garantirLinhaVazia(secao);
+        }
+        atualizarCelulaGrade(secao, tipo, idItem, res.total);
+      })
+      .catch(() => badge(false));
+  }
+
+  function adicionarLinhaDetalhe(btn) {
+    const secao = btn.closest('.pd-secao');
+    secao.querySelector('.pd-linhas').insertAdjacentHTML('beforeend',
+      linhaDetalheHtml(secao.dataset.tipo, secao.dataset.item, null, '', 0));
+    const linhas = secao.querySelectorAll('.pd-linha');
+    linhas[linhas.length - 1].querySelector('.pd-obs').focus();
+  }
+
+  function removerLinhaDetalhe(btn) {
+    const linha = btn.closest('.pd-linha');
+    const secao = btn.closest('.pd-secao');
+    const tipo = secao.dataset.tipo, idItem = secao.dataset.item;
+    const id = linha.dataset.id;
+    if (!id) { linha.remove(); garantirLinhaVazia(secao); return; }
+
+    const fd = new FormData();
+    fd.append('tipo', tipo); fd.append('cod_filial', FILIAL_ATUAL);
+    fd.append('data', pdDataAtual); fd.append('id_item', idItem);
+    fd.append('id_linha', id); fd.append('observacao', ''); fd.append('valor', '0');
+
+    fetch(URL_DETALHE_SALVAR, { method:'POST', body:fd })
+      .then(r => r.json())
+      .then(res => {
+        badge(!!res.ok);
+        if (!res.ok) return;
+        linha.remove();
+        garantirLinhaVazia(secao);
+        atualizarCelulaGrade(secao, tipo, idItem, res.total);
+      })
+      .catch(() => badge(false));
+  }
+
+  /* Enter cria uma nova linha na mesma seção (o blur já salva a atual) */
+  function detalheKeydown(ev, inp) {
+    if (ev.key !== 'Enter') return;
+    ev.preventDefault();
+    const secao = inp.closest('.pd-secao');
+    inp.blur();
+    setTimeout(() => adicionarLinhaDetalhe(secao.querySelector('.pd-btn-add')), 150);
+  }
+  {% endif %}
 </script>
 
 {% endblock %}

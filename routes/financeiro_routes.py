@@ -3611,6 +3611,41 @@ def menu_caixas():
     )
 
 
+# Janela de digitação do caixa. Por convenção da operação, o caixa que se
+# confere hoje é o de ontem — então hoje e qualquer data futura nunca podem
+# ser digitados, e mais de três dias atrás já se considera fechado.
+# Sobram exatamente ontem, anteontem e o dia anterior a anteontem.
+DIAS_EDICAO_CAIXA = 3
+
+
+def _janela_edicao_caixa(hoje=None):
+    """(primeiro_dia, ultimo_dia) em que a digitação é permitida."""
+    hoje = hoje or date.today()
+    return (hoje - timedelta(days=DIAS_EDICAO_CAIXA), hoje - timedelta(days=1))
+
+
+def _data_caixa_editavel(data_str, hoje=None):
+    """A data pode receber digitação? Vale para a grade e para o detalhamento."""
+    ini, fim = _janela_edicao_caixa(hoje)
+    try:
+        d = data_str if isinstance(data_str, date) else date.fromisoformat(str(data_str)[:10])
+    except (TypeError, ValueError):
+        return False
+    return ini <= d <= fim
+
+
+def _celula_tem_detalhe(cur, tipo, cod_empresa, cod_filial, data_str, id_item):
+    """A célula da grade é resultado de um detalhamento? Se for, o valor vem
+    da soma das linhas e não pode ser sobrescrito digitando direto na grade."""
+    tabela_det, campo_id = _tabela_detalhe(tipo)
+    cur.execute(f"""
+        SELECT 1 FROM {tabela_det}
+         WHERE cod_empresa=%s AND cod_filial=%s AND data=%s AND {campo_id}=%s
+         LIMIT 1
+    """, (cod_empresa, cod_filial, data_str, id_item))
+    return cur.fetchone() is not None
+
+
 @financeiro_bp.route("/caixas/conferir", methods=["GET", "POST"])
 @permissao_obrigatoria("FINANCEIRO", "ATUALIZAR_CAIXAS",
                        redirecionar_para="financeiro.menu_caixas")
@@ -3639,6 +3674,15 @@ def conferir_caixas():
             tipo_campo   = request.form.get("tipo")
             cod_filial_p = int(request.form.get("cod_filial") or 0)
             data_post    = request.form.get("data")
+
+            # A tela já bloqueia, mas o bloqueio que vale é este: fora da
+            # janela de digitação nada entra, venha de onde vier.
+            if not _data_caixa_editavel(data_post, hoje):
+                return jsonify({
+                    "ok": False,
+                    "erro": "Data fora do prazo de digitação do caixa."
+                }), 403
+
             def conv(v):
                 # O JS (parseBR) já converte o valor digitado (formato BR,
                 # "78,89") para um Number antes de enviar; o FormData manda
@@ -3647,6 +3691,19 @@ def conferir_caixas():
                 # fosse texto no formato brasileiro multiplicava por 100.
                 try: return float(v or "0")
                 except: return 0.0
+
+            # Célula alimentada por detalhamento: o valor é a soma das linhas,
+            # então só o painel de detalhe pode mudá-la.
+            if tipo_campo in ("forma", "controle"):
+                _id_item = int(request.form.get(
+                    "id_forma" if tipo_campo == "forma" else "id_controle") or 0)
+                if _celula_tem_detalhe(cur, tipo_campo, cod_empresa,
+                                       cod_filial_p, data_post, _id_item):
+                    return jsonify({
+                        "ok": False,
+                        "erro": "Este valor vem de um detalhamento (soma). "
+                                "Altere pelo botão de detalhar."
+                    }), 409
 
             if tipo_campo == "forma":
                 id_forma = int(request.form.get("id_forma") or 0)
@@ -3822,6 +3879,78 @@ def conferir_caixas():
             if d not in controles_valores: controles_valores[d] = {}
             controles_valores[d][r["id_controle"]] = float(r["valor"])
 
+        # quais (data, item) têm detalhamento — só existe no modo editável
+        # (uma filial só); usado pra marcar visualmente a célula na grade
+        com_detalhe_forma = set()
+        com_detalhe_controle = set()
+        dias_com_soma = set()
+        if editavel:
+            cur.execute("""
+                SELECT DISTINCT data, id_forma FROM caixas_lancamentos_detalhe
+                WHERE cod_empresa=%s AND cod_filial=%s
+                  AND EXTRACT(MONTH FROM data)=%s AND EXTRACT(YEAR FROM data)=%s
+            """, (cod_empresa, cod_filial_atual, mes_sel, ano_sel))
+            com_detalhe_forma = {(r["data"].isoformat(), r["id_forma"]) for r in cur.fetchall()}
+
+            cur.execute("""
+                SELECT DISTINCT data, id_controle FROM caixas_controles_detalhe
+                WHERE cod_empresa=%s AND cod_filial=%s
+                  AND EXTRACT(MONTH FROM data)=%s AND EXTRACT(YEAR FROM data)=%s
+            """, (cod_empresa, cod_filial_atual, mes_sel, ano_sel))
+            com_detalhe_controle = {(r["data"].isoformat(), r["id_controle"]) for r in cur.fetchall()}
+
+            # dias em que algum item recebeu MAIS DE UM lançamento — é a soma
+            # dessas linhas que forma o valor da célula. Mesmo critério da
+            # chave "só com detalhamento" do painel de visualização
+            # (linhas > 1, não apenas "tem detalhe"); serve pra deixar o
+            # ícone do olho verde nesses dias.
+            cur.execute("""
+                SELECT DISTINCT data FROM (
+                    SELECT data FROM caixas_lancamentos_detalhe
+                     WHERE cod_empresa=%s AND cod_filial=%s
+                       AND EXTRACT(MONTH FROM data)=%s AND EXTRACT(YEAR FROM data)=%s
+                     GROUP BY data, id_forma HAVING COUNT(*) > 1
+                    UNION ALL
+                    SELECT data FROM caixas_controles_detalhe
+                     WHERE cod_empresa=%s AND cod_filial=%s
+                       AND EXTRACT(MONTH FROM data)=%s AND EXTRACT(YEAR FROM data)=%s
+                     GROUP BY data, id_controle HAVING COUNT(*) > 1
+                ) t
+            """, (cod_empresa, cod_filial_atual, mes_sel, ano_sel) * 2)
+            dias_com_soma = {r["data"].isoformat() for r in cur.fetchall()}
+
+        # ---- quais colunas de forma de recebimento ficam abertas ----
+        # Só faz sentido com uma filial selecionada: a escolha é dela.
+        formas_com_valor = set()
+        colunas_fechadas = set()
+        if editavel:
+            # Formas que têm movimento no mês: nascem abertas e o checkbox
+            # fica travado, pra não dar pra esconder dado real.
+            cur.execute("""
+                SELECT DISTINCT id_forma FROM caixas_lancamentos
+                 WHERE cod_empresa=%s AND cod_filial=%s AND valor <> 0
+                   AND EXTRACT(MONTH FROM data)=%s AND EXTRACT(YEAR FROM data)=%s
+            """, (cod_empresa, cod_filial_atual, mes_sel, ano_sel))
+            formas_com_valor = {r["id_forma"] for r in cur.fetchall()}
+
+            cur.execute("""
+                SELECT id_forma, visivel FROM caixas_colunas_visiveis
+                 WHERE cod_empresa=%s AND cod_filial=%s
+            """, (cod_empresa, cod_filial_atual))
+            pref = {r["id_forma"]: r["visivel"] for r in cur.fetchall()}
+
+            for f in formas:
+                if f["id"] in formas_com_valor:
+                    continue                      # com valor: sempre aberta
+                if f["id"] in pref:
+                    if not pref[f["id"]]:
+                        colunas_fechadas.add(f["id"])
+                elif formas_com_valor:
+                    # Primeira visita e o mês tem movimento: quem não tem
+                    # valor nasce fechada. Mês totalmente vazio não serve de
+                    # base pra inferir nada, então tudo fica aberto.
+                    colunas_fechadas.add(f["id"])
+
     finally:
         cur.close()
         conn.close()
@@ -3846,6 +3975,13 @@ def conferir_caixas():
         totais_cx=totais_cx,
         controles=controles,
         controles_valores=controles_valores,
+        com_detalhe_forma=com_detalhe_forma,
+        com_detalhe_controle=com_detalhe_controle,
+        dias_com_soma=dias_com_soma,
+        formas_com_valor=formas_com_valor,
+        colunas_fechadas=colunas_fechadas,
+        edicao_ini=_janela_edicao_caixa(hoje)[0],
+        edicao_fim=_janela_edicao_caixa(hoje)[1],
         hoje=hoje,
         # "dia que se está processando": por convenção da operação, o caixa
         # fechado hoje é sempre o de ontem
@@ -3857,6 +3993,213 @@ def conferir_caixas():
         nomes_meses=nomes_meses,
         formatar_numero_br=formatar_numero_br,
     )
+
+
+# ---------------------------------------------------------------------------
+# DETALHAMENTO — quebra de um valor da grade em várias linhas (observação +
+# valor), cuja soma vira o valor mostrado na célula. Só existe no modo
+# editável (uma filial específica), tanto para formas de recebimento quanto
+# para controles adicionais.
+# ---------------------------------------------------------------------------
+
+def _tabela_detalhe(tipo):
+    return ("caixas_lancamentos_detalhe", "id_forma") if tipo == "forma" \
+        else ("caixas_controles_detalhe", "id_controle")
+
+
+def _tabela_pai(tipo):
+    return ("caixas_lancamentos", "id_forma", "valor") if tipo == "forma" \
+        else ("caixas_controles_valores", "id_controle", "valor")
+
+
+def _recalcular_total_pai(cur, tipo, cod_empresa, cod_filial, data_str, id_item):
+    """Soma as linhas de detalhe e grava o total na célula da grade
+    (upsert), devolvendo o novo total."""
+    tabela_det, campo_id = _tabela_detalhe(tipo)
+    tabela_pai, _, campo_valor = _tabela_pai(tipo)
+
+    cur.execute(f"""
+        SELECT COALESCE(SUM(valor), 0) AS total FROM {tabela_det}
+        WHERE cod_empresa=%s AND cod_filial=%s AND data=%s AND {campo_id}=%s
+    """, (cod_empresa, cod_filial, data_str, id_item))
+    total = float(cur.fetchone()["total"])
+
+    cur.execute(f"""
+        INSERT INTO {tabela_pai} (cod_empresa, cod_filial, data, {campo_id}, {campo_valor}, atualizado_em)
+        VALUES (%s, %s, %s, %s, %s, NOW())
+        ON CONFLICT (cod_empresa, cod_filial, data, {campo_id})
+        DO UPDATE SET {campo_valor} = EXCLUDED.{campo_valor}, atualizado_em = NOW()
+    """, (cod_empresa, cod_filial, data_str, id_item, total))
+    return total
+
+
+@financeiro_bp.route("/api/caixas/detalhe", methods=["GET"])
+@permissao_obrigatoria("FINANCEIRO", "ATUALIZAR_CAIXAS",
+                       redirecionar_para="financeiro.menu_caixas")
+def api_caixas_detalhe():
+    """Devolve, para um dia e uma filial, todas as linhas de detalhe já
+    lançadas em cada forma de recebimento e cada controle adicional."""
+    cod_empresa = str(session["cod_empresa"]).strip()
+    cod_filial  = int(request.args.get("cod_filial") or 0)
+    data_str    = request.args.get("data", "")
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT id, observacao, valor, id_forma AS id_item FROM caixas_lancamentos_detalhe
+            WHERE cod_empresa=%s AND cod_filial=%s AND data=%s
+            ORDER BY id_forma, ordem, id
+        """, (cod_empresa, cod_filial, data_str))
+        linhas_forma = cur.fetchall()
+
+        cur.execute("""
+            SELECT id, observacao, valor, id_controle AS id_item FROM caixas_controles_detalhe
+            WHERE cod_empresa=%s AND cod_filial=%s AND data=%s
+            ORDER BY id_controle, ordem, id
+        """, (cod_empresa, cod_filial, data_str))
+        linhas_controle = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+    def agrupar(linhas):
+        agrupado = {}
+        for l in linhas:
+            agrupado.setdefault(l["id_item"], []).append({
+                "id": l["id"], "observacao": l["observacao"] or "", "valor": float(l["valor"]),
+            })
+        return agrupado
+
+    return jsonify({
+        "ok": True,
+        "forma":    agrupar(linhas_forma),
+        "controle": agrupar(linhas_controle),
+    })
+
+
+@financeiro_bp.route("/api/caixas/coluna-visivel", methods=["POST"])
+@permissao_obrigatoria("FINANCEIRO", "ATUALIZAR_CAIXAS",
+                       redirecionar_para="financeiro.menu_caixas")
+def api_caixas_coluna_visivel():
+    """Grava se uma coluna de forma de recebimento fica aberta ou fechada
+    nesta filial. Coluna com valor lançado no mês não pode ser fechada."""
+    cod_empresa = str(session["cod_empresa"]).strip()
+    cod_filial  = int(request.form.get("cod_filial") or 0)
+    id_forma    = int(request.form.get("id_forma") or 0)
+    visivel     = request.form.get("visivel") == "1"
+
+    if not cod_filial or not id_forma:
+        return jsonify({"ok": False, "erro": "Filial ou forma inválida."}), 400
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if not visivel:
+            # Trava: com valor lançado no mês corrente a coluna não fecha.
+            hoje = date.today()
+            mes = int(request.form.get("mes") or hoje.month)
+            ano = int(request.form.get("ano") or hoje.year)
+            cur.execute("""
+                SELECT 1 FROM caixas_lancamentos
+                 WHERE cod_empresa=%s AND cod_filial=%s AND id_forma=%s AND valor <> 0
+                   AND EXTRACT(MONTH FROM data)=%s AND EXTRACT(YEAR FROM data)=%s
+                 LIMIT 1
+            """, (cod_empresa, cod_filial, id_forma, mes, ano))
+            if cur.fetchone():
+                return jsonify({
+                    "ok": False,
+                    "erro": "Esta coluna tem valor lançado no mês e não pode ser fechada."
+                }), 409
+
+        cur.execute("""
+            INSERT INTO caixas_colunas_visiveis
+                (cod_empresa, cod_filial, id_forma, visivel, atualizado_em)
+            VALUES (%s, %s, %s, %s, NOW())
+            ON CONFLICT (cod_empresa, cod_filial, id_forma)
+            DO UPDATE SET visivel = EXCLUDED.visivel, atualizado_em = NOW()
+        """, (cod_empresa, cod_filial, id_forma, visivel))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "visivel": visivel})
+
+
+@financeiro_bp.route("/api/caixas/detalhe/salvar", methods=["POST"])
+@permissao_obrigatoria("FINANCEIRO", "ATUALIZAR_CAIXAS",
+                       redirecionar_para="financeiro.menu_caixas")
+def api_caixas_detalhe_salvar():
+    """
+    Cria ou atualiza uma linha de detalhe (observação + valor). Sem id_linha
+    = cria uma nova. Com os dois campos em branco = apaga a linha. Depois
+    de qualquer mudança, recalcula e devolve o novo total da célula-mãe.
+    """
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo        = request.form.get("tipo", "")
+    if tipo not in ("forma", "controle"):
+        return jsonify({"ok": False, "erro": "Tipo inválido."}), 400
+
+    cod_filial  = int(request.form.get("cod_filial") or 0)
+    data_str    = request.form.get("data", "")
+    id_item     = int(request.form.get("id_item") or 0)
+    id_linha    = request.form.get("id_linha") or ""
+
+    # Mesma janela de digitação da grade — detalhar é digitar.
+    if not _data_caixa_editavel(data_str):
+        return jsonify({
+            "ok": False,
+            "erro": "Data fora do prazo de digitação do caixa."
+        }), 403
+
+    observacao  = (request.form.get("observacao") or "").strip()
+    try:
+        valor = float(request.form.get("valor") or "0")
+    except ValueError:
+        valor = 0.0
+
+    tabela_det, campo_id = _tabela_detalhe(tipo)
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        nova_id = None
+        if not observacao and not valor:
+            # em branco: se já existia, apaga; se era nova, não faz nada
+            if id_linha:
+                cur.execute(f"DELETE FROM {tabela_det} WHERE id=%s AND cod_empresa=%s",
+                            (id_linha, cod_empresa))
+        elif id_linha:
+            cur.execute(f"""
+                UPDATE {tabela_det} SET observacao=%s, valor=%s, atualizado_em=NOW()
+                WHERE id=%s AND cod_empresa=%s
+            """, (observacao, valor, id_linha, cod_empresa))
+        else:
+            cur.execute(f"""
+                INSERT INTO {tabela_det}
+                    (cod_empresa, cod_filial, data, {campo_id}, observacao, valor, ordem)
+                VALUES (%s, %s, %s, %s, %s, %s,
+                        COALESCE((SELECT MAX(ordem)+1 FROM {tabela_det}
+                                  WHERE cod_empresa=%s AND cod_filial=%s AND data=%s AND {campo_id}=%s), 0))
+                RETURNING id
+            """, (cod_empresa, cod_filial, data_str, id_item, observacao, valor,
+                  cod_empresa, cod_filial, data_str, id_item))
+            nova_id = cur.fetchone()["id"]
+
+        total = _recalcular_total_pai(cur, tipo, cod_empresa, cod_filial, data_str, id_item)
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "id": nova_id, "total": total})
 
 
 @financeiro_bp.route("/caixas/configuracoes", methods=["GET", "POST"])
