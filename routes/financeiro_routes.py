@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify, flash
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 import math
@@ -3879,6 +3879,35 @@ def conferir_caixas():
             if d not in controles_valores: controles_valores[d] = {}
             controles_valores[d][r["id_controle"]] = float(r["valor"])
 
+        # ---- abas de totais: coluna sem nenhum valor não aparece ----
+        # Nas abas de total (de uma área ou de todas) não há digitação nem
+        # checkbox, então coluna vazia é só ruído: sai da lista antes de
+        # renderizar e some da grade inteira — cabeçalho, dias, total e
+        # legenda. Não altera soma nenhuma, já que só sai o que é zero.
+        # Só filtra se houver movimento no período. Com o mês inteiro zerado
+        # não há o que destacar: esconder tudo deixaria a tela sem grade
+        # nenhuma, então a grade completa é exibida como sempre foi.
+        periodo_tem_movimento = (
+            any(v for dia in valores.values() for v in dia.values())
+            or any(v for dia in controles_valores.values() for v in dia.values())
+        )
+        if not editavel and periodo_tem_movimento:
+            com_mov = [
+                f for f in formas
+                if any(valores.get(d, {}).get(f["id"]) for d in datas)
+            ]
+            # A lista de formas nunca pode ficar vazia: sem ela a tela troca a
+            # grade pelo aviso de "nenhuma forma cadastrada", que seria falso.
+            # Acontece quando só os controles adicionais tiveram movimento.
+            formas = com_mov or formas
+
+            # Os controles podem esvaziar sem problema — aí o bloco inteiro
+            # da direita simplesmente não aparece.
+            controles = [
+                c for c in controles
+                if any(controles_valores.get(d, {}).get(c["id"]) for d in datas)
+            ]
+
         # quais (data, item) têm detalhamento — só existe no modo editável
         # (uma filial só); usado pra marcar visualmente a célula na grade
         com_detalhe_forma = set()
@@ -3919,13 +3948,18 @@ def conferir_caixas():
             """, (cod_empresa, cod_filial_atual, mes_sel, ano_sel) * 2)
             dias_com_soma = {r["data"].isoformat() for r in cur.fetchall()}
 
-        # ---- quais colunas de forma de recebimento ficam abertas ----
+        # ---- quais colunas ficam abertas ----
+        # Vale para as formas de recebimento e para os controles adicionais.
+        # Fora disso ficam a DATA repetida do bloco de controles e as colunas
+        # fixas do sistema (TOTAL, TOTAL CX, FALTAS / SOBRAS).
         # Só faz sentido com uma filial selecionada: a escolha é dela.
-        formas_com_valor = set()
-        colunas_fechadas = set()
+        formas_com_valor    = set()
+        controles_com_valor = set()
+        colunas_fechadas    = set()
+        controles_fechados  = set()
         if editavel:
-            # Formas que têm movimento no mês: nascem abertas e o checkbox
-            # fica travado, pra não dar pra esconder dado real.
+            # Itens com movimento no mês nascem abertos e com o checkbox
+            # travado, pra não dar pra esconder dado real.
             cur.execute("""
                 SELECT DISTINCT id_forma FROM caixas_lancamentos
                  WHERE cod_empresa=%s AND cod_filial=%s AND valor <> 0
@@ -3934,22 +3968,34 @@ def conferir_caixas():
             formas_com_valor = {r["id_forma"] for r in cur.fetchall()}
 
             cur.execute("""
-                SELECT id_forma, visivel FROM caixas_colunas_visiveis
+                SELECT DISTINCT id_controle FROM caixas_controles_valores
+                 WHERE cod_empresa=%s AND cod_filial=%s AND valor <> 0
+                   AND EXTRACT(MONTH FROM data)=%s AND EXTRACT(YEAR FROM data)=%s
+            """, (cod_empresa, cod_filial_atual, mes_sel, ano_sel))
+            controles_com_valor = {r["id_controle"] for r in cur.fetchall()}
+
+            cur.execute("""
+                SELECT tipo, id_item, visivel FROM caixas_colunas_visiveis
                  WHERE cod_empresa=%s AND cod_filial=%s
             """, (cod_empresa, cod_filial_atual))
-            pref = {r["id_forma"]: r["visivel"] for r in cur.fetchall()}
+            pref = {(r["tipo"], r["id_item"]): r["visivel"] for r in cur.fetchall()}
 
-            for f in formas:
-                if f["id"] in formas_com_valor:
-                    continue                      # com valor: sempre aberta
-                if f["id"] in pref:
-                    if not pref[f["id"]]:
-                        colunas_fechadas.add(f["id"])
-                elif formas_com_valor:
-                    # Primeira visita e o mês tem movimento: quem não tem
-                    # valor nasce fechada. Mês totalmente vazio não serve de
-                    # base pra inferir nada, então tudo fica aberto.
-                    colunas_fechadas.add(f["id"])
+            def _resolver(itens, tipo, com_valor, destino):
+                for it in itens:
+                    if it["id"] in com_valor:
+                        continue                  # com valor: sempre aberta
+                    escolha = pref.get((tipo, it["id"]))
+                    if escolha is not None:
+                        if not escolha:
+                            destino.add(it["id"])
+                    elif com_valor:
+                        # Primeira visita e o mês tem movimento: quem não tem
+                        # valor nasce fechada. Mês totalmente vazio não serve
+                        # de base pra inferir nada, então tudo fica aberto.
+                        destino.add(it["id"])
+
+            _resolver(formas,    "forma",    formas_com_valor,    colunas_fechadas)
+            _resolver(controles, "controle", controles_com_valor, controles_fechados)
 
     finally:
         cur.close()
@@ -3980,6 +4026,8 @@ def conferir_caixas():
         dias_com_soma=dias_com_soma,
         formas_com_valor=formas_com_valor,
         colunas_fechadas=colunas_fechadas,
+        controles_com_valor=controles_com_valor,
+        controles_fechados=controles_fechados,
         edicao_ini=_janela_edicao_caixa(hoje)[0],
         edicao_fim=_janela_edicao_caixa(hoje)[1],
         hoje=hoje,
@@ -4082,15 +4130,24 @@ def api_caixas_detalhe():
 @permissao_obrigatoria("FINANCEIRO", "ATUALIZAR_CAIXAS",
                        redirecionar_para="financeiro.menu_caixas")
 def api_caixas_coluna_visivel():
-    """Grava se uma coluna de forma de recebimento fica aberta ou fechada
-    nesta filial. Coluna com valor lançado no mês não pode ser fechada."""
+    """Grava se uma coluna fica aberta ou fechada nesta filial. Vale para
+    forma de recebimento e para controle adicional. Coluna com valor lançado
+    no mês não pode ser fechada."""
     cod_empresa = str(session["cod_empresa"]).strip()
     cod_filial  = int(request.form.get("cod_filial") or 0)
-    id_forma    = int(request.form.get("id_forma") or 0)
+    tipo        = request.form.get("tipo", "forma")
+    id_item     = int(request.form.get("id_item") or 0)
     visivel     = request.form.get("visivel") == "1"
 
-    if not cod_filial or not id_forma:
-        return jsonify({"ok": False, "erro": "Filial ou forma inválida."}), 400
+    if tipo not in ("forma", "controle"):
+        return jsonify({"ok": False, "erro": "Tipo inválido."}), 400
+    if not cod_filial or not id_item:
+        return jsonify({"ok": False, "erro": "Filial ou coluna inválida."}), 400
+
+    tabela_valores, campo_id = (
+        ("caixas_lancamentos", "id_forma") if tipo == "forma"
+        else ("caixas_controles_valores", "id_controle")
+    )
 
     conn = get_connection()
     cur  = conn.cursor(cursor_factory=RealDictCursor)
@@ -4100,12 +4157,12 @@ def api_caixas_coluna_visivel():
             hoje = date.today()
             mes = int(request.form.get("mes") or hoje.month)
             ano = int(request.form.get("ano") or hoje.year)
-            cur.execute("""
-                SELECT 1 FROM caixas_lancamentos
-                 WHERE cod_empresa=%s AND cod_filial=%s AND id_forma=%s AND valor <> 0
+            cur.execute(f"""
+                SELECT 1 FROM {tabela_valores}
+                 WHERE cod_empresa=%s AND cod_filial=%s AND {campo_id}=%s AND valor <> 0
                    AND EXTRACT(MONTH FROM data)=%s AND EXTRACT(YEAR FROM data)=%s
                  LIMIT 1
-            """, (cod_empresa, cod_filial, id_forma, mes, ano))
+            """, (cod_empresa, cod_filial, id_item, mes, ano))
             if cur.fetchone():
                 return jsonify({
                     "ok": False,
@@ -4114,11 +4171,11 @@ def api_caixas_coluna_visivel():
 
         cur.execute("""
             INSERT INTO caixas_colunas_visiveis
-                (cod_empresa, cod_filial, id_forma, visivel, atualizado_em)
-            VALUES (%s, %s, %s, %s, NOW())
-            ON CONFLICT (cod_empresa, cod_filial, id_forma)
+                (cod_empresa, cod_filial, tipo, id_item, visivel, atualizado_em)
+            VALUES (%s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (cod_empresa, cod_filial, tipo, id_item)
             DO UPDATE SET visivel = EXCLUDED.visivel, atualizado_em = NOW()
-        """, (cod_empresa, cod_filial, id_forma, visivel))
+        """, (cod_empresa, cod_filial, tipo, id_item, visivel))
         conn.commit()
     except Exception as e:
         conn.rollback()

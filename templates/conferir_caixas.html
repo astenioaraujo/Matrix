@@ -64,7 +64,8 @@
   /* ── Abrir/fechar colunas de forma de recebimento ──────────────────────
      O checkbox mora dentro do cabeçalho, encostado à esquerda, e o nome da
      forma fica centralizado no espaço que sobra. */
-  table.caixas thead th[data-col] { position:relative; padding-left:24px; }
+  table.caixas thead th[data-col],
+  table.caixas thead th[data-col-ctrl] { position:relative; padding-left:24px; }
   .chk-col {
     position:absolute; left:6px; top:50%; transform:translateY(-50%);
     width:13px; height:13px; margin:0; cursor:pointer; accent-color:#fff;
@@ -107,6 +108,19 @@
     padding:2px 0 6px 3px;
     min-width:0;
   }
+
+  /* Chave "só os últimos dias": esconde as linhas dos dias mais antigos,
+     puxando o fim do mês para perto do cabeçalho. É só exibição — a linha
+     de TOTAL continua somando o mês inteiro. */
+  .chk-dias {
+    display:inline-flex; align-items:center; gap:6px;
+    margin-left:16px; cursor:pointer;
+    font-size:12px; font-weight:600; letter-spacing:0;
+    color:#475569; vertical-align:middle;
+  }
+  .chk-dias input { width:13px; height:13px; margin:0; cursor:pointer; accent-color:#4338ca; }
+  .chk-dias:hover { color:#14114f; }
+  table.caixas.so-recentes tbody tr.dia-antigo { display:none; }
   table.caixas thead th.col-ctrl-info    { background:#4b5563; }
   table.caixas thead th.col-ctrl-receita { background:#166534; }
   table.caixas thead th.col-ctrl-despesa { background:#7f1d1d; }
@@ -422,8 +436,22 @@
     <thead>
       <!-- Título de cada bloco, fora do cabeçalho de colunas: texto solto,
            alinhado à esquerda, começando em cima da DATA do próprio bloco. -->
+      {# Encolher a lista de dias só faz sentido se houver dia a esconder:
+         precisa ser o mês corrente e sobrar mais dia do que os recentes. #}
+      {% set dias_recentes = datas | select('ge', edicao_ini) | select('le', hoje) | list %}
+      {% set pode_encolher = hoje in datas and datas|length > dias_recentes|length %}
+
       <tr class="linha-titulo-bloco">
-        <th colspan="{{ 1 + (1 if editavel else 0) + formas|length + 3 }}">CONTROLES</th>
+        <th colspan="{{ 1 + (1 if editavel else 0) + formas|length + 3 }}">
+          CONTROLES
+          {% if pode_encolher %}
+            <label class="chk-dias" title="Esconde os dias mais antigos e deixa só os {{ dias_recentes|length }} últimos">
+              <input type="checkbox" id="chk-dias-recentes"
+                     onchange="alternarDiasRecentes(this.checked)">
+              Só os últimos {{ dias_recentes|length }} dias
+            </label>
+          {% endif %}
+        </th>
         {% if controles %}
           <th></th>
           <th colspan="{{ 1 + controles|length }}">CONTROLES ADICIONAIS</th>
@@ -441,9 +469,9 @@
             {% if editavel %}
               <input type="checkbox" class="chk-col" {% if not fechada %}checked{% endif %}
                      {% if travada %}disabled{% endif %}
-                     data-forma="{{ f.id }}"
+                     data-tipo="forma" data-item="{{ f.id }}"
                      title="{% if travada %}{{ f.nome }} tem valor lançado no mês — não pode ser fechada{% else %}Abrir/fechar a coluna {{ f.nome }}{% endif %}"
-                     onchange="alternarColuna({{ f.id }}, this.checked)">
+                     onchange="alternarColuna('forma', {{ f.id }}, this.checked)">
             {% endif %}
             <span class="th-nome">{{ f.nome }}</span>
           </th>
@@ -455,7 +483,19 @@
           <th class="col-sep"></th>
           <th class="col-data">DATA</th>
           {% for c in controles %}
-            <th class="col-ctrl-{{ c.tipo|lower }}">{{ c.nome }}</th>
+            {% set c_fechada = c.id in controles_fechados %}
+            {% set c_travada = c.id in controles_com_valor %}
+            <th class="col-ctrl-{{ c.tipo|lower }} {{ 'col-fechada' if c_fechada else '' }}"
+                data-col-ctrl="{{ c.id }}">
+              {% if editavel %}
+                <input type="checkbox" class="chk-col" {% if not c_fechada %}checked{% endif %}
+                       {% if c_travada %}disabled{% endif %}
+                       data-tipo="controle" data-item="{{ c.id }}"
+                       title="{% if c_travada %}{{ c.nome }} tem valor lançado no mês — não pode ser fechada{% else %}Abrir/fechar a coluna {{ c.nome }}{% endif %}"
+                       onchange="alternarColuna('controle', {{ c.id }}, this.checked)">
+              {% endif %}
+              <span class="th-nome">{{ c.nome }}</span>
+            </th>
           {% endfor %}
         {% endif %}
       </tr>
@@ -476,9 +516,12 @@
         {# Só ontem, anteontem e o dia anterior a esse aceitam digitação. #}
         {% set dia_editavel = edicao_ini <= d <= edicao_fim %}
 
+        {# Dia antigo: some quando a chave "só os últimos dias" está ligada. #}
+        {% set dia_recente = edicao_ini <= d <= hoje %}
+
         <tr data-data="{{ d.strftime('%Y-%m-%d') }}"
             data-filial="{{ cod_filial_atual or '' }}"
-            class="{% if d == dia_processando %}dia-processando{% endif %} {% if not dia_editavel %}dia-travado{% endif %}">
+            class="{% if d == dia_processando %}dia-processando{% endif %} {% if not dia_editavel %}dia-travado{% endif %} {% if not dia_recente %}dia-antigo{% endif %}">
 
           <td class="td-data {% if d == hoje %}hoje{% endif %}">{{ data_cell(d) }}</td>
 
@@ -547,8 +590,9 @@
               {% set cv = cvals.get(c.id, 0)|float %}
               {% set tem_det_c = (d.strftime('%Y-%m-%d'), c.id) in com_detalhe_controle %}
               {% set cel_travada_c = (not dia_editavel) or tem_det_c %}
+              {% set c_fechada = c.id in controles_fechados %}
               {% if editavel %}
-              <td class="td-ctrl {{ 'tem-detalhe' if tem_det_c else '' }} {{ 'td-travada' if cel_travada_c else '' }}" data-col-ctrl="{{ c.id }}">
+              <td class="td-ctrl {{ 'tem-detalhe' if tem_det_c else '' }} {{ 'td-travada' if cel_travada_c else '' }} {{ 'col-fechada' if c_fechada else '' }}" data-col-ctrl="{{ c.id }}">
                 <input type="text" class="cel-ctrl {{ 'cel-travada' if cel_travada_c else '' }}" data-controle="{{ c.id }}"
                        value="{{ '{:,.2f}'.format(cv).replace(',','X').replace('.',',').replace('X','.') if cv else '' }}"
                        placeholder="{{ '' if cel_travada_c else '0,00' }}"
@@ -557,7 +601,7 @@
                        onblur="salvarControle(this)">
               </td>
               {% else %}
-              <td class="td-ctrl-ro {{ 'tem-detalhe' if tem_det_c else '' }}" data-col-ctrl="{{ c.id }}">{{ money(cv) }}</td>
+              <td class="td-ctrl-ro {{ 'tem-detalhe' if tem_det_c else '' }} {{ 'col-fechada' if c_fechada else '' }}" data-col-ctrl="{{ c.id }}">{{ money(cv) }}</td>
               {% endif %}
             {% endfor %}
           {% endif %}
@@ -587,7 +631,7 @@
           {% for c in controles %}
             {% set sc = namespace(v=0) %}
             {% for d in datas %}{% set sc.v = sc.v + (controles_valores.get(d,{}).get(c.id,0)|float) %}{% endfor %}
-            <td>{{ money(sc.v) }}</td>
+            <td data-col-ctrl="{{ c.id }}" class="{{ 'col-fechada' if c.id in controles_fechados else '' }}">{{ money(sc.v) }}</td>
           {% endfor %}
         {% endif %}
       </tr>
@@ -604,7 +648,7 @@
         {% if controles %}
           <td class="td-sep"></td>
           <td class="td-data">Data</td>
-          {% for c in controles %}<td>{{ c.nome }}</td>{% endfor %}
+          {% for c in controles %}<td data-col-ctrl="{{ c.id }}" class="{{ 'col-fechada' if c.id in controles_fechados else '' }}">{{ c.nome }}</td>{% endfor %}
         {% endif %}
       </tr>
     </tbody>
@@ -694,14 +738,23 @@
   /* Abre/fecha uma coluna de forma de recebimento inteira e grava a escolha
      para esta filial. Coluna com valor lançado no mês vem com o checkbox
      desabilitado, então nem chega aqui. */
-  function alternarColuna(idForma, mostrar) {
-    document.querySelectorAll(`[data-col="${idForma}"]`).forEach(el => {
-      el.classList.toggle('col-fechada', !mostrar);
-    });
+  /* Esconde/mostra as linhas dos dias mais antigos. Só mexe na exibição:
+     a linha de TOTAL continua sendo a do mês inteiro, não a soma do que
+     está à vista. Não fica salvo — vale só nesta visita à tela. */
+  function alternarDiasRecentes(soRecentes) {
+    const tabela = document.querySelector('table.caixas');
+    if (tabela) tabela.classList.toggle('so-recentes', soRecentes);
+  }
+
+  function alternarColuna(tipo, idItem, mostrar) {
+    const attr = tipo === 'forma' ? 'data-col' : 'data-col-ctrl';
+    const celulas = () => document.querySelectorAll(`[${attr}="${idItem}"]`);
+    celulas().forEach(el => el.classList.toggle('col-fechada', !mostrar));
 
     const fd = new FormData();
     fd.append('cod_filial', FILIAL_ATUAL);
-    fd.append('id_forma', idForma);
+    fd.append('tipo', tipo);
+    fd.append('id_item', idItem);
     fd.append('visivel', mostrar ? '1' : '0');
     fd.append('mes', MES_ATUAL); fd.append('ano', ANO_ATUAL);
 
@@ -710,11 +763,10 @@
       .then(res => {
         if (res.ok) { badge(true); return; }
         // servidor recusou: desfaz na tela pra não mentir pro usuário
-        const chk = document.querySelector(`.chk-col[data-forma="${idForma}"]`);
+        const chk = document.querySelector(
+          `.chk-col[data-tipo="${tipo}"][data-item="${idItem}"]`);
         if (chk) chk.checked = !mostrar;
-        document.querySelectorAll(`[data-col="${idForma}"]`).forEach(el => {
-          el.classList.toggle('col-fechada', mostrar);
-        });
+        celulas().forEach(el => el.classList.toggle('col-fechada', mostrar));
         alert(res.erro || 'Não foi possível gravar.');
       })
       .catch(() => badge(false));
