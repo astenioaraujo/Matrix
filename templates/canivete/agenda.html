@@ -137,6 +137,65 @@ tr.sep-mes-spacer td.td-rec-label { color: #1d4ed8; }
 }
 .ag-rec-add:hover { color: #1d4ed8; }
 
+/* ── COLUNA PROGRAMAÇÃO DO DIA (caixa única, sempre a de hoje) ── */
+.ag-dia-vazio { background:#f4f4f4 !important; border:none !important; padding:0 !important; }
+.ag-grade th.th-dia { color: #15803d; font-weight: 800; width: 21.7%; }
+tr.sep-mes-spacer td.td-dia-label { color: #15803d; }
+
+.ag-dia {
+  vertical-align: top;
+  display: flex; flex-direction: column;
+  background: #ecfdf5;              /* verde bem clarinho, opaco */
+  border-left: 2px solid #86efac;
+  border-right: 2px solid #86efac;
+  border-top: 3px solid #4ade80;
+  border-bottom: 3px solid #4ade80;
+  padding: 4px 5px; position: relative;
+}
+
+/* pendentes primeiro (order 0), depois o separador (order 1),
+   depois as concluídas (order 2) — reordena sem mexer no DOM */
+.ag-dia-linha { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; order: 0; }
+.ag-dia-linha.feito { order: 2; }
+.ag-dia-chk {
+  background: none; border: none; cursor: pointer;
+  font-size: 11px; color: #86efac; padding: 0 2px; line-height: 1;
+  flex-shrink: 0;
+}
+.ag-dia-chk:hover { color: #15803d; }
+.ag-dia-chk.on { color: #475569; }
+.ag-dia-txt {
+  flex: 1; min-width: 0;
+  border: none; outline: none; background: transparent;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  color: #14532d; padding: 2px 0;
+}
+.ag-dia-txt::placeholder { color: #86efac; font-weight: 500; }
+.ag-dia-cod {
+  width: 24px; flex-shrink: 0;
+  border: none; outline: none; background: transparent;
+  font-family: inherit; font-size: 11px; font-weight: 800;
+  color: #4ade80; text-align: center; text-transform: uppercase;
+  padding: 2px 0; border-radius: 3px;
+}
+.ag-dia-cod:focus { background: #bbf7d0; color: #15803d; }
+.ag-dia-cod.erro { background: #fecaca; color: #b91c1c; }
+
+.ag-dia-linha.feito .ag-dia-txt { color: #64748b; text-decoration: line-through; }
+.ag-dia-linha.feito { background: #d1fae5; border-radius: 4px; }
+
+/* espaço entre pendentes e concluídas — só aparece quando há concluídas */
+.ag-dia-separador { order: 1; height: 0; transition: height .15s; }
+.ag-dia-separador.ativo { height: 10px; }
+
+.ag-dia-add {
+  order: 3;
+  display: block; width: 100%; text-align: center;
+  font-size: 11px; color: #86efac; background: none; border: none;
+  cursor: pointer; padding: 2px 0;
+}
+.ag-dia-add:hover { color: #15803d; }
+
 /* linha separadora de mês: altura dobrada, nome do mês acima do dia da semana */
 tr.sep-mes-spacer td {
   background: #f4f4f4; border: none;
@@ -327,6 +386,11 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
           <span class="sep-mes-nome"></span>
           <span class="sep-dia-nome">Recorrentes</span>
         </th>
+        <th class="col-gap"></th>
+        <th class="th-dia">
+          <span class="sep-mes-nome"></span>
+          <span class="sep-dia-nome">Programação do Dia</span>
+        </th>
       </tr>
     </thead>
     <tbody>
@@ -353,6 +417,11 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
         <td class="td-rec-label">
           <span class="sep-mes-nome"></span>
           <span class="sep-dia-nome">Recorrentes</span>
+        </td>
+        <td class="col-gap"></td>
+        <td class="td-dia-label">
+          <span class="sep-mes-nome"></span>
+          <span class="sep-dia-nome">Programação do Dia</span>
         </td>
       </tr>
       {% endif %}
@@ -478,12 +547,38 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
             <input class="ag-rec-txt" type="text" value="{{ it.texto }}"
               onblur="salvarRec(this)" onkeydown="recKeydown(event, this)">
             <input class="ag-rec-cod" type="text" maxlength="3" value="{{ it.codigo }}"
-              title="S1–S5: semana do mês · D1–D31: dia do mês · em branco não repete."
+              title="S: toda semana · S1–S5: semana do mês · D1–D31: dia do mês · em branco não repete."
               onblur="salvarRec(this)">
           </div>
           {% endfor %}
           <button class="ag-rec-add" onclick="addRecLinha('{{ sem_ini }}')">＋</button>
         </td>
+
+        {# ── COLUNA PROGRAMAÇÃO DO DIA — caixa única, só na semana de hoje ── #}
+        {% set tem_hoje = namespace(v=False) %}
+        {% for dv in semana %}{% if dv and dv.isoformat() == hoje %}{% set tem_hoje.v = True %}{% endif %}{% endfor %}
+        <td class="col-gap"></td>
+        {% if tem_hoje.v %}
+        <td class="ag-dia" id="dia-prog" data-dia="{{ hoje }}">
+          {% for it in programacao_hoje %}
+          <div class="ag-dia-linha {{ 'feito' if it.concluido else '' }}"
+               data-id="{{ it.id }}" data-codigo="{{ it.codigo }}"
+               data-texto="{{ it.texto }}">
+            <button class="ag-dia-chk {{ 'on' if it.concluido else '' }}"
+              onclick="toggleDiaLinha(this)">✔</button>
+            <input class="ag-dia-txt" type="text" value="{{ it.texto }}"
+              onblur="salvarDia(this)" onkeydown="diaKeydown(event, this)">
+            <input class="ag-dia-cod" type="text" maxlength="2" value="{{ it.codigo }}"
+              title="D: repete todo dia · DU: repete em dias úteis · em branco não repete."
+              onblur="salvarDia(this)">
+          </div>
+          {% endfor %}
+          <div class="ag-dia-separador"></div>
+          <button class="ag-dia-add" onclick="addDiaLinha()">＋</button>
+        </td>
+        {% else %}
+        <td class="ag-dia-vazio"></td>
+        {% endif %}
       </tr>
     {% endfor %}
     </tbody>
@@ -611,7 +706,7 @@ function addRecLinha(semana) {
     <input class="ag-rec-txt" type="text"
       onblur="salvarRec(this)" onkeydown="recKeydown(event, this)">
     <input class="ag-rec-cod" type="text" maxlength="3" value="${codigo}"
-      title="S1–S5: semana do mês · D1–D31: dia do mês · em branco não repete." onblur="salvarRec(this)">`;
+      title="S: toda semana · S1–S5: semana do mês · D1–D31: dia do mês · em branco não repete." onblur="salvarRec(this)">`;
   cel.insertBefore(div, cel.querySelector('.ag-rec-add'));
 
   // guarda a promessa: se o usuário digitar e sair antes da resposta,
@@ -644,6 +739,122 @@ function recKeydown(ev, inp) {
     }
   }
 }
+
+/* ── PROGRAMAÇÃO DO DIA — mesmo padrão das recorrentes, mas por dia ── */
+const URL_DIA_CRIAR    = "{{ url_for('canivete.agenda_dia_criar') }}";
+const URL_DIA_SALVAR   = "{{ url_for('canivete.agenda_dia_salvar') }}";
+const URL_DIA_EXCLUIR  = "{{ url_for('canivete.agenda_dia_excluir') }}";
+const URL_DIA_CONCLUIR = "{{ url_for('canivete.agenda_dia_concluir') }}";
+
+/* Mostra o espaço entre pendentes e concluídas só quando há concluídas */
+function atualizarSeparadorDia() {
+  const cel = document.getElementById('dia-prog');
+  if (!cel) return;
+  const temFeito = !!cel.querySelector('.ag-dia-linha.feito');
+  const sep = cel.querySelector('.ag-dia-separador');
+  if (sep) sep.classList.toggle('ativo', temFeito);
+}
+
+function salvarDia(campo) {
+  const linha = campo.closest('.ag-dia-linha');
+  const cel   = campo.closest('.ag-dia');
+  const dia   = cel.dataset.dia;
+  const texto = linha.querySelector('.ag-dia-txt').value.trim();
+  const codEl = linha.querySelector('.ag-dia-cod');
+  const codigo = codEl.value.trim().toUpperCase();
+
+  const pronto = linha._criando || Promise.resolve();
+  pronto.then(() => {
+    const id = linha.dataset.id;
+    if (!id) return;
+    if (!texto) { excluirDia(linha); return; }
+
+    const mudouTexto  = texto  !== (linha.dataset.texto  || '');
+    const mudouCodigo = codigo !== (linha.dataset.codigo || '');
+    if (!mudouTexto && !mudouCodigo && !cel.dataset.pendente) return;
+
+    return post(URL_DIA_SALVAR, {id, texto, codigo, dia}).then(res => {
+      if (!res) return;
+      if (!res.ok) {
+        codEl.value = linha.dataset.codigo || '';
+        codEl.classList.add('erro');
+        alert(res.erro || 'Não foi possível salvar.');
+        codEl.focus();
+        setTimeout(() => codEl.classList.remove('erro'), 2000);
+        return;
+      }
+      codEl.value = res.codigo;
+      linha.dataset.codigo = res.codigo;
+      linha.dataset.texto  = texto;
+      recarregarQuandoSairDaCelula(cel);
+    });
+  });
+}
+
+function excluirDia(linha) {
+  const id = linha.dataset.id;
+  linha.remove();
+  if (id) post(URL_DIA_EXCLUIR, {id});
+  atualizarSeparadorDia();
+}
+
+/* Marca/desmarca a conclusão de hoje e reordena via CSS (order),
+   sem precisar mover o nó no DOM */
+function toggleDiaLinha(btn) {
+  const linha = btn.closest('.ag-dia-linha');
+  const dia   = btn.closest('.ag-dia').dataset.dia;
+  const id    = linha.dataset.id;
+  if (!id) return;
+  const on = !btn.classList.contains('on');
+  btn.classList.toggle('on', on);
+  linha.classList.toggle('feito', on);
+  atualizarSeparadorDia();
+  post(URL_DIA_CONCLUIR, {id, dia, concluido: on ? '1' : '0'});
+}
+
+/* Nova tarefa do dia — sem código sugerido: em branco só vale para hoje */
+function addDiaLinha() {
+  const cel = document.getElementById('dia-prog');
+  if (!cel) return;
+  const dia = cel.dataset.dia;
+  const div = document.createElement('div');
+  div.className = 'ag-dia-linha';
+  div.innerHTML = `
+    <button class="ag-dia-chk" onclick="toggleDiaLinha(this)">✔</button>
+    <input class="ag-dia-txt" type="text"
+      onblur="salvarDia(this)" onkeydown="diaKeydown(event, this)">
+    <input class="ag-dia-cod" type="text" maxlength="2"
+      title="D: repete todo dia · DU: repete em dias úteis · em branco não repete." onblur="salvarDia(this)">`;
+  cel.insertBefore(div, cel.querySelector('.ag-dia-separador'));
+
+  div._criando = post(URL_DIA_CRIAR, {texto: '', codigo: '', dia}).then(res => {
+    if (res && res.id) {
+      div.dataset.id = res.id;
+      div.dataset.codigo = res.codigo;
+      div.dataset.texto = '';
+    }
+  });
+  div.querySelector('.ag-dia-txt').focus();
+  return div;
+}
+
+function diaKeydown(ev, inp) {
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    inp.blur();
+    addDiaLinha();
+  } else if (ev.key === 'Backspace' && inp.value === '') {
+    ev.preventDefault();
+    const linha    = inp.closest('.ag-dia-linha');
+    const anterior = linha.previousElementSibling;
+    excluirDia(linha);
+    if (anterior && anterior.classList.contains('ag-dia-linha')) {
+      anterior.querySelector('.ag-dia-txt').focus();
+    }
+  }
+}
+
+document.addEventListener('DOMContentLoaded', atualizarSeparadorDia);
 
 const URL_SALVAR = "{{ url_for('canivete.agenda_salvar') }}";
 const URL_CONCLUIR = "{{ url_for('canivete.agenda_concluir') }}";

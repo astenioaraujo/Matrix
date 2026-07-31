@@ -622,6 +622,7 @@ def _codigo_casa_linha(codigo: str, dias, pares) -> bool:
     """
     Diz se a tarefa deve aparecer nesta linha da agenda.
 
+    S       — toda semana, sem exceção.
     S1..S5  — semana do mês (ver _semana_efetiva).
     D1..D31 — dia do mês: aparece na semana que contém aquele dia.
               Se o mês não tiver o dia (D31 em fevereiro), o código é
@@ -631,6 +632,9 @@ def _codigo_casa_linha(codigo: str, dias, pares) -> bool:
     c = (codigo or "").strip().upper()
     if not c:
         return False
+
+    if c == "S":
+        return True
 
     if c[0] == "D":
         try:
@@ -646,6 +650,20 @@ def _codigo_casa_linha(codigo: str, dias, pares) -> bool:
         return False
 
     return any(_semana_efetiva(c, total) == indice for indice, total in pares)
+
+
+def _codigo_dia_casa(codigo: str, dia) -> bool:
+    """
+    D  — repete todo dia.
+    DU — repete só em dias úteis (segunda a sexta).
+    Branco — não repete (só aparece no dia em que foi criada).
+    """
+    c = (codigo or "").strip().upper()
+    if c == "D":
+        return True
+    if c == "DU":
+        return dia.weekday() < 5   # 0=Seg .. 4=Sex
+    return False
 
 
 @canivete_bp.route("/agenda")
@@ -702,6 +720,23 @@ def agenda():
         (e["id_tarefa"], e["semana_inicio"].isoformat()): e["concluido"]
         for e in cur.fetchall()
     }
+
+    # programação do dia (uma caixa única, sempre a de hoje)
+    cur.execute("""
+        SELECT id, texto, codigo, ordem, dia_inicio, dia_fim
+        FROM agenda_dia_tarefas
+        WHERE id_usuario=%s
+        ORDER BY ordem, id
+    """, (id_usuario,))
+    tarefas_dia = cur.fetchall()
+
+    cur.execute("""
+        SELECT id_tarefa, concluido
+        FROM agenda_dia_execucoes
+        WHERE id_tarefa = ANY(%s) AND dia=%s
+    """, ([t["id"] for t in tarefas_dia] or [-1], hoje))
+    execs_dia = {e["id_tarefa"]: e["concluido"] for e in cur.fetchall()}
+
     cur.close(); conn.close()
 
     # distribuir as tarefas nas semanas certas de cada mês
@@ -738,6 +773,27 @@ def agenda():
                 })
         recorrentes[chave] = linha
 
+    # Programação do dia: sempre a lista de HOJE (data real do servidor).
+    # Não recorrentes (código em branco) só aparecem no dia em que foram
+    # criadas; D repete todo dia; DU só em dias úteis (seg-sex).
+    programacao_hoje = []
+    for t in tarefas_dia:
+        ini_t, fim_t = t["dia_inicio"], t["dia_fim"]
+        if ini_t and hoje < ini_t:
+            continue
+        if fim_t and hoje > fim_t:
+            continue
+        mostra = (ini_t == hoje)
+        if not mostra and hoje > ini_t:
+            mostra = _codigo_dia_casa(t["codigo"], hoje)
+        if mostra:
+            programacao_hoje.append({
+                "id":        t["id"],
+                "texto":     t["texto"] or "",
+                "codigo":    t["codigo"] or "",
+                "concluido": execs_dia.get(t["id"], False),
+            })
+
     blocos = {}
     for r2 in rows:
         key = (r2["data"].isoformat(), r2["turno"])
@@ -772,14 +828,30 @@ def agenda():
         feriados=feriados,
         recorrentes=recorrentes,
         indice_semana=indice_semana,
+        programacao_hoje=programacao_hoje,
         url_voltar=url_for("canivete.menu_canivete"),
     )
 
 
-_RE_CODIGO = _re_agenda.compile(r"^(S[1-5]|D(?:[1-9]|[12][0-9]|3[01]))$")
+_RE_CODIGO = _re_agenda.compile(r"^(S[1-5]?|D(?:[1-9]|[12][0-9]|3[01]))$")
 
-ERRO_CODIGO = ("Código inválido. Use S1–S5 para semana do mês "
-               "ou D1–D31 para dia do mês. Em branco não repete.")
+ERRO_CODIGO = ("Código inválido. Use S para toda semana, S1–S5 para semana "
+               "do mês, ou D1–D31 para dia do mês. Em branco não repete.")
+
+_RE_CODIGO_DIA = _re_agenda.compile(r"^(D|DU)$")
+
+ERRO_CODIGO_DIA = ("Código inválido. Use D para repetir todo dia, "
+                    "DU para repetir só em dias úteis. Em branco não repete.")
+
+
+def _norm_codigo_dia(codigo: str):
+    """Mesma ideia de _norm_codigo, mas para a programação do dia (D / DU)."""
+    c = (codigo or "").strip().upper().replace(" ", "")
+    if not c:
+        return "", None
+    if _RE_CODIGO_DIA.match(c):
+        return c, None
+    return None, ERRO_CODIGO_DIA
 
 
 def _norm_codigo(codigo: str):
@@ -927,6 +999,148 @@ def agenda_recorrente_concluir():
         ON CONFLICT (id_tarefa, semana_inicio)
         DO UPDATE SET concluido = EXCLUDED.concluido
     """, (id_tarefa, semana, concluido, id_tarefa, id_usuario))
+    conn.commit()
+    cur.close(); conn.close()
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# PROGRAMAÇÃO DO DIA — mesma ideia das recorrentes, mas por dia em vez de
+# semana (código D / DU em vez de S1-S5 / D1-D31).
+# ---------------------------------------------------------------------------
+
+@canivete_bp.route("/agenda/dia/criar", methods=["POST"])
+def agenda_dia_criar():
+    """Cria uma tarefa da programação do dia e devolve o id."""
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+
+    texto  = request.form.get("texto", "")
+    dia    = request.form.get("dia", "")
+    codigo, erro = _norm_codigo_dia(request.form.get("codigo", ""))
+    if erro:
+        return jsonify({"ok": False, "erro": erro}), 400
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("""
+        INSERT INTO agenda_dia_tarefas (id_usuario, texto, codigo, dia_inicio, ordem)
+        VALUES (%s, %s, %s, %s,
+                COALESCE((SELECT MAX(ordem)+1 FROM agenda_dia_tarefas WHERE id_usuario=%s), 0))
+        RETURNING id
+    """, (id_usuario, texto, codigo, dia, id_usuario))
+    novo_id = cur.fetchone()[0]
+    conn.commit()
+    cur.close(); conn.close()
+    return jsonify({"ok": True, "id": novo_id, "codigo": codigo})
+
+
+@canivete_bp.route("/agenda/dia/salvar", methods=["POST"])
+def agenda_dia_salvar():
+    """
+    Atualiza texto e código de uma tarefa da programação do dia.
+
+    Mudar o código vale do dia editado para a frente: a série antiga é
+    encerrada no dia anterior e nasce uma nova a partir daqui — mesmo
+    princípio usado nas recorrentes semanais.
+    """
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+
+    id_tarefa = request.form.get("id", "")
+    texto     = request.form.get("texto", "")
+    dia_str   = request.form.get("dia", "")
+    codigo, erro = _norm_codigo_dia(request.form.get("codigo", ""))
+    if erro:
+        return jsonify({"ok": False, "erro": erro}), 400
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("""
+        SELECT codigo, dia_inicio FROM agenda_dia_tarefas
+        WHERE id=%s AND id_usuario=%s
+    """, (id_tarefa, id_usuario))
+    atual = cur.fetchone()
+    if not atual:
+        cur.close(); conn.close()
+        return jsonify({"ok": False}), 404
+
+    try:
+        dia = date.fromisoformat(dia_str)
+    except ValueError:
+        dia = atual["dia_inicio"]
+
+    mudou_codigo = (atual["codigo"] or "") != codigo
+    novo_id = None
+
+    if mudou_codigo and atual["dia_inicio"] and dia > atual["dia_inicio"]:
+        # encerra a série antiga no dia anterior e abre uma nova aqui
+        cur.execute("""
+            UPDATE agenda_dia_tarefas SET texto=%s, dia_fim=%s
+            WHERE id=%s AND id_usuario=%s
+        """, (texto, dia - timedelta(days=1), id_tarefa, id_usuario))
+        cur.execute("""
+            INSERT INTO agenda_dia_tarefas
+                (id_usuario, texto, codigo, dia_inicio, ordem)
+            VALUES (%s, %s, %s, %s,
+                    COALESCE((SELECT MAX(ordem)+1 FROM agenda_dia_tarefas
+                              WHERE id_usuario=%s), 0))
+            RETURNING id
+        """, (id_usuario, texto, codigo, dia, id_usuario))
+        novo_id = cur.fetchone()["id"]
+    else:
+        cur.execute("""
+            UPDATE agenda_dia_tarefas SET texto=%s, codigo=%s
+            WHERE id=%s AND id_usuario=%s
+        """, (texto, codigo, id_tarefa, id_usuario))
+
+    conn.commit()
+    cur.close(); conn.close()
+    return jsonify({"ok": True, "codigo": codigo,
+                    "recarregar": mudou_codigo, "novo_id": novo_id})
+
+
+@canivete_bp.route("/agenda/dia/excluir", methods=["POST"])
+def agenda_dia_excluir():
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("DELETE FROM agenda_dia_tarefas WHERE id=%s AND id_usuario=%s",
+                (request.form.get("id", ""), id_usuario))
+    conn.commit()
+    cur.close(); conn.close()
+    return jsonify({"ok": True})
+
+
+@canivete_bp.route("/agenda/dia/concluir", methods=["POST"])
+def agenda_dia_concluir():
+    """Marca/desmarca a execução de uma tarefa da programação do dia."""
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+
+    id_tarefa = request.form.get("id", "")
+    dia       = request.form.get("dia", "")
+    concluido = request.form.get("concluido", "0") == "1"
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("""
+        INSERT INTO agenda_dia_execucoes (id_tarefa, dia, concluido)
+        SELECT %s, %s, %s
+        WHERE EXISTS (SELECT 1 FROM agenda_dia_tarefas WHERE id=%s AND id_usuario=%s)
+        ON CONFLICT (id_tarefa, dia)
+        DO UPDATE SET concluido = EXCLUDED.concluido
+    """, (id_tarefa, dia, concluido, id_tarefa, id_usuario))
     conn.commit()
     cur.close(); conn.close()
     return jsonify({"ok": True})

@@ -3640,7 +3640,12 @@ def conferir_caixas():
             cod_filial_p = int(request.form.get("cod_filial") or 0)
             data_post    = request.form.get("data")
             def conv(v):
-                try: return float((v or "0").replace(".", "").replace(",", "."))
+                # O JS (parseBR) já converte o valor digitado (formato BR,
+                # "78,89") para um Number antes de enviar; o FormData manda
+                # esse Number como string no formato JS puro ("78.89", ponto
+                # decimal, sem separador de milhar). Tratar aqui como se
+                # fosse texto no formato brasileiro multiplicava por 100.
+                try: return float(v or "0")
                 except: return 0.0
 
             if tipo_campo == "forma":
@@ -3841,6 +3846,10 @@ def conferir_caixas():
         totais_cx=totais_cx,
         controles=controles,
         controles_valores=controles_valores,
+        hoje=hoje,
+        # "dia que se está processando": por convenção da operação, o caixa
+        # fechado hoje é sempre o de ontem
+        dia_processando=hoje - timedelta(days=1),
         mes_sel=mes_sel,
         ano_sel=ano_sel,
         meses=list(range(1, 13)),

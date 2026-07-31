@@ -57,63 +57,99 @@
   table.caixas thead th {
     background:#14114f; color:#fff; font-weight:700;
     padding:8px 10px; text-align:center; position:sticky; top:0; z-index:2;
+    min-width:96px; box-sizing:border-box;
   }
+  table.caixas thead th.col-data { min-width:110px; }
   table.caixas thead th.col-total   { background:#1d4ed8; }
   table.caixas thead th.col-totalcx { background:#166534; }
   table.caixas thead th.col-faltas  { background:#7f1d1d; }
-  table.caixas thead th.col-sep     { background:#e5e7eb; width:8px; padding:0; border:1px solid #bbb; }
+  table.caixas thead th.col-sep     { background:#e5e7eb; width:8px; min-width:8px; padding:0; border:1px solid #bbb; }
   table.caixas thead th.col-ctrl-header { background:#374151; letter-spacing:.05em; }
   table.caixas thead th.col-ctrl-info    { background:#4b5563; }
   table.caixas thead th.col-ctrl-receita { background:#166534; }
   table.caixas thead th.col-ctrl-despesa { background:#7f1d1d; }
 
-  td.td-sep { background:#e5e7eb !important; width:8px; padding:0; border:1px solid #bbb !important; }
-  td.td-ctrl { text-align:right; padding:0; }
+  /* Todas as colunas de valor (editáveis ou não) com a mesma largura e altura —
+     antes as células somente-leitura (aba de totais) encolhiam porque o texto
+     era mais estreito que o <input> das células editáveis. */
+  td.td-sep { background:#e5e7eb !important; width:8px; min-width:8px; padding:0; border:1px solid #bbb !important; }
+  td.td-ctrl { text-align:right; padding:0; min-width:96px; box-sizing:border-box; }
   td.td-ctrl input {
-    width:100%; height:32px; border:none; background:transparent;
-    text-align:right; padding:0 8px; font-size:13px; font-family:Arial,sans-serif;
+    width:100%; height:34px; border:none; background:transparent;
+    text-align:right; padding:0 10px; font-size:13px; font-family:Arial,sans-serif;
     outline:none; box-sizing:border-box;
   }
   td.td-ctrl input:focus { background:#fffde7; box-shadow:inset 0 0 0 2px #facc15; }
-  td.td-ctrl-ro { text-align:right; padding:6px 8px; color:#333; }
+  td.td-ctrl-ro { text-align:right; padding:0 10px; color:#333; height:34px; box-sizing:border-box; vertical-align:middle; min-width:96px; }
   table.caixas tbody td { background:#fff; }
-  table.caixas tbody tr:nth-child(even) td { background:#f9f9f9; }
   table.caixas tbody tr:hover td { background:#fffbea; }
 
-  td.td-data { text-align:center; font-weight:700; color:#333; padding:6px 8px; background:#f1f5f9 !important; width:110px; }
+  /* Zebra: cinza nas telas editáveis (filial), verde clarinho nas telas de
+     total/agregado — para diferenciar de cara em qual modo se está */
+  table.caixas.tbl-editavel tbody tr:nth-child(even) td { background:#f9f9f9; }
+  table.caixas.tbl-total    tbody tr:nth-child(even) td { background:#eafaf0; }
+
+  td.td-data { text-align:center; font-weight:700; color:#333; padding:0 10px; background:#f1f5f9 !important; width:110px; min-width:110px; height:34px; box-sizing:border-box; vertical-align:middle; }
   td.td-data.hoje { background:#fef9c3 !important; color:#854d0e; }
 
-  td.td-valor { text-align:right; padding:0; }
+  td.td-valor { text-align:right; padding:0; min-width:96px; box-sizing:border-box; }
   td.td-valor input {
-    width:100%; height:32px; border:none; background:transparent;
-    text-align:right; padding:0 8px; font-size:13px; font-family:Arial,sans-serif;
+    width:100%; height:34px; border:none; background:transparent;
+    text-align:right; padding:0 10px; font-size:13px; font-family:Arial,sans-serif;
     outline:none; box-sizing:border-box;
   }
   td.td-valor input:focus { background:#fffde7; box-shadow:inset 0 0 0 2px #facc15; }
 
-  td.td-total    { text-align:right; padding:6px 8px; font-weight:700; color:#1d4ed8; background:#eff6ff !important; }
-  td.td-totalcx  { text-align:right; padding:0; background:#f0fdf4 !important; }
+  td.td-total    { text-align:right; padding:0 10px; font-weight:700; color:#1d4ed8; background:#eff6ff !important; height:34px; box-sizing:border-box; vertical-align:middle; min-width:96px; }
+  td.td-totalcx  { text-align:right; padding:0; background:#f0fdf4 !important; min-width:96px; box-sizing:border-box; }
   td.td-totalcx input {
-    width:100%; height:32px; border:none; background:transparent;
-    text-align:right; padding:0 8px; font-size:13px; font-family:Arial,sans-serif;
+    width:100%; height:34px; border:none; background:transparent;
+    text-align:right; padding:0 10px; font-size:13px; font-family:Arial,sans-serif;
     outline:none; box-sizing:border-box; color:#166534; font-weight:700;
   }
   td.td-totalcx input:focus { background:#dcfce7; box-shadow:inset 0 0 0 2px #16a34a; }
-  td.td-faltas { text-align:right; padding:6px 8px; font-weight:700; }
+  td.td-faltas { text-align:right; padding:0 10px; font-weight:700; height:34px; box-sizing:border-box; vertical-align:middle; min-width:96px; }
   td.td-faltas.positivo { color:#166534; background:#f0fdf4 !important; }
   td.td-faltas.negativo { color:#b91c1c; background:#fef2f2 !important; }
   td.td-faltas.zero     { color:#888;    background:#f8fafc !important; }
 
-  td.td-readonly     { text-align:right; padding:6px 8px; color:#333; }
-  td.td-totalcx-ro   { text-align:right; padding:6px 8px; font-weight:700; color:#166534; background:#f0fdf4 !important; }
+  td.td-readonly     { text-align:right; padding:0 10px; color:#333; height:34px; box-sizing:border-box; vertical-align:middle; min-width:96px; }
+  td.td-totalcx-ro   { text-align:right; padding:0 10px; font-weight:700; color:#166534; background:#f0fdf4 !important; height:34px; box-sizing:border-box; vertical-align:middle; min-width:96px; }
+
+  /* Valor zero/ausente: um traço discreto, não o travessão largo de antes */
+  .tracinho { color:#bbb; font-size:11px; font-weight:400; }
 
   tr.linha-total td {
     background:#14114f !important; color:#fff; font-weight:800;
-    padding:7px 8px; text-align:right; border-color:#0a0830;
+    padding:7px 10px; text-align:right; border-color:#0a0830;
   }
   tr.linha-total td.td-data { text-align:center; }
   tr.linha-total td.fpos { color:#86efac; }
   tr.linha-total td.fneg { color:#fca5a5; }
+  tr.linha-total .tracinho { color:#93a3c9; }
+
+  /* Legenda repetida logo abaixo do total: ao rolar a tela e perder o
+     cabeçalho de cima, ainda dá pra saber qual coluna é qual */
+  tr.linha-legenda td {
+    border:none !important; border-top:1px solid #e5e7eb !important;
+    background:#f8fafc !important; color:#94a3b8 !important;
+    font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+    padding:5px 10px; text-align:right; height:auto;
+  }
+  tr.linha-legenda td.td-data { text-align:center; }
+
+  /* Dia que está sendo processado (ontem, em relação à data real de hoje):
+     valores em negrito vermelho, para não confundir com o amarelo de foco. */
+  tr.dia-processando td.td-data { color:#dc2626 !important; }
+  tr.dia-processando td.td-valor input,
+  tr.dia-processando td.td-readonly,
+  tr.dia-processando td.td-total,
+  tr.dia-processando td.td-totalcx input,
+  tr.dia-processando td.td-totalcx-ro {
+    color:#dc2626 !important; font-weight:800 !important;
+  }
+  tr.dia-processando td.td-data,
+  tr.dia-processando td.td-faltas { font-weight:800 !important; }
 
   .badge-salvo { display:none; font-size:11px; color:#16a34a; font-weight:700; position:fixed; bottom:20px; right:24px; background:#fff; border:1px solid #16a34a; border-radius:8px; padding:8px 14px; box-shadow:0 3px 10px rgba(0,0,0,.15); z-index:999; }
   .badge-erro  { display:none; font-size:11px; color:#dc2626; font-weight:700; position:fixed; bottom:20px; right:24px; background:#fff; border:1px solid #dc2626; border-radius:8px; padding:8px 14px; box-shadow:0 3px 10px rgba(0,0,0,.15); z-index:999; }
@@ -152,6 +188,18 @@
 </form>
 
 {% macro qs(a, f) %}mes={{ mes_sel }}&ano={{ ano_sel }}&area={{ a }}&filial={{ f }}{% endmacro %}
+
+{# Formata em BRL; quando o valor é zero/ausente, mostra um tracinho discreto
+   em vez do travessão largo. Usada em toda célula somente-exibição da tabela. #}
+{% macro money(v) -%}
+{%- if v -%}{{ '{:,.2f}'.format(v).replace(',','X').replace('.',',').replace('X','.') }}{%- else -%}<span class="tracinho">–</span>{%- endif -%}
+{%- endmacro %}
+
+{# Texto "dd/mm (Seg)" da data — usado na coluna original e na repetida
+   antes dos controles adicionais, para não duplicar o array de dias. #}
+{% macro data_cell(d) -%}
+{{ d.strftime('%d/%m') }} ({{ ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'][d.weekday()] }})
+{%- endmacro %}
 
 <!-- Navegação de postos dentro da área selecionada -->
 {% if area_sel != 'TODOS' %}
@@ -214,16 +262,17 @@
 {% else %}
 
 <div class="tbl-wrapper">
-  <table class="caixas">
+  <table class="caixas {{ 'tbl-editavel' if editavel else 'tbl-total' }}">
     <thead>
       <tr>
-        <th>DATA</th>
+        <th class="col-data">DATA</th>
         {% for f in formas %}<th>{{ f.nome }}</th>{% endfor %}
         <th class="col-total">TOTAL</th>
         <th class="col-totalcx">TOTAL CX</th>
         <th class="col-faltas">FALTAS</th>
         {% if controles %}
           <th class="col-sep"></th>
+          <th class="col-data">DATA</th>
           <th class="col-ctrl-header" colspan="{{ controles|length }}">CONTROLES ADICIONAIS</th>
         {% endif %}
       </tr>
@@ -233,6 +282,7 @@
         {% for f in formas %}<th></th>{% endfor %}
         <th></th><th></th><th></th>
         <th class="col-sep"></th>
+        <th class="col-data"></th>
         {% for c in controles %}
           <th class="col-ctrl-{{ c.tipo|lower }}">{{ c.nome }}</th>
         {% endfor %}
@@ -240,7 +290,6 @@
       {% endif %}
     </thead>
     <tbody>
-      {% set hoje_dt = datas[0].__class__.today() %}
       {% set tot_total   = namespace(v=0) %}
       {% set tot_totalcx = namespace(v=0) %}
 
@@ -254,11 +303,10 @@
         {% set tot_totalcx.v = tot_totalcx.v + tcx %}
 
         <tr data-data="{{ d.strftime('%Y-%m-%d') }}"
-            data-filial="{{ cod_filial_atual or '' }}">
+            data-filial="{{ cod_filial_atual or '' }}"
+            class="{% if d == dia_processando %}dia-processando{% endif %}">
 
-          <td class="td-data {% if d == hoje_dt %}hoje{% endif %}">
-            {{ d.strftime('%d/%m') }} ({{ ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'][d.weekday()] }})
-          </td>
+          <td class="td-data {% if d == hoje %}hoje{% endif %}">{{ data_cell(d) }}</td>
 
           {% for f in formas %}
             {% set v = vals.get(f.id, 0)|float %}
@@ -269,15 +317,11 @@
                      placeholder="0,00" onblur="salvarCelula(this)">
             </td>
             {% else %}
-            <td class="td-readonly">
-              {{ '{:,.2f}'.format(v).replace(',','X').replace('.',',').replace('X','.') if v else '—' }}
-            </td>
+            <td class="td-readonly">{{ money(v) }}</td>
             {% endif %}
           {% endfor %}
 
-          <td class="td-total" data-total="{{ soma.v }}">
-            {{ '{:,.2f}'.format(soma.v).replace(',','X').replace('.',',').replace('X','.') if soma.v else '—' }}
-          </td>
+          <td class="td-total" data-total="{{ soma.v }}">{{ money(soma.v) }}</td>
 
           {% if editavel %}
           <td class="td-totalcx">
@@ -286,9 +330,7 @@
                    placeholder="0,00" onblur="salvarTotalCx(this)">
           </td>
           {% else %}
-          <td class="td-totalcx-ro">
-            {{ '{:,.2f}'.format(tcx).replace(',','X').replace('.',',').replace('X','.') if tcx else '—' }}
-          </td>
+          <td class="td-totalcx-ro">{{ money(tcx) }}</td>
           {% endif %}
 
           {% if falta > 0.005 %}
@@ -296,11 +338,12 @@
           {% elif falta < -0.005 %}
             <td class="td-faltas negativo">({{ '{:,.2f}'.format(-falta).replace(',','X').replace('.',',').replace('X','.') }})</td>
           {% else %}
-            <td class="td-faltas zero">—</td>
+            <td class="td-faltas zero"><span class="tracinho">–</span></td>
           {% endif %}
 
           {% if controles %}
             <td class="td-sep"></td>
+            <td class="td-data {% if d == hoje %}hoje{% endif %}">{{ data_cell(d) }}</td>
             {% set cvals = controles_valores.get(d, {}) %}
             {% for c in controles %}
               {% set cv = cvals.get(c.id, 0)|float %}
@@ -311,7 +354,7 @@
                        placeholder="0,00" onblur="salvarControle(this)">
               </td>
               {% else %}
-              <td class="td-ctrl-ro">{{ '{:,.2f}'.format(cv).replace(',','X').replace('.',',').replace('X','.') if cv else '—' }}</td>
+              <td class="td-ctrl-ro">{{ money(cv) }}</td>
               {% endif %}
             {% endfor %}
           {% endif %}
@@ -325,22 +368,38 @@
         {% for f in formas %}
           {% set sf = namespace(v=0) %}
           {% for d in datas %}{% set sf.v = sf.v + (valores.get(d,{}).get(f.id,0)|float) %}{% endfor %}
-          <td>{{ '{:,.2f}'.format(sf.v).replace(',','X').replace('.',',').replace('X','.') if sf.v else '—' }}</td>
+          <td>{{ money(sf.v) }}</td>
         {% endfor %}
-        <td>{{ '{:,.2f}'.format(tot_total.v).replace(',','X').replace('.',',').replace('X','.') if tot_total.v else '—' }}</td>
-        <td>{{ '{:,.2f}'.format(tot_totalcx.v).replace(',','X').replace('.',',').replace('X','.') if tot_totalcx.v else '—' }}</td>
+        <td>{{ money(tot_total.v) }}</td>
+        <td>{{ money(tot_totalcx.v) }}</td>
         <td class="{% if fg > 0.005 %}fpos{% elif fg < -0.005 %}fneg{% endif %}">
           {% if fg > 0.005 %}{{ '{:,.2f}'.format(fg).replace(',','X').replace('.',',').replace('X','.') }}
           {% elif fg < -0.005 %}({{ '{:,.2f}'.format(-fg).replace(',','X').replace('.',',').replace('X','.') }})
-          {% else %}—{% endif %}
+          {% else %}<span class="tracinho">–</span>{% endif %}
         </td>
         {% if controles %}
           <td class="td-sep" style="background:#14114f !important;"></td>
+          <td class="td-data">TOTAL</td>
           {% for c in controles %}
             {% set sc = namespace(v=0) %}
             {% for d in datas %}{% set sc.v = sc.v + (controles_valores.get(d,{}).get(c.id,0)|float) %}{% endfor %}
-            <td>{{ '{:,.2f}'.format(sc.v).replace(',','X').replace('.',',').replace('X','.') if sc.v else '—' }}</td>
+            <td>{{ money(sc.v) }}</td>
           {% endfor %}
+        {% endif %}
+      </tr>
+
+      <!-- Legenda repetida: ao rolar e perder o cabeçalho de cima, ainda dá
+           pra saber qual coluna é qual -->
+      <tr class="linha-legenda">
+        <td class="td-data">Data</td>
+        {% for f in formas %}<td>{{ f.nome }}</td>{% endfor %}
+        <td>Total</td>
+        <td>Total Cx</td>
+        <td>Faltas</td>
+        {% if controles %}
+          <td class="td-sep"></td>
+          <td class="td-data">Data</td>
+          {% for c in controles %}<td>{{ c.nome }}</td>{% endfor %}
         {% endif %}
       </tr>
     </tbody>
