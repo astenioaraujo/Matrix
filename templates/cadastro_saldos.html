@@ -235,7 +235,7 @@
   <div class="topo-aba">
     <div>
       Normalmente só é possível lançar/editar ontem e anteontem. Liberar aqui permite editar
-      a partir de uma data mais antiga — mas dura só <strong>1 hora</strong> depois de ativado,
+      a partir de uma data mais antiga — mas dura só <strong>4 horas</strong> depois de ativado,
       voltando sozinho ao normal em seguida.
     </div>
   </div>
@@ -613,7 +613,7 @@
         body: JSON.stringify({ data_liberada_desde: dataLiberacao }),
       });
       if (data.ok) {
-        mostrarStatus("statusLiberacaoTemp", "Liberado com sucesso por 1 hora.", false);
+        mostrarStatus("statusLiberacaoTemp", "Liberado com sucesso por 4 horas.", false);
         carregarStatusLiberacaoTemp();
       } else {
         mostrarStatus("statusLiberacaoTemp", data.erro || "Erro ao liberar.", true);

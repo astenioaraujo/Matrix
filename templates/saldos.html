@@ -346,8 +346,8 @@
   }
 
   .input-valor:focus {
-    outline: 2px solid #1a73e8;
-    outline-offset: -2px;
+    /* sem contorno ao editar — o campo em foco fica marcado só pelo fundo */
+    outline: none;
     background: #fff;
   }
 
@@ -466,16 +466,6 @@
     const div = document.createElement("div");
     div.textContent = texto || "";
     return div.innerHTML;
-  }
-
-  function formatarNumeroBRDigitando(valor) {
-    if (!valor) return "";
-    const negativo = valor.toString().trim().startsWith("-");
-    const digitos = valor.toString().replace(/\D/g, "");
-    if (digitos === "") return negativo ? "-" : "";
-    let numero = (parseInt(digitos, 10) / 100).toFixed(2);
-    numero = numero.replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-    return (negativo ? "-" : "") + numero;
   }
 
   function formatarBR(numero) {
@@ -753,7 +743,7 @@
       : "";
 
     return `
-      <div class="dia-card">
+      <div class="dia-card" data-data="${dia.data}">
         <div class="dia-titulo">${formatarDataBR(dia.data)} ${badge}</div>
         ${montarTabelaBloco("Contas Bancárias", dia.contas_bancarias, dia.subtotal_contas, "bancario", dia.data, filiais, modo, editavel, true, null, podeDuplicarContas)}
         ${montarTabelaBloco("Estoques e Recebíveis", dia.recebiveis, dia.subtotal_recebiveis, "recebivel", dia.data, filiais, modo, editavel, false, dia.total, podeDuplicarRecebiveis)}
@@ -782,6 +772,8 @@
 
   function renderTudo() {
     const container = document.getElementById("blocosDias");
+    // o redesenho recria os campos; guarda onde a pessoa estava digitando
+    const foco = guardarFoco();
     if (!ultimaResposta || !ultimaResposta.dias || ultimaResposta.dias.length === 0) {
       container.innerHTML = '<div class="sem-dados">Nenhum dado para o período selecionado.</div>';
       return;
@@ -790,6 +782,24 @@
     const editavelBase = PODE_LANCAMENTO && MODO_ATUAL !== "lado_a_lado";
     const rotuloModo = { banco: "BANCOS", sistema: "SISTEMA", lado_a_lado: "LADO A LADO" }[MODO_ATUAL];
 
+    const ctx = contextoDuplicacao();
+
+    container.innerHTML = `<div class="titulo-modo">${rotuloModo}</div>` + ultimaResposta.dias
+      .map(d => montarBlocoDia(d, ultimaResposta.filiais, MODO_ATUAL, ...contextoDia(d, editavelBase, ctx)))
+      .join("");
+
+    ligarEventosCampos(container);
+    ligarBotoesDuplicar(container);
+
+    aplicarMapaCalorVariacao();
+    aplicarMapaCalorColunaTotal();
+    restaurarFoco(foco);
+  }
+
+  /* Quais dias (ontem/anteontem) e se dá pra oferecer o botão "Duplicar" —
+     mesma regra usada tanto no redesenho completo quanto na atualização de
+     um único dia, pra não duplicar a lógica. */
+  function contextoDuplicacao() {
     const ontemStr = diasAtras(1);
     const anteontemStr = diasAtras(2);
     const diaOntem = ultimaResposta.dias.find(d => d.data === ontemStr);
@@ -797,48 +807,136 @@
 
     let podeDuplicarContas = false;
     let podeDuplicarRecebiveis = false;
-    if (editavelBase && diaOntem && diaAnteontem) {
+    if (diaOntem && diaAnteontem) {
       podeDuplicarContas = blocoTotalmenteVazio(diaOntem.contas_bancarias, ultimaResposta.filiais)
         && blocoTemAlgumValor(diaAnteontem.contas_bancarias, ultimaResposta.filiais);
       podeDuplicarRecebiveis = blocoTotalmenteVazio(diaOntem.recebiveis, ultimaResposta.filiais)
         && blocoTemAlgumValor(diaAnteontem.recebiveis, ultimaResposta.filiais);
     }
+    return { ontemStr, podeDuplicarContas, podeDuplicarRecebiveis };
+  }
 
-    container.innerHTML = `<div class="titulo-modo">${rotuloModo}</div>` + ultimaResposta.dias
-      .map(d => montarBlocoDia(
-        d, ultimaResposta.filiais, MODO_ATUAL,
-        editavelBase && (!DATA_MINIMA_EDITAVEL || d.data >= DATA_MINIMA_EDITAVEL),
-        d.data === ontemStr && podeDuplicarContas,
-        d.data === ontemStr && podeDuplicarRecebiveis
-      ))
-      .join("");
+  /* Os 4 argumentos de montarBlocoDia para um dia específico */
+  function contextoDia(dia, editavelBase, ctx) {
+    return [
+      editavelBase && (!DATA_MINIMA_EDITAVEL || dia.data >= DATA_MINIMA_EDITAVEL),
+      dia.data === ctx.ontemStr && ctx.podeDuplicarContas,
+      dia.data === ctx.ontemStr && ctx.podeDuplicarRecebiveis,
+    ];
+  }
 
-    container.querySelectorAll(".input-valor").forEach(input => {
-      input.addEventListener("input", function () {
-        this.value = formatarNumeroBRDigitando(this.value);
+  /* Mesmo modelo de digitação da Conferência de Caixas:
+     - ao entrar no campo, mostra o número puro e seleciona tudo;
+     - enquanto digita, nada é reescrito;
+     - ao sair, formata com separador de milhar e salva.
+     A máscara antiga reformatava a cada tecla e dividia por 100, então
+     digitar "1000" virava "10,00" e o cursor pulava para o fim a cada
+     tecla — daí a sensação de que o número não tinha sido aceito.
+     Recebe o escopo (todo o container ou só o card de um dia) pra poder
+     religar os campos sem duplicar listener nos que já tinham. */
+  function ligarEventosCampos(escopo) {
+    escopo.querySelectorAll(".input-valor").forEach(input => {
+      input.addEventListener("focus", function () {
+        const v = paraNumero(this.value);
+        this.value = v ? v.toFixed(2).replace(".", ",") : "";
+        this.select();
       });
       input.addEventListener("keydown", function (e) {
         if (e.key === "Enter") {
           e.preventDefault();
-          salvarValor(this);
+          this.blur();          // o blur formata e salva
         }
       });
       input.addEventListener("blur", function () {
+        const v = paraNumero(this.value);
+        this.value = v ? formatarBR(v) : "";
         salvarValor(this);
       });
-      input.addEventListener("focus", function () {
-        this.select();
-      });
     });
+  }
 
-    container.querySelectorAll(".btn-duplicar").forEach(btn => {
+  function ligarBotoesDuplicar(escopo) {
+    escopo.querySelectorAll(".btn-duplicar").forEach(btn => {
       btn.addEventListener("click", function () {
         duplicarDeAnteontem(this.dataset.tipo);
       });
     });
+  }
 
+  /* Soma as linhas de um bloco (contas bancárias ou recebíveis) por filial,
+     e atualiza o total de cada linha — mesma fórmula do servidor (rota
+     /api/saldos): soma direta de saldo_banco/saldo_sistema, sem depender
+     de nenhum outro dia. Serve pra recalcular o TOTAL na hora, sem
+     esperar a viagem ao servidor. */
+  function somarLinhas(linhas, filiais) {
+    const banco = {}, sistema = {};
+    filiais.forEach(f => { banco[f.cod_filial] = 0; sistema[f.cod_filial] = 0; });
+    linhas.forEach(l => {
+      let totalLinhaBanco = 0, totalLinhaSistema = 0;
+      filiais.forEach(f => {
+        const fid = f.cod_filial;
+        const vb = l.saldo_banco[fid] || 0;
+        const vs = l.saldo_sistema[fid] || 0;
+        banco[fid] += vb;
+        sistema[fid] += vs;
+        totalLinhaBanco += vb;
+        totalLinhaSistema += vs;
+      });
+      l.total_banco = totalLinhaBanco;
+      l.total_sistema = totalLinhaSistema;
+    });
+    const total_banco = filiais.reduce((s, f) => s + banco[f.cod_filial], 0);
+    const total_sistema = filiais.reduce((s, f) => s + sistema[f.cod_filial], 0);
+    return { banco, sistema, total_banco, total_sistema };
+  }
+
+  /* Recalcula os totais de um dia (Contas Bancárias, Estoques e Recebíveis,
+     e o TOTAL geral) e os totais por linha das Valores Informados — tudo
+     que só depende dos dados do PRÓPRIO dia. Deliberadamente não mexe em
+     dia.variacao nem em variacao_final: essas comparam com o dia anterior,
+     e replicar a fórmula do servidor aqui teria risco de dar um número
+     errado por um segundo em vez de só atrasado. Ficam para a atualização
+     de fundo (agendarAtualizacaoSuave), que continua rodando por baixo. */
+  function recomputarTotaisDia(dia, filiais) {
+    dia.subtotal_contas = somarLinhas(dia.contas_bancarias, filiais);
+    dia.subtotal_recebiveis = somarLinhas(dia.recebiveis, filiais);
+
+    const banco = {}, sistema = {};
+    filiais.forEach(f => {
+      const fid = f.cod_filial;
+      banco[fid] = (dia.subtotal_contas.banco[fid] || 0) + (dia.subtotal_recebiveis.banco[fid] || 0);
+      sistema[fid] = (dia.subtotal_contas.sistema[fid] || 0) + (dia.subtotal_recebiveis.sistema[fid] || 0);
+    });
+    const total_banco = filiais.reduce((s, f) => s + banco[f.cod_filial], 0);
+    const total_sistema = filiais.reduce((s, f) => s + sistema[f.cod_filial], 0);
+    dia.total = { banco, sistema, total_banco, total_sistema, total_diferenca: total_banco - total_sistema };
+  }
+
+  /* Troca só o card de UM dia, sem redesenhar a tela inteira e sem esperar
+     o servidor — é o que faz o TOTAL aparecer no mesmo instante em que o
+     campo perde o foco, em vez de só no próximo carregarSaldos(). */
+  function atualizarCardDia(dataStr) {
+    const dia = ultimaResposta && ultimaResposta.dias.find(d => d.data === dataStr);
+    const cardAntigo = document.querySelector(`.dia-card[data-data="${dataStr}"]`);
+    if (!dia || !cardAntigo) return;   // sem card correspondente: a atualização de fundo resolve
+
+    recomputarTotaisDia(dia, ultimaResposta.filiais);
+
+    const editavelBase = PODE_LANCAMENTO && MODO_ATUAL !== "lado_a_lado";
+    const ctx = contextoDuplicacao();
+    const html = montarBlocoDia(dia, ultimaResposta.filiais, MODO_ATUAL, ...contextoDia(dia, editavelBase, ctx));
+
+    const foco = guardarFoco();
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = html.trim();
+    const cardNovo = wrapper.firstElementChild;
+    cardAntigo.replaceWith(cardNovo);
+
+    ligarEventosCampos(cardNovo);
+    ligarBotoesDuplicar(cardNovo);
     aplicarMapaCalorVariacao();
     aplicarMapaCalorColunaTotal();
+    restaurarFoco(foco);
   }
 
   async function duplicarDeAnteontem(tipo) {
@@ -960,6 +1058,7 @@
     status.classList.remove("erro");
 
     let url, payload;
+    let aplicarLocal;   // grava o valor no modelo em memória, só depois de confirmado
 
     if (tipo === "informado") {
       const registro = dia.valores_informados[codFilial] || {
@@ -975,6 +1074,10 @@
       lancamento[campo] = novoValor;
       url = "/api/saldos/valores-informados";
       payload = { data: dataStr, cod_empresa: EMPRESA_ATIVA, lancamentos: [lancamento] };
+      aplicarLocal = () => {
+        dia.valores_informados[codFilial] = registro;
+        registro[campo] = novoValor;
+      };
     } else {
       const idItem = Number(input.dataset.idItem);
       const lista = tipo === "bancario" ? dia.contas_bancarias : dia.recebiveis;
@@ -997,6 +1100,10 @@
           lancamentos: [{ cod_filial: codFilial, id_indicador_recebivel: idItem, valor_banco: valorBanco, valor_sistema: valorSistema }],
         };
       }
+      aplicarLocal = () => {
+        item.saldo_banco[codFilial] = valorBanco;
+        item.saldo_sistema[codFilial] = valorSistema;
+      };
     }
 
     try {
@@ -1008,6 +1115,12 @@
       if (data.ok) {
         status.textContent = "Salvo.";
         setTimeout(() => { if (status.textContent === "Salvo.") status.textContent = ""; }, 1500);
+        // Total instantâneo: recalcula em memória (mesma fórmula do
+        // servidor) e troca só o card deste dia — sem esperar a viagem ao
+        // servidor. A atualização de fundo continua agendada por baixo,
+        // pra pegar o que depende de outro dia (variação, mapa de calor).
+        aplicarLocal();
+        atualizarCardDia(dataStr);
         agendarAtualizacaoSuave();
       } else {
         status.textContent = data.erro || "Erro ao salvar.";
@@ -1025,17 +1138,43 @@
 
   let timeoutAtualizacaoSuave = null;
 
+  /* Antes, enquanto o foco estivesse em QUALQUER campo de valor, a
+     atualização era adiada de 1,5 em 1,5 segundo — indefinidamente. Quem
+     digitava a linha inteira pulando de campo em campo nunca soltava o
+     foco, então os totais só apareciam ao sair da grade: o "demora um
+     minuto". Agora o adiamento conta do último valor salvo, e o foco e o
+     texto em digitação são preservados durante o redesenho. */
   function agendarAtualizacaoSuave() {
     if (timeoutAtualizacaoSuave) clearTimeout(timeoutAtualizacaoSuave);
-    timeoutAtualizacaoSuave = setTimeout(function tentar() {
-      const focoAtual = document.activeElement;
-      const digitando = focoAtual && focoAtual.classList && focoAtual.classList.contains("input-valor");
-      if (digitando) {
-        timeoutAtualizacaoSuave = setTimeout(tentar, 1500);
-        return;
-      }
-      carregarSaldos();
-    }, 1500);
+    timeoutAtualizacaoSuave = setTimeout(carregarSaldos, 1200);
+  }
+
+  /* Identidade estável de um campo, para reencontrá-lo depois do redesenho */
+  function chaveInput(input) {
+    const d = input.dataset;
+    return [d.tipo, d.campo, d.data, d.codFilial, d.idItem || ""].join("|");
+  }
+
+  function guardarFoco() {
+    const el = document.activeElement;
+    if (!el || !el.classList || !el.classList.contains("input-valor")) return null;
+    return {
+      chave: chaveInput(el),
+      valor: el.value,                 // texto ainda não salvo
+      ini: el.selectionStart,
+      fim: el.selectionEnd,
+    };
+  }
+
+  function restaurarFoco(estado) {
+    if (!estado) return;
+    const alvo = Array.from(document.querySelectorAll(".input-valor"))
+      .find(i => chaveInput(i) === estado.chave);
+    if (!alvo) return;
+    // o que a pessoa estava digitando vale mais que o valor vindo do servidor
+    alvo.value = estado.valor;
+    alvo.focus();
+    try { alvo.setSelectionRange(estado.ini, estado.fim); } catch (e) {}
   }
 
   async function carregarStatusLiberacao() {

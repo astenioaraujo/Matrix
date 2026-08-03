@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:36px; font-weight:800; margin-bottom:6px; }
+  .empresa { font-size:20px; margin-bottom:8px; }
+  .ajuda {
+    font-size:13px; color:#475569; max-width:80ch; line-height:1.6;
+    margin-bottom:22px;
+  }
+  .ajuda strong { color:#14114f; }
+
+  .aviso-ok, .aviso-erro {
+    border-radius:10px; padding:12px 18px; font-size:14px; margin-bottom:18px;
+  }
+  .aviso-ok  { background:#dcfce7; border:1px solid #16a34a; color:#14532d; }
+  .aviso-erro{ background:#fee2e2; border:1px solid #dc2626; color:#7f1d1d; }
+
+  table.acessos { border-collapse:collapse; font-size:13px; background:#fff; }
+  table.acessos th, table.acessos td { border:1px solid #cbd5e1; padding:8px 12px; }
+  table.acessos thead th {
+    background:#14114f; color:#fff; font-weight:700; text-align:center;
+    position:sticky; top:0; z-index:2;
+  }
+  table.acessos thead th.grupo-resumo { background:#374151; }
+  table.acessos thead th.grupo-area   { background:#1d4ed8; }
+  table.acessos thead tr.sub th { font-size:11px; letter-spacing:.05em; padding:5px 10px; }
+  table.acessos td.usuario { text-align:left; white-space:nowrap; }
+  table.acessos td.usuario small { display:block; color:#94a3b8; font-size:11px; }
+  table.acessos td.marca { text-align:center; }
+  table.acessos tbody tr:nth-child(even) td { background:#f8fafc; }
+  table.acessos tbody tr:hover td { background:#fffbea; }
+  .sep { background:#e5e7eb !important; width:8px; padding:0 !important; }
+
+  input[type=checkbox] { width:16px; height:16px; cursor:pointer; accent-color:#4338ca; }
+
+  .barra { margin:22px 0; display:flex; gap:12px; align-items:center; }
+  .btn-salvar {
+    background:#14114f; color:#fff; border:none; border-radius:9px;
+    padding:11px 26px; font-size:14px; font-weight:700; cursor:pointer;
+  }
+  .btn-salvar:hover { background:#221c78; }
+  .btn-voltar {
+    background:#fff; color:#14114f; border:1px solid #cbd5e1; border-radius:9px;
+    padding:11px 22px; font-size:14px; font-weight:600; text-decoration:none;
+  }
+  .vazio { background:#fef9c3; border:1px solid #fde68a; border-radius:10px;
+           padding:16px 20px; color:#78350f; font-size:14px; }
+</style>
+
+<div class="pagina-titulo">Acessos de Caixas</div>
+<div class="empresa"><strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}</div>
+
+<p class="ajuda">
+  <strong>Consultar</strong> deixa o usuário ver os caixas daquela área, sem digitar.
+  <strong>Alterar</strong> deixa digitar nas filiais da área — e já inclui consultar,
+  então marcar alterar marca consultar sozinho.
+  <strong>Todas as áreas</strong> é a aba de resumo consolidado; ali só existe consulta,
+  porque alteração é sempre dentro de uma área.
+  Superusuários não aparecem nesta lista: eles já podem tudo.
+</p>
+
+<p class="ajuda" style="margin-top:-12px;">
+  A lista traz apenas quem <strong>já tem acesso ao módulo de Caixas</strong>.
+  Se alguém está faltando aqui, conceda primeiro a permissão de Caixas no
+  cadastro de usuários — depois essa pessoa passa a aparecer nesta tela.
+</p>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for categoria, texto in messages %}
+    <div class="{{ 'aviso-erro' if categoria == 'error' else 'aviso-ok' }}">{{ texto }}</div>
+  {% endfor %}
+{% endwith %}
+
+{% if not usuarios %}
+  <div class="vazio">
+    Nenhum usuário desta empresa tem acesso ao módulo de Caixas ainda.
+    Conceda a permissão de Caixas no cadastro de usuários para que apareçam aqui.
+  </div>
+{% elif not areas %}
+  <div class="vazio">
+    Nenhuma área cadastrada nesta empresa.
+    <a href="{{ url_for('configuracoes.config_areas') if 'configuracoes.config_areas' else '#' }}"
+       style="color:#14114f;font-weight:700;margin-left:8px;">Cadastrar áreas →</a>
+  </div>
+{% else %}
+
+<form method="post">
+  <div style="overflow-x:auto;">
+    <table class="acessos">
+      <thead>
+        <tr>
+          <th rowspan="2">Usuário</th>
+          <th class="sep" rowspan="2"></th>
+          <th class="grupo-resumo">Resumo</th>
+          <th class="sep" rowspan="2"></th>
+          {% for a in areas %}
+            <th class="grupo-area" colspan="2">{{ a.nome_area }}</th>
+            {% if not loop.last %}<th class="sep" rowspan="2"></th>{% endif %}
+          {% endfor %}
+        </tr>
+        <tr class="sub">
+          <th class="grupo-resumo">Todas as áreas</th>
+          {% for a in areas %}
+            <th class="grupo-area">Consultar</th>
+            <th class="grupo-area">Alterar</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in usuarios %}
+          {% set resumo = acessos.get((u.id_usuario, None)) %}
+          <tr>
+            <td class="usuario">
+              {{ u.nome }}
+              {% if u.email %}<small>{{ u.email }}</small>{% endif %}
+            </td>
+            <td class="sep"></td>
+
+            <td class="marca">
+              <input type="checkbox" name="consultar-{{ u.id_usuario }}-todas"
+                     {% if resumo and resumo.pode_consultar %}checked{% endif %}
+                     title="{{ u.nome }} pode ver o resumo de todas as áreas">
+            </td>
+            <td class="sep"></td>
+
+            {% for a in areas %}
+              {% set ac = acessos.get((u.id_usuario, a.id_area)) %}
+              <td class="marca">
+                <input type="checkbox"
+                       name="consultar-{{ u.id_usuario }}-{{ a.id_area }}"
+                       data-par="{{ u.id_usuario }}-{{ a.id_area }}"
+                       {% if ac and ac.pode_consultar %}checked{% endif %}
+                       title="{{ u.nome }} consulta {{ a.nome_area }}">
+              </td>
+              <td class="marca">
+                <input type="checkbox"
+                       name="alterar-{{ u.id_usuario }}-{{ a.id_area }}"
+                       data-alterar="{{ u.id_usuario }}-{{ a.id_area }}"
+                       {% if ac and ac.pode_alterar %}checked{% endif %}
+                       title="{{ u.nome }} altera {{ a.nome_area }}">
+              </td>
+              {% if not loop.last %}<td class="sep"></td>{% endif %}
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="barra">
+    <button type="submit" class="btn-salvar">Salvar acessos</button>
+    <a class="btn-voltar" href="{{ url_voltar }}">Voltar</a>
+  </div>
+</form>
+
+<script>
+  /* Alterar implica consultar: marcar alterar já marca a consulta ao lado, e
+     desmarcar a consulta desmarca o alterar. O banco também garante isso,
+     mas aqui a tela não deixa o usuário montar um estado impossível. */
+  document.querySelectorAll('input[data-alterar]').forEach(alt => {
+    const par = document.querySelector(
+      `input[data-par="${alt.dataset.alterar}"]`);
+    if (!par) return;
+
+    alt.addEventListener('change', () => { if (alt.checked) par.checked = true; });
+    par.addEventListener('change', () => { if (!par.checked) alt.checked = false; });
+  });
+</script>
+
+{% endif %}
+{% endblock %}

@@ -366,7 +366,10 @@
     <div>
       <label>Área</label>
       <select name="area" onchange="this.form.submit()">
-        <option value="TODOS" {% if area_sel == 'TODOS' %}selected{% endif %}>Todas as Áreas</option>
+        {# o resumo consolidado só aparece para quem tem esse acesso #}
+        {% if ve_resumo %}
+          <option value="TODOS" {% if area_sel == 'TODOS' %}selected{% endif %}>Todas as Áreas</option>
+        {% endif %}
         {% for a in areas %}
           <option value="{{ a.id_area }}" {% if area_sel == a.id_area|string %}selected{% endif %}>{{ a.nome_area }}</option>
         {% endfor %}

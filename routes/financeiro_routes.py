@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify, flash
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+from zoneinfo import ZoneInfo
 from collections import defaultdict
 import math
 import io
@@ -3593,12 +3594,16 @@ def menu_caixas():
     if tipo_global == "superusuario":
         pode_atualizar_caixas = True
         pode_configuracoes_caixas = True
+        pode_acessos_caixas = True
     else:
         pode_atualizar_caixas = usuario_tem_permissao(
             id_usuario, cod_empresa, "FINANCEIRO", "ATUALIZAR_CAIXAS"
         )
         pode_configuracoes_caixas = usuario_tem_permissao(
             id_usuario, cod_empresa, "FINANCEIRO", "CONFIGURACOES_CAIXAS"
+        )
+        pode_acessos_caixas = usuario_tem_permissao(
+            id_usuario, cod_empresa, "FINANCEIRO", "ACESSOS_CAIXAS"
         )
 
     return render_template(
@@ -3608,6 +3613,109 @@ def menu_caixas():
         url_voltar=url_for("financeiro.menu_empresa"),
         pode_atualizar_caixas=pode_atualizar_caixas,
         pode_configuracoes_caixas=pode_configuracoes_caixas,
+        pode_acessos_caixas=pode_acessos_caixas,
+    )
+
+
+@financeiro_bp.route("/caixas/acessos", methods=["GET", "POST"])
+@permissao_obrigatoria("FINANCEIRO", "ACESSOS_CAIXAS",
+                       redirecionar_para="financeiro.menu_caixas")
+def acessos_caixas():
+    """Define, por usuário e por área, quem consulta e quem altera os caixas.
+
+    Três colunas por usuário: o resumo de todas as áreas (só consulta) e,
+    para cada área, consultar e alterar. Alterar implica consultar — o banco
+    também garante isso. Superusuário não aparece na lista: já pode tudo.
+    """
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT id_area, nome_area FROM areas
+             WHERE cod_empresa=%s AND ativo = TRUE
+             ORDER BY nome_area
+        """, (cod_empresa,))
+        areas = cur.fetchall()
+
+        # Só entram na lista os usuários que já alcançam o módulo de caixas.
+        # Quem não tem nenhuma dessas permissões não teria como usar o acesso
+        # concedido aqui, então só poluiria a tela.
+        cur.execute("""
+            SELECT u.id_usuario, u.nome, u.email
+              FROM usuarios u
+              JOIN usuarios_empresas ue
+                ON ue.id_usuario = u.id_usuario AND ue.cod_empresa = %s
+             WHERE ue.ativo = TRUE AND u.ativo = TRUE
+               AND COALESCE(LOWER(u.tipo_global), '') <> 'superusuario'
+               AND EXISTS (
+                     SELECT 1 FROM usuarios_permissoes up
+                      WHERE up.id_usuario = u.id_usuario
+                        AND up.cod_empresa = %s
+                        AND up.ativo = TRUE
+                        AND up.sistema = 'FINANCEIRO'
+                        AND up.opcao IN ('MENU_CAIXAS', 'ATUALIZAR_CAIXAS',
+                                         'CONFIGURACOES_CAIXAS', 'ACESSOS_CAIXAS')
+                   )
+             ORDER BY u.nome
+        """, (cod_empresa, cod_empresa))
+        usuarios = cur.fetchall()
+
+        if request.method == "POST":
+            # A tela manda o estado inteiro. Em vez de sair lendo as chaves
+            # que vierem no formulário, percorro a mesma matriz que montei
+            # para exibir: assim nada de fora entra e nada de dentro escapa.
+            cur.execute("DELETE FROM caixas_acessos WHERE cod_empresa=%s", (cod_empresa,))
+
+            linhas = []
+            for u in usuarios:
+                uid = u["id_usuario"]
+
+                # resumo de todas as áreas: só consulta
+                if f"consultar-{uid}-todas" in request.form:
+                    linhas.append((cod_empresa, uid, None, True, False))
+
+                for a in areas:
+                    aid = a["id_area"]
+                    alterar = f"alterar-{uid}-{aid}" in request.form
+                    # alterar implica consultar, mesmo que a caixa de
+                    # consultar não tenha vindo marcada
+                    consultar = alterar or f"consultar-{uid}-{aid}" in request.form
+                    if consultar:
+                        linhas.append((cod_empresa, uid, aid, True, alterar))
+
+            if linhas:
+                cur.executemany("""
+                    INSERT INTO caixas_acessos
+                        (cod_empresa, id_usuario, id_area, pode_consultar, pode_alterar)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, linhas)
+
+            conn.commit()
+            flash(f"Acessos atualizados: {len(linhas)} concessões gravadas.", "success")
+            return redirect(url_for("financeiro.acessos_caixas"))
+
+        cur.execute("""
+            SELECT id_usuario, id_area, pode_consultar, pode_alterar
+              FROM caixas_acessos WHERE cod_empresa=%s
+        """, (cod_empresa,))
+        acessos = {(r["id_usuario"], r["id_area"]): r for r in cur.fetchall()}
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "acessos_caixas.html",
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_caixas"),
+        areas=areas,
+        usuarios=usuarios,
+        acessos=acessos,
     )
 
 
@@ -3632,6 +3740,29 @@ def _data_caixa_editavel(data_str, hoje=None):
     except (TypeError, ValueError):
         return False
     return ini <= d <= fim
+
+
+def _pode_alterar_filial(cur, cod_empresa, id_usuario, tipo_global, cod_filial):
+    """O usuário pode digitar nesta filial?
+
+    A concessão é por área (tabela caixas_acessos); a filial herda da área a
+    que pertence. Bloquear só na tela não protegeria nada — qualquer POST
+    direto passaria por cima.
+    """
+    if str(tipo_global or "").strip().lower() == "superusuario":
+        return True
+
+    cur.execute("""
+        SELECT 1
+          FROM areas_filiais af
+          JOIN caixas_acessos ca
+            ON ca.id_area = af.id_area
+           AND ca.cod_empresa = af.cod_empresa
+         WHERE af.cod_empresa = %s AND af.cod_filial = %s
+           AND ca.id_usuario = %s AND ca.pode_alterar = TRUE
+         LIMIT 1
+    """, (cod_empresa, cod_filial, id_usuario))
+    return cur.fetchone() is not None
 
 
 def _celula_tem_detalhe(cur, tipo, cod_empresa, cod_filial, data_str, id_item):
@@ -3674,6 +3805,13 @@ def conferir_caixas():
             tipo_campo   = request.form.get("tipo")
             cod_filial_p = int(request.form.get("cod_filial") or 0)
             data_post    = request.form.get("data")
+
+            if not _pode_alterar_filial(cur, cod_empresa, id_usuario,
+                                        tipo_global, cod_filial_p):
+                return jsonify({
+                    "ok": False,
+                    "erro": "Você não tem permissão para alterar esta filial."
+                }), 403
 
             # A tela já bloqueia, mas o bloqueio que vale é este: fora da
             # janela de digitação nada entra, venha de onde vier.
@@ -3760,6 +3898,37 @@ def conferir_caixas():
             areas_dict[ia]["filiais"].append({"cod_filial": r["cod_filial"], "nome_filial": r["nome_filial"]})
         areas = list(areas_dict.values())
 
+        # ---- acesso por área (tabela caixas_acessos) ----
+        # Superusuário passa direto. Para os demais, a área só aparece se
+        # houver consulta concedida, e a digitação só é liberada onde houver
+        # alteração. A aba de resumo (todas as áreas) é a linha id_area NULL.
+        if tipo_global == "superusuario":
+            areas_consulta = {a["id_area"] for a in areas}
+            areas_alterar  = set(areas_consulta)
+            ve_resumo      = True
+        else:
+            cur.execute("""
+                SELECT id_area, pode_consultar, pode_alterar
+                  FROM caixas_acessos
+                 WHERE cod_empresa=%s AND id_usuario=%s
+            """, (cod_empresa, id_usuario))
+            areas_consulta, areas_alterar, ve_resumo = set(), set(), False
+            for r in cur.fetchall():
+                if r["id_area"] is None:
+                    ve_resumo = bool(r["pode_consultar"])
+                    continue
+                if r["pode_consultar"]:
+                    areas_consulta.add(r["id_area"])
+                if r["pode_alterar"]:
+                    areas_alterar.add(r["id_area"])
+
+            areas = [a for a in areas if a["id_area"] in areas_consulta]
+
+            if not areas:
+                flash("Você não tem acesso a nenhuma área de caixas. "
+                      "Peça a liberação em Acessos de Caixas.", "error")
+                return redirect(url_for("financeiro.menu_caixas"))
+
         # Todas as filiais permitidas (lista plana)
         todos_filiais = [f["cod_filial"] for a in areas for f in a["filiais"]]
 
@@ -3781,6 +3950,33 @@ def conferir_caixas():
         # Parâmetros de seleção
         area_sel   = request.args.get("area",   "TODOS")   # "TODOS" | id_area
         filial_sel = request.args.get("filial",  "")        # "" | cod_filial
+
+        # Sem direito ao resumo, "todas as áreas" não existe para este
+        # usuário: a tela já abre na área dele. Se pedir uma área que não
+        # pode consultar (URL montada na mão, link antigo), volta para o que
+        # ele pode ver em vez de mostrar dado alheio.
+        ids_permitidos = {a["id_area"] for a in areas}
+        if area_sel != "TODOS":
+            try:
+                if int(area_sel) not in ids_permitidos:
+                    area_sel, filial_sel = "TODOS", ""
+            except ValueError:
+                area_sel, filial_sel = "TODOS", ""
+        if area_sel == "TODOS" and not ve_resumo:
+            area_sel, filial_sel = str(areas[0]["id_area"]), ""
+
+        # A filial pedida precisa pertencer à área selecionada.
+        if filial_sel and area_sel != "TODOS":
+            filiais_da_area = {
+                f["cod_filial"] for a in areas
+                if a["id_area"] == int(area_sel) for f in a["filiais"]
+            }
+            try:
+                if int(filial_sel) not in filiais_da_area:
+                    filial_sel = ""
+            except ValueError:
+                filial_sel = ""
+
         id_area_atual   = None
         cod_filial_atual = None
         editavel = False
@@ -3789,11 +3985,12 @@ def conferir_caixas():
             # Soma de todas as filiais
             cods = todos_filiais
         elif filial_sel:
-            # Filial individual dentro da área — editável
+            # Filial individual dentro da área — editável só se houver
+            # alteração concedida naquela área
             cod_filial_atual = int(filial_sel)
             id_area_atual    = int(area_sel)
             cods     = [cod_filial_atual]
-            editavel = True
+            editavel = id_area_atual in areas_alterar
         else:
             # Área selecionada sem filial → soma da área
             id_area_atual = int(area_sel)
@@ -4035,6 +4232,7 @@ def conferir_caixas():
         nome_empresa_ativa=session["nome_empresa"],
         url_voltar=url_for("financeiro.menu_caixas"),
         areas=areas,
+        ve_resumo=ve_resumo,
         area_sel=area_sel,
         filial_sel=filial_sel,
         id_area_atual=id_area_atual,
@@ -4177,6 +4375,15 @@ def api_caixas_coluna_visivel():
     conn = get_connection()
     cur  = conn.cursor(cursor_factory=RealDictCursor)
     try:
+        # A escolha de colunas é da filial e vale para todo mundo que a abrir,
+        # então só quem altera aquela filial pode mexer.
+        if not _pode_alterar_filial(cur, cod_empresa, session["id_usuario"],
+                                    session.get("tipo_global"), cod_filial):
+            return jsonify({
+                "ok": False,
+                "erro": "Você não tem permissão para alterar esta filial."
+            }), 403
+
         if not visivel:
             # Trava: com valor lançado no mês corrente a coluna não fecha.
             hoje = date.today()
@@ -4249,6 +4456,13 @@ def api_caixas_detalhe_salvar():
     conn = get_connection()
     cur  = conn.cursor(cursor_factory=RealDictCursor)
     try:
+        if not _pode_alterar_filial(cur, cod_empresa, session["id_usuario"],
+                                    session.get("tipo_global"), cod_filial):
+            return jsonify({
+                "ok": False,
+                "erro": "Você não tem permissão para alterar esta filial."
+            }), 403
+
         nova_id = None
         if not observacao and not valor:
             # em branco: se já existia, apaga; se era nova, não faz nada
@@ -4507,11 +4721,17 @@ def filiais_da_area(cur, cod_empresa, id_area):
     return cur.fetchall()
 
 
-def areas_permitidas_usuario(cur, cod_empresa, id_usuario):
-    cur.execute("""
-        SELECT id_area
-        FROM usuarios_areas_saldos
-        WHERE cod_empresa = %s AND id_usuario = %s AND ativo = TRUE
+def _areas_do_usuario(cur, cod_empresa, id_usuario, coluna):
+    """Áreas concedidas ao usuário em caixas_acessos.
+
+    Saldos usa a MESMA tabela de Caixas: quem consulta a área no caixa
+    consulta em saldos, quem altera altera. A linha de resumo (id_area NULL)
+    é ignorada aqui — saldos não tem aba de todas as áreas.
+    """
+    cur.execute(f"""
+        SELECT id_area FROM caixas_acessos
+         WHERE cod_empresa = %s AND id_usuario = %s
+           AND id_area IS NOT NULL AND {coluna} = TRUE
     """, (cod_empresa, id_usuario))
     linhas = cur.fetchall()
     if not linhas:
@@ -4519,6 +4739,16 @@ def areas_permitidas_usuario(cur, cod_empresa, id_usuario):
     if isinstance(linhas[0], dict):
         return {int(r["id_area"]) for r in linhas}
     return {int(r[0]) for r in linhas}
+
+
+def areas_permitidas_usuario(cur, cod_empresa, id_usuario):
+    """Áreas que o usuário pode VER em saldos."""
+    return _areas_do_usuario(cur, cod_empresa, id_usuario, "pode_consultar")
+
+
+def areas_alteracao_usuario(cur, cod_empresa, id_usuario):
+    """Áreas em que o usuário pode LANÇAR em saldos."""
+    return _areas_do_usuario(cur, cod_empresa, id_usuario, "pode_alterar")
 
 
 def filiais_permitidas_usuario(cur, cod_empresa, id_area):
@@ -4539,7 +4769,9 @@ def cod_filiais_permitidas_lancamento(cur, cod_empresa):
         cur.execute("SELECT cod_filial FROM filiais WHERE cod_empresa = %s AND ativo = TRUE", (cod_empresa,))
         return {int(r[0]) for r in cur.fetchall()}
 
-    areas_ok = areas_permitidas_usuario(cur, cod_empresa, session["id_usuario"])
+    # Lançar é alterar: aqui vale pode_alterar, não pode_consultar. Quem só
+    # consulta enxerga a área mas não grava nada nela.
+    areas_ok = areas_alteracao_usuario(cur, cod_empresa, session["id_usuario"])
     if not areas_ok:
         return set()
 
@@ -4551,9 +4783,30 @@ def cod_filiais_permitidas_lancamento(cur, cod_empresa):
     return {int(r[0]) for r in cur.fetchall()}
 
 
+FUSO_LOCAL = ZoneInfo("America/Sao_Paulo")
+
+# Duração da liberação temporária de saldos, em horário local.
+HORAS_LIBERACAO_SALDOS = 4
+
+
+def _ativado_em_local(ativado_em):
+    """Converte o `ativado_em` da liberação para o horário de Brasília.
+
+    A coluna é `timestamp without time zone` e é preenchida pelo NOW() do
+    banco, que roda em UTC. Comparar esse valor direto com datetime.now(),
+    que é local, criava três horas de folga: a liberação anunciada como de
+    1 hora durava 4, e a tela mostrava a expiração em UTC.
+    """
+    if ativado_em is None:
+        return None
+    return (ativado_em.replace(tzinfo=timezone.utc)
+                      .astimezone(FUSO_LOCAL)
+                      .replace(tzinfo=None))
+
+
 def data_minima_editavel(cod_empresa):
     """Normalmente só ontem/anteontem são editáveis. Uma liberação temporária
-    ativada há menos de 1 hora abaixa esse limite para a data liberada."""
+    recente abaixa esse limite para a data liberada."""
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
@@ -4569,8 +4822,10 @@ def data_minima_editavel(cod_empresa):
         cur.close()
         conn.close()
 
-    if liberacao and (datetime.now() - liberacao["ativado_em"]) < timedelta(hours=1):
-        return liberacao["data_liberada_desde"]
+    if liberacao:
+        ativado = _ativado_em_local(liberacao["ativado_em"])
+        if (datetime.now() - ativado) < timedelta(hours=HORAS_LIBERACAO_SALDOS):
+            return liberacao["data_liberada_desde"]
 
     return date.today() - timedelta(days=2)
 
@@ -5013,7 +5268,10 @@ def api_status_liberacao_temporaria():
     expira_em = None
     ativa = False
     if liberacao:
-        expira_em = liberacao["ativado_em"] + timedelta(hours=1)
+        # tudo em horário de Brasília — é o que a tela mostra e o que o
+        # usuário usa para saber quanto tempo ainda tem
+        expira_em = (_ativado_em_local(liberacao["ativado_em"])
+                     + timedelta(hours=HORAS_LIBERACAO_SALDOS))
         ativa = datetime.now() < expira_em
 
     return jsonify({
@@ -5056,7 +5314,8 @@ def api_ativar_liberacao_temporaria():
         cur.close()
         conn.close()
 
-    expira_em = liberacao["ativado_em"] + timedelta(hours=1)
+    expira_em = (_ativado_em_local(liberacao["ativado_em"])
+                 + timedelta(hours=HORAS_LIBERACAO_SALDOS))
     return jsonify({
         "ok": True,
         "data_liberada_desde": liberacao["data_liberada_desde"].isoformat(),
