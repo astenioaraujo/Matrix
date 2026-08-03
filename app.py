@@ -62,6 +62,13 @@ app.register_blueprint(canivete_bp)
 app.register_blueprint(projetos_bp)
 
 
+from db import fechar_conexao_da_requisicao
+
+# Fecha, ao fim de cada requisição, a conexão compartilhada que get_connection()
+# entrega a todos os chamadores. Sem isto ela ficaria aberta.
+app.teardown_appcontext(fechar_conexao_da_requisicao)
+
+
 @app.context_processor
 def _injetar_atalho_agenda():
     """
@@ -78,11 +85,26 @@ def _injetar_atalho_agenda():
     if str(session.get("tipo_global") or "").strip().lower() == "superusuario":
         return {"pode_atalho_agenda": True}
 
+    cod_empresa = str(cod_empresa).strip()
+
+    # Isto roda em TODA página que estende o base.html. Consultar o banco a
+    # cada render custava ~100 ms para decidir se aparece um ícone na barra.
+    # Fica guardado na sessão, amarrado ao usuário e à empresa: trocar de
+    # empresa refaz a checagem. O acesso em si continua sendo verificado na
+    # rota da agenda — aqui é só a exibição do atalho.
+    cache = session.get("_atalho_agenda")
+    if isinstance(cache, list) and len(cache) == 3:
+        u_cache, e_cache, pode_cache = cache
+        if u_cache == id_usuario and e_cache == cod_empresa:
+            return {"pode_atalho_agenda": pode_cache}
+
     try:
         from security_helpers import usuario_tem_permissao
-        pode = usuario_tem_permissao(id_usuario, str(cod_empresa).strip(), "CANIVETE", "AGENDA")
+        pode = usuario_tem_permissao(id_usuario, cod_empresa, "CANIVETE", "AGENDA")
     except Exception:
         pode = False
+
+    session["_atalho_agenda"] = [id_usuario, cod_empresa, pode]
     return {"pode_atalho_agenda": pode}
 
 

@@ -3914,39 +3914,27 @@ def conferir_caixas():
         com_detalhe_controle = set()
         dias_com_soma = set()
         if editavel:
-            cur.execute("""
-                SELECT DISTINCT data, id_forma FROM caixas_lancamentos_detalhe
-                WHERE cod_empresa=%s AND cod_filial=%s
-                  AND EXTRACT(MONTH FROM data)=%s AND EXTRACT(YEAR FROM data)=%s
-            """, (cod_empresa, cod_filial_atual, mes_sel, ano_sel))
-            com_detalhe_forma = {(r["data"].isoformat(), r["id_forma"]) for r in cur.fetchall()}
-
-            cur.execute("""
-                SELECT DISTINCT data, id_controle FROM caixas_controles_detalhe
-                WHERE cod_empresa=%s AND cod_filial=%s
-                  AND EXTRACT(MONTH FROM data)=%s AND EXTRACT(YEAR FROM data)=%s
-            """, (cod_empresa, cod_filial_atual, mes_sel, ano_sel))
-            com_detalhe_controle = {(r["data"].isoformat(), r["id_controle"]) for r in cur.fetchall()}
-
-            # dias em que algum item recebeu MAIS DE UM lançamento — é a soma
-            # dessas linhas que forma o valor da célula. Mesmo critério da
-            # chave "só com detalhamento" do painel de visualização
-            # (linhas > 1, não apenas "tem detalhe"); serve pra deixar o
-            # ícone do olho verde nesses dias.
-            cur.execute("""
-                SELECT DISTINCT data FROM (
-                    SELECT data FROM caixas_lancamentos_detalhe
+            # Uma consulta por tabela de detalhe resolve as duas coisas: quais
+            # células têm detalhamento (para a marca na grade) e em que dias
+            # algum item recebeu MAIS DE UM lançamento (para o olho verde).
+            # Antes eram três idas ao banco lendo as mesmas duas tabelas.
+            for tabela, campo, destino in (
+                ("caixas_lancamentos_detalhe", "id_forma", com_detalhe_forma),
+                ("caixas_controles_detalhe", "id_controle", com_detalhe_controle),
+            ):
+                cur.execute(f"""
+                    SELECT data, {campo} AS id_item, COUNT(*) AS linhas
+                      FROM {tabela}
                      WHERE cod_empresa=%s AND cod_filial=%s
                        AND EXTRACT(MONTH FROM data)=%s AND EXTRACT(YEAR FROM data)=%s
-                     GROUP BY data, id_forma HAVING COUNT(*) > 1
-                    UNION ALL
-                    SELECT data FROM caixas_controles_detalhe
-                     WHERE cod_empresa=%s AND cod_filial=%s
-                       AND EXTRACT(MONTH FROM data)=%s AND EXTRACT(YEAR FROM data)=%s
-                     GROUP BY data, id_controle HAVING COUNT(*) > 1
-                ) t
-            """, (cod_empresa, cod_filial_atual, mes_sel, ano_sel) * 2)
-            dias_com_soma = {r["data"].isoformat() for r in cur.fetchall()}
+                     GROUP BY data, {campo}
+                """, (cod_empresa, cod_filial_atual, mes_sel, ano_sel))
+                for r in cur.fetchall():
+                    dia = r["data"].isoformat()
+                    destino.add((dia, r["id_item"]))
+                    # mais de uma linha = o valor da célula é uma soma
+                    if r["linhas"] > 1:
+                        dias_com_soma.add(dia)
 
         # ---- quais colunas ficam abertas ----
         # Vale para as formas de recebimento e para os controles adicionais.
@@ -3958,21 +3946,16 @@ def conferir_caixas():
         colunas_fechadas    = set()
         controles_fechados  = set()
         if editavel:
-            # Itens com movimento no mês nascem abertos e com o checkbox
-            # travado, pra não dar pra esconder dado real.
-            cur.execute("""
-                SELECT DISTINCT id_forma FROM caixas_lancamentos
-                 WHERE cod_empresa=%s AND cod_filial=%s AND valor <> 0
-                   AND EXTRACT(MONTH FROM data)=%s AND EXTRACT(YEAR FROM data)=%s
-            """, (cod_empresa, cod_filial_atual, mes_sel, ano_sel))
-            formas_com_valor = {r["id_forma"] for r in cur.fetchall()}
-
-            cur.execute("""
-                SELECT DISTINCT id_controle FROM caixas_controles_valores
-                 WHERE cod_empresa=%s AND cod_filial=%s AND valor <> 0
-                   AND EXTRACT(MONTH FROM data)=%s AND EXTRACT(YEAR FROM data)=%s
-            """, (cod_empresa, cod_filial_atual, mes_sel, ano_sel))
-            controles_com_valor = {r["id_controle"] for r in cur.fetchall()}
+            # Quem tem valor no mês exibido já está em memória: `valores` e
+            # `controles_valores` foram carregados acima, desta mesma filial
+            # e deste mesmo mês. Perguntar de novo ao banco era uma viagem
+            # de ~100 ms para uma resposta que já estava aqui.
+            formas_com_valor = {
+                i for dia in valores.values() for i, v in dia.items() if v
+            }
+            controles_com_valor = {
+                i for dia in controles_valores.values() for i, v in dia.items() if v
+            }
 
             cur.execute("""
                 SELECT tipo, id_item, visivel FROM caixas_colunas_visiveis
@@ -3980,22 +3963,64 @@ def conferir_caixas():
             """, (cod_empresa, cod_filial_atual))
             pref = {(r["tipo"], r["id_item"]): r["visivel"] for r in cur.fetchall()}
 
-            def _resolver(itens, tipo, com_valor, destino):
+            # O mês anterior só interessa para coluna indecisa: sem valor no
+            # mês e sem escolha sua. Se não sobrou nenhuma, a consulta não
+            # tem para quem responder e é pulada. Conforme as filiais vão
+            # sendo configuradas, isto deixa de custar.
+            mes_ant = 12 if mes_sel == 1 else mes_sel - 1
+            ano_ant = ano_sel - 1 if mes_sel == 1 else ano_sel
+
+            def _mes_anterior(itens, tipo, com_valor, tabela, campo):
+                indecisos = [
+                    it["id"] for it in itens
+                    if it["id"] not in com_valor
+                    and (tipo, it["id"]) not in pref
+                ]
+                if not indecisos:
+                    return set()
+                cur.execute(f"""
+                    SELECT DISTINCT {campo} AS id_item FROM {tabela}
+                     WHERE cod_empresa=%s AND cod_filial=%s AND valor <> 0
+                       AND {campo} = ANY(%s)
+                       AND EXTRACT(MONTH FROM data)=%s AND EXTRACT(YEAR FROM data)=%s
+                """, (cod_empresa, cod_filial_atual, indecisos, mes_ant, ano_ant))
+                return {r["id_item"] for r in cur.fetchall()}
+
+            formas_mes_ant = _mes_anterior(
+                formas, "forma", formas_com_valor,
+                "caixas_lancamentos", "id_forma")
+            controles_mes_ant = _mes_anterior(
+                controles, "controle", controles_com_valor,
+                "caixas_controles_valores", "id_controle")
+
+            def _resolver(itens, tipo, com_valor, mes_anterior, destino):
+                """Decide coluna a coluna, na ordem de prioridade:
+
+                1. tem valor no mês exibido  -> aberta, sem discussão
+                2. você marcou ou desmarcou  -> a sua escolha manda
+                3. teve valor no mês passado -> aberta (só como ponto de
+                   partida; é aprendizado, não regra fixa)
+                4. resto                     -> fechada, se a filial já tem
+                   movimento no mês; mês vazio não serve de base pra
+                   inferir nada, então fica tudo aberto.
+                """
                 for it in itens:
                     if it["id"] in com_valor:
-                        continue                  # com valor: sempre aberta
+                        continue                          # 1
                     escolha = pref.get((tipo, it["id"]))
                     if escolha is not None:
                         if not escolha:
-                            destino.add(it["id"])
-                    elif com_valor:
-                        # Primeira visita e o mês tem movimento: quem não tem
-                        # valor nasce fechada. Mês totalmente vazio não serve
-                        # de base pra inferir nada, então tudo fica aberto.
-                        destino.add(it["id"])
+                            destino.add(it["id"])         # 2
+                        continue
+                    if it["id"] in mes_anterior:
+                        continue                          # 3
+                    if com_valor:
+                        destino.add(it["id"])             # 4
 
-            _resolver(formas,    "forma",    formas_com_valor,    colunas_fechadas)
-            _resolver(controles, "controle", controles_com_valor, controles_fechados)
+            _resolver(formas, "forma", formas_com_valor,
+                      formas_mes_ant, colunas_fechadas)
+            _resolver(controles, "controle", controles_com_valor,
+                      controles_mes_ant, controles_fechados)
 
     finally:
         cur.close()

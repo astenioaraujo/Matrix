@@ -79,6 +79,25 @@
     width:24px !important; min-width:24px !important; max-width:24px !important;
     padding:0 !important; overflow:hidden;
   }
+  /* o cabeçalho fechado não precisa recortar nada (o nome já está oculto) e
+     precisa deixar a dica vazar pra fora dos 24px da tira */
+  th.col-fechada { overflow:visible; }
+
+  /* Dica instantânea: aparece no hover sem a espera do tooltip nativo do
+     navegador. Fica abaixo do cabeçalho, por cima das primeiras linhas. */
+  table.caixas thead th[data-dica]:hover::after {
+    content:attr(data-dica);
+    position:absolute;
+    top:100%; left:50%; transform:translateX(-50%);
+    margin-top:3px;
+    z-index:50;
+    background:#111827; color:#fff;
+    font-size:11px; font-weight:600; letter-spacing:0; text-transform:none;
+    white-space:nowrap;
+    padding:5px 9px; border-radius:6px;
+    box-shadow:0 3px 10px rgba(0,0,0,.35);
+    pointer-events:none;
+  }
   td.col-fechada { background:#eef2f7 !important; font-size:0 !important; }
   th.col-fechada .th-nome { display:none !important; }
   /* qualquer filho da célula fechada some — input, tracinho, span de
@@ -465,12 +484,14 @@
         {% for f in formas %}
           {% set fechada = f.id in colunas_fechadas %}
           {% set travada = f.id in formas_com_valor %}
-          <th data-col="{{ f.id }}" class="{{ 'col-fechada' if fechada else '' }}">
+          {% set dica_f = f.nome ~ ' — tem valor lançado no mês, não pode ser fechada' if travada else f.nome %}
+          <th data-col="{{ f.id }}" data-dica="{{ dica_f }}"
+              class="{{ 'col-fechada' if fechada else '' }}">
             {% if editavel %}
               <input type="checkbox" class="chk-col" {% if not fechada %}checked{% endif %}
                      {% if travada %}disabled{% endif %}
                      data-tipo="forma" data-item="{{ f.id }}"
-                     title="{% if travada %}{{ f.nome }} tem valor lançado no mês — não pode ser fechada{% else %}Abrir/fechar a coluna {{ f.nome }}{% endif %}"
+                     aria-label="{% if travada %}{{ f.nome }} tem valor lançado no mês — não pode ser fechada{% else %}Abrir/fechar a coluna {{ f.nome }}{% endif %}"
                      onchange="alternarColuna('forma', {{ f.id }}, this.checked)">
             {% endif %}
             <span class="th-nome">{{ f.nome }}</span>
@@ -485,13 +506,14 @@
           {% for c in controles %}
             {% set c_fechada = c.id in controles_fechados %}
             {% set c_travada = c.id in controles_com_valor %}
+            {% set dica_c = c.nome ~ ' — tem valor lançado no mês, não pode ser fechada' if c_travada else c.nome %}
             <th class="col-ctrl-{{ c.tipo|lower }} {{ 'col-fechada' if c_fechada else '' }}"
-                data-col-ctrl="{{ c.id }}">
+                data-col-ctrl="{{ c.id }}" data-dica="{{ dica_c }}">
               {% if editavel %}
                 <input type="checkbox" class="chk-col" {% if not c_fechada %}checked{% endif %}
                        {% if c_travada %}disabled{% endif %}
                        data-tipo="controle" data-item="{{ c.id }}"
-                       title="{% if c_travada %}{{ c.nome }} tem valor lançado no mês — não pode ser fechada{% else %}Abrir/fechar a coluna {{ c.nome }}{% endif %}"
+                       aria-label="{% if c_travada %}{{ c.nome }} tem valor lançado no mês — não pode ser fechada{% else %}Abrir/fechar a coluna {{ c.nome }}{% endif %}"
                        onchange="alternarColuna('controle', {{ c.id }}, this.checked)">
               {% endif %}
               <span class="th-nome">{{ c.nome }}</span>
