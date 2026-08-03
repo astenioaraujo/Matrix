@@ -740,11 +740,34 @@
      desabilitado, então nem chega aqui. */
   /* Esconde/mostra as linhas dos dias mais antigos. Só mexe na exibição:
      a linha de TOTAL continua sendo a do mês inteiro, não a soma do que
-     está à vista. Não fica salvo — vale só nesta visita à tela. */
+     está à vista. */
+  const CHAVE_DIAS_RECENTES = 'matrx.conferir_caixas.so_recentes';
+
   function alternarDiasRecentes(soRecentes) {
     const tabela = document.querySelector('table.caixas');
     if (tabela) tabela.classList.toggle('so-recentes', soRecentes);
+    try { sessionStorage.setItem(CHAVE_DIAS_RECENTES, soRecentes ? '1' : '0'); }
+    catch (e) { /* navegador sem sessionStorage: só perde a memória */ }
   }
+
+  /* Trocar de filial ou de mês recarrega a página inteira. Sem restaurar
+     aqui, a chave voltava sozinha para desmarcada a cada troca. Fica na
+     sessionStorage: vale enquanto esta aba do navegador estiver aberta e
+     não vaza para outros usuários nem para outras máquinas. */
+  (function restaurarDiasRecentes() {
+    const chk = document.getElementById('chk-dias-recentes');
+    // Tela sem dia a esconder (começo de mês, mês passado) não tem a chave.
+    // Aplicar a classe aqui esconderia todas as linhas de uma vez.
+    if (!chk) return;
+
+    let salvo = null;
+    try { salvo = sessionStorage.getItem(CHAVE_DIAS_RECENTES); } catch (e) {}
+    if (salvo !== '1') return;
+
+    chk.checked = true;
+    const tabela = document.querySelector('table.caixas');
+    if (tabela) tabela.classList.add('so-recentes');
+  })();
 
   function alternarColuna(tipo, idItem, mostrar) {
     const attr = tipo === 'forma' ? 'data-col' : 'data-col-ctrl';
