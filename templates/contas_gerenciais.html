@@ -114,6 +114,16 @@
         width: auto;
     }
 
+    .col-projetar {
+        width: 90px;
+        text-align: center;
+    }
+
+    .col-projetar input {
+        width: auto;
+        cursor: pointer;
+    }
+
     input[type="text"] {
         width: 100%;
         padding: 8px 10px;
@@ -166,6 +176,7 @@
                     <th>Nome do Grupo</th>
                     <th>Conta</th>
                     <th>Descrição</th>
+                    <th class="col-projetar" title="Marcada: entra na média dos meses projetados do Fluxo de Caixa Projetado">Projetar</th>
                 </tr>
             </thead>
 
@@ -173,7 +184,7 @@
                 {% for c in contas %}
                     {% if not loop.first and contas[loop.index0][0] != contas[loop.index0 - 1][0] %}
                     <tr class="linha-separadora">
-                        <td colspan="4"></td>
+                        <td colspan="5"></td>
                     </tr>
                     {% endif %}
 
@@ -185,6 +196,10 @@
                             <input type="text" name="descricao[]" value="{{ c[3] or '' }}">
                             <input type="hidden" name="cod_grupo[]" value="{{ c[0] }}">
                             <input type="hidden" name="cod_conta[]" value="{{ c[2] }}">
+                        </td>
+                        <td class="col-projetar">
+                            <input type="checkbox" name="projetar[]" value="{{ c[0] }}-{{ c[2] }}"
+                                   {% if c[4] %}checked{% endif %}>
                         </td>
                     </tr>
                 {% endfor %}

@@ -655,6 +655,10 @@ def contas_gerenciais():
                 if not (len(descricoes) == len(grupos) == len(contas_post)):
                     raise ValueError("Os dados enviados estão inconsistentes.")
 
+                # checkbox só vem no POST quando marcado; a lista de marcados
+                # identifica cada conta por "grupo-conta"
+                projetar_marcados = set(request.form.getlist("projetar[]"))
+
                 for i in range(len(descricoes)):
                     cod_grupo = int(grupos[i])
                     cod_conta = int(contas_post[i])
@@ -663,16 +667,19 @@ def contas_gerenciais():
                     if descricao == "":
                         descricao = None
 
+                    projetar = f"{cod_grupo}-{cod_conta}" in projetar_marcados
+
                     cur.execute("""
                         UPDATE contas_gerenciais
-                        SET descricao = %s
+                        SET descricao = %s,
+                            projetar = %s
                         WHERE cod_empresa = %s
                           AND cod_grupo = %s
                           AND cod_conta = %s
-                    """, (descricao, cod_empresa, cod_grupo, cod_conta))
+                    """, (descricao, projetar, cod_empresa, cod_grupo, cod_conta))
 
                 conn.commit()
-                mensagem = "Descrições atualizadas com sucesso."
+                mensagem = "Contas atualizadas com sucesso."
 
             except Exception as e:
                 conn.rollback()
@@ -683,7 +690,8 @@ def contas_gerenciais():
                 c.cod_grupo,
                 g.abreviatura AS nome_grupo,
                 c.cod_conta,
-                c.descricao
+                c.descricao,
+                c.projetar
             FROM contas_gerenciais c
             LEFT JOIN grupos_gerenciais g
                 ON c.cod_grupo = g.cod_grupo
@@ -1839,6 +1847,27 @@ def exclusoes():
                 mensagem = f"{len(ids)} lançamento(s) excluído(s) com sucesso."
             else:
                 erro = "Nenhum registro válido selecionado."
+
+        # =========================
+        # PERÍODO SUGERIDO (primeiro acesso)
+        # =========================
+        # Sem ano/mês informados nenhuma <option> ficava marcada e o navegador
+        # exibia a primeira da lista — e o combo de meses é crescente, então
+        # aparecia o mês MAIS ANTIGO com dados. Sugere o mais recente, mesmo
+        # critério já usado na consulta matricial.
+        if not ano_sel and not mes_sel:
+            cur.execute("""
+                SELECT ano, mes FROM lancamentos
+                WHERE cod_empresa = %s
+                  AND ano IS NOT NULL
+                  AND mes IS NOT NULL
+                ORDER BY ano DESC, mes DESC
+                LIMIT 1
+            """, (cod_empresa,))
+            row_def = cur.fetchone()
+            if row_def:
+                ano_sel = str(int(row_def[0]))
+                mes_sel = str(int(row_def[1]))
 
         # =========================
         # FILTROS DINÂMICOS
@@ -3429,6 +3458,16 @@ def fluxo_caixa_projetado():
         """, (cod_empresa,))
         todos_grupos = [str(r["grupo"]) for r in cur.fetchall()]
 
+        # Contas que o usuário desmarcou: não viram média nos meses futuros.
+        # Guardado no cadastro de contas, então vale para os dois tipos de
+        # análise e persiste entre acessos.
+        cur.execute("""
+            SELECT cod_grupo, cod_conta
+            FROM contas_gerenciais
+            WHERE cod_empresa = %s AND projetar = FALSE
+        """, (cod_empresa,))
+        contas_sem_projecao = {(str(r["cod_grupo"]), r["cod_conta"]) for r in cur.fetchall()}
+
         cur.execute("""
             SELECT mes, COALESCE(SUM(margem_bruta), 0) AS mb
             FROM vendas_mb_sintetico
@@ -3496,10 +3535,12 @@ def fluxo_caixa_projetado():
             conta_info = info["contas"][chave]
             vals = conta_info["valores"]
             proj = calcular_projecao(vals) if ano_aberto else None
+            projetar = (g, conta_info["cod_conta"]) not in contas_sem_projecao
             valores_exibir = {}
             for m in meses:
                 if ano_aberto and m >= mes_atual:
-                    valor_proj = 0.0 if g == "7" else proj
+                    # zero sai em branco na tela e não soma nos totais
+                    valor_proj = 0.0 if (g == "7" or not projetar) else proj
                     valores_exibir[m] = {"valor": valor_proj, "projetado": True}
                 else:
                     valores_exibir[m] = {"valor": vals.get(m, 0), "projetado": False}
@@ -3507,6 +3548,7 @@ def fluxo_caixa_projetado():
             contas.append({
                 "cod_conta": conta_info["cod_conta"],
                 "descricao": conta_info["descricao"],
+                "projetar": projetar,
                 "valores": valores_exibir,
                 "total": total
             })
@@ -3571,6 +3613,57 @@ def fluxo_caixa_projetado():
         formatar_numero_br=formatar_numero_br,
         url_voltar=url_for("financeiro.menu_empresa")
     )
+
+
+@financeiro_bp.route("/api/contas-projecao", methods=["PUT"])
+def api_marcar_conta_projecao():
+    """Liga/desliga a conta na projeção, direto do grid do Fluxo Projetado.
+    Grava no cadastro de contas, então a marcação fica memorizada e vale
+    também para a tela de Contas Gerenciais."""
+    if "cod_empresa" not in session:
+        return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    dados = request.get_json(silent=True) or {}
+
+    try:
+        cod_grupo = int(dados["cod_grupo"])
+        cod_conta = int(dados["cod_conta"])
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"ok": False, "erro": "Informe cod_grupo e cod_conta."}), 400
+
+    projetar = bool(dados.get("projetar", True))
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        # contas_gerenciais é alimentada pela importação e tem trigger que
+        # bloqueia inclusão — aqui só atualiza o que já existe no cadastro
+        cur.execute("""
+            UPDATE contas_gerenciais
+            SET projetar = %s
+            WHERE cod_empresa = %s
+              AND cod_grupo = %s
+              AND cod_conta = %s
+        """, (projetar, cod_empresa, cod_grupo, cod_conta))
+
+        if cur.rowcount == 0:
+            conn.rollback()
+            return jsonify({
+                "ok": False,
+                "erro": f"Conta {cod_grupo}-{cod_conta} não encontrada no cadastro de contas gerenciais.",
+            }), 404
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "projetar": projetar})
+
 
 #---------------------------------------------------------
 # SALDOS (CONCILIAÇÃO BANCÁRIA)

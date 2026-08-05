@@ -109,6 +109,10 @@
   th { background: #f1f1f1; font-weight: 800; text-align: center; }
 
   .col-desc  { width: 260px; }
+  .col-chk   { width: 46px; text-align: center; }
+  .col-chk input { cursor: pointer; }
+  /* conta fora da projeção: some da média dos meses futuros */
+  .linha-conta.sem-projecao .col-desc { color: #999; font-style: italic; }
   .col-num   { width: 110px; text-align: right; }
   .col-total { width: 120px; text-align: right; font-weight: 900; background: #fffbe6; }
 
@@ -238,6 +242,7 @@
       <thead>
         <tr>
           <th class="col-desc">Descrição</th>
+          <th class="col-chk" title="Contas marcadas entram na projeção dos meses futuros">Proj.</th>
           {% for m in meses %}
             <th class="col-num {% if ano_aberto and m >= mes_atual %}projetado{% endif %}">
               {{ nomes_meses[m-1] }}{% if ano_aberto and m >= mes_atual %} *{% endif %}
@@ -250,6 +255,7 @@
         <!-- linha MB (visível só no modo margem bruta) -->
         <tr class="linha-mb">
           <td class="col-desc">0 - Margem Bruta</td>
+          <td class="col-chk"></td>
           {% for m in meses %}
             {% set v = mb_por_mes[m] %}
             <td class="col-num {% if v.projetado %}projetado{% endif %} {% if v.valor < 0 %}negativo{% elif v.valor > 0 %}positivo{% endif %}">
@@ -263,13 +269,14 @@
 
         <!-- espaçador entre MB e despesas operacionais (só no modo margem bruta) -->
         <tr class="linha-mb linha-mb-sep">
-          <td colspan="{{ meses|length + 2 }}" style="background: #f5f5f5; height: 12px; border: none;"></td>
+          <td colspan="{{ meses|length + 3 }}" style="background: #f5f5f5; height: 12px; border: none;"></td>
         </tr>
 
         {% for grupo in grupos %}
         <!-- linha do grupo -->
         <tr class="linha-grupo linha-fluxo {% if grupo.grupo in ['1','2','3'] %}linha-grupo-123{% endif %} {% if grupo.grupo == '7' %}linha-grupo-7{% endif %}" data-grupo="{{ grupo.grupo }}">
           <td class="col-desc">{{ grupo.grupo }}{% if grupo.nome_grupo %} - {{ grupo.nome_grupo }}{% endif %}</td>
+          <td class="col-chk"></td>
           {% for m in meses %}
             {% set v = grupo.total_mes[m] %}
             <td class="col-num {% if v.projetado %}projetado{% endif %} {% if v.valor < 0 %}negativo{% elif v.valor > 0 %}positivo{% endif %}">
@@ -282,8 +289,14 @@
         </tr>
         <!-- linhas das contas -->
         {% for conta in grupo.contas %}
-        <tr class="linha-conta linha-fluxo {% if grupo.grupo in ['1','2','3'] %}linha-conta-123{% endif %} {% if grupo.grupo == '7' %}linha-conta-7{% endif %}" data-grupo="{{ grupo.grupo }}">
+        <tr class="linha-conta linha-fluxo {% if grupo.grupo in ['1','2','3'] %}linha-conta-123{% endif %} {% if grupo.grupo == '7' %}linha-conta-7{% endif %} {% if not conta.projetar %}sem-projecao{% endif %}" data-grupo="{{ grupo.grupo }}">
           <td class="col-desc" style="padding-left:24px;">{{ conta.cod_conta }} - {{ conta.descricao }}</td>
+          <td class="col-chk">
+            <input type="checkbox" class="chk-projetar"
+                   data-grupo="{{ grupo.grupo }}" data-conta="{{ conta.cod_conta }}"
+                   {% if conta.projetar %}checked{% endif %}
+                   title="Desmarque para esta conta não ser projetada nos meses futuros">
+          </td>
           {% for m in meses %}
             {% set v = conta.valores[m] %}
             <td class="col-num {% if v.projetado %}projetado{% endif %} {% if v.valor < 0 %}negativo{% elif v.valor > 0 %}positivo{% endif %}">
@@ -300,6 +313,7 @@
         <!-- total geral — modo fluxo -->
         <tr class="linha-total-geral total-fluxo">
           <td class="col-desc">SALDO</td>
+          <td class="col-chk"></td>
           {% for m in meses %}
             {% set v = totais_mes[m] %}
             <td class="col-num {% if v.projetado %}projetado{% endif %} {% if v.valor < 0 %}negativo{% elif v.valor > 0 %}positivo{% endif %}">
@@ -314,6 +328,7 @@
         <!-- saldo — modo margem bruta -->
         <tr class="linha-total-geral total-mb" style="display:none;">
           <td class="col-desc">SALDO</td>
+          <td class="col-chk"></td>
           {% for m in meses %}
             {% set v = totais_mes_mb[m] %}
             <td class="col-num {% if v.projetado %}projetado{% endif %} {% if v.valor < 0 %}negativo{% elif v.valor > 0 %}positivo{% endif %}">
@@ -469,7 +484,71 @@
     });
   }
 
-  document.addEventListener("DOMContentLoaded", aplicarMapaCalor);
+  // ── Contas que entram na projeção ─────────────────────────────────────────
+  /* Os totais de grupo, o SALDO e o SALDO da margem bruta são calculados no
+     servidor; depois de salvar a marcação a página é recarregada para eles
+     virem coerentes. O estado visual (tipo de análise, analítico/sintético e
+     filtro de grupos) é só do navegador, então é guardado e reposto. */
+  function guardarEstadoVisual() {
+    const tipo = document.querySelector('input[name="tipo"]:checked');
+    const vis  = document.querySelector('input[name="vis"]:checked');
+    sessionStorage.setItem("fcp-estado", JSON.stringify({
+      tipo: tipo ? tipo.value : "fluxo",
+      vis:  vis  ? vis.value  : "analitico",
+      grupos: Array.from(document.querySelectorAll(".chk-grupo:checked")).map(c => c.value),
+    }));
+  }
+
+  function restaurarEstadoVisual() {
+    const bruto = sessionStorage.getItem("fcp-estado");
+    if (!bruto) return;
+    sessionStorage.removeItem("fcp-estado");   // vale só para o reload seguinte
+    let e;
+    try { e = JSON.parse(bruto); } catch (_) { return; }
+
+    const radioVis = document.querySelector('input[name="vis"][value="' + e.vis + '"]');
+    if (radioVis) { radioVis.checked = true; radioVis.dispatchEvent(new Event("change")); }
+
+    const radioTipo = document.querySelector('input[name="tipo"][value="' + e.tipo + '"]');
+    if (radioTipo) { radioTipo.checked = true; radioTipo.dispatchEvent(new Event("change")); }
+
+    if (Array.isArray(e.grupos)) {
+      document.querySelectorAll(".chk-grupo").forEach(c => { c.checked = e.grupos.includes(c.value); });
+      atualizarFiltro();
+    }
+  }
+
+  document.querySelectorAll(".chk-projetar").forEach(chk => {
+    chk.addEventListener("change", function () {
+      const alvo = this;
+      alvo.disabled = true;
+      fetch("/api/contas-projecao", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cod_grupo: alvo.dataset.grupo,
+          cod_conta: alvo.dataset.conta,
+          projetar: alvo.checked,
+        }),
+      })
+        .then(r => r.json())
+        .then(res => {
+          if (!res.ok) throw new Error(res.erro || "Erro ao salvar.");
+          guardarEstadoVisual();
+          window.location.reload();
+        })
+        .catch(err => {
+          alert(err.message || "Erro ao salvar.");
+          alvo.checked = !alvo.checked;   // desfaz visualmente
+          alvo.disabled = false;
+        });
+    });
+  });
+
+  document.addEventListener("DOMContentLoaded", function () {
+    restaurarEstadoVisual();
+    aplicarMapaCalor();
+  });
 </script>
 
 {% endblock %}

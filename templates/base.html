@@ -369,6 +369,12 @@
             </div>
           {% endif %}
 
+          {% if pode_atalho_financas %}
+            <a href="{{ url_for('canivete.menu_financas_pessoais') }}" class="btn-atalho-agenda" title="Ir para Finanças Pessoais">
+              💰
+            </a>
+          {% endif %}
+
           {% if pode_atalho_agenda %}
             <a href="{{ url_for('canivete.agenda') }}" class="btn-atalho-agenda" title="Ir para a Agenda">
               📅

@@ -70,42 +70,69 @@ app.teardown_appcontext(fechar_conexao_da_requisicao)
 
 
 @app.context_processor
-def _injetar_atalho_agenda():
+def _injetar_atalhos_topo():
     """
-    Disponibiliza `pode_atalho_agenda` para toda página que estende base.html,
-    para mostrar o ícone de atalho da Agenda na barra superior.
+    Disponibiliza `pode_atalho_financas` e `pode_atalho_agenda` para toda
+    página que estende base.html, para os ícones de atalho da barra superior.
     """
     from flask import session
 
     id_usuario = session.get("id_usuario")
     cod_empresa = session.get("cod_empresa")
     if not id_usuario or not cod_empresa:
-        return {"pode_atalho_agenda": False}
+        return {"pode_atalho_agenda": False, "pode_atalho_financas": False}
 
     if str(session.get("tipo_global") or "").strip().lower() == "superusuario":
-        return {"pode_atalho_agenda": True}
+        return {"pode_atalho_agenda": True, "pode_atalho_financas": True}
 
     cod_empresa = str(cod_empresa).strip()
 
     # Isto roda em TODA página que estende o base.html. Consultar o banco a
     # cada render custava ~100 ms para decidir se aparece um ícone na barra.
     # Fica guardado na sessão, amarrado ao usuário e à empresa: trocar de
-    # empresa refaz a checagem. O acesso em si continua sendo verificado na
-    # rota da agenda — aqui é só a exibição do atalho.
-    cache = session.get("_atalho_agenda")
-    if isinstance(cache, list) and len(cache) == 3:
-        u_cache, e_cache, pode_cache = cache
+    # empresa refaz a checagem. As duas permissões saem de UMA consulta só,
+    # então o segundo ícone não acrescenta nada ao tempo de carga. O acesso em
+    # si continua sendo verificado nas rotas — aqui é só a exibição do atalho.
+    cache = session.get("_atalhos_topo")
+    if isinstance(cache, list) and len(cache) == 4:
+        u_cache, e_cache, agenda_cache, financas_cache = cache
         if u_cache == id_usuario and e_cache == cod_empresa:
-            return {"pode_atalho_agenda": pode_cache}
+            return {
+                "pode_atalho_agenda": agenda_cache,
+                "pode_atalho_financas": financas_cache,
+            }
 
+    pode_agenda = False
+    pode_financas = False
     try:
-        from security_helpers import usuario_tem_permissao
-        pode = usuario_tem_permissao(id_usuario, cod_empresa, "CANIVETE", "AGENDA")
+        from db import get_connection
+        cur = get_connection().cursor()
+        try:
+            cur.execute("""
+                SELECT opcao
+                FROM usuarios_permissoes
+                WHERE id_usuario = %s
+                  AND cod_empresa = %s
+                  AND sistema = 'CANIVETE'
+                  AND opcao IN ('MENU', 'AGENDA', 'FINANCAS_PESSOAIS_MENU')
+                  AND ativo = TRUE
+            """, (id_usuario, cod_empresa))
+            liberadas = {r[0] for r in cur.fetchall()}
+        finally:
+            cur.close()
+        pode_agenda = "AGENDA" in liberadas
+        # o atalho entra no Canivete Suíço, então exige acesso ao módulo
+        # além do acesso à própria tela de Finanças Pessoais
+        pode_financas = "MENU" in liberadas and "FINANCAS_PESSOAIS_MENU" in liberadas
     except Exception:
-        pode = False
+        pass
 
-    session["_atalho_agenda"] = [id_usuario, cod_empresa, pode]
-    return {"pode_atalho_agenda": pode}
+    session.pop("_atalho_agenda", None)   # cache antigo, só da agenda
+    session["_atalhos_topo"] = [id_usuario, cod_empresa, pode_agenda, pode_financas]
+    return {
+        "pode_atalho_agenda": pode_agenda,
+        "pode_atalho_financas": pode_financas,
+    }
 
 
 if __name__ == "__main__":
