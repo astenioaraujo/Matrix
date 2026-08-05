@@ -56,11 +56,15 @@
   <h3>Formas de Recebimento</h3>
   <p style="color:#666; font-size:13px; margin-bottom:16px;">
     Cadastre aqui as colunas que aparecerão na conferência de caixas. A coluna <strong>Ordem</strong> define a sequência de exibição.
+    O <strong>Agrupamento</strong> é opcional: formas com o mesmo agrupamento (ex.: "PIX" em PIX REDE e PIX CNPJ) entram somadas
+    numa única linha no resumo por origem do dinheiro, nas abas de totais do Conferir Caixas. Deixe em branco para a forma
+    aparecer sozinha no resumo, com o próprio nome.
   </p>
-  <table>
+  <table style="table-layout:fixed;">
     <thead>
       <tr>
-        <th>Nome</th>
+        <th style="width:260px;">Nome</th>
+        <th style="width:160px;">Agrupamento</th>
         <th style="width:100px; text-align:center;">Ordem</th>
         <th style="width:90px; text-align:center;">Status</th>
         <th style="width:220px;"></th>
@@ -75,6 +79,10 @@
             <input type="hidden" name="id_editar" value="{{ f.id }}">
             <input type="text" name="nome_editar" value="{{ f.nome }}" required>
           </form>
+        </td>
+        <td>
+          <input type="text" name="agrupamento_editar" value="{{ f.agrupamento or '' }}"
+                 placeholder="—" form="form-editar-{{ f.id }}">
         </td>
         <td>
           <input type="number" name="ordem_editar" value="{{ f.ordem }}" form="form-editar-{{ f.id }}"
@@ -100,7 +108,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="4" style="text-align:center; color:#888; font-style:italic; padding:18px;">Nenhuma forma cadastrada.</td></tr>
+      <tr><td colspan="5" style="text-align:center; color:#888; font-style:italic; padding:18px;">Nenhuma forma cadastrada.</td></tr>
       {% endfor %}
 
       <tr class="nova-linha">
@@ -108,6 +116,9 @@
           <form method="post" id="form-nova" style="margin:0;">
             <input type="hidden" name="acao" value="incluir">
             <input type="text" name="nome" placeholder="Nova forma de recebimento..." required>
+        </td>
+        <td>
+          <input type="text" name="agrupamento" placeholder="—" form="form-nova">
         </td>
         <td>
           <input type="number" name="ordem" value="0" form="form-nova" style="width:70px; text-align:center;">

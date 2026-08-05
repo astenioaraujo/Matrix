@@ -52,6 +52,50 @@
 
   /* Tabela */
   .tbl-wrapper { overflow-x:auto; }
+
+  /* ── Resumo por origem do dinheiro (tabela + pizza) ─────────────────── */
+  .bloco-resumo {
+    margin-top:22px; padding:18px 20px; background:#fff;
+    border:1px solid #d8dee6; border-radius:10px;
+  }
+  .bloco-resumo-titulo { font-size:14px; font-weight:800; color:#14114f; margin-bottom:14px; }
+  .btn-resumo {
+    background:#14114f; color:#fff; border:none; border-radius:8px;
+    padding:9px 18px; font-size:13px; font-weight:700; cursor:pointer;
+  }
+  .btn-resumo:hover:not(:disabled) { background:#221c78; }
+  .btn-resumo:disabled { opacity:.6; cursor:wait; }
+  .resumo-vazio { font-size:13px; color:#888; font-style:italic; margin-top:12px; }
+
+  /* flex sem crescer: a tabela e a pizza só ocupam o espaço que precisam,
+     encostadas à esquerda — sem isso elas esticavam pra preencher a
+     largura toda do bloco (que segue a largura da grade acima) e a pizza
+     ia parar lá longe, do lado direito, fora da tela sem rolar. */
+  .resumo-flex { display:flex; gap:28px; align-items:center; flex-wrap:wrap; margin-top:14px; }
+  .resumo-tabela {
+    border-collapse:collapse; font-size:13px; table-layout:fixed;
+    width:510px; flex:0 0 auto;
+  }
+  .resumo-tabela th {
+    text-align:center; vertical-align:middle; height:36px;
+    font-size:11px; letter-spacing:.04em; text-transform:uppercase;
+    color:#475569; background:#eef2f6; padding:0 10px;
+    border-bottom:2px solid #e2e8f0;
+  }
+  .resumo-tabela td { padding:7px 10px; border-bottom:1px solid #eef1f5; text-align:left; }
+  /* Valor e % são número — alinhados à direita, como no Excel. O fundo do
+     Valor é o mapa de calor (aplicado por linha via JS, não por aqui). */
+  .resumo-tabela td.valor {
+    text-align:right; font-variant-numeric:tabular-nums; border-radius:4px;
+  }
+  .resumo-swatch {
+    display:inline-block; width:11px; height:11px; border-radius:3px;
+    margin-right:8px; vertical-align:middle; flex-shrink:0;
+  }
+  /* A pizza é um <svg> com o nome de cada fatia desenhado do lado de fora
+     dela mesma — não tem legenda separada, o rótulo já é a legenda. */
+  .resumo-pizza-bloco { flex:0 0 auto; margin-left:24px; }
+  .resumo-pizza-bloco svg { display:block; overflow:visible; }
   table.caixas { border-collapse:collapse; font-size:13px; min-width:100%; font-family:Arial,sans-serif; }
   table.caixas th, table.caixas td { border:1px solid #bbb; padding:0; white-space:nowrap; }
   table.caixas thead th {
@@ -679,6 +723,29 @@
     </tbody>
   </table>
 </div>
+
+{% if resumo_agrupamento is not none %}
+  <div class="bloco-resumo">
+    <div class="bloco-resumo-titulo">Resumo por origem do dinheiro</div>
+    <div id="resumo-agrupamento"></div>
+  </div>
+  <script>
+    /* A função só existe no bloco de script principal, mais abaixo na
+       página — DOMContentLoaded garante que ele já rodou antes desta
+       chamada, independente da ordem dos blocos no HTML. */
+    document.addEventListener('DOMContentLoaded', function () {
+      renderResumoAgrupamento({{ resumo_agrupamento | tojson }}, 'resumo-agrupamento');
+    });
+  </script>
+{% elif editavel %}
+  <div class="bloco-resumo">
+    <button type="button" class="btn-resumo" onclick="buscarResumoAgrupamento(this)">
+      Ver resumo por origem do dinheiro
+    </button>
+    <div id="resumo-agrupamento"></div>
+  </div>
+{% endif %}
+
 {% endif %}
 
 {% if editavel %}
@@ -721,6 +788,7 @@
   const URL_DETALHE_SALVAR = "{{ url_for('financeiro.api_caixas_detalhe_salvar') }}";
   const FILIAL_ATUAL = {{ cod_filial_atual or 0 }};
   const URL_COLUNA_VISIVEL = "{{ url_for('financeiro.api_caixas_coluna_visivel') }}";
+  const URL_RESUMO_AGRUPAMENTO = "{{ url_for('financeiro.api_caixas_resumo_agrupamento') }}";
   const MES_ATUAL = {{ mes_sel }};
   const ANO_ATUAL = {{ ano_sel }};
   const FORMAS_JS    = {{ formas | tojson }};
@@ -732,6 +800,154 @@
     if (!v) return '';
     return Math.abs(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   }
+
+  /* ── RESUMO POR ORIGEM DO DINHEIRO ────────────────────────────────────
+     Tabela + pizza a partir de [{rotulo, valor, percentual}]. A pizza é um
+     div circular com conic-gradient — sem biblioteca de gráfico nenhuma. */
+  const PALETA_RESUMO = ['#4338ca','#0891b2','#16a34a','#ca8a04','#dc2626',
+                          '#9333ea','#0d9488','#c2410c','#2563eb','#65a30d'];
+
+  /* Cópia local: o escapeHtml "de verdade" só existe dentro do bloco de
+     detalhamento, que não roda na aba de totais (não editável) — e é
+     justamente lá que este resumo precisa funcionar sozinho. */
+  function escapeHtmlResumo(s) {
+    return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  /* Mesma escala de cor do mapa de calor de Saldos (vermelho→amarelo→verde,
+     51 faixas — Math.round(ratio*50)/50 quantiza em 51 degraus, igual à
+     escala de cores do Excel), copiada aqui porque este arquivo é
+     independente do de Saldos. */
+  function corCalorResumo(ratio) {
+    let r, g, b;
+    if (ratio <= 0.5) {
+      const t = ratio / 0.5;
+      r = 248 + (255 - 248) * t; g = 105 + (235 - 105) * t; b = 107 + (132 - 107) * t;
+    } else {
+      const t = (ratio - 0.5) / 0.5;
+      r = 255 + (99 - 255) * t; g = 235 + (190 - 235) * t; b = 132 + (123 - 132) * t;
+    }
+    return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+  }
+
+  /* Ponto na borda de um círculo, ângulo em graus medido a partir do topo
+     (12 horas), sentido horário — mesma convenção do Excel.
+     0°→(cx,cy-r) topo · 90°→(cx+r,cy) direita · 180°→(cx,cy+r) baixo. */
+  function pontoNoCirculo(cx, cy, r, anguloGraus) {
+    const rad = anguloGraus * Math.PI / 180;
+    return { x: cx + r * Math.sin(rad), y: cy - r * Math.cos(rad) };
+  }
+
+  /* Pizza em SVG com o nome de cada fatia do lado de fora — igual ao
+     estilo "Rótulos de Dados Fora da Extremidade" do Excel. Fatia pequena
+     (< 3%) empurra o rótulo mais pra fora e ganha uma linha guia fina até
+     a borda, senão o texto ficaria emaranhado nas fatias vizinhas. Sem
+     legenda separada: o nome já está grudado na fatia. */
+  function montarPizzaSVG(itens) {
+    const cx = 210, cy = 190, r = 120;
+    const LIMIAR_PEQUENA = 3; // %
+
+    let anguloAtual = 0;
+    let fatiasSvg = '';
+    let rotulosSvg = '';
+
+    // fatias pequenas adjacentes (tipicamente as últimas, já vem ordenado
+    // do maior pro menor) recebem raios de rótulo alternados, pra não
+    // sobrepor texto quando ficam coladas uma na outra no gráfico
+    let indicePequena = 0;
+
+    itens.forEach((it, i) => {
+      const anguloInicio = anguloAtual;
+      const anguloFim = anguloAtual + (it.percentual / 100) * 360;
+      anguloAtual = anguloFim;
+      const anguloMeio = (anguloInicio + anguloFim) / 2;
+      const cor = PALETA_RESUMO[i % PALETA_RESUMO.length];
+
+      const p1 = pontoNoCirculo(cx, cy, r, anguloInicio);
+      const p2 = pontoNoCirculo(cx, cy, r, anguloFim);
+      const largeArc = (anguloFim - anguloInicio) > 180 ? 1 : 0;
+      fatiasSvg += `<path d="M${cx},${cy} L${p1.x.toFixed(2)},${p1.y.toFixed(2)} `
+        + `A${r},${r} 0 ${largeArc} 1 ${p2.x.toFixed(2)},${p2.y.toFixed(2)} Z" `
+        + `fill="${cor}" stroke="#fff" stroke-width="1.5"></path>`;
+
+      const pequena = it.percentual < LIMIAR_PEQUENA;
+      const raioRotulo = pequena ? r + 46 + (indicePequena % 2) * 20 : r + 22;
+      if (pequena) indicePequena++;
+
+      const pBorda = pontoNoCirculo(cx, cy, r, anguloMeio);
+      const pRotulo = pontoNoCirculo(cx, cy, raioRotulo, anguloMeio);
+      const aDireita = pRotulo.x >= cx;
+      const anchor = aDireita ? 'start' : 'end';
+      const deslocaTexto = aDireita ? 6 : -6;
+
+      if (pequena) {
+        rotulosSvg += `<line x1="${pBorda.x.toFixed(2)}" y1="${pBorda.y.toFixed(2)}" `
+          + `x2="${pRotulo.x.toFixed(2)}" y2="${pRotulo.y.toFixed(2)}" `
+          + `stroke="${cor}" stroke-width="1"></line>`;
+      }
+      rotulosSvg += `<text x="${(pRotulo.x + deslocaTexto).toFixed(2)}" y="${pRotulo.y.toFixed(2)}" `
+        + `text-anchor="${anchor}" dominant-baseline="middle" `
+        + `font-size="12" font-weight="700" fill="${cor}">${escapeHtmlResumo(it.rotulo)}</text>`;
+    });
+
+    return `<svg viewBox="0 0 420 380" width="420" height="380">${fatiasSvg}${rotulosSvg}</svg>`;
+  }
+
+  function renderResumoAgrupamento(itens, elId) {
+    const container = document.getElementById(elId);
+    if (!container) return;
+    if (!itens || !itens.length) {
+      container.innerHTML = '<p class="resumo-vazio">Sem lançamentos no período para montar o resumo.</p>';
+      return;
+    }
+
+    // a ordem já vem maior -> menor do servidor; aqui é só desenhar
+    const pizzaSvg = montarPizzaSVG(itens);
+
+    const valores = itens.map(it => it.valor);
+    const min = Math.min(...valores), max = Math.max(...valores);
+
+    const linhas = itens.map((it, i) => {
+      let ratio = (it.valor - min) / ((max - min) || 1);
+      ratio = Math.round(ratio * 50) / 50;
+      return `
+      <tr>
+        <td><span class="resumo-swatch" style="background:${PALETA_RESUMO[i % PALETA_RESUMO.length]}"></span>${escapeHtmlResumo(it.rotulo)}</td>
+        <td class="valor" style="background:${corCalorResumo(ratio)}">${fmtBR(it.valor)}</td>
+        <td class="valor">${it.percentual.toFixed(1)}%</td>
+      </tr>`;
+    }).join('');
+
+    container.innerHTML = `
+      <div class="resumo-flex">
+        <table class="resumo-tabela">
+          <thead><tr>
+            <th style="width:340px;">Origem</th>
+            <th style="width:120px;">Valor</th>
+            <th style="width:50px;">%</th>
+          </tr></thead>
+          <tbody>${linhas}</tbody>
+        </table>
+        <div class="resumo-pizza-bloco">${pizzaSvg}</div>
+      </div>`;
+  }
+
+  async function buscarResumoAgrupamento(botao) {
+    const container = document.getElementById('resumo-agrupamento');
+    container.innerHTML = '<p class="resumo-vazio">Carregando…</p>';
+    botao.disabled = true;
+    try {
+      const resp = await fetch(`${URL_RESUMO_AGRUPAMENTO}?cod_filial=${FILIAL_ATUAL}&mes=${MES_ATUAL}&ano=${ANO_ATUAL}`);
+      const j = await resp.json();
+      if (!j.ok) { container.innerHTML = '<p class="resumo-vazio">Erro ao carregar.</p>'; return; }
+      renderResumoAgrupamento(j.itens, 'resumo-agrupamento');
+    } catch (e) {
+      container.innerHTML = '<p class="resumo-vazio">Erro ao carregar.</p>';
+    } finally {
+      botao.disabled = false;
+    }
+  }
+
   function badge(ok) {
     const el = document.getElementById(ok?'badge-salvo':'badge-erro');
     el.style.display='block'; setTimeout(()=>el.style.display='none',1800);

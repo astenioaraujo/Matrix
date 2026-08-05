@@ -3742,6 +3742,30 @@ def _data_caixa_editavel(data_str, hoje=None):
     return ini <= d <= fim
 
 
+def _resumo_por_agrupamento(formas, valores, datas):
+    """De onde veio o dinheiro no período: soma cada forma de recebimento no
+    seu agrupamento (ex.: DÉB REDE + DÉB CIELO -> "DÉBITO"). Forma sem
+    agrupamento cadastrado aparece sozinha, com o próprio nome. Forma sem
+    nenhum valor lançado no período não entra — evita fatia de 0% na pizza.
+    """
+    somas = {}
+    for f in formas:
+        total_forma = sum((valores.get(d, {}).get(f["id"], 0) or 0) for d in datas)
+        if not total_forma:
+            continue
+        rotulo = (f.get("agrupamento") or f["nome"]).strip()
+        somas[rotulo] = somas.get(rotulo, 0) + total_forma
+
+    total_geral = sum(somas.values())
+    itens = [
+        {"rotulo": rotulo, "valor": valor,
+         "percentual": (valor / total_geral * 100) if total_geral else 0}
+        for rotulo, valor in somas.items()
+    ]
+    itens.sort(key=lambda x: x["valor"], reverse=True)
+    return itens
+
+
 def _pode_alterar_filial(cur, cod_empresa, id_usuario, tipo_global, cod_filial):
     """O usuário pode digitar nesta filial?
 
@@ -3933,7 +3957,7 @@ def conferir_caixas():
         todos_filiais = [f["cod_filial"] for a in areas for f in a["filiais"]]
 
         cur.execute("""
-            SELECT id, nome FROM caixas_formas_recebimento
+            SELECT id, nome, agrupamento FROM caixas_formas_recebimento
             WHERE cod_empresa = %s
               AND (ativo = TRUE
                    OR EXISTS (
@@ -4226,6 +4250,13 @@ def conferir_caixas():
     nomes_meses = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
                    "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
 
+    # Resumo por origem do dinheiro: só nas abas de totais (área específica
+    # ou todas as áreas). Na aba de filial não roda sozinho — pesa demais
+    # pra abrir toda vez; lá existe um botão que busca isso sob demanda.
+    resumo_agrupamento = (
+        _resumo_por_agrupamento(formas, valores, datas) if not editavel else None
+    )
+
     return render_template(
         "conferir_caixas.html",
         empresa_ativa=cod_empresa,
@@ -4251,6 +4282,7 @@ def conferir_caixas():
         colunas_fechadas=colunas_fechadas,
         controles_com_valor=controles_com_valor,
         controles_fechados=controles_fechados,
+        resumo_agrupamento=resumo_agrupamento,
         edicao_ini=_janela_edicao_caixa(hoje)[0],
         edicao_fim=_janela_edicao_caixa(hoje)[1],
         hoje=hoje,
@@ -4347,6 +4379,57 @@ def api_caixas_detalhe():
         "forma":    agrupar(linhas_forma),
         "controle": agrupar(linhas_controle),
     })
+
+
+@financeiro_bp.route("/api/caixas/resumo-agrupamento", methods=["GET"])
+@permissao_obrigatoria("FINANCEIRO", "ATUALIZAR_CAIXAS",
+                       redirecionar_para="financeiro.menu_caixas")
+def api_caixas_resumo_agrupamento():
+    """Resumo por origem do dinheiro de UMA filial, sob demanda — é o que o
+    botão "Resumo" busca na aba de filial, que não calcula isso sozinha."""
+    cod_empresa = str(session["cod_empresa"]).strip()
+    cod_filial  = int(request.args.get("cod_filial") or 0)
+    mes = int(request.args.get("mes") or 0)
+    ano = int(request.args.get("ano") or 0)
+    if not cod_filial or not mes or not ano:
+        return jsonify({"ok": False, "erro": "Parâmetros inválidos."}), 400
+
+    import calendar as _cal
+    _, ultimo_dia = _cal.monthrange(ano, mes)
+    datas = [date(ano, mes, d) for d in range(1, ultimo_dia + 1)]
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT id, nome, agrupamento FROM caixas_formas_recebimento
+             WHERE cod_empresa = %s
+               AND (ativo = TRUE
+                    OR EXISTS (
+                        SELECT 1 FROM caixas_lancamentos l
+                         WHERE l.id_forma = caixas_formas_recebimento.id
+                           AND l.cod_empresa = %s
+                           AND EXTRACT(MONTH FROM l.data) = %s
+                           AND EXTRACT(YEAR  FROM l.data) = %s
+                    ))
+             ORDER BY ordem, nome
+        """, (cod_empresa, cod_empresa, mes, ano))
+        formas = cur.fetchall()
+
+        cur.execute("""
+            SELECT data, id_forma, valor FROM caixas_lancamentos
+             WHERE cod_empresa = %s AND cod_filial = %s
+               AND EXTRACT(MONTH FROM data) = %s AND EXTRACT(YEAR FROM data) = %s
+        """, (cod_empresa, cod_filial, mes, ano))
+        valores = {}
+        for r in cur.fetchall():
+            valores.setdefault(r["data"], {})[r["id_forma"]] = float(r["valor"])
+    finally:
+        cur.close()
+        conn.close()
+
+    itens = _resumo_por_agrupamento(formas, valores, datas)
+    return jsonify({"ok": True, "itens": itens})
 
 
 @financeiro_bp.route("/api/caixas/coluna-visivel", methods=["POST"])
@@ -4515,24 +4598,26 @@ def configuracoes_caixas():
 
             if acao == "incluir":
                 nome  = (request.form.get("nome") or "").strip().upper()
+                agrupamento = (request.form.get("agrupamento") or "").strip().upper() or None
                 ordem = int(request.form.get("ordem") or 0)
                 if nome:
                     cur.execute("""
-                        INSERT INTO caixas_formas_recebimento (cod_empresa, nome, ordem)
-                        VALUES (%s, %s, %s)
-                    """, (cod_empresa, nome, ordem))
+                        INSERT INTO caixas_formas_recebimento (cod_empresa, nome, agrupamento, ordem)
+                        VALUES (%s, %s, %s, %s)
+                    """, (cod_empresa, nome, agrupamento, ordem))
                     conn.commit()
                     flash("Forma de recebimento incluída.", "success")
 
             elif acao == "editar":
                 id_ed = request.form.get("id_editar")
                 nome  = (request.form.get("nome_editar") or "").strip().upper()
+                agrupamento = (request.form.get("agrupamento_editar") or "").strip().upper() or None
                 ordem = int(request.form.get("ordem_editar") or 0)
                 if id_ed and nome:
                     cur.execute("""
                         UPDATE caixas_formas_recebimento
-                        SET nome = %s, ordem = %s WHERE id = %s AND cod_empresa = %s
-                    """, (nome, ordem, id_ed, cod_empresa))
+                        SET nome = %s, agrupamento = %s, ordem = %s WHERE id = %s AND cod_empresa = %s
+                    """, (nome, agrupamento, ordem, id_ed, cod_empresa))
                     conn.commit()
                     flash("Forma de recebimento atualizada.", "success")
 
@@ -4599,7 +4684,7 @@ def configuracoes_caixas():
                     flash("Status do controle adicional alterado.", "success")
 
         cur.execute("""
-            SELECT id, nome, ordem, ativo FROM caixas_formas_recebimento
+            SELECT id, nome, agrupamento, ordem, ativo FROM caixas_formas_recebimento
             WHERE cod_empresa = %s ORDER BY ordem, nome
         """, (cod_empresa,))
         formas = cur.fetchall()
