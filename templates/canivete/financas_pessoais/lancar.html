@@ -283,10 +283,11 @@
   }
   document.getElementById("btn-confirmar-excluir").onclick = function() {
     if (!idExcluir) return;
+    const idParaExcluir = idExcluir;
     fecharModal();
-    post({ acao:'excluir', id_excluir: idExcluir }).then(res => {
+    post({ acao:'excluir', id_excluir: idParaExcluir }).then(res => {
       if (!res.ok) { alert('Erro ao excluir.'); return; }
-      const tr = document.querySelector(`tr[data-id="${idExcluir}"]`);
+      const tr = document.querySelector(`tr[data-id="${idParaExcluir}"]`);
       if (tr) tr.remove();
       recalcularTotal();
     }).catch(() => alert('Erro de comunicação.'));

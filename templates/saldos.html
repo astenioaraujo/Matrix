@@ -472,11 +472,19 @@
     return (Number(numero) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
+  /* Aceita texto meio digitado sem virar zero. O .replace(",", ".") trocava
+     só a PRIMEIRA vírgula, então um "66,,00" (que aparecia quando o redesenho
+     reformatava o campo no meio da digitação) virava Number("66.,00") = NaN
+     e era gravado como 0. Aqui a 1ª vírgula é o decimal e as demais são
+     descartadas, e os pontos de milhar saem antes da conta. */
   function paraNumero(valorFormatado) {
-    if (!valorFormatado) return 0;
-    const negativo = valorFormatado.toString().trim().startsWith("-");
-    const limpo = valorFormatado.toString().replace(/[^\d,]/g, "").replace(",", ".");
-    const numero = Number(limpo) || 0;
+    if (valorFormatado === null || valorFormatado === undefined) return 0;
+    const texto = valorFormatado.toString().trim();
+    const negativo = texto.startsWith("-");
+    const limpo = texto.replace(/[^\d,]/g, "");
+    const [inteiros, ...resto] = limpo.split(",");
+    const decimais = resto.join("");
+    const numero = Number(inteiros + (resto.length ? "." + decimais : "")) || 0;
     return negativo ? -numero : numero;
   }
 
@@ -837,6 +845,9 @@
   function ligarEventosCampos(escopo) {
     escopo.querySelectorAll(".input-valor").forEach(input => {
       input.addEventListener("focus", function () {
+        // Durante um redesenho o foco é devolvido por código; reformatar aqui
+        // injetaria ",00" no meio do que a pessoa ainda está digitando.
+        if (restaurandoFoco) return;
         const v = paraNumero(this.value);
         this.value = v ? v.toFixed(2).replace(".", ",") : "";
         this.select();
@@ -1166,14 +1177,20 @@
     };
   }
 
+  let restaurandoFoco = false;
+
   function restaurarFoco(estado) {
     if (!estado) return;
     const alvo = Array.from(document.querySelectorAll(".input-valor"))
       .find(i => chaveInput(i) === estado.chave);
     if (!alvo) return;
-    // o que a pessoa estava digitando vale mais que o valor vindo do servidor
-    alvo.value = estado.valor;
+    // foca primeiro (com o handler de focus silenciado) e só então devolve o
+    // texto e o cursor: o que a pessoa estava digitando vale mais que o valor
+    // vindo do servidor, e não pode ser reformatado no meio do caminho.
+    restaurandoFoco = true;
     alvo.focus();
+    restaurandoFoco = false;
+    alvo.value = estado.valor;
     try { alvo.setSelectionRange(estado.ini, estado.fim); } catch (e) {}
   }
 
