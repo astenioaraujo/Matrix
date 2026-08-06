@@ -63,6 +63,35 @@
   <div class="status-msg" id="statusPeriodos"></div>
 </div>
 
+<div class="bloco" style="margin-top:24px;">
+  <div class="topo-bloco">
+    <div class="ajuda">
+      Feriados. A tela de Saldos não gera esses dias — sábados e domingos já são pulados
+      automaticamente. A variação sempre encosta um dia útil no dia útil anterior
+      (um feriado na quinta faz a sexta comparar com a quarta).
+    </div>
+  </div>
+
+  <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px;">
+    <input type="date" id="dataFeriado">
+    <input type="text" id="descricaoFeriado" placeholder="Descrição (opcional)" style="min-width:240px;">
+    <button type="button" class="btn-novo" id="btnAdicionarFeriado">+ Adicionar Feriado</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:260px">Data</th>
+        <th>Descrição</th>
+        <th style="width:120px">Ações</th>
+      </tr>
+    </thead>
+    <tbody id="corpoFeriados"></tbody>
+  </table>
+
+  <div class="status-msg" id="statusFeriados"></div>
+</div>
+
 <script>
   let PERIODOS = [];
 
@@ -209,7 +238,88 @@
     document.getElementById("corpoPeriodos").prepend(linhaPeriodo(sugerirPeriodo()));
   });
 
+  // ---------------- FERIADOS ----------------
+  const DIAS_SEMANA = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira",
+                       "Quinta-feira", "Sexta-feira", "Sábado"];
+
+  function statusFeriados(msg, erro) {
+    const el = document.getElementById("statusFeriados");
+    el.textContent = msg;
+    el.className = "status-msg " + (erro ? "erro" : "ok");
+  }
+
+  // data local: parse manual, senão new Date("2026-08-05") vem em UTC e volta um dia
+  function rotuloDataFeriado(dataIso) {
+    const [ano, mes, dia] = dataIso.split("-").map(Number);
+    const d = new Date(ano, mes - 1, dia);
+    return `${String(dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}/${ano} - ${DIAS_SEMANA[d.getDay()]}`;
+  }
+
+  function escapeHtmlFeriado(texto) {
+    const div = document.createElement("div");
+    div.textContent = texto || "";
+    return div.innerHTML;
+  }
+
+  async function carregarFeriados() {
+    try {
+      const data = await fetchJson("/api/saldos/feriados");
+      const corpo = document.getElementById("corpoFeriados");
+      corpo.innerHTML = "";
+      (data.feriados || []).forEach(f => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${rotuloDataFeriado(f.data)}</td>
+          <td>${escapeHtmlFeriado(f.descricao)}</td>
+          <td><button type="button" class="btn-mini btn-excluir">Excluir</button></td>
+        `;
+        tr.querySelector("button").addEventListener("click", () => excluirFeriado(f));
+        corpo.appendChild(tr);
+      });
+    } catch (e) {
+      statusFeriados(e.message || "Erro ao carregar feriados.", true);
+    }
+  }
+
+  async function adicionarFeriado() {
+    const dataFeriado = document.getElementById("dataFeriado").value;
+    if (!dataFeriado) {
+      statusFeriados("Informe a data do feriado.", true);
+      return;
+    }
+    try {
+      await fetchJson("/api/saldos/feriados", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: dataFeriado,
+          descricao: document.getElementById("descricaoFeriado").value,
+        }),
+      });
+      document.getElementById("dataFeriado").value = "";
+      document.getElementById("descricaoFeriado").value = "";
+      statusFeriados("Feriado salvo.", false);
+      await carregarFeriados();
+    } catch (e) {
+      statusFeriados(e.message || "Erro ao salvar.", true);
+    }
+  }
+
+  async function excluirFeriado(feriado) {
+    if (!confirm(`Excluir o feriado de ${rotuloDataFeriado(feriado.data)}?`)) return;
+    try {
+      await fetchJson(`/api/saldos/feriados/${feriado.id_feriado}`, { method: "DELETE" });
+      statusFeriados("Feriado excluído.", false);
+      await carregarFeriados();
+    } catch (e) {
+      statusFeriados(e.message || "Erro ao excluir.", true);
+    }
+  }
+
+  document.getElementById("btnAdicionarFeriado").addEventListener("click", adicionarFeriado);
+
   carregarPeriodos();
+  carregarFeriados();
 </script>
 
 {% endblock %}

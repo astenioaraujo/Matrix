@@ -5133,9 +5133,54 @@ def _ativado_em_local(ativado_em):
                       .replace(tzinfo=None))
 
 
+# =========================
+# DIAS ÚTEIS (SALDOS SÓ TRABALHA COM DIA ÚTIL)
+# =========================
+DIAS_SEMANA_PT = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira",
+                  "Sexta-feira", "Sábado", "Domingo"]
+
+
+def carregar_feriados(cod_empresa, data_inicio=None, data_fim=None):
+    """Conjunto de datas de feriado da empresa (opcionalmente no período)."""
+    sql = "SELECT data FROM saldos_feriados WHERE cod_empresa = %s"
+    params = [cod_empresa]
+    if data_inicio:
+        sql += " AND data >= %s"
+        params.append(data_inicio)
+    if data_fim:
+        sql += " AND data <= %s"
+        params.append(data_fim)
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(sql, params)
+        return {linha[0] for linha in cur.fetchall()}
+    finally:
+        cur.close()
+        conn.close()
+
+
+def eh_dia_util(data, feriados):
+    """Sábado, domingo e feriado cadastrado não são dias úteis."""
+    return data.weekday() < 5 and data not in feriados
+
+
+def dia_util_anterior(data, feriados):
+    """Dia útil imediatamente anterior — é com ele que a variação é calculada
+    (numa segunda-feira, encosta na sexta; feriado no meio também é pulado)."""
+    anterior = data - timedelta(days=1)
+    # limite de segurança: sem ele um cadastro de feriados errado viraria laço infinito
+    for _ in range(60):
+        if eh_dia_util(anterior, feriados):
+            return anterior
+        anterior -= timedelta(days=1)
+    return anterior
+
+
 def data_minima_editavel(cod_empresa):
-    """Normalmente só ontem/anteontem são editáveis. Uma liberação temporária
-    recente abaixa esse limite para a data liberada."""
+    """Normalmente só os dois últimos dias úteis são editáveis. Uma liberação
+    temporária recente abaixa esse limite para a data liberada."""
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
@@ -5156,7 +5201,10 @@ def data_minima_editavel(cod_empresa):
         if (datetime.now() - ativado) < timedelta(hours=HORAS_LIBERACAO_SALDOS):
             return liberacao["data_liberada_desde"]
 
-    return date.today() - timedelta(days=2)
+    # dois últimos dias úteis: numa segunda-feira libera sexta e quinta,
+    # não sábado e domingo (que a tela nem gera)
+    feriados = carregar_feriados(cod_empresa, date.today() - timedelta(days=60), date.today())
+    return dia_util_anterior(dia_util_anterior(date.today(), feriados), feriados)
 
 
 # =========================
@@ -5573,6 +5621,99 @@ def api_excluir_competencia(id_competencia):
 
 
 # =========================
+# CADASTRO: FERIADOS (DIAS QUE A TELA DE SALDOS NÃO GERA)
+# =========================
+@financeiro_bp.route("/api/saldos/feriados", methods=["GET"])
+@permissao_obrigatoria("FINANCEIRO", "CONSULTA_SALDOS")
+def api_listar_feriados():
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT id_feriado, data, descricao
+              FROM saldos_feriados
+             WHERE cod_empresa = %s
+             ORDER BY data DESC
+        """, (cod_empresa,))
+        feriados = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "feriados": [
+        {"id_feriado": f["id_feriado"], "data": f["data"].isoformat(), "descricao": f["descricao"]}
+        for f in feriados
+    ]})
+
+
+@financeiro_bp.route("/api/saldos/feriados", methods=["POST"])
+@permissao_obrigatoria("FINANCEIRO", "CONFIGURAR_SALDOS")
+def api_criar_feriado():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    dados = request.get_json(silent=True) or {}
+
+    try:
+        data_feriado = datetime.strptime((dados.get("data") or "").strip(), "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify({"ok": False, "erro": "Informe a data no formato YYYY-MM-DD."}), 400
+
+    descricao = (dados.get("descricao") or "").strip() or None
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            INSERT INTO saldos_feriados (cod_empresa, data, descricao)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (cod_empresa, data)
+            DO UPDATE SET descricao = EXCLUDED.descricao, atualizado_em = NOW()
+            RETURNING id_feriado, data, descricao
+        """, (cod_empresa, data_feriado, descricao))
+        feriado = cur.fetchone()
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "feriado": {
+        "id_feriado": feriado["id_feriado"],
+        "data": feriado["data"].isoformat(),
+        "descricao": feriado["descricao"],
+    }}), 201
+
+
+@financeiro_bp.route("/api/saldos/feriados/<int:id_feriado>", methods=["DELETE"])
+@permissao_obrigatoria("FINANCEIRO", "CONFIGURAR_SALDOS")
+def api_excluir_feriado(id_feriado):
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            DELETE FROM saldos_feriados
+             WHERE id_feriado = %s AND cod_empresa = %s
+        """, (id_feriado, cod_empresa))
+        if cur.rowcount == 0:
+            conn.rollback()
+            return jsonify({"ok": False, "erro": "Feriado não encontrado."}), 404
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True})
+
+
+# =========================
 # CADASTRO: ACESSO POR ÁREA (QUEM PODE VER/LANÇAR CADA ÁREA NOS SALDOS)
 # =========================
 @financeiro_bp.route("/api/usuarios-areas-saldos", methods=["GET"])
@@ -5842,6 +5983,7 @@ def montar_bloco_dia(data_atual, contas, indicadores, codigos_filiais,
 
     return {
         "data": data_atual.isoformat(),
+        "dia_semana": DIAS_SEMANA_PT[data_atual.weekday()],
         "inicio_competencia": inicio_competencia,
         "contas_bancarias": contas_bloco,
         "subtotal_contas": subtotal_contas,
@@ -6476,7 +6618,31 @@ def api_consultar_saldos():
             return jsonify({"ok": False, "erro": "Nenhuma filial disponível para esta área."}), 404
 
         codigos_filiais = [int(f["cod_filial"]) for f in filiais]
-        data_inicio_extendida = data_inicio - timedelta(days=1)
+
+        # a tela só gera dia útil; a variação de cada um encosta no dia útil
+        # anterior, que pode estar fora do período pedido (sexta ← segunda)
+        cur.execute("""
+            SELECT data FROM saldos_feriados
+             WHERE cod_empresa = %s AND data BETWEEN %s AND %s
+        """, (cod_empresa, data_inicio - timedelta(days=60), data_fim))
+        feriados = {linha["data"] for linha in cur.fetchall()}
+
+        dias_uteis = []
+        data_atual = data_inicio
+        while data_atual <= data_fim:
+            if eh_dia_util(data_atual, feriados):
+                dias_uteis.append((data_atual, dia_util_anterior(data_atual, feriados)))
+            data_atual += timedelta(days=1)
+
+        datas_consultadas = sorted({d for par in dias_uteis for d in par})
+        if not datas_consultadas:
+            return jsonify({
+                "ok": True,
+                "id_area": id_area,
+                "periodo": {"data_inicio": data_inicio.isoformat(), "data_fim": data_fim.isoformat()},
+                "filiais": [{"cod_filial": int(f["cod_filial"]), "nome_filial": f["nome_filial"]} for f in filiais],
+                "dias": [],
+            })
 
         cur.execute("""
             SELECT id_conta_bancaria, banco, apelido, ordem, espelhar_sistema
@@ -6497,15 +6663,15 @@ def api_consultar_saldos():
         cur.execute("""
             SELECT cod_filial, data, id_conta_bancaria, saldo_banco, saldo_sistema
             FROM saldos_bancarios
-            WHERE cod_empresa = %s AND cod_filial = ANY(%s) AND data BETWEEN %s AND %s
-        """, (cod_empresa, codigos_filiais, data_inicio_extendida, data_fim))
+            WHERE cod_empresa = %s AND cod_filial = ANY(%s) AND data = ANY(%s)
+        """, (cod_empresa, codigos_filiais, datas_consultadas))
         linhas_bancarios = cur.fetchall()
 
         cur.execute("""
             SELECT cod_filial, data, id_indicador_recebivel, valor_banco, valor_sistema
             FROM saldos_recebiveis
-            WHERE cod_empresa = %s AND cod_filial = ANY(%s) AND data BETWEEN %s AND %s
-        """, (cod_empresa, codigos_filiais, data_inicio_extendida, data_fim))
+            WHERE cod_empresa = %s AND cod_filial = ANY(%s) AND data = ANY(%s)
+        """, (cod_empresa, codigos_filiais, datas_consultadas))
         linhas_recebiveis = cur.fetchall()
 
         cur.execute("""
@@ -6538,9 +6704,7 @@ def api_consultar_saldos():
         informados_por_dia[r["data"]].append(r)
 
     dias = []
-    data_atual = data_inicio
-    while data_atual <= data_fim:
-        data_anterior = data_atual - timedelta(days=1)
+    for data_atual, data_anterior in dias_uteis:
         dias.append(montar_bloco_dia(
             data_atual, contas, indicadores, codigos_filiais,
             bancarios_por_dia.get(data_atual, []),

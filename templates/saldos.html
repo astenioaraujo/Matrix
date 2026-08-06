@@ -505,6 +505,48 @@
     return new Date(ano, mes - 1, dia);
   }
 
+  /* ---------- dias úteis ----------
+     A tela só trabalha com dia útil: sábado, domingo e feriado cadastrado
+     não geram bloco, e a variação de um dia encosta no dia útil anterior
+     (sexta ← segunda). Os feriados vêm do cadastro (Configurar Saldos). */
+  let FERIADOS = new Set();
+
+  async function carregarFeriados() {
+    try {
+      const data = await fetchJson("/api/saldos/feriados");
+      FERIADOS = new Set((data.feriados || []).map(f => f.data));
+    } catch (e) { /* sem feriados carregados, valem só sábado e domingo */ }
+  }
+
+  function ehDiaUtil(d) {
+    const diaSemana = d.getDay();
+    return diaSemana !== 0 && diaSemana !== 6 && !FERIADOS.has(formatarDataISO(d));
+  }
+
+  /* n-ésimo dia útil antes de hoje (1 = "ontem útil", 2 = o anterior a esse) */
+  function diaUtilAtras(n) {
+    const d = new Date();
+    let restantes = n;
+    // limite de segurança: sem ele um cadastro de feriados errado viraria laço infinito
+    for (let i = 0; i < 400 && restantes > 0; i++) {
+      d.setDate(d.getDate() - 1);
+      if (ehDiaUtil(d)) restantes--;
+    }
+    return d;
+  }
+
+  /* desloca uma data em `delta` dias úteis (delta pode ser negativo) */
+  function deslocarDiasUteis(d, delta) {
+    const passo = delta < 0 ? -1 : 1;
+    const nova = new Date(d);
+    let restantes = Math.abs(delta);
+    for (let i = 0; i < 400 && restantes > 0; i++) {
+      nova.setDate(nova.getDate() + passo);
+      if (ehDiaUtil(nova)) restantes--;
+    }
+    return nova;
+  }
+
   async function fetchJson(url, opcoes) {
     const resp = await fetch(url, opcoes);
     const contentType = resp.headers.get("content-type") || "";
@@ -648,7 +690,7 @@
     }
 
     const botaoDuplicar = mostrarBotaoDuplicar
-      ? `<button type="button" class="btn-duplicar" data-tipo="${tipo}">↻ Duplicar de Anteontem</button>`
+      ? `<button type="button" class="btn-duplicar" data-tipo="${tipo}">↻ Duplicar do dia anterior</button>`
       : "";
 
     return `
@@ -752,7 +794,7 @@
 
     return `
       <div class="dia-card" data-data="${dia.data}">
-        <div class="dia-titulo">${formatarDataBR(dia.data)} ${badge}</div>
+        <div class="dia-titulo">${formatarDataBR(dia.data)}${dia.dia_semana ? " - " + dia.dia_semana : ""} ${badge}</div>
         ${montarTabelaBloco("Contas Bancárias", dia.contas_bancarias, dia.subtotal_contas, "bancario", dia.data, filiais, modo, editavel, true, null, podeDuplicarContas)}
         ${montarTabelaBloco("Estoques e Recebíveis", dia.recebiveis, dia.subtotal_recebiveis, "recebivel", dia.data, filiais, modo, editavel, false, dia.total, podeDuplicarRecebiveis)}
         ${blocosDeVariacao}
@@ -761,9 +803,7 @@
   }
 
   function diasAtras(n) {
-    const d = new Date();
-    d.setDate(d.getDate() - n);
-    return formatarDataISO(d);
+    return formatarDataISO(diaUtilAtras(n));
   }
 
   function blocoTotalmenteVazio(linhas, filiais) {
@@ -974,7 +1014,7 @@
 
     const url = tipo === "bancario" ? "/api/saldos/bancarios" : "/api/saldos/recebiveis";
     const status = document.getElementById("statusSaldos");
-    status.textContent = "Duplicando valores de anteontem...";
+    status.textContent = "Duplicando valores do dia anterior...";
     status.classList.remove("erro");
 
     try {
@@ -1241,11 +1281,9 @@
   }
 
   function definirPeriodoOntemAnteontem() {
-    const hoje = new Date();
-    const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1);
-    const anteontem = new Date(hoje); anteontem.setDate(hoje.getDate() - 2);
-    document.getElementById("dataInicio").value = formatarDataISO(anteontem);
-    document.getElementById("dataFim").value = formatarDataISO(ontem);
+    // os dois últimos dias úteis — numa segunda-feira, quinta e sexta
+    document.getElementById("dataInicio").value = formatarDataISO(diaUtilAtras(2));
+    document.getElementById("dataFim").value = formatarDataISO(diaUtilAtras(1));
   }
 
   async function definirPeriodoDesdeInicioMes() {
@@ -1261,9 +1299,8 @@
       if (comp) dataInicioStr = comp.data_corte_inicio.substring(0, 10);
     } catch (e) { /* mantém o fallback do dia 1 do mês */ }
 
-    const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1);
     document.getElementById("dataInicio").value = dataInicioStr;
-    document.getElementById("dataFim").value = formatarDataISO(ontem);
+    document.getElementById("dataFim").value = formatarDataISO(diaUtilAtras(1));
     carregarSaldos();
   }
 
@@ -1277,10 +1314,9 @@
   document.getElementById("selArea").addEventListener("change", carregarSaldos);
 
   function deslocarPeriodo(deltaDias) {
-    const inicio = parseDataISO(document.getElementById("dataInicio").value);
-    const fim = parseDataISO(document.getElementById("dataFim").value);
-    inicio.setDate(inicio.getDate() + deltaDias);
-    fim.setDate(fim.getDate() + deltaDias);
+    // desloca em dias úteis: as setas nunca param num sábado, domingo ou feriado
+    const inicio = deslocarDiasUteis(parseDataISO(document.getElementById("dataInicio").value), deltaDias);
+    const fim = deslocarDiasUteis(parseDataISO(document.getElementById("dataFim").value), deltaDias);
     document.getElementById("dataInicio").value = formatarDataISO(inicio);
     document.getElementById("dataFim").value = formatarDataISO(fim);
     carregarSaldos();
@@ -1298,8 +1334,12 @@
     });
   });
 
-  definirPeriodoOntemAnteontem();
-  carregarSaldos();
+  // os feriados precisam estar carregados antes de escolher o período inicial
+  (async () => {
+    await carregarFeriados();
+    definirPeriodoOntemAnteontem();
+    carregarSaldos();
+  })();
 </script>
 
 {% endblock %}
