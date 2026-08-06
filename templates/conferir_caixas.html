@@ -508,7 +508,7 @@
       {% set pode_encolher = hoje in datas and datas|length > dias_recentes|length %}
 
       <tr class="linha-titulo-bloco">
-        <th colspan="{{ 1 + (1 if editavel else 0) + formas|length + 3 }}">
+        <th colspan="{{ 1 + (1 if visualizar else 0) + formas|length + 3 }}">
           CONTROLES
           {% if pode_encolher %}
             <label class="chk-dias" title="Esconde os dias mais antigos e deixa só os {{ dias_recentes|length }} últimos">
@@ -527,7 +527,7 @@
            padrão, com o nome de cada coluna na mesma altura da DATA. -->
       <tr>
         <th class="col-data">DATA</th>
-        {% if editavel %}<th class="col-editar"></th>{% endif %}
+        {% if visualizar %}<th class="col-editar"></th>{% endif %}
         {% for f in formas %}
           {% set fechada = f.id in colunas_fechadas %}
           {% set travada = f.id in formas_com_valor %}
@@ -594,12 +594,14 @@
 
           <td class="td-data {% if d == hoje %}hoje{% endif %}">{{ data_cell(d) }}</td>
 
-          {% if editavel %}
+          {% if visualizar %}
           <td class="td-editar">
+            {% if editavel %}
             <button type="button" class="btn-editar-dia"
               {% if not dia_editavel %}disabled{% endif %}
               onclick="abrirDetalhe('{{ d.strftime('%Y-%m-%d') }}')"
               title="{% if dia_editavel %}Detalhar os valores deste dia{% else %}Fora do prazo de digitação{% endif %}">✎</button>
+            {% endif %}
             {% set tem_soma = d.strftime('%Y-%m-%d') in dias_com_soma %}
             <button type="button" class="btn-visualizar-dia {{ 'tem-soma' if tem_soma else '' }}"
               onclick="abrirVisualizar('{{ d.strftime('%Y-%m-%d') }}')"
@@ -681,7 +683,7 @@
       {% set fg = tot_total.v - tot_totalcx.v %}
       <tr class="linha-total">
         <td class="td-data">TOTAL</td>
-        {% if editavel %}<td></td>{% endif %}
+        {% if visualizar %}<td></td>{% endif %}
         {% for f in formas %}
           {% set sf = namespace(v=0) %}
           {% for d in datas %}{% set sf.v = sf.v + (valores.get(d,{}).get(f.id,0)|float) %}{% endfor %}
@@ -709,7 +711,7 @@
            pra saber qual coluna é qual -->
       <tr class="linha-legenda">
         <td class="td-data">Data</td>
-        {% if editavel %}<td></td>{% endif %}
+        {% if visualizar %}<td></td>{% endif %}
         {% for f in formas %}<td data-col="{{ f.id }}" class="{{ 'col-fechada' if f.id in colunas_fechadas else '' }}">{{ f.nome }}</td>{% endfor %}
         <td>Total</td>
         <td>Total Cx</td>
@@ -737,7 +739,7 @@
       renderResumoAgrupamento({{ resumo_agrupamento | tojson }}, 'resumo-agrupamento');
     });
   </script>
-{% elif editavel %}
+{% elif visualizar %}
   <div class="bloco-resumo">
     <button type="button" class="btn-resumo" onclick="buscarResumoAgrupamento(this)">
       Ver resumo por origem do dinheiro
@@ -748,6 +750,7 @@
 
 {% endif %}
 
+{% if visualizar %}
 {% if editavel %}
 <!-- PAINEL DE DETALHAMENTO — abre abaixo da grade ao clicar em "editar" -->
 <div id="painel-detalhe">
@@ -757,6 +760,7 @@
   </div>
   <div class="pd-secoes" id="pd-secoes"></div>
 </div>
+{% endif %}
 
 <!-- PAINEL DE VISUALIZAÇÃO — só leitura, mostra apenas o que tem valor -->
 <div id="painel-visualizar">
@@ -783,16 +787,18 @@
 
 <script>
   const URL_SALVAR = "{{ url_for('financeiro.conferir_caixas') }}";
-  {% if editavel %}
-  const URL_DETALHE        = "{{ url_for('financeiro.api_caixas_detalhe') }}";
-  const URL_DETALHE_SALVAR = "{{ url_for('financeiro.api_caixas_detalhe_salvar') }}";
+  {% if visualizar %}
+  const URL_DETALHE  = "{{ url_for('financeiro.api_caixas_detalhe') }}";
   const FILIAL_ATUAL = {{ cod_filial_atual or 0 }};
-  const URL_COLUNA_VISIVEL = "{{ url_for('financeiro.api_caixas_coluna_visivel') }}";
-  const URL_RESUMO_AGRUPAMENTO = "{{ url_for('financeiro.api_caixas_resumo_agrupamento') }}";
   const MES_ATUAL = {{ mes_sel }};
   const ANO_ATUAL = {{ ano_sel }};
   const FORMAS_JS    = {{ formas | tojson }};
   const CONTROLES_JS = {{ controles | tojson }};
+  {# Só quem edita chega a usar estas, mas declarar sempre evita que o código
+     compartilhado do painel esbarre numa const inexistente. #}
+  const URL_DETALHE_SALVAR = "{{ url_for('financeiro.api_caixas_detalhe_salvar') }}";
+  const URL_COLUNA_VISIVEL = "{{ url_for('financeiro.api_caixas_coluna_visivel') }}";
+  const URL_RESUMO_AGRUPAMENTO = "{{ url_for('financeiro.api_caixas_resumo_agrupamento') }}";
   {% endif %}
 
   function parseBR(v) { return parseFloat((v||'0').replace(/\./g,'').replace(',','.')) || 0; }
@@ -1082,7 +1088,7 @@
     });
   });
 
-  {% if editavel %}
+  {% if visualizar %}
   /* ── PAINEL DE DETALHAMENTO ─────────────────────────────────────────────
      Quebra o valor de uma célula (forma de recebimento ou controle
      adicional) em várias linhas de observação+valor. A soma das linhas
@@ -1224,19 +1230,25 @@
 
       const tr = document.querySelector(`tr[data-data="${dataStr}"]`);
 
+      /* Item sem detalhamento não vem da API: o total sai da própria grade.
+         No modo editável a célula é um <input>; para quem só consulta é o
+         texto da <td>. */
       const montarItens = (lista, mapaLinhas, seletor, atributo) => lista.map(x => {
         const linhas = mapaLinhas[x.id] || [];
         let total = linhas.reduce((s,l)=>s+l.valor,0);
         if (!linhas.length && tr) {
-          const inp = tr.querySelector(`${seletor}[${atributo}="${x.id}"]`);
-          if (inp) total = parseBR(inp.value);
+          const cel = tr.querySelector(`[${atributo}="${x.id}"]`);
+          if (cel) {
+            const inp = cel.matches(seletor) ? cel : cel.querySelector(seletor);
+            total = inp ? parseBR(inp.value) : parseBR(cel.textContent.trim());
+          }
         }
         return { nome: x.nome, total, linhas };
       }).filter(it => it.total);
 
       pvItens = {
-        formas:    montarItens(FORMAS_JS,    j.forma,    'input.cel-forma', 'data-forma'),
-        controles: montarItens(CONTROLES_JS, j.controle, 'input.cel-ctrl',  'data-controle'),
+        formas:    montarItens(FORMAS_JS,    j.forma,    'input.cel-forma', 'data-col'),
+        controles: montarItens(CONTROLES_JS, j.controle, 'input.cel-ctrl',  'data-col-ctrl'),
       };
       renderizarVisualizar();
     } catch (e) {

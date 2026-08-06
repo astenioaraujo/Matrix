@@ -4222,12 +4222,13 @@ def conferir_caixas():
                 if any(controles_valores.get(d, {}).get(c["id"]) for d in datas)
             ]
 
-        # quais (data, item) têm detalhamento — só existe no modo editável
-        # (uma filial só); usado pra marcar visualmente a célula na grade
+        # quais (data, item) têm detalhamento — só existe com UMA filial
+        # selecionada; usado pra marcar visualmente a célula na grade e para
+        # o olho de visualização, que também vale para quem só consulta.
         com_detalhe_forma = set()
         com_detalhe_controle = set()
         dias_com_soma = set()
-        if editavel:
+        if cod_filial_atual:
             # Uma consulta por tabela de detalhe resolve as duas coisas: quais
             # células têm detalhamento (para a marca na grade) e em que dias
             # algum item recebeu MAIS DE UM lançamento (para o olho verde).
@@ -4347,7 +4348,7 @@ def conferir_caixas():
     # ou todas as áreas). Na aba de filial não roda sozinho — pesa demais
     # pra abrir toda vez; lá existe um botão que busca isso sob demanda.
     resumo_agrupamento = (
-        _resumo_por_agrupamento(formas, valores, datas) if not editavel else None
+        _resumo_por_agrupamento(formas, valores, datas) if not cod_filial_atual else None
     )
 
     return render_template(
@@ -4362,6 +4363,9 @@ def conferir_caixas():
         id_area_atual=id_area_atual,
         cod_filial_atual=cod_filial_atual,
         editavel=editavel,
+        # o olho (detalhamento só-leitura) aparece sempre que houver uma
+        # filial selecionada, mesmo para quem só tem permissão de consulta
+        visualizar=bool(cod_filial_atual),
         formas=formas,
         datas=datas,
         valores=valores,
@@ -4430,7 +4434,9 @@ def _recalcular_total_pai(cur, tipo, cod_empresa, cod_filial, data_str, id_item)
 
 
 @financeiro_bp.route("/api/caixas/detalhe", methods=["GET"])
-@permissao_obrigatoria("FINANCEIRO", "ATUALIZAR_CAIXAS",
+# Só leitura: serve tanto o painel de edição quanto o olho de visualização,
+# que quem só consulta também usa. Gravar continua exigindo ATUALIZAR_CAIXAS.
+@permissao_obrigatoria("FINANCEIRO", "MENU_CAIXAS",
                        redirecionar_para="financeiro.menu_caixas")
 def api_caixas_detalhe():
     """Devolve, para um dia e uma filial, todas as linhas de detalhe já
@@ -4475,7 +4481,9 @@ def api_caixas_detalhe():
 
 
 @financeiro_bp.route("/api/caixas/resumo-agrupamento", methods=["GET"])
-@permissao_obrigatoria("FINANCEIRO", "ATUALIZAR_CAIXAS",
+# Só leitura: o botão "ver resumo" da aba de filial também é usado por quem
+# só tem consulta.
+@permissao_obrigatoria("FINANCEIRO", "MENU_CAIXAS",
                        redirecionar_para="financeiro.menu_caixas")
 def api_caixas_resumo_agrupamento():
     """Resumo por origem do dinheiro de UMA filial, sob demanda — é o que o
