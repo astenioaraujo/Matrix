@@ -3813,16 +3813,17 @@ def acessos_caixas():
 
 
 # Janela de digitação do caixa. Por convenção da operação, o caixa que se
-# confere hoje é o de ontem — então hoje e qualquer data futura nunca podem
-# ser digitados, e mais de três dias atrás já se considera fechado.
-# Sobram exatamente ontem, anteontem e o dia anterior a anteontem.
+# confere hoje é o de ontem, mas a digitação do próprio dia de hoje também é
+# liberada. Data futura nunca pode ser digitada, e mais de três dias atrás já
+# se considera fechado. Sobram hoje, ontem, anteontem e o dia anterior a
+# anteontem.
 DIAS_EDICAO_CAIXA = 3
 
 
 def _janela_edicao_caixa(hoje=None):
     """(primeiro_dia, ultimo_dia) em que a digitação é permitida."""
     hoje = hoje or date.today()
-    return (hoje - timedelta(days=DIAS_EDICAO_CAIXA), hoje - timedelta(days=1))
+    return (hoje - timedelta(days=DIAS_EDICAO_CAIXA), hoje)
 
 
 def _data_caixa_editavel(data_str, hoje=None):
@@ -4461,6 +4462,12 @@ def api_caixas_detalhe():
             ORDER BY id_controle, ordem, id
         """, (cod_empresa, cod_filial, data_str))
         linhas_controle = cur.fetchall()
+
+        cur.execute("""
+            SELECT observacao FROM caixas_observacoes_dia
+            WHERE cod_empresa=%s AND cod_filial=%s AND data=%s
+        """, (cod_empresa, cod_filial, data_str))
+        linha_obs = cur.fetchone()
     finally:
         cur.close()
         conn.close()
@@ -4477,7 +4484,60 @@ def api_caixas_detalhe():
         "ok": True,
         "forma":    agrupar(linhas_forma),
         "controle": agrupar(linhas_controle),
+        "observacao_dia": (linha_obs or {}).get("observacao") or "",
     })
+
+
+@financeiro_bp.route("/api/caixas/observacao-dia", methods=["POST"])
+@permissao_obrigatoria("FINANCEIRO", "ATUALIZAR_CAIXAS",
+                       redirecionar_para="financeiro.menu_caixas")
+def api_caixas_observacao_dia():
+    """Grava a observação livre do dia. Texto em branco apaga a linha —
+    não guardar registro vazio mantém a tabela só com o que foi escrito."""
+    cod_empresa = str(session["cod_empresa"]).strip()
+    cod_filial  = int(request.form.get("cod_filial") or 0)
+    data_str    = request.form.get("data", "")
+    observacao  = (request.form.get("observacao") or "").strip()
+
+    # Mesma janela de digitação do resto do caixa.
+    if not _data_caixa_editavel(data_str):
+        return jsonify({
+            "ok": False,
+            "erro": "Data fora do prazo de digitação do caixa."
+        }), 403
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if not _pode_alterar_filial(cur, cod_empresa, session["id_usuario"],
+                                    session.get("tipo_global"), cod_filial):
+            return jsonify({
+                "ok": False,
+                "erro": "Você não tem permissão para alterar esta filial."
+            }), 403
+
+        if observacao:
+            cur.execute("""
+                INSERT INTO caixas_observacoes_dia
+                    (cod_empresa, cod_filial, data, observacao)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (cod_empresa, cod_filial, data)
+                DO UPDATE SET observacao = EXCLUDED.observacao, atualizado_em = NOW()
+            """, (cod_empresa, cod_filial, data_str, observacao))
+        else:
+            cur.execute("""
+                DELETE FROM caixas_observacoes_dia
+                WHERE cod_empresa=%s AND cod_filial=%s AND data=%s
+            """, (cod_empresa, cod_filial, data_str))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True})
 
 
 @financeiro_bp.route("/api/caixas/resumo-agrupamento", methods=["GET"])
