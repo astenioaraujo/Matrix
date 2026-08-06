@@ -158,7 +158,6 @@
 <div class="abas">
   <div class="aba-btn ativa" data-aba="contas">Contas Bancárias</div>
   <div class="aba-btn" data-aba="indicadores">Indicadores de Recebíveis</div>
-  <div class="aba-btn" data-aba="competencia">Competência</div>
   <div class="aba-btn" data-aba="acesso-area">Acesso por Área</div>
   <div class="aba-btn" data-aba="liberacao-temp">Liberação Temporária</div>
 </div>
@@ -189,20 +188,6 @@
     <tbody id="corpoIndicadores"></tbody>
   </table>
   <div class="status-msg" id="statusIndicadores"></div>
-</div>
-
-<div class="aba-conteudo" id="aba-competencia">
-  <div class="topo-aba">
-    <div>Data de corte de competência (último dia válido do mês anterior), por área.</div>
-    <button type="button" class="btn-novo" id="btnNovaCompetencia">+ Nova Competência</button>
-  </div>
-  <table>
-    <thead>
-      <tr><th>Área</th><th>Mês/Ano</th><th>Data de Corte</th><th style="width:150px">Ações</th></tr>
-    </thead>
-    <tbody id="corpoCompetencias"></tbody>
-  </table>
-  <div class="status-msg" id="statusCompetencias"></div>
 </div>
 
 <div class="aba-conteudo" id="aba-acesso-area">
@@ -443,73 +428,6 @@
     document.getElementById("corpoIndicadores").prepend(linhaIndicador(null));
   });
 
-  // ---------------- COMPETÊNCIA ----------------
-  function nomeArea(idArea) {
-    const a = AREAS.find(x => x.id_area === idArea);
-    return a ? a.nome_area : idArea;
-  }
-
-  function linhaCompetencia(comp) {
-    const tr = document.createElement("tr");
-    const mesAnoValor = comp ? comp.mes_ano.substring(0, 7) : "";
-    tr.innerHTML = `
-      <td>
-        <select class="input-area" ${comp ? "disabled" : ""}>
-          ${AREAS.map(a => `<option value="${a.id_area}" ${comp && comp.id_area === a.id_area ? "selected" : ""}>${escapeHtml(a.nome_area)}</option>`).join("")}
-        </select>
-      </td>
-      <td><input type="month" class="input-mes-ano" value="${mesAnoValor}" ${comp ? "disabled" : ""}></td>
-      <td><input type="date" class="input-corte" value="${comp ? comp.data_corte_inicio.substring(0, 10) : ''}"></td>
-      <td class="col-acoes"><button type="button" class="btn-mini">Salvar</button></td>
-    `;
-    tr.querySelector(".btn-mini").addEventListener("click", () => salvarCompetencia(tr));
-    return tr;
-  }
-
-  async function carregarCompetencias() {
-    const corpo = document.getElementById("corpoCompetencias");
-    corpo.innerHTML = "";
-    try {
-      for (const area of AREAS) {
-        const data = await fetchJson(`/api/competencias?id_area=${area.id_area}`);
-        (data.competencias || []).forEach(c => corpo.appendChild(linhaCompetencia(c)));
-      }
-    } catch (e) {
-      mostrarStatus("statusCompetencias", e.message || "Erro ao carregar.", true);
-    }
-  }
-
-  async function salvarCompetencia(tr) {
-    const payload = {
-      id_area: Number(tr.querySelector(".input-area").value),
-      mes_ano: tr.querySelector(".input-mes-ano").value + "-01",
-      data_corte_inicio: tr.querySelector(".input-corte").value,
-    };
-    if (!payload.mes_ano || payload.mes_ano === "-01" || !payload.data_corte_inicio) {
-      mostrarStatus("statusCompetencias", "Preencha mês/ano e data de corte.", true);
-      return;
-    }
-    try {
-      const data = await fetchJson("/api/competencias", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (data.ok) {
-        mostrarStatus("statusCompetencias", "Salvo com sucesso.", false);
-        carregarCompetencias();
-      } else {
-        mostrarStatus("statusCompetencias", data.erro || "Erro ao salvar.", true);
-      }
-    } catch (e) {
-      mostrarStatus("statusCompetencias", e.message || "Erro ao salvar.", true);
-    }
-  }
-
-  document.getElementById("btnNovaCompetencia").addEventListener("click", () => {
-    document.getElementById("corpoCompetencias").prepend(linhaCompetencia(null));
-  });
-
   // ---------------- ACESSO POR ÁREA ----------------
   function linhaAcessoArea(acesso) {
     const tr = document.createElement("tr");
@@ -627,7 +545,6 @@
 
   carregarContas();
   carregarIndicadores();
-  carregarCompetencias();
   carregarAcessoArea();
   carregarStatusLiberacaoTemp();
 </script>

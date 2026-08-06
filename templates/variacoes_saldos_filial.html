@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 30px; font-weight: 800; margin-bottom: 6px; }
+  .empresa { font-size: 17px; margin-bottom: 18px; }
+
+  .barra-filtro { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+  .barra-filtro select { padding: 8px; border: 1px solid #cfd8dc; border-radius: 8px; font-size: 15px; }
+
+  .bloco { background: #fff; border: 1px solid #e2e6ea; border-radius: 10px; padding: 14px; margin-bottom: 20px; }
+  .data-bloco { font-size: 20px; font-weight: 800; color: #5b2d8e; margin-bottom: 10px; }
+  .rolagem { overflow-x: auto; }
+
+  table { border-collapse: collapse; table-layout: fixed; }
+  th, td { padding: 5px 8px; font-size: 12px; border-bottom: 1px dotted #dde3e8; white-space: nowrap; }
+  th { background: #f5f7f9; font-weight: 700; color: #1e5aa8; }
+  th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  th.area { text-align: center; border-bottom: 2px solid #1e5aa8; }
+
+  /* Primeira coluna congelada: são 23 filiais, a rolagem é horizontal. */
+  .col-rotulo { position: sticky; left: 0; background: #fff; z-index: 2; color: #1e5aa8; width: 170px; }
+  thead .col-rotulo { background: #f5f7f9; z-index: 3; }
+
+  td.sub, th.sub { background: #eef4fb; font-weight: 700; }
+  td.geral, th.geral { background: #e8eef5; font-weight: 700; }
+
+  tr.linha-total td { border-top: 2px solid #333; border-bottom: none; color: #c62828; font-weight: 700; }
+  tr.linha-dividendos td { border-top: 1px solid #333; font-weight: 700; }
+  tr.linha-projecao td { font-weight: 700; }
+  tr.linha-projecao td.num { color: #c62828; }
+  .neg { color: #c62828; }
+
+  .aviso { color: #8a6d3b; background: #fcf8e3; border: 1px solid #faebcc; border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; }
+  .status-msg { font-size: 14px; color: #b3261e; min-height: 20px; }
+  .legenda { font-size: 12px; color: #666; margin-top: 8px; }
+</style>
+
+<div class="pagina-titulo">Consultar Variações por Filial</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<div class="barra-filtro">
+  <label for="selPeriodo"><strong>Período:</strong></label>
+  <select id="selPeriodo">
+    {% for p in periodos %}
+      <option value="{{ p.id_competencia }}">{{ p.mes_ano }}</option>
+    {% endfor %}
+  </select>
+</div>
+
+<div id="aviso" class="aviso" style="display:none"></div>
+<div id="status" class="status-msg"></div>
+
+<div id="blocoInicio" class="bloco" style="display:none">
+  <div class="data-bloco" id="dataInicio"></div>
+  <div class="rolagem"><table id="tabInicio"></table></div>
+</div>
+
+<div id="blocoFim" class="bloco" style="display:none">
+  <div class="data-bloco" id="dataFim"></div>
+  <div class="rolagem"><table id="tabFim"></table></div>
+</div>
+
+<div id="blocoVar" class="bloco" style="display:none">
+  <div class="data-bloco">Variação</div>
+  <div class="rolagem"><table id="tabVar"></table></div>
+  <div class="legenda">Mapa de calor na linha de variação, filial a filial: vermelho na menor variação, verde na maior.</div>
+</div>
+
+<script>
+  const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+                 "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+  document.querySelectorAll("#selPeriodo option").forEach(op => {
+    const [ano, mes] = op.textContent.trim().split("-");
+    op.textContent = `${MESES[Number(mes) - 1]} / ${ano}`;
+  });
+
+  function formatarValor(v) {
+    if (!v) return "-";
+    const txt = Math.abs(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return v < 0 ? `(${txt})` : txt;
+  }
+
+  function formatarData(iso) {
+    const [a, m, d] = iso.split("-");
+    return `${d}/${m}/${a.substring(2)}`;
+  }
+
+  function classeColuna(coluna) {
+    if (coluna === "total") return "geral";
+    return coluna.startsWith("sub_") ? "sub" : "";
+  }
+
+  // Mesma escala do matricial.html: vermelho -> amarelo -> verde, do menor ao
+  // maior valor da linha, em 51 faixas discretas como o Excel.
+  function corCalor(ratio) {
+    let r, g, b;
+    if (ratio <= 0.5) {
+      const t = ratio / 0.5;
+      r = 248 + (255 - 248) * t;
+      g = 105 + (235 - 105) * t;
+      b = 107 + (132 - 107) * t;
+    } else {
+      const t = (ratio - 0.5) / 0.5;
+      r = 255 + (99 - 255) * t;
+      g = 235 + (190 - 235) * t;
+      b = 132 + (123 - 132) * t;
+    }
+    return `background: rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+  }
+
+  function montarCabecalho(dados) {
+    let linhaAreas = '<th class="col-rotulo"></th>';
+    let linhaFiliais = '<th class="col-rotulo"></th>';
+
+    dados.areas.forEach(a => {
+      linhaAreas += `<th class="area" colspan="${a.filiais.length + 1}">${a.nome_area}</th>`;
+      a.filiais.forEach(f => { linhaFiliais += `<th class="num">${f.nome_filial}</th>`; });
+      linhaFiliais += '<th class="num sub">Sub-Total</th>';
+    });
+
+    linhaAreas += '<th class="area geral" rowspan="2">TOTAL</th>';
+    return `<colgroup><col style="width:170px">
+      ${dados.colunas.map(() => '<col style="width:118px">').join("")}
+      </colgroup><thead><tr>${linhaAreas}</tr><tr>${linhaFiliais}</tr></thead>`;
+  }
+
+  function montarLinha(dados, l, momento, opcoes) {
+    opcoes = opcoes || {};
+    const codigosFiliais = dados.areas.flatMap(a => a.filiais.map(f => String(f.cod_filial)));
+
+    let minimo = 0, maximo = 0;
+    if (opcoes.calor) {
+      const valores = codigosFiliais.map(c => l[momento][c] || 0);
+      minimo = Math.min(...valores);
+      maximo = Math.max(...valores);
+    }
+
+    const celulas = dados.colunas.map(coluna => {
+      const v = l[momento][coluna];
+      const ehFilial = !coluna.startsWith("sub_") && coluna !== "total";
+      let estilo = "";
+      if (opcoes.calor && ehFilial) {
+        const ratio = Math.round(((v - minimo) / ((maximo - minimo) || 1)) * 50) / 50;
+        // texto escuro: sobre o vermelho forte da escala o vermelho do total sumia
+        estilo = corCalor(ratio) + "; color:#222";
+      }
+      const neg = v < 0 ? "neg" : "";
+      return `<td class="num ${classeColuna(coluna)} ${neg}" style="${estilo}">${formatarValor(v)}</td>`;
+    }).join("");
+
+    return `<tr class="${opcoes.classe || ""}">
+      <td class="col-rotulo">${l.rotulo}</td>${celulas}</tr>`;
+  }
+
+  function montarTabela(dados, momento, ehVariacao) {
+    let html = montarCabecalho(dados) + "<tbody>";
+    dados.linhas.forEach(l => { html += montarLinha(dados, l, momento); });
+
+    // O mapa de calor fica só na linha de variação das filiais.
+    html += montarLinha(dados, dados.total, momento,
+      { classe: "linha-total", calor: ehVariacao });
+
+    if (ehVariacao) {
+      html += montarLinha(dados, dados.antecipacao, "variacao", { classe: "" });
+      html += montarLinha(dados, dados.total_com_dividendos, "variacao", { classe: "linha-dividendos" });
+      html += montarLinha(dados, dados.projecao, "variacao", { classe: "linha-projecao" });
+    }
+    return html + "</tbody>";
+  }
+
+  async function carregar() {
+    const id = document.getElementById("selPeriodo").value;
+    const status = document.getElementById("status");
+    const aviso = document.getElementById("aviso");
+    status.textContent = "";
+    aviso.style.display = "none";
+
+    if (!id) { status.textContent = "Cadastre um período em Configurar Saldos."; return; }
+
+    let dados;
+    try {
+      const resp = await fetch(`/api/saldos/variacoes-filial?id_competencia=${id}`);
+      dados = await resp.json();
+      if (!resp.ok || !dados.ok) throw new Error(dados.erro || "Erro ao consultar.");
+    } catch (e) {
+      status.textContent = e.message;
+      ["blocoInicio", "blocoFim", "blocoVar"].forEach(b =>
+        document.getElementById(b).style.display = "none");
+      return;
+    }
+
+    document.getElementById("dataInicio").textContent = formatarData(dados.data_inicio);
+    document.getElementById("tabInicio").innerHTML = montarTabela(dados, "inicio", false);
+    document.getElementById("blocoInicio").style.display = "";
+
+    if (!dados.data_final) {
+      document.getElementById("blocoFim").style.display = "none";
+      document.getElementById("blocoVar").style.display = "none";
+      aviso.textContent = "Nenhum dia do período tem lançamento de todas as áreas.";
+      aviso.style.display = "";
+      return;
+    }
+
+    document.getElementById("dataFim").textContent = formatarData(dados.data_final);
+    document.getElementById("tabFim").innerHTML = montarTabela(dados, "fim", false);
+    document.getElementById("blocoFim").style.display = "";
+
+    document.getElementById("tabVar").innerHTML = montarTabela(dados, "variacao", true);
+    document.getElementById("blocoVar").style.display = "";
+
+    const recados = [];
+    if (dados.data_inicio !== dados.periodo.data_inicio) {
+      recados.push("O período começa em " + formatarData(dados.periodo.data_inicio)
+        + ", mas nesse dia nem todas as áreas tinham lançamento; usada a data "
+        + formatarData(dados.data_inicio) + ".");
+    }
+    if (dados.data_final !== dados.periodo.data_fim) {
+      recados.push("Última data com lançamento de todas as áreas: "
+        + formatarData(dados.data_final) + ". O período vai até "
+        + formatarData(dados.periodo.data_fim) + ".");
+    }
+    if (recados.length) {
+      aviso.textContent = recados.join(" ");
+      aviso.style.display = "";
+    }
+  }
+
+  document.getElementById("selPeriodo").addEventListener("change", carregar);
+  carregar();
+</script>
+
+{% endblock %}

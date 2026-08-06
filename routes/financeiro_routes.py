@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify, flash
 from datetime import datetime, date, timedelta, timezone
 from zoneinfo import ZoneInfo
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 import math
 import io
 from psycopg2.extras import RealDictCursor, execute_batch
@@ -4803,8 +4803,52 @@ def configuracoes_caixas():
 
 
 @financeiro_bp.route("/saldos")
-@permissao_obrigatoria("FINANCEIRO", "CONSULTA_SALDOS")
+@permissao_obrigatoria("FINANCEIRO", "MENU_SALDOS")
 def menu_saldos():
+    """Menu do módulo Saldos: Informar, Consultar Variações e Configurar."""
+    cod_empresa = str(session["cod_empresa"]).strip()
+    id_usuario = session["id_usuario"]
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global == "superusuario":
+        pode_informar = True
+        pode_antecipacao = True
+        pode_variacoes = True
+        pode_variacoes_filial = True
+        pode_configurar = True
+    else:
+        pode_informar = usuario_tem_permissao(
+            id_usuario, cod_empresa, "FINANCEIRO", "INFORMAR_SALDOS"
+        )
+        pode_antecipacao = usuario_tem_permissao(
+            id_usuario, cod_empresa, "FINANCEIRO", "ANTECIPACAO_DIVIDENDOS"
+        )
+        pode_variacoes = usuario_tem_permissao(
+            id_usuario, cod_empresa, "FINANCEIRO", "CONSULTAR_VARIACOES_SALDOS"
+        )
+        pode_variacoes_filial = usuario_tem_permissao(
+            id_usuario, cod_empresa, "FINANCEIRO", "CONSULTAR_VARIACOES_FILIAL"
+        )
+        pode_configurar = usuario_tem_permissao(
+            id_usuario, cod_empresa, "FINANCEIRO", "CONFIGURAR_SALDOS"
+        )
+
+    return render_template(
+        "menu_saldos.html",
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_empresa"),
+        pode_informar=pode_informar,
+        pode_antecipacao=pode_antecipacao,
+        pode_variacoes=pode_variacoes,
+        pode_variacoes_filial=pode_variacoes_filial,
+        pode_configurar=pode_configurar,
+    )
+
+
+@financeiro_bp.route("/saldos/informar")
+@permissao_obrigatoria("FINANCEIRO", "INFORMAR_SALDOS")
+def informar_saldos():
     cod_empresa = str(session["cod_empresa"]).strip()
     id_usuario = session["id_usuario"]
     tipo_global = str(session.get("tipo_global") or "").strip().lower()
@@ -4838,7 +4882,46 @@ def menu_saldos():
         nome_empresa_ativa=session["nome_empresa"],
         areas=areas,
         pode_lancamento=pode_lancamento,
-        url_voltar=url_for("financeiro.menu_empresa"),
+        url_voltar=url_for("financeiro.menu_saldos"),
+    )
+
+
+@financeiro_bp.route("/saldos/variacoes")
+@permissao_obrigatoria("FINANCEIRO", "CONSULTAR_VARIACOES_SALDOS")
+def consultar_variacoes_saldos():
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT id_competencia, mes_ano, data_inicio, data_fim
+              FROM competencia_mes
+             WHERE cod_empresa = %s
+             ORDER BY mes_ano DESC
+        """, (cod_empresa,))
+        periodos = [_periodo_json(p) for p in cur.fetchall()]
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "variacoes_saldos.html",
+        periodos=periodos,
+        empresa_ativa=str(session["cod_empresa"]).strip(),
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_saldos"),
+    )
+
+
+@financeiro_bp.route("/saldos/configurar")
+@permissao_obrigatoria("FINANCEIRO", "CONFIGURAR_SALDOS")
+def configurar_saldos():
+    return render_template(
+        "configurar_saldos.html",
+        empresa_ativa=str(session["cod_empresa"]).strip(),
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_saldos"),
     )
 
 
@@ -5258,31 +5341,38 @@ def api_excluir_indicador_recebivel(id_indicador_recebivel):
 
 
 # =========================
-# CADASTRO: COMPETÊNCIA (DATA DE CORTE)
+# CADASTRO: PERÍODOS (COMPETÊNCIA — MÊS/ANO, INÍCIO E FIM)
 # =========================
+def _periodo_json(row):
+    """Datas em ISO — o padrão do Flask (RFC 822) quebra o parse no JS."""
+    if not row:
+        return row
+    return {
+        "id_competencia": row["id_competencia"],
+        "mes_ano": row["mes_ano"].isoformat(),
+        "data_inicio": row["data_inicio"].isoformat(),
+        "data_fim": row["data_fim"].isoformat(),
+    }
+
+
 @financeiro_bp.route("/api/competencias", methods=["GET"])
-@permissao_obrigatoria("FINANCEIRO", "CONSULTA_SALDOS")
+@permissao_obrigatoria("FINANCEIRO", "CONFIGURAR_SALDOS")
 def api_listar_competencias():
     cod_empresa = str(session["cod_empresa"]).strip()
-    id_area = request.args.get("id_area", type=int)
     ano = request.args.get("ano", type=int)
 
     sql = """
-        SELECT id_competencia, id_area, mes_ano, data_corte_inicio
+        SELECT id_competencia, mes_ano, data_inicio, data_fim
         FROM competencia_mes
         WHERE cod_empresa = %s
     """
     params = [cod_empresa]
 
-    if id_area:
-        sql += " AND id_area = %s"
-        params.append(id_area)
-
     if ano:
         sql += " AND EXTRACT(YEAR FROM mes_ano) = %s"
         params.append(ano)
 
-    sql += " ORDER BY mes_ano"
+    sql += " ORDER BY mes_ano DESC"
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -5293,32 +5383,54 @@ def api_listar_competencias():
         cur.close()
         conn.close()
 
-    return jsonify({"ok": True, "competencias": competencias})
+    return jsonify({"ok": True, "competencias": [_periodo_json(c) for c in competencias]})
+
+
+def _validar_periodo(dados):
+    """Devolve (mes_ano, data_inicio, data_fim) ou levanta ValueError."""
+    mes_ano = (dados.get("mes_ano") or "").strip()
+    data_inicio = (dados.get("data_inicio") or "").strip()
+    data_fim = (dados.get("data_fim") or "").strip()
+
+    if not mes_ano or not data_inicio or not data_fim:
+        raise ValueError("Informe mês/ano, data de início e data de fim.")
+
+    try:
+        mes = datetime.strptime(mes_ano, "%Y-%m-%d").date().replace(day=1)
+        inicio = datetime.strptime(data_inicio, "%Y-%m-%d").date()
+        fim = datetime.strptime(data_fim, "%Y-%m-%d").date()
+    except ValueError:
+        raise ValueError("Datas inválidas.")
+
+    if fim <= inicio:
+        raise ValueError("A data de fim deve ser posterior à de início.")
+
+    return mes, inicio, fim
 
 
 @financeiro_bp.route("/api/competencias", methods=["POST"])
-@permissao_obrigatoria("FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS")
+@permissao_obrigatoria("FINANCEIRO", "CONFIGURAR_SALDOS")
 def api_criar_competencia():
     cod_empresa = str(session["cod_empresa"]).strip()
     dados = request.get_json(silent=True) or {}
 
-    id_area = dados.get("id_area")
-    mes_ano = dados.get("mes_ano")
-    data_corte_inicio = dados.get("data_corte_inicio")
-
-    if not id_area or not mes_ano or not data_corte_inicio:
-        return jsonify({"ok": False, "erro": "Informe id_area, mes_ano e data_corte_inicio."}), 400
+    try:
+        mes, inicio, fim = _validar_periodo(dados)
+    except ValueError as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
         cur.execute("""
-            INSERT INTO competencia_mes (cod_empresa, id_area, mes_ano, data_corte_inicio)
+            INSERT INTO competencia_mes (cod_empresa, mes_ano, data_inicio, data_fim)
             VALUES (%s, %s, %s, %s)
-            ON CONFLICT (cod_empresa, id_area, mes_ano)
-            DO UPDATE SET data_corte_inicio = EXCLUDED.data_corte_inicio, atualizado_em = NOW()
-            RETURNING id_competencia, id_area, mes_ano, data_corte_inicio
-        """, (cod_empresa, id_area, mes_ano, data_corte_inicio))
+            ON CONFLICT (cod_empresa, mes_ano)
+            DO UPDATE SET data_inicio = EXCLUDED.data_inicio,
+                          data_fim = EXCLUDED.data_fim,
+                          atualizado_em = NOW()
+            RETURNING id_competencia, mes_ano, data_inicio, data_fim
+        """, (cod_empresa, mes, inicio, fim))
         competencia = cur.fetchone()
         conn.commit()
     except Exception as e:
@@ -5328,7 +5440,68 @@ def api_criar_competencia():
         cur.close()
         conn.close()
 
-    return jsonify({"ok": True, "competencia": competencia}), 201
+    return jsonify({"ok": True, "competencia": _periodo_json(competencia)}), 201
+
+
+@financeiro_bp.route("/api/competencias/<int:id_competencia>", methods=["PUT"])
+@permissao_obrigatoria("FINANCEIRO", "CONFIGURAR_SALDOS")
+def api_atualizar_competencia(id_competencia):
+    cod_empresa = str(session["cod_empresa"]).strip()
+    dados = request.get_json(silent=True) or {}
+
+    try:
+        mes, inicio, fim = _validar_periodo(dados)
+    except ValueError as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            UPDATE competencia_mes
+               SET mes_ano = %s, data_inicio = %s, data_fim = %s, atualizado_em = NOW()
+             WHERE id_competencia = %s AND cod_empresa = %s
+            RETURNING id_competencia, mes_ano, data_inicio, data_fim
+        """, (mes, inicio, fim, id_competencia, cod_empresa))
+        competencia = cur.fetchone()
+        if not competencia:
+            conn.rollback()
+            return jsonify({"ok": False, "erro": "Período não encontrado."}), 404
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "competencia": _periodo_json(competencia)})
+
+
+@financeiro_bp.route("/api/competencias/<int:id_competencia>", methods=["DELETE"])
+@permissao_obrigatoria("FINANCEIRO", "CONFIGURAR_SALDOS")
+def api_excluir_competencia(id_competencia):
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            DELETE FROM competencia_mes
+             WHERE id_competencia = %s AND cod_empresa = %s
+        """, (id_competencia, cod_empresa))
+        if cur.rowcount == 0:
+            conn.rollback()
+            return jsonify({"ok": False, "erro": "Período não encontrado."}), 404
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True})
 
 
 # =========================
@@ -5622,6 +5795,593 @@ def montar_bloco_dia(data_atual, contas, indicadores, codigos_filiais,
     }
 
 
+def _areas_com_filiais(cur, cod_empresa):
+    """Áreas visíveis ao usuário, cada uma com suas filiais, na ordem da tela."""
+    cur.execute("""
+        SELECT id_area, nome_area
+          FROM areas
+         WHERE cod_empresa = %s AND ativo = TRUE
+         ORDER BY nome_area
+    """, (cod_empresa,))
+    areas = cur.fetchall()
+
+    if str(session.get("tipo_global") or "").strip().lower() != "superusuario":
+        areas_ok = areas_permitidas_usuario(cur, cod_empresa, session["id_usuario"])
+        areas = [a for a in areas if a["id_area"] in areas_ok]
+
+    resultado = []
+    for a in areas:
+        resultado.append({
+            "id_area": a["id_area"],
+            "nome_area": a["nome_area"],
+            "filiais": [
+                {"cod_filial": int(f["cod_filial"]), "nome_filial": f["nome_filial"]}
+                for f in filiais_da_area(cur, cod_empresa, a["id_area"])
+            ],
+        })
+    return resultado
+
+
+@financeiro_bp.route("/saldos/antecipacao-dividendos")
+@permissao_obrigatoria("FINANCEIRO", "ANTECIPACAO_DIVIDENDOS")
+def antecipacao_dividendos():
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        areas = _areas_com_filiais(cur, cod_empresa)
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "antecipacao_dividendos.html",
+        areas=areas,
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_saldos"),
+    )
+
+
+@financeiro_bp.route("/api/antecipacao-dividendos", methods=["GET"])
+@permissao_obrigatoria("FINANCEIRO", "ANTECIPACAO_DIVIDENDOS")
+def api_listar_antecipacao_dividendos():
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        areas = _areas_com_filiais(cur, cod_empresa)
+        codigos = [f["cod_filial"] for a in areas for f in a["filiais"]]
+
+        lancamentos = []
+        if codigos:
+            cur.execute("""
+                SELECT data, cod_filial, valor
+                  FROM antecipacao_dividendos
+                 WHERE cod_empresa = %s AND cod_filial = ANY(%s)
+                 ORDER BY data DESC
+            """, (cod_empresa, codigos))
+            lancamentos = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+    # Uma linha por data, com o valor de cada filial.
+    por_data = OrderedDict()
+    for r in lancamentos:
+        linha = por_data.setdefault(r["data"], {})
+        linha[str(int(r["cod_filial"]))] = float(r["valor"] or 0)
+
+    return jsonify({
+        "ok": True,
+        "areas": areas,
+        "linhas": [{"data": d.isoformat(), "valores": v} for d, v in por_data.items()],
+    })
+
+
+@financeiro_bp.route("/api/antecipacao-dividendos", methods=["PUT"])
+@permissao_obrigatoria("FINANCEIRO", "ANTECIPACAO_DIVIDENDOS")
+def api_salvar_antecipacao_dividendos():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    dados = request.get_json(silent=True) or {}
+
+    data_str = (dados.get("data") or "").strip()
+    valores = dados.get("valores") or {}
+
+    try:
+        data = datetime.strptime(data_str, "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify({"ok": False, "erro": "Data inválida."}), 400
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        areas = _areas_com_filiais(cur, cod_empresa)
+        permitidas = {f["cod_filial"] for a in areas for f in a["filiais"]}
+
+        for cod_filial, valor in valores.items():
+            cod_filial = int(cod_filial)
+            if cod_filial not in permitidas:
+                conn.rollback()
+                return jsonify({"ok": False, "erro": "Filial fora das suas áreas."}), 403
+
+            cur.execute("""
+                INSERT INTO antecipacao_dividendos
+                    (cod_empresa, cod_filial, data, valor, usuario_lancamento)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (cod_empresa, cod_filial, data)
+                DO UPDATE SET valor = EXCLUDED.valor,
+                              usuario_lancamento = EXCLUDED.usuario_lancamento,
+                              atualizado_em = NOW()
+            """, (cod_empresa, cod_filial, data, float(valor or 0), session["id_usuario"]))
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True})
+
+
+@financeiro_bp.route("/api/antecipacao-dividendos", methods=["DELETE"])
+@permissao_obrigatoria("FINANCEIRO", "ANTECIPACAO_DIVIDENDOS")
+def api_excluir_antecipacao_dividendos():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    data_str = (request.args.get("data") or "").strip()
+
+    try:
+        data = datetime.strptime(data_str, "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify({"ok": False, "erro": "Data inválida."}), 400
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        areas = _areas_com_filiais(cur, cod_empresa)
+        codigos = [f["cod_filial"] for a in areas for f in a["filiais"]]
+        cur.execute("""
+            DELETE FROM antecipacao_dividendos
+             WHERE cod_empresa = %s AND data = %s AND cod_filial = ANY(%s)
+        """, (cod_empresa, data, codigos))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True})
+
+
+def _arredondar_linhas(*grupos):
+    """Arredonda para centavos na saída: somas em float acumulam resíduo e as
+    duas telas de variação chegavam a divergir 1 centavo entre si."""
+    for grupo in grupos:
+        for linha in (grupo if isinstance(grupo, list) else [grupo]):
+            for momento in ("inicio", "fim", "variacao"):
+                if momento in linha:
+                    linha[momento] = {k: round(v, 2) for k, v in linha[momento].items()}
+
+
+class ErroConsulta(Exception):
+    """Erro de negócio das consultas de variação (vira 400/403 no endpoint)."""
+
+    def __init__(self, mensagem, status=400):
+        super().__init__(mensagem)
+        self.status = status
+
+
+def _coletar_variacoes(cod_empresa, id_competencia):
+    """Dados crus das duas telas de variação: período, janela e saldos.
+
+    A janela comparada usa só dias em que TODAS as áreas visíveis lançaram —
+    nas duas pontas, senão área atrasada entra zerada e inventa variação.
+    """
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if id_competencia:
+            cur.execute("""
+                SELECT id_competencia, mes_ano, data_inicio, data_fim
+                  FROM competencia_mes
+                 WHERE cod_empresa = %s AND id_competencia = %s
+            """, (cod_empresa, id_competencia))
+        else:
+            cur.execute("""
+                SELECT id_competencia, mes_ano, data_inicio, data_fim
+                  FROM competencia_mes
+                 WHERE cod_empresa = %s
+                 ORDER BY mes_ano DESC LIMIT 1
+            """, (cod_empresa,))
+        periodo = cur.fetchone()
+
+        if not periodo:
+            raise ErroConsulta("Nenhum período cadastrado.")
+
+        data_inicio = periodo["data_inicio"]
+        data_fim = periodo["data_fim"]
+
+        cur.execute("""
+            SELECT id_area, nome_area
+              FROM areas
+             WHERE cod_empresa = %s AND ativo = TRUE
+             ORDER BY nome_area
+        """, (cod_empresa,))
+        areas = cur.fetchall()
+
+        if str(session.get("tipo_global") or "").strip().lower() != "superusuario":
+            areas_ok = areas_permitidas_usuario(cur, cod_empresa, session["id_usuario"])
+            areas = [a for a in areas if a["id_area"] in areas_ok]
+
+        if not areas:
+            raise ErroConsulta("Nenhuma área liberada para você.", 403)
+
+        ids_areas = [a["id_area"] for a in areas]
+
+        # Filiais de cada área — a soma da área é a soma das filiais dela.
+        cur.execute("""
+            SELECT id_area, cod_filial
+              FROM areas_filiais
+             WHERE cod_empresa = %s AND id_area = ANY(%s)
+        """, (cod_empresa, ids_areas))
+        area_da_filial = {int(r["cod_filial"]): r["id_area"] for r in cur.fetchall()}
+        codigos_filiais = list(area_da_filial.keys())
+
+        if not codigos_filiais:
+            raise ErroConsulta("Nenhuma filial vinculada às áreas.")
+
+        # Última data do período com lançamento de TODAS as áreas visíveis.
+        cur.execute("""
+            SELECT s.data, af.id_area
+              FROM saldos_bancarios s
+              JOIN areas_filiais af
+                ON af.cod_empresa = s.cod_empresa AND af.cod_filial = s.cod_filial
+             WHERE s.cod_empresa = %s AND af.id_area = ANY(%s)
+               AND s.data BETWEEN %s AND %s
+             GROUP BY s.data, af.id_area
+        """, (cod_empresa, ids_areas, data_inicio, data_fim))
+
+        areas_por_data = defaultdict(set)
+        for r in cur.fetchall():
+            areas_por_data[r["data"]].add(r["id_area"])
+
+        # A mesma regra vale nas duas pontas: comparar só dias em que todas as
+        # áreas lançaram. Se o primeiro dia do período está incompleto (caso do
+        # 31/07/26, só a Área I), usa o primeiro dia completo dali em diante —
+        # senão a área atrasada entraria zerada e inventaria variação.
+        datas_completas = [d for d, ids in areas_por_data.items() if ids >= set(ids_areas)]
+        data_final = max(datas_completas) if datas_completas else None
+        data_inicial_efetiva = min(datas_completas) if datas_completas else data_inicio
+
+        cur.execute("""
+            SELECT id_indicador_recebivel, nome
+              FROM indicadores_recebiveis
+             WHERE cod_empresa = %s AND ativo = TRUE
+             ORDER BY ordem, nome
+        """, (cod_empresa,))
+        indicadores = cur.fetchall()
+
+        datas_consulta = [d for d in (data_inicial_efetiva, data_final) if d]
+
+        cur.execute("""
+            SELECT data, cod_filial, SUM(saldo_banco) AS valor
+              FROM saldos_bancarios
+             WHERE cod_empresa = %s AND cod_filial = ANY(%s) AND data = ANY(%s)
+             GROUP BY data, cod_filial
+        """, (cod_empresa, codigos_filiais, datas_consulta))
+        bancarios = cur.fetchall()
+
+        cur.execute("""
+            SELECT data, cod_filial, id_indicador_recebivel, SUM(valor_banco) AS valor
+              FROM saldos_recebiveis
+             WHERE cod_empresa = %s AND cod_filial = ANY(%s) AND data = ANY(%s)
+             GROUP BY data, cod_filial, id_indicador_recebivel
+        """, (cod_empresa, codigos_filiais, datas_consulta))
+        recebiveis = cur.fetchall()
+
+        # Antecipação de dividendos retirada DENTRO do intervalo comparado:
+        # explica a queda de saldo, por isso soma depois da variação.
+        antecipacoes = []
+        if data_final:
+            cur.execute("""
+                SELECT cod_filial, SUM(valor) AS valor
+                  FROM antecipacao_dividendos
+                 WHERE cod_empresa = %s AND cod_filial = ANY(%s)
+                   AND data > %s AND data <= %s
+                 GROUP BY cod_filial
+            """, (cod_empresa, codigos_filiais, data_inicial_efetiva, data_final))
+            antecipacoes = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+    return {
+        "periodo": periodo,
+        "areas": areas,
+        "ids_areas": ids_areas,
+        "area_da_filial": area_da_filial,
+        "indicadores": indicadores,
+        "data_inicial_efetiva": data_inicial_efetiva,
+        "data_final": data_final,
+        "bancarios": bancarios,
+        "recebiveis": recebiveis,
+        "antecipacoes": antecipacoes,
+    }
+
+
+@financeiro_bp.route("/api/saldos/variacoes", methods=["GET"])
+@permissao_obrigatoria("FINANCEIRO", "CONSULTAR_VARIACOES_SALDOS")
+def api_consultar_variacoes():
+    """Resumo por área na primeira data do período × na última data fechada.
+
+    "Última data fechada" é o dia mais recente do período em que TODAS as áreas
+    visíveis têm lançamento — área atrasada não entra zerada no comparativo.
+    """
+    cod_empresa = str(session["cod_empresa"]).strip()
+    id_competencia = request.args.get("id_competencia", type=int)
+
+    try:
+        dados = _coletar_variacoes(cod_empresa, id_competencia)
+    except ErroConsulta as e:
+        return jsonify({"ok": False, "erro": str(e)}), e.status
+
+    periodo = dados["periodo"]
+    areas = dados["areas"]
+    ids_areas = dados["ids_areas"]
+    area_da_filial = dados["area_da_filial"]
+    indicadores = dados["indicadores"]
+    data_inicial_efetiva = dados["data_inicial_efetiva"]
+    data_final = dados["data_final"]
+    bancarios = dados["bancarios"]
+    recebiveis = dados["recebiveis"]
+    antecipacoes = dados["antecipacoes"]
+    data_inicio = periodo["data_inicio"]
+    data_fim = periodo["data_fim"]
+
+    # chave: (data, rótulo, id_area) -> valor
+    acumulado = defaultdict(float)
+
+    for r in bancarios:
+        id_area = area_da_filial.get(int(r["cod_filial"]))
+        acumulado[(r["data"], "contas", id_area)] += float(r["valor"] or 0)
+
+    for r in recebiveis:
+        id_area = area_da_filial.get(int(r["cod_filial"]))
+        chave = ("ind", r["id_indicador_recebivel"])
+        acumulado[(r["data"], chave, id_area)] += float(r["valor"] or 0)
+
+    def montar_linha(rotulo, chave):
+        linha = {"rotulo": rotulo, "inicio": {}, "fim": {}, "variacao": {}}
+        for id_area in ids_areas:
+            v_ini = acumulado.get((data_inicial_efetiva, chave, id_area), 0.0)
+            v_fim = acumulado.get((data_final, chave, id_area), 0.0) if data_final else 0.0
+            linha["inicio"][str(id_area)] = v_ini
+            linha["fim"][str(id_area)] = v_fim
+            linha["variacao"][str(id_area)] = v_fim - v_ini
+        for momento in ("inicio", "fim", "variacao"):
+            linha[momento]["total"] = sum(linha[momento][str(a)] for a in ids_areas)
+        return linha
+
+    linhas = [montar_linha("Contas", "contas")]
+    linhas += [montar_linha(i["nome"], ("ind", i["id_indicador_recebivel"])) for i in indicadores]
+
+    total = {"rotulo": "Total", "inicio": {}, "fim": {}, "variacao": {}}
+    for momento in ("inicio", "fim", "variacao"):
+        for coluna in [str(a) for a in ids_areas] + ["total"]:
+            total[momento][coluna] = sum(l[momento][coluna] for l in linhas)
+
+    # A antecipação não é saldo: entra como linha própria, somada ao total.
+    antecipacao_por_area = defaultdict(float)
+    for r in antecipacoes:
+        id_area = area_da_filial.get(int(r["cod_filial"]))
+        antecipacao_por_area[id_area] += float(r["valor"] or 0)
+
+    antecipacao = {"rotulo": "Antecipação Dividendos", "inicio": {}, "fim": {}, "variacao": {}}
+    com_dividendos = {"rotulo": "Total com Dividendos", "inicio": {}, "fim": {}, "variacao": {}}
+    for coluna in [str(a) for a in ids_areas] + ["total"]:
+        valor = (sum(antecipacao_por_area.values()) if coluna == "total"
+                 else antecipacao_por_area.get(int(coluna), 0.0))
+        antecipacao["inicio"][coluna] = 0.0
+        antecipacao["fim"][coluna] = valor
+        antecipacao["variacao"][coluna] = valor
+        com_dividendos["inicio"][coluna] = total["inicio"][coluna]
+        com_dividendos["fim"][coluna] = total["fim"][coluna] + valor
+        com_dividendos["variacao"][coluna] = total["variacao"][coluna] + valor
+
+    # Projeção: a variação já apurada, esticada para o período inteiro.
+    # Ex.: 31/07 -> 04/08 são 4 dias decorridos; o período (31/07 a 31/08) tem 31.
+    dias_decorridos = (data_final - data_inicial_efetiva).days if data_final else 0
+    dias_periodo = (data_fim - periodo["data_inicio"]).days
+
+    projecao = {"rotulo": "Projeção", "variacao": {}}
+    for coluna in [str(a) for a in ids_areas] + ["total"]:
+        projecao["variacao"][coluna] = (
+            round(com_dividendos["variacao"][coluna], 2) / dias_decorridos * dias_periodo
+            if dias_decorridos else 0.0
+        )
+
+    _arredondar_linhas(linhas, total, antecipacao, com_dividendos, projecao)
+
+    return jsonify({
+        "ok": True,
+        "periodo": {
+            "id_competencia": periodo["id_competencia"],
+            "mes_ano": periodo["mes_ano"].isoformat(),
+            "data_inicio": data_inicio.isoformat(),
+            "data_fim": data_fim.isoformat(),
+        },
+        "data_inicio": data_inicial_efetiva.isoformat(),
+        "data_final": data_final.isoformat() if data_final else None,
+        "areas": [{"id_area": a["id_area"], "nome_area": a["nome_area"]} for a in areas],
+        "linhas": linhas,
+        "total": total,
+        "antecipacao": antecipacao,
+        "total_com_dividendos": com_dividendos,
+        "projecao": projecao,
+        "dias_decorridos": dias_decorridos,
+        "dias_periodo": dias_periodo,
+    })
+
+
+@financeiro_bp.route("/api/saldos/variacoes-filial", methods=["GET"])
+@permissao_obrigatoria("FINANCEIRO", "CONSULTAR_VARIACOES_FILIAL")
+def api_consultar_variacoes_filial():
+    """Mesmo comparativo da tela de variações, aberto filial a filial."""
+    cod_empresa = str(session["cod_empresa"]).strip()
+    id_competencia = request.args.get("id_competencia", type=int)
+
+    try:
+        dados = _coletar_variacoes(cod_empresa, id_competencia)
+    except ErroConsulta as e:
+        return jsonify({"ok": False, "erro": str(e)}), e.status
+
+    periodo = dados["periodo"]
+    ids_areas = dados["ids_areas"]
+    area_da_filial = dados["area_da_filial"]
+    data_inicial_efetiva = dados["data_inicial_efetiva"]
+    data_final = dados["data_final"]
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        areas = _areas_com_filiais(cur, cod_empresa)
+    finally:
+        cur.close()
+        conn.close()
+
+    # Colunas na ordem da tela: filiais da área 1, subtotal, filiais da área 2,
+    # subtotal, e o total geral no fim.
+    colunas = []
+    for a in areas:
+        colunas += [str(f["cod_filial"]) for f in a["filiais"]]
+        colunas.append(f"sub_{a['id_area']}")
+    colunas.append("total")
+
+    filiais_da_area = {a["id_area"]: [f["cod_filial"] for f in a["filiais"]] for a in areas}
+
+    # chave: (data, linha, cod_filial) -> valor
+    acumulado = defaultdict(float)
+    for r in dados["bancarios"]:
+        acumulado[(r["data"], "contas", int(r["cod_filial"]))] += float(r["valor"] or 0)
+    for r in dados["recebiveis"]:
+        chave = ("ind", r["id_indicador_recebivel"])
+        acumulado[(r["data"], chave, int(r["cod_filial"]))] += float(r["valor"] or 0)
+
+    def preencher(dic, valor_da_filial):
+        """Preenche filiais, subtotais por área e total geral."""
+        total = 0.0
+        for a in areas:
+            subtotal = 0.0
+            for cod_filial in filiais_da_area[a["id_area"]]:
+                v = valor_da_filial(cod_filial)
+                dic[str(cod_filial)] = v
+                subtotal += v
+            dic[f"sub_{a['id_area']}"] = subtotal
+            total += subtotal
+        dic["total"] = total
+
+    def montar_linha(rotulo, chave):
+        linha = {"rotulo": rotulo, "inicio": {}, "fim": {}, "variacao": {}}
+        preencher(linha["inicio"], lambda c: acumulado.get((data_inicial_efetiva, chave, c), 0.0))
+        preencher(linha["fim"], lambda c: (
+            acumulado.get((data_final, chave, c), 0.0) if data_final else 0.0))
+        preencher(linha["variacao"], lambda c: (
+            (acumulado.get((data_final, chave, c), 0.0) if data_final else 0.0)
+            - acumulado.get((data_inicial_efetiva, chave, c), 0.0)))
+        return linha
+
+    linhas = [montar_linha("Contas", "contas")]
+    linhas += [montar_linha(i["nome"], ("ind", i["id_indicador_recebivel"]))
+               for i in dados["indicadores"]]
+
+    total = {"rotulo": "Total", "inicio": {}, "fim": {}, "variacao": {}}
+    for momento in ("inicio", "fim", "variacao"):
+        for coluna in colunas:
+            total[momento][coluna] = sum(l[momento][coluna] for l in linhas)
+
+    antecipacao_por_filial = defaultdict(float)
+    for r in dados["antecipacoes"]:
+        antecipacao_por_filial[int(r["cod_filial"])] += float(r["valor"] or 0)
+
+    antecipacao = {"rotulo": "Antecipação Dividendos", "inicio": {}, "fim": {}, "variacao": {}}
+    preencher(antecipacao["inicio"], lambda c: 0.0)
+    preencher(antecipacao["fim"], lambda c: antecipacao_por_filial.get(c, 0.0))
+    preencher(antecipacao["variacao"], lambda c: antecipacao_por_filial.get(c, 0.0))
+
+    com_dividendos = {"rotulo": "Total com Dividendos", "inicio": {}, "fim": {}, "variacao": {}}
+    for momento in ("inicio", "fim", "variacao"):
+        for coluna in colunas:
+            com_dividendos[momento][coluna] = total[momento][coluna] + antecipacao[momento][coluna]
+
+    dias_decorridos = (data_final - data_inicial_efetiva).days if data_final else 0
+    dias_periodo = (periodo["data_fim"] - periodo["data_inicio"]).days
+
+    projecao = {"rotulo": "Projeção", "variacao": {}}
+    for coluna in colunas:
+        projecao["variacao"][coluna] = (
+            round(com_dividendos["variacao"][coluna], 2) / dias_decorridos * dias_periodo
+            if dias_decorridos else 0.0
+        )
+
+    _arredondar_linhas(linhas, total, antecipacao, com_dividendos, projecao)
+
+    return jsonify({
+        "ok": True,
+        "periodo": {
+            "id_competencia": periodo["id_competencia"],
+            "mes_ano": periodo["mes_ano"].isoformat(),
+            "data_inicio": periodo["data_inicio"].isoformat(),
+            "data_fim": periodo["data_fim"].isoformat(),
+        },
+        "data_inicio": data_inicial_efetiva.isoformat(),
+        "data_final": data_final.isoformat() if data_final else None,
+        "areas": areas,
+        "colunas": colunas,
+        "linhas": linhas,
+        "total": total,
+        "antecipacao": antecipacao,
+        "total_com_dividendos": com_dividendos,
+        "projecao": projecao,
+        "dias_decorridos": dias_decorridos,
+        "dias_periodo": dias_periodo,
+    })
+
+
+@financeiro_bp.route("/saldos/variacoes-filial")
+@permissao_obrigatoria("FINANCEIRO", "CONSULTAR_VARIACOES_FILIAL")
+def consultar_variacoes_filial():
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT id_competencia, mes_ano, data_inicio, data_fim
+              FROM competencia_mes
+             WHERE cod_empresa = %s
+             ORDER BY mes_ano DESC
+        """, (cod_empresa,))
+        periodos = [_periodo_json(p) for p in cur.fetchall()]
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "variacoes_saldos_filial.html",
+        periodos=periodos,
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_saldos"),
+    )
+
+
 @financeiro_bp.route("/api/saldos", methods=["GET"])
 @permissao_obrigatoria("FINANCEIRO", "CONSULTA_SALDOS")
 def api_consultar_saldos():
@@ -5688,11 +6448,11 @@ def api_consultar_saldos():
         linhas_informados = cur.fetchall()
 
         cur.execute("""
-            SELECT data_corte_inicio
+            SELECT data_inicio
             FROM competencia_mes
-            WHERE cod_empresa = %s AND id_area = %s AND data_corte_inicio BETWEEN %s AND %s
-        """, (cod_empresa, id_area, data_inicio, data_fim))
-        datas_inicio_competencia = {r["data_corte_inicio"] for r in cur.fetchall()}
+            WHERE cod_empresa = %s AND data_inicio BETWEEN %s AND %s
+        """, (cod_empresa, data_inicio, data_fim))
+        datas_inicio_competencia = {r["data_inicio"] for r in cur.fetchall()}
     finally:
         cur.close()
         conn.close()

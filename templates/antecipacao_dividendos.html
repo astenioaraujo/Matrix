@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 30px; font-weight: 800; margin-bottom: 6px; }
+  .empresa { font-size: 17px; margin-bottom: 18px; }
+
+  .topo { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .btn-novo { background: #1e5aa8; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
+  .btn-novo:hover { background: #17488a; }
+
+  .rolagem { overflow-x: auto; background: #fff; border: 1px solid #e2e6ea; border-radius: 10px; padding: 12px; }
+  table { border-collapse: collapse; }
+  th, td { padding: 6px 8px; font-size: 13px; border-bottom: 1px solid #eceff1; white-space: nowrap; }
+  thead th { background: #f5f7f9; font-weight: 700; position: sticky; top: 0; }
+  th.area { color: #1e5aa8; text-align: center; border-bottom: 2px solid #1e5aa8; }
+  th.num, td.num { text-align: right; }
+  .col-data { position: sticky; left: 0; background: #fff; z-index: 2; font-weight: 600; }
+  thead .col-data { background: #f5f7f9; z-index: 3; }
+  .subtotal { background: #eef4fb; font-weight: 700; }
+  .total-geral { background: #e6efe6; font-weight: 700; }
+
+  td input.valor { width: 105px; padding: 4px; border: 1px solid #cfd8dc; border-radius: 5px; text-align: right; font-size: 13px; }
+  td input.data { padding: 4px; border: 1px solid #cfd8dc; border-radius: 5px; font-size: 13px; }
+
+  .btn-mini { border: none; border-radius: 6px; padding: 5px 9px; font-size: 12px; font-weight: 600; cursor: pointer; margin-right: 5px; }
+  .btn-salvar { background: #1e7a34; color: #fff; }
+  .btn-excluir { background: #b3261e; color: #fff; }
+
+  .status-msg { margin-top: 10px; font-size: 14px; min-height: 20px; }
+  .status-msg.erro { color: #b3261e; }
+  .status-msg.ok { color: #1e7a34; }
+</style>
+
+<div class="pagina-titulo">Informar Antecipação de Dividendos</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<div class="topo">
+  <button type="button" class="btn-novo" id="btnNovaData">+ Nova Data</button>
+  <span style="color:#666; font-size:14px">Valores retirados das contas, por filial e data.</span>
+</div>
+
+<div class="rolagem">
+  <table>
+    <thead>
+      <tr id="cabAreas"></tr>
+      <tr id="cabFiliais"></tr>
+    </thead>
+    <tbody id="corpo"></tbody>
+    <tfoot id="rodape"></tfoot>
+  </table>
+</div>
+
+<div class="status-msg" id="status"></div>
+
+<script>
+  const AREAS = {{ areas | tojson }};
+
+  function mostrarStatus(msg, erro) {
+    const el = document.getElementById("status");
+    el.textContent = msg;
+    el.className = "status-msg " + (erro ? "erro" : "ok");
+  }
+
+  function formatarValor(v) {
+    return (v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  // Tolerante a texto meio digitado: "1.234,5", "1234,", "".
+  function paraNumero(txt) {
+    if (txt === null || txt === undefined) return 0;
+    const limpo = String(txt).replace(/\./g, "").replace(",", ".").replace(/[^0-9.\-]/g, "");
+    const n = parseFloat(limpo);
+    return isNaN(n) ? 0 : n;
+  }
+
+  function hojeISO() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  function montarCabecalho() {
+    let linhaAreas = '<th class="col-data"></th>';
+    let linhaFiliais = '<th class="col-data">Data</th>';
+
+    AREAS.forEach(a => {
+      linhaAreas += `<th class="area" colspan="${a.filiais.length + 1}">${a.nome_area}</th>`;
+      a.filiais.forEach(f => {
+        linhaFiliais += `<th class="num">${f.nome_filial}</th>`;
+      });
+      linhaFiliais += '<th class="num subtotal">Subtotal</th>';
+    });
+
+    linhaAreas += '<th class="area" rowspan="2">Total Geral</th><th rowspan="2"></th>';
+    document.getElementById("cabAreas").innerHTML = linhaAreas;
+    document.getElementById("cabFiliais").innerHTML = linhaFiliais;
+  }
+
+  function recalcular(tr) {
+    let totalGeral = 0;
+    AREAS.forEach(a => {
+      let subtotal = 0;
+      a.filiais.forEach(f => {
+        subtotal += paraNumero(tr.querySelector(`.valor[data-filial="${f.cod_filial}"]`).value);
+      });
+      tr.querySelector(`.sub[data-area="${a.id_area}"]`).textContent = formatarValor(subtotal);
+      totalGeral += subtotal;
+    });
+    tr.querySelector(".tot").textContent = formatarValor(totalGeral);
+    recalcularRodape();
+  }
+
+  function recalcularRodape() {
+    const linhas = [...document.querySelectorAll("#corpo tr")];
+    let html = '<tr class="total-geral"><td class="col-data total-geral">Total do quadro</td>';
+    let totalGeral = 0;
+
+    AREAS.forEach(a => {
+      let subtotalArea = 0;
+      a.filiais.forEach(f => {
+        let soma = 0;
+        linhas.forEach(tr => {
+          soma += paraNumero(tr.querySelector(`.valor[data-filial="${f.cod_filial}"]`).value);
+        });
+        subtotalArea += soma;
+        html += `<td class="num total-geral">${formatarValor(soma)}</td>`;
+      });
+      html += `<td class="num subtotal">${formatarValor(subtotalArea)}</td>`;
+      totalGeral += subtotalArea;
+    });
+
+    html += `<td class="num total-geral">${formatarValor(totalGeral)}</td><td></td></tr>`;
+    document.getElementById("rodape").innerHTML = html;
+  }
+
+  function linha(dados) {
+    const tr = document.createElement("tr");
+    const valores = dados.valores || {};
+    const salvo = !!dados.data && !dados.nova;
+
+    let html = `<td class="col-data"><input type="date" class="data" value="${dados.data || hojeISO()}" ${salvo ? "disabled" : ""}></td>`;
+
+    AREAS.forEach(a => {
+      a.filiais.forEach(f => {
+        const v = valores[String(f.cod_filial)];
+        html += `<td class="num"><input type="text" class="valor" data-filial="${f.cod_filial}"
+                   value="${v ? formatarValor(v) : ""}"></td>`;
+      });
+      html += `<td class="num sub subtotal" data-area="${a.id_area}">0,00</td>`;
+    });
+
+    html += `<td class="num tot total-geral">0,00</td>
+             <td>
+               <button type="button" class="btn-mini btn-salvar">Salvar</button>
+               <button type="button" class="btn-mini btn-excluir">Excluir</button>
+             </td>`;
+
+    tr.innerHTML = html;
+    tr.querySelectorAll(".valor").forEach(i => i.addEventListener("input", () => recalcular(tr)));
+    tr.querySelector(".btn-salvar").addEventListener("click", () => salvar(tr));
+    tr.querySelector(".btn-excluir").addEventListener("click", () => excluir(tr));
+    return tr;
+  }
+
+  async function carregar() {
+    const corpo = document.getElementById("corpo");
+    corpo.innerHTML = "";
+    try {
+      const resp = await fetch("/api/antecipacao-dividendos");
+      const dados = await resp.json();
+      if (!resp.ok || !dados.ok) throw new Error(dados.erro || "Erro ao carregar.");
+      (dados.linhas || []).forEach(l => {
+        const tr = linha(l);
+        corpo.appendChild(tr);
+        recalcular(tr);
+      });
+      recalcularRodape();
+    } catch (e) {
+      mostrarStatus(e.message || "Erro ao carregar.", true);
+    }
+  }
+
+  async function salvar(tr) {
+    const data = tr.querySelector(".data").value;
+    if (!data) { mostrarStatus("Informe a data.", true); return; }
+
+    const valores = {};
+    tr.querySelectorAll(".valor").forEach(i => {
+      valores[i.dataset.filial] = paraNumero(i.value);
+    });
+
+    try {
+      const resp = await fetch("/api/antecipacao-dividendos", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data, valores }),
+      });
+      const dados = await resp.json();
+      if (!resp.ok || !dados.ok) throw new Error(dados.erro || "Erro ao salvar.");
+      await carregar();
+      mostrarStatus("Salvo com sucesso.", false);
+    } catch (e) {
+      mostrarStatus(e.message || "Erro ao salvar.", true);
+    }
+  }
+
+  async function excluir(tr) {
+    const data = tr.querySelector(".data").value;
+    if (tr.dataset.nova === "1" || !data) { tr.remove(); recalcularRodape(); return; }
+    if (!confirm("Excluir os lançamentos desta data?")) return;
+    try {
+      const resp = await fetch(`/api/antecipacao-dividendos?data=${data}`, { method: "DELETE" });
+      const dados = await resp.json();
+      if (!resp.ok || !dados.ok) throw new Error(dados.erro || "Erro ao excluir.");
+      await carregar();
+      mostrarStatus("Data excluída.", false);
+    } catch (e) {
+      mostrarStatus(e.message || "Erro ao excluir.", true);
+    }
+  }
+
+  document.getElementById("btnNovaData").addEventListener("click", () => {
+    const tr = linha({ data: hojeISO(), valores: {}, nova: true });
+    tr.dataset.nova = "1";
+    document.getElementById("corpo").prepend(tr);
+    recalcular(tr);
+  });
+
+  montarCabecalho();
+  carregar();
+</script>
+
+{% endblock %}

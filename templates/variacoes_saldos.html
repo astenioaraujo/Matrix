@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 32px; font-weight: 800; margin-bottom: 6px; }
+  .empresa { font-size: 18px; margin-bottom: 20px; }
+
+  .barra-filtro { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; }
+  .barra-filtro select { padding: 8px; border: 1px solid #cfd8dc; border-radius: 8px; font-size: 15px; }
+
+  .bloco { background: #fff; border: 1px solid #e2e6ea; border-radius: 10px; padding: 16px; margin-bottom: 22px; max-width: 1100px; }
+  .data-bloco { font-size: 22px; font-weight: 800; color: #5b2d8e; margin-bottom: 12px; }
+
+  /* Layout fixo + colgroup igual nos dois blocos: sem isso cada tabela
+     calcula a própria largura e as colunas saem desalinhadas. */
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th, td { padding: 7px 10px; font-size: 14px; border-bottom: 1px dotted #dde3e8; }
+  th { background: #f5f7f9; font-weight: 700; color: #1e5aa8; }
+  th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.rotulo { color: #1e5aa8; }
+  td.total-emp { font-weight: 700; }
+  td.por-area { color: #6b7780; }
+
+  tr.linha-total td { border-top: 2px solid #333; border-bottom: none; color: #c62828; font-weight: 700; }
+  tr.linha-dividendos td { border-top: 1px solid #333; font-weight: 700; }
+  tr.linha-projecao td { font-weight: 700; border-bottom: none; }
+  tr.linha-projecao td.variacao { color: #c62828; }
+  .neg { color: #c62828; }
+  .pos { color: #6aa84f; }
+  th.col-variacao { color: #6aa84f; }
+
+  .aviso { color: #8a6d3b; background: #fcf8e3; border: 1px solid #faebcc; border-radius: 8px; padding: 10px 12px; max-width: 1100px; margin-bottom: 18px; }
+  .status-msg { font-size: 14px; color: #b3261e; min-height: 20px; }
+</style>
+
+<div class="pagina-titulo">Consultar Variações</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<div class="barra-filtro">
+  <label for="selPeriodo"><strong>Período:</strong></label>
+  <select id="selPeriodo">
+    {% for p in periodos %}
+      <option value="{{ p.id_competencia }}">{{ p.mes_ano }}</option>
+    {% endfor %}
+  </select>
+</div>
+
+<div id="aviso" class="aviso" style="display:none"></div>
+<div id="status" class="status-msg"></div>
+
+<div id="blocoInicio" class="bloco" style="display:none">
+  <div class="data-bloco" id="dataInicio"></div>
+  <table><colgroup id="colsInicio"></colgroup><thead id="cabInicio"></thead><tbody id="corpoInicio"></tbody></table>
+</div>
+
+<div id="blocoFim" class="bloco" style="display:none">
+  <div class="data-bloco" id="dataFim"></div>
+  <table><colgroup id="colsFim"></colgroup><thead id="cabFim"></thead><tbody id="corpoFim"></tbody></table>
+</div>
+
+<script>
+  const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+                 "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+  // Rótulo do período em português — o value do <option> vem como AAAA-MM-DD.
+  document.querySelectorAll("#selPeriodo option").forEach(op => {
+    const [ano, mes] = op.textContent.trim().split("-");
+    op.textContent = `${MESES[Number(mes) - 1]} / ${ano}`;
+  });
+
+  function formatarValor(v) {
+    if (!v) return "-";
+    const txt = Math.abs(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return v < 0 ? `(${txt})` : txt;
+  }
+
+  function formatarData(iso) {
+    const [a, m, d] = iso.split("-");
+    return `${d}/${m}/${a.substring(2)}`;
+  }
+
+  function celulaValor(v, classe) {
+    const cls = (v < 0 ? "neg" : (classe === "variacao" ? "pos" : ""));
+    return `<td class="num ${classe} ${cls}">${formatarValor(v)}</td>`;
+  }
+
+  // A coluna de Variação existe nos dois blocos; no de cima ela fica vazia,
+  // só para as duas tabelas terem exatamente as mesmas colunas.
+  function montarColgroup(areas) {
+    const porArea = areas.map(() => '<col style="width:170px">').join("");
+    return '<col style="width:190px"><col style="width:160px">' + porArea + '<col style="width:160px">';
+  }
+
+  function montarCabecalho(areas, comVariacao) {
+    const colunas = areas.map(a => `<th class="num">${a.nome_area}</th>`).join("");
+    const variacao = comVariacao ? '<th class="num col-variacao">Variação</th>' : "<th></th>";
+    return `<tr><th></th><th class="num"></th>${colunas}${variacao}</tr>`;
+  }
+
+  function montarCorpo(dados, momento, comVariacao) {
+    // Antecipação e total com dividendos só fazem sentido no bloco final.
+    const linhas = comVariacao
+      ? dados.linhas.concat([dados.total, dados.antecipacao, dados.total_com_dividendos])
+      : dados.linhas.concat([dados.total]);
+    const corpo = linhas.map(l => {
+      const ehTotal = l.rotulo === "Total";
+      const ehDividendos = l.rotulo === "Total com Dividendos";
+      const areas = dados.areas.map(a =>
+        celulaValor(l[momento][String(a.id_area)], "por-area")).join("");
+      const variacao = comVariacao ? celulaValor(l.variacao.total, "variacao") : "<td></td>";
+      const classe = ehTotal ? "linha-total" : (ehDividendos ? "linha-dividendos" : "");
+      return `<tr class="${classe}">
+        <td class="rotulo">${l.rotulo}</td>
+        ${celulaValor(l[momento].total, "total-emp")}
+        ${areas}${variacao}
+      </tr>`;
+    }).join("");
+
+    if (!comVariacao) return corpo;
+
+    const vazias = dados.areas.map(() => "<td></td>").join("");
+    return corpo + `<tr class="linha-projecao">
+      <td class="rotulo">Projeção</td><td></td>${vazias}
+      ${celulaValor(dados.projecao.variacao.total, "variacao")}
+    </tr>`;
+  }
+
+  async function carregar() {
+    const id = document.getElementById("selPeriodo").value;
+    const status = document.getElementById("status");
+    const aviso = document.getElementById("aviso");
+    status.textContent = "";
+    aviso.style.display = "none";
+
+    if (!id) { status.textContent = "Cadastre um período em Configurar Saldos."; return; }
+
+    let dados;
+    try {
+      const resp = await fetch(`/api/saldos/variacoes?id_competencia=${id}`);
+      dados = await resp.json();
+      if (!resp.ok || !dados.ok) throw new Error(dados.erro || "Erro ao consultar.");
+    } catch (e) {
+      status.textContent = e.message;
+      document.getElementById("blocoInicio").style.display = "none";
+      document.getElementById("blocoFim").style.display = "none";
+      return;
+    }
+
+    document.getElementById("dataInicio").textContent = formatarData(dados.data_inicio);
+    document.getElementById("colsInicio").innerHTML = montarColgroup(dados.areas);
+    document.getElementById("cabInicio").innerHTML = montarCabecalho(dados.areas, false);
+    document.getElementById("corpoInicio").innerHTML = montarCorpo(dados, "inicio", false);
+    document.getElementById("blocoInicio").style.display = "";
+
+    if (!dados.data_final) {
+      document.getElementById("blocoFim").style.display = "none";
+      aviso.textContent = "Nenhum dia do período tem lançamento de todas as áreas.";
+      aviso.style.display = "";
+      return;
+    }
+
+    document.getElementById("dataFim").textContent = formatarData(dados.data_final);
+    document.getElementById("colsFim").innerHTML = montarColgroup(dados.areas);
+    document.getElementById("cabFim").innerHTML = montarCabecalho(dados.areas, true);
+    document.getElementById("corpoFim").innerHTML = montarCorpo(dados, "fim", true);
+    document.getElementById("blocoFim").style.display = "";
+
+    // Só entram dias em que todas as áreas lançaram — avisa quando as datas
+    // usadas não coincidem com as do período cadastrado.
+    const recados = [];
+    if (dados.data_inicio !== dados.periodo.data_inicio) {
+      recados.push("O período começa em " + formatarData(dados.periodo.data_inicio)
+        + ", mas nesse dia nem todas as áreas tinham lançamento; usada a data "
+        + formatarData(dados.data_inicio) + ".");
+    }
+    if (dados.data_final !== dados.periodo.data_fim) {
+      recados.push("Última data com lançamento de todas as áreas: "
+        + formatarData(dados.data_final) + ". O período vai até "
+        + formatarData(dados.periodo.data_fim) + ".");
+    }
+    if (recados.length) {
+      aviso.textContent = recados.join(" ");
+      aviso.style.display = "";
+    }
+  }
+
+  document.getElementById("selPeriodo").addEventListener("change", carregar);
+  carregar();
+</script>
+
+{% endblock %}
