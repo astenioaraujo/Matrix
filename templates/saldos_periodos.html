@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 32px; font-weight: 800; margin-bottom: 6px; }
+  .empresa { font-size: 18px; margin-bottom: 24px; }
+
+  .bloco { background: #fff; border: 1px solid #e2e6ea; border-radius: 10px; padding: 16px; max-width: 900px; }
+  .topo-bloco { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 12px; }
+  .topo-bloco .ajuda { color: #666; font-size: 14px; }
+
+  .btn-novo {
+    background: #1e5aa8; color: #fff; border: none; border-radius: 8px;
+    padding: 8px 14px; font-weight: 600; cursor: pointer;
+  }
+  .btn-novo:hover { background: #17488a; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border-bottom: 1px solid #eceff1; padding: 8px; text-align: left; font-size: 14px; }
+  th { background: #f5f7f9; font-weight: 700; }
+  td input { padding: 6px; border: 1px solid #cfd8dc; border-radius: 6px; font-size: 14px; }
+
+  .btn-mini {
+    border: none; border-radius: 6px; padding: 6px 10px;
+    font-size: 13px; font-weight: 600; cursor: pointer; margin-right: 6px;
+  }
+  .btn-salvar { background: #1e7a34; color: #fff; }
+  .btn-excluir { background: #b3261e; color: #fff; }
+
+  .status-msg { margin-top: 10px; font-size: 14px; min-height: 20px; }
+  .status-msg.erro { color: #b3261e; }
+  .status-msg.ok { color: #1e7a34; }
+</style>
+
+<div class="pagina-titulo">Períodos de Apuração</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<div class="bloco">
+  <div class="topo-bloco">
+    <div class="ajuda">
+      Períodos de apuração. O início de um período novo é sempre a data final do período anterior.
+    </div>
+    <button type="button" class="btn-novo" id="btnNovoPeriodo">+ Novo Período</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:180px">Período</th>
+        <th style="width:200px">Data de Início</th>
+        <th style="width:200px">Data Final</th>
+        <th style="width:180px">Ações</th>
+      </tr>
+    </thead>
+    <tbody id="corpoPeriodos"></tbody>
+  </table>
+
+  <div class="status-msg" id="statusPeriodos"></div>
+</div>
+
+<script>
+  let PERIODOS = [];
+
+  // Nomes fixos em português: <input type="month"> segue o idioma do navegador.
+  const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+                 "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+  function mostrarStatus(msg, erro) {
+    const el = document.getElementById("statusPeriodos");
+    el.textContent = msg;
+    el.className = "status-msg " + (erro ? "erro" : "ok");
+  }
+
+  async function fetchJson(url, opcoes) {
+    const resp = await fetch(url, opcoes);
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.erro || "Erro na requisição.");
+    return data;
+  }
+
+  // Datas em horário local — nada de toISOString (vira o dia à noite).
+  function paraISO(d) {
+    const mes = String(d.getMonth() + 1).padStart(2, "0");
+    const dia = String(d.getDate()).padStart(2, "0");
+    return `${d.getFullYear()}-${mes}-${dia}`;
+  }
+
+  function ultimoDiaDoMes(ano, mesZeroBase) {
+    return new Date(ano, mesZeroBase + 1, 0);
+  }
+
+  // Sugestão do próximo período: o mês seguinte ao último cadastrado (ou o mês
+  // atual, se não houver nenhum). Início = fim do período anterior, ou o último
+  // dia do mês anterior. Fim = último dia do próprio mês. Tudo editável.
+  function sugerirPeriodo() {
+    const anterior = PERIODOS[0] || null;  // lista vem em ordem decrescente
+
+    let ano, mes;
+    if (anterior) {
+      const [a, m] = anterior.mes_ano.substring(0, 7).split("-").map(Number);
+      const proximo = new Date(a, m, 1);  // m (1-based) => mês seguinte
+      ano = proximo.getFullYear();
+      mes = proximo.getMonth();
+    } else {
+      const hoje = new Date();
+      ano = hoje.getFullYear();
+      mes = hoje.getMonth();
+    }
+
+    const inicio = anterior
+      ? anterior.data_fim.substring(0, 10)
+      : paraISO(ultimoDiaDoMes(ano, mes - 1));
+
+    return {
+      id_competencia: null,
+      mes_ano: `${ano}-${String(mes + 1).padStart(2, "0")}-01`,
+      data_inicio: inicio,
+      data_fim: paraISO(ultimoDiaDoMes(ano, mes)),
+    };
+  }
+
+  function linhaPeriodo(p) {
+    const tr = document.createElement("tr");
+    tr.dataset.id = p.id_competencia || "";
+    const anoNum = Number(p.mes_ano.substring(0, 4));
+    const mesNum = Number(p.mes_ano.substring(5, 7));
+    // Período já salvo não troca de mês/ano — só as datas continuam editáveis.
+    const salvo = !!p.id_competencia;
+    tr.innerHTML = `
+      <td>
+        <select class="in-mes" ${salvo ? "disabled" : ""}>
+          ${MESES.map((nome, i) => `<option value="${i + 1}" ${(i + 1) === mesNum ? "selected" : ""}>${nome}</option>`).join("")}
+        </select>
+        <input type="number" class="in-ano" value="${anoNum}" min="2000" max="2099"
+               style="width:80px" ${salvo ? "disabled" : ""}>
+      </td>
+      <td><input type="date" class="in-inicio" value="${p.data_inicio.substring(0, 10)}"></td>
+      <td><input type="date" class="in-fim" value="${p.data_fim.substring(0, 10)}"></td>
+      <td>
+        <button type="button" class="btn-mini btn-salvar">Salvar</button>
+        ${p.id_competencia ? '<button type="button" class="btn-mini btn-excluir">Excluir</button>' : ""}
+      </td>
+    `;
+    tr.querySelector(".btn-salvar").addEventListener("click", () => salvarPeriodo(tr));
+    const btnExcluir = tr.querySelector(".btn-excluir");
+    if (btnExcluir) btnExcluir.addEventListener("click", () => excluirPeriodo(tr));
+    return tr;
+  }
+
+  async function carregarPeriodos() {
+    const corpo = document.getElementById("corpoPeriodos");
+    corpo.innerHTML = "";
+    try {
+      const data = await fetchJson("/api/competencias");
+      PERIODOS = data.competencias || [];
+      PERIODOS.forEach(p => corpo.appendChild(linhaPeriodo(p)));
+      if (!PERIODOS.length) mostrarStatus("Nenhum período cadastrado.", false);
+    } catch (e) {
+      mostrarStatus(e.message || "Erro ao carregar.", true);
+    }
+  }
+
+  async function salvarPeriodo(tr) {
+    const mes = tr.querySelector(".in-mes").value;
+    const ano = tr.querySelector(".in-ano").value;
+    const payload = {
+      mes_ano: (mes && ano) ? `${ano}-${String(mes).padStart(2, "0")}-01` : "",
+      data_inicio: tr.querySelector(".in-inicio").value,
+      data_fim: tr.querySelector(".in-fim").value,
+    };
+    if (!payload.mes_ano || !payload.data_inicio || !payload.data_fim) {
+      mostrarStatus("Preencha período, data de início e data final.", true);
+      return;
+    }
+
+    const id = tr.dataset.id;
+    try {
+      await fetchJson(id ? `/api/competencias/${id}` : "/api/competencias", {
+        method: id ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      await carregarPeriodos();
+      mostrarStatus("Salvo com sucesso.", false);
+    } catch (e) {
+      mostrarStatus(e.message || "Erro ao salvar.", true);
+    }
+  }
+
+  async function excluirPeriodo(tr) {
+    const id = tr.dataset.id;
+    if (!id) { tr.remove(); return; }
+    if (!confirm("Excluir este período?")) return;
+    try {
+      await fetchJson(`/api/competencias/${id}`, { method: "DELETE" });
+      await carregarPeriodos();
+      mostrarStatus("Período excluído.", false);
+    } catch (e) {
+      mostrarStatus(e.message || "Erro ao excluir.", true);
+    }
+  }
+
+  document.getElementById("btnNovoPeriodo").addEventListener("click", () => {
+    document.getElementById("corpoPeriodos").prepend(linhaPeriodo(sugerirPeriodo()));
+  });
+
+  carregarPeriodos();
+</script>
+
+{% endblock %}

@@ -4884,6 +4884,7 @@ def menu_saldos():
         pode_variacoes = True
         pode_variacoes_filial = True
         pode_configurar = True
+        pode_acessos_area = True
     else:
         pode_informar = usuario_tem_permissao(
             id_usuario, cod_empresa, "FINANCEIRO", "INFORMAR_SALDOS"
@@ -4897,7 +4898,12 @@ def menu_saldos():
         pode_variacoes_filial = usuario_tem_permissao(
             id_usuario, cod_empresa, "FINANCEIRO", "CONSULTAR_VARIACOES_FILIAL"
         )
-        pode_configurar = usuario_tem_permissao(
+        pode_acessos_area = usuario_tem_permissao(
+            id_usuario, cod_empresa, "FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS"
+        )
+        # Configurar Saldos virou menu: períodos/feriados (CONFIGURAR_SALDOS) e
+        # os cadastros (CADASTRO_CONTAS_BANCARIAS). Qualquer uma das duas abre.
+        pode_configurar = pode_acessos_area or usuario_tem_permissao(
             id_usuario, cod_empresa, "FINANCEIRO", "CONFIGURAR_SALDOS"
         )
 
@@ -4911,6 +4917,7 @@ def menu_saldos():
         pode_variacoes=pode_variacoes,
         pode_variacoes_filial=pode_variacoes_filial,
         pode_configurar=pode_configurar,
+        pode_acessos_area=pode_acessos_area,
     )
 
 
@@ -4940,6 +4947,8 @@ def informar_saldos():
         if tipo_global != "superusuario":
             areas_ok = areas_permitidas_usuario(cur, cod_empresa, id_usuario)
             areas = [a for a in areas if a["id_area"] in areas_ok]
+
+        config = config_saldos_empresa(cur, cod_empresa)
     finally:
         cur.close()
         conn.close()
@@ -4950,6 +4959,7 @@ def informar_saldos():
         nome_empresa_ativa=session["nome_empresa"],
         areas=areas,
         pode_lancamento=pode_lancamento,
+        config=config,
         url_voltar=url_for("financeiro.menu_saldos"),
     )
 
@@ -4983,19 +4993,170 @@ def consultar_variacoes_saldos():
 
 
 @financeiro_bp.route("/saldos/configurar")
-@permissao_obrigatoria("FINANCEIRO", "CONFIGURAR_SALDOS")
 def configurar_saldos():
+    """Menu de configuração dos Saldos: períodos, feriados e os cadastros."""
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.escolher_empresa"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    id_usuario = session["id_usuario"]
+
+    if str(session.get("tipo_global") or "").strip().lower() == "superusuario":
+        pode_configurar = True
+        pode_cadastros = True
+    else:
+        pode_configurar = usuario_tem_permissao(
+            id_usuario, cod_empresa, "FINANCEIRO", "CONFIGURAR_SALDOS"
+        )
+        pode_cadastros = usuario_tem_permissao(
+            id_usuario, cod_empresa, "FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS"
+        )
+
+    # As duas permissões abrem opções diferentes deste menu — basta uma delas.
+    if not pode_configurar and not pode_cadastros:
+        flash("Você não tem permissão para acessar esta opção.", "error")
+        return redirect(url_for("sistema.selecionar_sistema"))
+
     return render_template(
         "configurar_saldos.html",
-        empresa_ativa=str(session["cod_empresa"]).strip(),
+        empresa_ativa=cod_empresa,
         nome_empresa_ativa=session["nome_empresa"],
         url_voltar=url_for("financeiro.menu_saldos"),
+        pode_configurar=pode_configurar,
+        pode_cadastros=pode_cadastros,
     )
 
 
-@financeiro_bp.route("/saldos/cadastros")
+OPCOES_VISUALIZACAO_SALDOS = (
+    "mostrar_valores_informados",
+    "mostrar_recebiveis",
+    "mostrar_variacoes",
+)
+
+
+def config_saldos_empresa(cur, cod_empresa):
+    """Parâmetros de visualização da empresa. Sem linha cadastrada, tudo desligado."""
+    cur.execute(f"""
+        SELECT {", ".join(OPCOES_VISUALIZACAO_SALDOS)}
+          FROM saldos_configuracoes
+         WHERE cod_empresa = %s
+    """, (cod_empresa,))
+    linha = cur.fetchone()
+    return {opcao: bool(linha[opcao]) if linha else False for opcao in OPCOES_VISUALIZACAO_SALDOS}
+
+
+@financeiro_bp.route("/saldos/configurar/parametros-visualizacao")
+@permissao_obrigatoria("FINANCEIRO", "CONFIGURAR_SALDOS")
+def saldos_parametros_visualizacao():
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        config = config_saldos_empresa(cur, cod_empresa)
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "saldos_parametros_visualizacao.html",
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.configurar_saldos"),
+        config=config,
+    )
+
+
+@financeiro_bp.route("/api/saldos/configuracoes", methods=["PUT"])
+@permissao_obrigatoria("FINANCEIRO", "CONFIGURAR_SALDOS")
+def api_salvar_configuracoes_saldos():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    dados = request.get_json(silent=True) or {}
+    valores = [bool(dados.get(opcao)) for opcao in OPCOES_VISUALIZACAO_SALDOS]
+
+    colunas = ", ".join(OPCOES_VISUALIZACAO_SALDOS)
+    marcadores = ", ".join(["%s"] * len(OPCOES_VISUALIZACAO_SALDOS))
+    atribuicoes = ", ".join(f"{opcao} = EXCLUDED.{opcao}" for opcao in OPCOES_VISUALIZACAO_SALDOS)
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(f"""
+            INSERT INTO saldos_configuracoes (cod_empresa, {colunas})
+            VALUES (%s, {marcadores})
+            ON CONFLICT (cod_empresa) DO UPDATE
+               SET {atribuicoes},
+                   atualizado_em = now()
+        """, (cod_empresa, *valores))
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True})
+
+
+@financeiro_bp.route("/saldos/configurar/periodos")
+@permissao_obrigatoria("FINANCEIRO", "CONFIGURAR_SALDOS")
+def saldos_periodos():
+    return render_template(
+        "saldos_periodos.html",
+        empresa_ativa=str(session["cod_empresa"]).strip(),
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.configurar_saldos"),
+    )
+
+
+@financeiro_bp.route("/saldos/configurar/feriados")
+@permissao_obrigatoria("FINANCEIRO", "CONFIGURAR_SALDOS")
+def saldos_feriados():
+    return render_template(
+        "saldos_feriados.html",
+        empresa_ativa=str(session["cod_empresa"]).strip(),
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.configurar_saldos"),
+    )
+
+
+@financeiro_bp.route("/saldos/configurar/contas-bancarias")
 @permissao_obrigatoria("FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS")
-def cadastro_saldos():
+def saldos_contas_bancarias():
+    return render_template(
+        "saldos_contas_bancarias.html",
+        empresa_ativa=str(session["cod_empresa"]).strip(),
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.configurar_saldos"),
+    )
+
+
+@financeiro_bp.route("/saldos/configurar/indicadores-recebiveis")
+@permissao_obrigatoria("FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS")
+def saldos_indicadores_recebiveis():
+    return render_template(
+        "saldos_indicadores_recebiveis.html",
+        empresa_ativa=str(session["cod_empresa"]).strip(),
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.configurar_saldos"),
+    )
+
+
+@financeiro_bp.route("/saldos/configurar/liberacao-temporaria")
+@permissao_obrigatoria("FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS")
+def saldos_liberacao_temporaria():
+    return render_template(
+        "saldos_liberacao_temporaria.html",
+        empresa_ativa=str(session["cod_empresa"]).strip(),
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.configurar_saldos"),
+    )
+
+
+@financeiro_bp.route("/saldos/acessos-area")
+@permissao_obrigatoria("FINANCEIRO", "CADASTRO_CONTAS_BANCARIAS")
+def acessos_area_saldos():
+    """Concessão de acesso aos saldos por área, dentro do menu de Saldos."""
     cod_empresa = str(session["cod_empresa"]).strip()
 
     conn = get_connection()
@@ -5022,12 +5183,12 @@ def cadastro_saldos():
         conn.close()
 
     return render_template(
-        "cadastro_saldos.html",
+        "acessos_area_saldos.html",
         empresa_ativa=cod_empresa,
         nome_empresa_ativa=session["nome_empresa"],
         areas=areas,
         usuarios=usuarios,
-        url_voltar=url_for("financeiro.menu_cadastros"),
+        url_voltar=url_for("financeiro.menu_saldos"),
     )
 
 
@@ -6266,7 +6427,16 @@ def _coletar_variacoes(cod_empresa, id_competencia):
         # áreas lançaram. Se o primeiro dia do período está incompleto (caso do
         # 31/07/26, só a Área I), usa o primeiro dia completo dali em diante —
         # senão a área atrasada entraria zerada e inventaria variação.
-        datas_completas = [d for d, ids in areas_por_data.items() if ids >= set(ids_areas)]
+        # Feriados do período: sábado, domingo e feriado não servem de ponta do
+        # comparativo (é dia sem movimento — encostaria o saldo nele mesmo).
+        cur.execute("""
+            SELECT data FROM saldos_feriados
+             WHERE cod_empresa = %s AND data BETWEEN %s AND %s
+        """, (cod_empresa, data_inicio, data_fim))
+        feriados = {linha["data"] for linha in cur.fetchall()}
+
+        datas_completas = [d for d, ids in areas_por_data.items()
+                           if ids >= set(ids_areas) and eh_dia_util(d, feriados)]
         data_final = max(datas_completas) if datas_completas else None
         data_inicial_efetiva = min(datas_completas) if datas_completas else data_inicio
 

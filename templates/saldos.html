@@ -457,6 +457,10 @@
 <script>
   const PODE_LANCAMENTO = {{ pode_lancamento | tojson }};
   const EMPRESA_ATIVA = {{ empresa_ativa | tojson }};
+  // Parâmetros de visualização da empresa (Configurar Saldos → Parâmetros de Visualização)
+  const MOSTRAR_VALORES_INFORMADOS = {{ config.mostrar_valores_informados | tojson }};
+  const MOSTRAR_RECEBIVEIS = {{ config.mostrar_recebiveis | tojson }};
+  const MOSTRAR_VARIACOES = {{ config.mostrar_variacoes | tojson }};
 
   let MODO_ATUAL = "banco";
   let ultimaResposta = null;
@@ -787,16 +791,24 @@
   function montarBlocoDia(dia, filiais, modo, editavel, podeDuplicarContas, podeDuplicarRecebiveis) {
     const badge = dia.inicio_competencia ? '<span class="badge-competencia">Início da competência</span>' : "";
 
-    // Variação e Valores Informados só fazem sentido em cima do saldo bancário real (modo Bancos)
+    // Variação e Valores Informados só fazem sentido em cima do saldo bancário real (modo Bancos),
+    // e cada um ainda depende de a empresa ter ligado a opção em Configurar Saldos →
+    // Parâmetros de Visualização — há empresas que não usam esses blocos.
     const blocosDeVariacao = modo === "banco"
-      ? `${montarBlocoVariacao(dia, filiais, modo)}${montarBlocoInformados(dia, filiais, modo, editavel)}`
+      ? `${MOSTRAR_VARIACOES ? montarBlocoVariacao(dia, filiais, modo) : ""}${MOSTRAR_VALORES_INFORMADOS ? montarBlocoInformados(dia, filiais, modo, editavel) : ""}`
+      : "";
+
+    // Sem Estoques e Recebíveis não há TOTAL: ele soma os dois blocos, e sozinho
+    // em cima das Contas Bancárias repetiria o SUBTOTAL delas.
+    const blocoRecebiveis = MOSTRAR_RECEBIVEIS
+      ? montarTabelaBloco("Estoques e Recebíveis", dia.recebiveis, dia.subtotal_recebiveis, "recebivel", dia.data, filiais, modo, editavel, false, dia.total, podeDuplicarRecebiveis)
       : "";
 
     return `
       <div class="dia-card" data-data="${dia.data}">
         <div class="dia-titulo">${formatarDataBR(dia.data)}${dia.dia_semana ? " - " + dia.dia_semana : ""} ${badge}</div>
         ${montarTabelaBloco("Contas Bancárias", dia.contas_bancarias, dia.subtotal_contas, "bancario", dia.data, filiais, modo, editavel, true, null, podeDuplicarContas)}
-        ${montarTabelaBloco("Estoques e Recebíveis", dia.recebiveis, dia.subtotal_recebiveis, "recebivel", dia.data, filiais, modo, editavel, false, dia.total, podeDuplicarRecebiveis)}
+        ${blocoRecebiveis}
         ${blocosDeVariacao}
       </div>
     `;

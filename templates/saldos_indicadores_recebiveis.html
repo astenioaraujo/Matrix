@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 8px; color: #111; }
+  .pagina-subtitulo { font-size: 20px; margin-bottom: 24px; color: #222; }
+
+  .bloco {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 20px;
+  }
+
+  .topo-bloco {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+
+  .btn-mini {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .btn-mini.excluir { border-color: #c0392b; background: #c0392b; }
+  .btn-mini:hover { filter: brightness(0.92); }
+
+  .btn-novo {
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+  th { background: #dbe8f4; }
+
+  td input[type="text"], td input[type="number"] {
+    width: 100%;
+    padding: 6px 8px;
+    box-sizing: border-box;
+    border-radius: 6px;
+    border: 1px solid #bbb;
+  }
+
+  td.col-ativo, td.col-acoes { text-align: center; white-space: nowrap; }
+
+  .status-msg { font-size: 13px; margin-top: 10px; color: #1e6b34; min-height: 18px; }
+  .status-msg.erro { color: #9f2f2f; }
+</style>
+
+<div class="pagina-titulo">Indicadores de Recebíveis</div>
+
+<div class="pagina-subtitulo">
+  <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<div class="bloco">
+  <div class="topo-bloco">
+    <div>Indicadores do bloco Estoques e Recebíveis, comuns a todas as áreas.</div>
+    <button type="button" class="btn-novo" id="btnNovoIndicador">+ Novo Indicador</button>
+  </div>
+  <table>
+    <thead>
+      <tr><th style="width:90px">Ordem</th><th>Nome</th><th style="width:70px">Ativo</th><th style="width:150px">Ações</th></tr>
+    </thead>
+    <tbody id="corpoIndicadores"></tbody>
+  </table>
+  <div class="status-msg" id="statusIndicadores"></div>
+</div>
+
+<script>
+  function escapeHtml(texto) {
+    const div = document.createElement("div");
+    div.textContent = texto || "";
+    return div.innerHTML;
+  }
+
+  async function fetchJson(url, opcoes) {
+    const resp = await fetch(url, opcoes);
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+    }
+    return resp.json();
+  }
+
+  function mostrarStatus(idStatus, mensagem, erro) {
+    const el = document.getElementById(idStatus);
+    el.textContent = mensagem;
+    el.classList.toggle("erro", !!erro);
+    if (!erro) setTimeout(() => { el.textContent = ""; }, 2500);
+  }
+
+  function linhaIndicador(ind) {
+    const tr = document.createElement("tr");
+    tr.dataset.id = ind ? ind.id_indicador_recebivel : "";
+    tr.innerHTML = `
+      <td><input type="number" class="input-ordem" value="${ind ? ind.ordem : 10}"></td>
+      <td><input type="text" class="input-nome" value="${ind ? escapeHtml(ind.nome) : ''}" placeholder="Nome do indicador"></td>
+      <td class="col-ativo"><input type="checkbox" class="input-ativo" ${(!ind || ind.ativo) ? "checked" : ""}></td>
+      <td class="col-acoes">
+        <button type="button" class="btn-mini">Salvar</button>
+        ${ind ? '<button type="button" class="btn-mini excluir">Excluir</button>' : ""}
+      </td>
+    `;
+    tr.querySelector(".btn-mini").addEventListener("click", () => salvarIndicador(tr));
+    const btnExcluir = tr.querySelector(".btn-mini.excluir");
+    if (btnExcluir) btnExcluir.addEventListener("click", () => excluirIndicador(tr));
+    return tr;
+  }
+
+  async function carregarIndicadores() {
+    try {
+      const data = await fetchJson("/api/indicadores-recebiveis");
+      const corpo = document.getElementById("corpoIndicadores");
+      corpo.innerHTML = "";
+      (data.indicadores_recebiveis || []).forEach(i => corpo.appendChild(linhaIndicador(i)));
+    } catch (e) {
+      mostrarStatus("statusIndicadores", e.message || "Erro ao carregar.", true);
+    }
+  }
+
+  async function salvarIndicador(tr) {
+    const id = tr.dataset.id;
+    const payload = {
+      nome: tr.querySelector(".input-nome").value.trim(),
+      ordem: Number(tr.querySelector(".input-ordem").value || 10),
+      ativo: tr.querySelector(".input-ativo").checked,
+    };
+    if (!payload.nome) {
+      mostrarStatus("statusIndicadores", "Informe o nome.", true);
+      return;
+    }
+    try {
+      const data = await fetchJson(id ? `/api/indicadores-recebiveis/${id}` : "/api/indicadores-recebiveis", {
+        method: id ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (data.ok) {
+        mostrarStatus("statusIndicadores", "Salvo com sucesso.", false);
+        carregarIndicadores();
+      } else {
+        mostrarStatus("statusIndicadores", data.erro || "Erro ao salvar.", true);
+      }
+    } catch (e) {
+      mostrarStatus("statusIndicadores", e.message || "Erro ao salvar.", true);
+    }
+  }
+
+  async function excluirIndicador(tr) {
+    if (!confirm("Excluir este indicador?")) return;
+    try {
+      const data = await fetchJson(`/api/indicadores-recebiveis/${tr.dataset.id}`, { method: "DELETE" });
+      if (data.ok) {
+        mostrarStatus("statusIndicadores", "Excluído com sucesso.", false);
+        carregarIndicadores();
+      } else {
+        mostrarStatus("statusIndicadores", data.erro || "Erro ao excluir.", true);
+      }
+    } catch (e) {
+      mostrarStatus("statusIndicadores", e.message || "Erro ao excluir.", true);
+    }
+  }
+
+  document.getElementById("btnNovoIndicador").addEventListener("click", () => {
+    document.getElementById("corpoIndicadores").prepend(linhaIndicador(null));
+  });
+
+  carregarIndicadores();
+</script>
+
+{% endblock %}

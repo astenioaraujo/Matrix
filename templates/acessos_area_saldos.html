@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 8px;
+    color: #111;
+  }
+
+  .pagina-subtitulo {
+    font-size: 20px;
+    margin-bottom: 24px;
+    color: #222;
+  }
+
+  .painel {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 20px;
+  }
+
+  .topo-painel {
+    margin-bottom: 14px;
+    color: #444;
+  }
+
+  .btn-mini {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid #c0392b;
+    background: #c0392b;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .btn-mini:hover {
+    filter: brightness(0.92);
+  }
+
+  .btn-novo {
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .linha-form-acesso {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .linha-form-acesso select {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #bbb;
+    min-width: 200px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+  }
+
+  th {
+    background: #dbe8f4;
+  }
+
+  td.col-acoes {
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .status-msg {
+    font-size: 13px;
+    margin-top: 10px;
+    color: #1e6b34;
+    min-height: 18px;
+  }
+
+  .status-msg.erro {
+    color: #9f2f2f;
+  }
+</style>
+
+<div class="pagina-titulo">Acessos por Área</div>
+
+<div class="pagina-subtitulo">
+  <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<div class="painel">
+  <div class="topo-painel">
+    Quem pode ver e lançar saldos de cada área. Sem acesso concedido aqui, o usuário não vê a área na tela de Saldos.
+  </div>
+  <div class="linha-form-acesso">
+    <select id="selUsuarioAcesso">
+      {% for u in usuarios %}
+        <option value="{{ u.id_usuario }}">{{ u.nome }}</option>
+      {% endfor %}
+    </select>
+    <select id="selAreaAcesso">
+      {% for a in areas %}
+        <option value="{{ a.id_area }}">{{ a.nome_area }}</option>
+      {% endfor %}
+    </select>
+    <button type="button" class="btn-novo" id="btnConcederAcesso">+ Conceder Acesso</button>
+  </div>
+  <table>
+    <thead>
+      <tr><th>Usuário</th><th>Área</th><th style="width:150px">Ações</th></tr>
+    </thead>
+    <tbody id="corpoAcessoArea"></tbody>
+  </table>
+  <div class="status-msg" id="statusAcessoArea"></div>
+</div>
+
+<script>
+  function escapeHtml(texto) {
+    const div = document.createElement("div");
+    div.textContent = texto || "";
+    return div.innerHTML;
+  }
+
+  async function fetchJson(url, opcoes) {
+    const resp = await fetch(url, opcoes);
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+    }
+    return resp.json();
+  }
+
+  function mostrarStatus(idStatus, mensagem, erro) {
+    const el = document.getElementById(idStatus);
+    el.textContent = mensagem;
+    el.classList.toggle("erro", !!erro);
+    if (!erro) setTimeout(() => { el.textContent = ""; }, 2500);
+  }
+
+  function linhaAcessoArea(acesso) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(acesso.nome_usuario)}</td>
+      <td>${escapeHtml(acesso.nome_area)}</td>
+      <td class="col-acoes"><button type="button" class="btn-mini">Remover</button></td>
+    `;
+    tr.querySelector(".btn-mini").addEventListener("click", () => excluirAcessoArea(acesso.id_usuario_area_saldo));
+    return tr;
+  }
+
+  async function carregarAcessoArea() {
+    try {
+      const data = await fetchJson("/api/usuarios-areas-saldos");
+      const corpo = document.getElementById("corpoAcessoArea");
+      corpo.innerHTML = "";
+      (data.acessos || []).forEach(a => corpo.appendChild(linhaAcessoArea(a)));
+    } catch (e) {
+      mostrarStatus("statusAcessoArea", e.message || "Erro ao carregar.", true);
+    }
+  }
+
+  async function concederAcessoArea() {
+    const id_usuario = Number(document.getElementById("selUsuarioAcesso").value);
+    const id_area = Number(document.getElementById("selAreaAcesso").value);
+
+    if (!id_usuario || !id_area) {
+      mostrarStatus("statusAcessoArea", "Selecione usuário e área.", true);
+      return;
+    }
+
+    try {
+      const data = await fetchJson("/api/usuarios-areas-saldos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id_usuario, id_area }),
+      });
+      if (data.ok) {
+        mostrarStatus("statusAcessoArea", "Acesso concedido com sucesso.", false);
+        carregarAcessoArea();
+      } else {
+        mostrarStatus("statusAcessoArea", data.erro || "Erro ao conceder acesso.", true);
+      }
+    } catch (e) {
+      mostrarStatus("statusAcessoArea", e.message || "Erro ao conceder acesso.", true);
+    }
+  }
+
+  async function excluirAcessoArea(id) {
+    if (!confirm("Remover este acesso?")) return;
+    try {
+      const data = await fetchJson(`/api/usuarios-areas-saldos/${id}`, { method: "DELETE" });
+      if (data.ok) {
+        mostrarStatus("statusAcessoArea", "Acesso removido com sucesso.", false);
+        carregarAcessoArea();
+      } else {
+        mostrarStatus("statusAcessoArea", data.erro || "Erro ao remover.", true);
+      }
+    } catch (e) {
+      mostrarStatus("statusAcessoArea", e.message || "Erro ao remover.", true);
+    }
+  }
+
+  document.getElementById("btnConcederAcesso").addEventListener("click", concederAcessoArea);
+
+  carregarAcessoArea();
+</script>
+
+{% endblock %}

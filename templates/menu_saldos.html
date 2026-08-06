@@ -79,6 +79,12 @@
         </a>
     {% endif %}
 
+    {% if pode_acessos_area %}
+        <a href="{{ url_for('financeiro.acessos_area_saldos') }}">
+        Acessos por Área
+        </a>
+    {% endif %}
+
     {% if pode_configurar %}
         <a href="{{ url_for('financeiro.configurar_saldos') }}">
         Configurar Saldos

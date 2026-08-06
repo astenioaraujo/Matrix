@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 32px; font-weight: 800; margin-bottom: 6px; }
+  .empresa { font-size: 18px; margin-bottom: 24px; }
+
+  .bloco { background: #fff; border: 1px solid #e2e6ea; border-radius: 10px; padding: 16px; max-width: 900px; }
+
+  .ajuda-topo { color: #666; font-size: 14px; margin-bottom: 18px; }
+
+  .linha-opcao { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 16px; }
+  .linha-opcao input[type="checkbox"] { margin-top: 3px; width: 18px; height: 18px; }
+  .linha-opcao label { font-weight: 700; cursor: pointer; }
+  .linha-opcao .ajuda { color: #666; font-size: 14px; font-weight: 400; display: block; margin-top: 4px; }
+
+  .status-msg { margin-top: 14px; font-size: 14px; min-height: 20px; color: #1e7a34; }
+  .status-msg.erro { color: #b3261e; }
+</style>
+
+<div class="pagina-titulo">Parâmetros de Visualização</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<div class="bloco">
+  <div class="ajuda-topo">
+    O que a tela de Informar Saldos mostra nesta empresa. Desmarcar só esconde o
+    bloco — nada do que já foi lançado é apagado.
+  </div>
+
+  <div class="linha-opcao">
+    <input type="checkbox" class="opcao" data-opcao="mostrar_recebiveis"
+           id="mostrarRecebiveis" {% if config.mostrar_recebiveis %}checked{% endif %}>
+    <label for="mostrarRecebiveis">
+      Mostrar o bloco "Estoques e Recebíveis"
+      <span class="ajuda">
+        Desmarcado, some junto a linha de TOTAL, que soma este bloco com as Contas Bancárias.
+      </span>
+    </label>
+  </div>
+
+  <div class="linha-opcao">
+    <input type="checkbox" class="opcao" data-opcao="mostrar_variacoes"
+           id="mostrarVariacoes" {% if config.mostrar_variacoes %}checked{% endif %}>
+    <label for="mostrarVariacoes">
+      Mostrar o bloco "Variação (dia a dia)"
+      <span class="ajuda">
+        A comparação de cada dia útil com o dia útil anterior.
+      </span>
+    </label>
+  </div>
+
+  <div class="linha-opcao">
+    <input type="checkbox" class="opcao" data-opcao="mostrar_valores_informados"
+           id="mostrarValoresInformados" {% if config.mostrar_valores_informados %}checked{% endif %}>
+    <label for="mostrarValoresInformados">
+      Mostrar o bloco "Valores Informados"
+      <span class="ajuda">
+        Perdas/Sobras, Extras, Empréstimos/Devoluções, Despesas e a Variação Final.
+      </span>
+    </label>
+  </div>
+
+  <div class="status-msg" id="statusConfig"></div>
+</div>
+
+<script>
+  const opcoes = Array.from(document.querySelectorAll(".opcao"));
+
+  function mostrarStatus(msg, erro) {
+    const el = document.getElementById("statusConfig");
+    el.textContent = msg;
+    el.classList.toggle("erro", !!erro);
+    if (!erro) setTimeout(() => { el.textContent = ""; }, 2500);
+  }
+
+  // O endpoint grava a linha inteira, então manda sempre o estado dos três.
+  async function salvar(alterado) {
+    const payload = {};
+    opcoes.forEach(op => { payload[op.dataset.opcao] = op.checked; });
+    try {
+      const resp = await fetch("/api/saldos/configuracoes", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data.ok) throw new Error(data.erro || "Erro ao salvar.");
+      mostrarStatus("Salvo com sucesso.", false);
+    } catch (e) {
+      alterado.checked = !alterado.checked;  // desfaz na tela o que não gravou
+      mostrarStatus(e.message || "Erro ao salvar.", true);
+    }
+  }
+
+  opcoes.forEach(op => op.addEventListener("change", () => salvar(op)));
+</script>
+
+{% endblock %}

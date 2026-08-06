@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 8px; color: #111; }
+  .pagina-subtitulo { font-size: 20px; margin-bottom: 24px; color: #222; }
+
+  .bloco {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 20px;
+  }
+
+  .topo-bloco {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+
+  .btn-mini {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .btn-mini.excluir { border-color: #c0392b; background: #c0392b; }
+  .btn-mini:hover { filter: brightness(0.92); }
+
+  .btn-novo {
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+  th { background: #dbe8f4; }
+
+  td input[type="text"], td input[type="number"] {
+    width: 100%;
+    padding: 6px 8px;
+    box-sizing: border-box;
+    border-radius: 6px;
+    border: 1px solid #bbb;
+  }
+
+  td.col-ativo, td.col-acoes { text-align: center; white-space: nowrap; }
+
+  .status-msg { font-size: 13px; margin-top: 10px; color: #1e6b34; min-height: 18px; }
+  .status-msg.erro { color: #9f2f2f; }
+</style>
+
+<div class="pagina-titulo">Contas Bancárias</div>
+
+<div class="pagina-subtitulo">
+  <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<div class="bloco">
+  <div class="topo-bloco">
+    <div>Contas comuns a todas as áreas da empresa.</div>
+    <button type="button" class="btn-novo" id="btnNovaConta">+ Nova Conta</button>
+  </div>
+  <table>
+    <thead>
+      <tr><th style="width:90px">Ordem</th><th>Banco</th><th>Apelido</th><th style="width:110px" title="Copia o saldo para o lado Sistema e bloqueia a digitação lá">Espelhar no Sistema</th><th style="width:70px">Ativo</th><th style="width:150px">Ações</th></tr>
+    </thead>
+    <tbody id="corpoContas"></tbody>
+  </table>
+  <div class="status-msg" id="statusContas"></div>
+</div>
+
+<script>
+  function escapeHtml(texto) {
+    const div = document.createElement("div");
+    div.textContent = texto || "";
+    return div.innerHTML;
+  }
+
+  async function fetchJson(url, opcoes) {
+    const resp = await fetch(url, opcoes);
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+    }
+    return resp.json();
+  }
+
+  function mostrarStatus(idStatus, mensagem, erro) {
+    const el = document.getElementById(idStatus);
+    el.textContent = mensagem;
+    el.classList.toggle("erro", !!erro);
+    if (!erro) setTimeout(() => { el.textContent = ""; }, 2500);
+  }
+
+  function linhaConta(c) {
+    const tr = document.createElement("tr");
+    tr.dataset.id = c ? c.id_conta_bancaria : "";
+    tr.innerHTML = `
+      <td><input type="number" class="input-ordem" value="${c ? c.ordem : 10}"></td>
+      <td><input type="text" class="input-banco" value="${c ? escapeHtml(c.banco) : ''}" placeholder="Nome do banco"></td>
+      <td><input type="text" class="input-apelido" value="${c && c.apelido ? escapeHtml(c.apelido) : ''}" placeholder="Opcional"></td>
+      <td class="col-ativo"><input type="checkbox" class="input-espelhar" title="Copia o saldo para o lado Sistema e bloqueia a digitação lá" ${(c && c.espelhar_sistema) ? "checked" : ""}></td>
+      <td class="col-ativo"><input type="checkbox" class="input-ativo" ${(!c || c.ativo) ? "checked" : ""}></td>
+      <td class="col-acoes">
+        <button type="button" class="btn-mini">Salvar</button>
+        ${c ? '<button type="button" class="btn-mini excluir">Excluir</button>' : ""}
+      </td>
+    `;
+    tr.querySelector(".btn-mini").addEventListener("click", () => salvarConta(tr));
+    const btnExcluir = tr.querySelector(".btn-mini.excluir");
+    if (btnExcluir) btnExcluir.addEventListener("click", () => excluirConta(tr));
+    return tr;
+  }
+
+  async function carregarContas() {
+    try {
+      const data = await fetchJson("/api/contas-bancarias");
+      const corpo = document.getElementById("corpoContas");
+      corpo.innerHTML = "";
+      (data.contas_bancarias || []).forEach(c => corpo.appendChild(linhaConta(c)));
+    } catch (e) {
+      mostrarStatus("statusContas", e.message || "Erro ao carregar.", true);
+    }
+  }
+
+  async function salvarConta(tr) {
+    const id = tr.dataset.id;
+    const payload = {
+      banco: tr.querySelector(".input-banco").value.trim(),
+      apelido: tr.querySelector(".input-apelido").value.trim(),
+      ordem: Number(tr.querySelector(".input-ordem").value || 10),
+      ativo: tr.querySelector(".input-ativo").checked,
+      espelhar_sistema: tr.querySelector(".input-espelhar").checked,
+    };
+    if (!payload.banco) {
+      mostrarStatus("statusContas", "Informe o banco.", true);
+      return;
+    }
+    try {
+      const data = await fetchJson(id ? `/api/contas-bancarias/${id}` : "/api/contas-bancarias", {
+        method: id ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (data.ok) {
+        mostrarStatus("statusContas", "Salvo com sucesso.", false);
+        carregarContas();
+      } else {
+        mostrarStatus("statusContas", data.erro || "Erro ao salvar.", true);
+      }
+    } catch (e) {
+      mostrarStatus("statusContas", e.message || "Erro ao salvar.", true);
+    }
+  }
+
+  async function excluirConta(tr) {
+    if (!confirm("Excluir esta conta bancária?")) return;
+    try {
+      const data = await fetchJson(`/api/contas-bancarias/${tr.dataset.id}`, { method: "DELETE" });
+      if (data.ok) {
+        mostrarStatus("statusContas", "Excluída com sucesso.", false);
+        carregarContas();
+      } else {
+        mostrarStatus("statusContas", data.erro || "Erro ao excluir.", true);
+      }
+    } catch (e) {
+      mostrarStatus("statusContas", e.message || "Erro ao excluir.", true);
+    }
+  }
+
+  document.getElementById("btnNovaConta").addEventListener("click", () => {
+    document.getElementById("corpoContas").prepend(linhaConta(null));
+  });
+
+  carregarContas();
+</script>
+
+{% endblock %}
