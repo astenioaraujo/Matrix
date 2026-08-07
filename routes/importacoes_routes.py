@@ -162,6 +162,92 @@ def importar_pdf_fluxo_caixa():
 
 
 # ---------------------------------------------------------------
+# IMPORTACAO DO CSV O CLOSET
+# ---------------------------------------------------------------
+
+@importacoes_bp.route("/importacoes/csv-ocloset", methods=["GET", "POST"])
+def importar_csv_ocloset():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    mensagem = ""
+    erro = ""
+    resultado = None
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT cod_filial, nome_filial
+            FROM filiais
+            WHERE cod_empresa = %s
+              AND ativo = true
+            ORDER BY cod_filial
+        """, (cod_empresa,))
+        filiais = cur.fetchall()
+    finally:
+        cur.close()
+
+    cod_filial_selecionada = (request.form.get("cod_filial") or "").strip()
+    base_data = (request.form.get("base_data") or "pagamento").strip()
+    limpar_antes = (request.form.get("limpar_antes") or "") == "1"
+
+    if not cod_filial_selecionada and filiais:
+        cod_filial_selecionada = str(filiais[0]["cod_filial"])
+
+    if request.method == "POST":
+        try:
+            arquivo = request.files.get("arquivo")
+
+            if not arquivo or not (arquivo.filename or "").strip():
+                raise ValueError("Selecione o arquivo CSV do O Closet.")
+
+            if not cod_filial_selecionada:
+                raise ValueError("Informe a filial de destino.")
+
+            from importa_ocloset import Importa_CSV_OCloset
+
+            resultado = Importa_CSV_OCloset(
+                arquivo_csv=arquivo,
+                cod_empresa_fixo=cod_empresa,
+                conn=conn,
+                cod_filial=int(cod_filial_selecionada),
+                base_data=base_data,
+                limpar_antes=limpar_antes,
+            )
+
+            mensagem = (
+                f"Importação concluída. {resultado['total_importado']} lançamento(s) importado(s), "
+                f"{resultado['total_ignorado']} descartado(s), "
+                f"{resultado['total_classificado']} classificado(s) automaticamente."
+            )
+
+        except Exception as e:
+            conn.rollback()
+            traceback.print_exc()
+            erro = str(e)
+
+    conn.close()
+
+    return render_template(
+        "importar_csv_ocloset.html",
+        mensagem=mensagem,
+        erro=erro,
+        resultado=resultado,
+        filiais=filiais,
+        cod_filial_selecionada=cod_filial_selecionada,
+        base_data=base_data,
+        limpar_antes=limpar_antes,
+        empresa_ativa=session["cod_empresa"],
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("importacoes.listar_importacoes"),
+        texto_voltar="← Voltar",
+    )
+
+
+# ---------------------------------------------------------------
 # RECLASSIFICAR
 # ---------------------------------------------------------------
 

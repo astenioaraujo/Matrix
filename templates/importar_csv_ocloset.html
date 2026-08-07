@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 20px;
+  }
+
+  .painel {
+    max-width: 1100px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+
+  .mensagem { margin-bottom: 16px; font-weight: 600; }
+  .mensagem.sucesso { color: #1f7a1f; }
+  .mensagem.erro { color: #c62828; }
+
+  .linha-form {
+    display: flex;
+    gap: 16px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+
+  .campo { display: flex; flex-direction: column; gap: 6px; }
+  .campo label { font-weight: 700; font-size: 13px; color: #444; }
+
+  .campo select,
+  .campo input[type="file"] {
+    height: 42px;
+    padding: 0 12px;
+    border: 1px solid #c7c7c7;
+    border-radius: 10px;
+    background: #fff;
+    font-size: 14px;
+  }
+
+  .campo input[type="file"] { padding-top: 9px; }
+
+  .opcoes { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
+  .opcoes label { font-size: 14px; font-weight: 600; color: #333; }
+
+  .btn {
+    padding: 11px 22px;
+    border-radius: 10px;
+    border: none;
+    background: #1f5fd1;
+    color: #fff;
+    cursor: pointer;
+    font-weight: 800;
+  }
+
+  .btn:hover { background: #174bad; }
+
+  .ajuda {
+    font-size: 13px;
+    color: #666;
+    line-height: 1.6;
+    margin-bottom: 22px;
+    border-left: 3px solid #dcdcdc;
+    padding-left: 12px;
+  }
+
+  .painel-auditoria {
+    margin-top: 30px;
+    border-top: 1px solid #e1e1e1;
+    padding-top: 24px;
+  }
+
+  .titulo-auditoria { font-size: 22px; font-weight: 800; margin-bottom: 14px; }
+
+  .table-auditoria {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    background: #fff;
+    margin-bottom: 24px;
+  }
+
+  .table-auditoria th,
+  .table-auditoria td {
+    border: 1px solid #d9d9d9;
+    padding: 8px 12px;
+  }
+
+  .table-auditoria th { background: #f2f2f2; text-align: left; }
+
+  .td-num {
+    text-align: right;
+    font-family: Consolas, Menlo, monospace;
+    font-weight: 700;
+  }
+
+  .linha-total { background: #fafafa; font-weight: 800; }
+</style>
+
+<div class="pagina-titulo">Importar CSV - O Closet</div>
+
+<div class="painel">
+
+  {% if mensagem %}
+    <div class="mensagem sucesso">{{ mensagem }}</div>
+  {% endif %}
+
+  {% if erro %}
+    <div class="mensagem erro">{{ erro }}</div>
+  {% endif %}
+
+  <div class="ajuda">
+    Arquivo esperado: <strong>Contas a Pagar</strong> exportado do O Closet em CSV (separador
+    <code>;</code>). O histórico gravado fica no formato
+    <code>Categoria | Descrição</code>, e a classificação usa a tabela
+    <strong>Classificações Automáticas</strong> (Financeiro → Cadastros).
+    <br>
+    Só são importados os lançamentos com status <strong>Pago</strong> — Vencido, Parcial,
+    Cancelado e linhas com valor zerado são descartados.
+    Como o arquivo é de contas a pagar, <strong>todos os valores entram negativos</strong>.
+  </div>
+
+  <form method="POST" enctype="multipart/form-data">
+
+    <div class="linha-form">
+      <div class="campo">
+        <label for="arquivo">Arquivo CSV</label>
+        <input type="file" id="arquivo" name="arquivo" accept=".csv,text/csv" required>
+      </div>
+
+      <div class="campo">
+        <label for="cod_filial">Filial de destino</label>
+        <select id="cod_filial" name="cod_filial">
+          {% for f in filiais %}
+            <option value="{{ f['cod_filial'] }}"
+              {% if cod_filial_selecionada == f['cod_filial']|string %}selected{% endif %}>
+              {{ f['cod_filial'] }} - {{ f['nome_filial'] }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="campo">
+        <label for="base_data">Data do lançamento</label>
+        <select id="base_data" name="base_data">
+          <option value="pagamento" {% if base_data == 'pagamento' %}selected{% endif %}>
+            Data de pagamento (cai para vencimento)
+          </option>
+          <option value="vencimento" {% if base_data == 'vencimento' %}selected{% endif %}>
+            Vencimento
+          </option>
+        </select>
+      </div>
+    </div>
+
+    <div class="opcoes">
+      <label>
+        <input type="checkbox" name="limpar_antes" value="1"
+               {% if limpar_antes %}checked{% endif %}>
+        Limpar as importações pendentes desta empresa antes de importar
+      </label>
+    </div>
+
+    <button type="submit" class="btn">Importar CSV</button>
+  </form>
+
+  {% if resultado %}
+    <div class="painel-auditoria">
+      <div class="titulo-auditoria">Auditoria da importação</div>
+
+      <table class="table-auditoria">
+        <thead>
+          <tr><th>Ano</th><th>Mês</th><th>Lançamentos</th><th>Valor</th></tr>
+        </thead>
+        <tbody>
+          {% for m in resultado['por_mes'] %}
+            <tr>
+              <td>{{ m['ano'] }}</td>
+              <td>{{ '%02d'|format(m['mes']) }}</td>
+              <td class="td-num">{{ m['qtd'] }}</td>
+              <td class="td-num">
+                {{ "{:,.2f}".format(m['valor']|float).replace(",", "X").replace(".", ",").replace("X", ".") }}
+              </td>
+            </tr>
+          {% endfor %}
+          <tr class="linha-total">
+            <td colspan="2">TOTAL</td>
+            <td class="td-num">{{ resultado['total_importado'] }}</td>
+            <td class="td-num">
+              {{ "{:,.2f}".format(resultado['total_valor']|float).replace(",", "X").replace(".", ",").replace("X", ".") }}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {% if resultado['ignorados'] %}
+        <div class="titulo-auditoria">
+          Linhas descartadas ({{ resultado['total_ignorado'] }})
+        </div>
+
+        <table class="table-auditoria">
+          <thead>
+            <tr><th>Linha</th><th>Descrição</th><th>Valor</th><th>Motivo</th></tr>
+          </thead>
+          <tbody>
+            {% for i in resultado['ignorados'] %}
+              <tr>
+                <td>{{ i['linha'] }}</td>
+                <td>{{ i['descricao'] }}</td>
+                <td class="td-num">{{ i['valor'] }}</td>
+                <td>{{ i['motivo'] }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+
+      <a class="btn" style="text-decoration:none;"
+         href="{{ url_for('importacoes.listar_importacoes') }}">
+        Ver lançamentos importados
+      </a>
+    </div>
+  {% endif %}
+
+</div>
+
+{% endblock %}

@@ -185,6 +185,7 @@
         <select id="tipo_importacao">
             <option value="/importacoes/pdf">Importar PDF WebPostos</option>
             <option value="{{ url_for('importacoes.importar_web_postos') }}">Importar Excel WebPostos</option>
+            <option value="{{ url_for('importacoes.importar_csv_ocloset') }}">Importar CSV O Closet</option>
         </select>
 
         <button type="button" onclick="abrirImportacaoSelecionada()">
