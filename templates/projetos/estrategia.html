@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .pagina-sub    { font-size:15px; color:#666; margin-bottom:24px; }
+
+  .toast { padding:10px 16px; border-radius:8px; margin-bottom:16px; font-size:14px; font-weight:600; max-width:900px; }
+  .toast-ok  { background:#dcfce7; color:#166534; border:1px solid #86efac; }
+  .toast-err { background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; }
+
+  /* O formulário de cadastro fica recolhido: aberto o tempo todo, ele
+     empurrava a lista de estratégias para fora da tela. */
+  .novo { max-width:1400px; margin-bottom:28px; }
+  .novo .btn-novo {
+    /* precisa continuar block/list-item: com inline-block o Chrome deixa de
+       tratar o summary como gatilho e o details nunca abre */
+    display:block; width:fit-content; cursor:pointer; list-style:none;
+    background:#b91c1c; color:#fff; border-radius:8px;
+    padding:9px 22px; font-size:14px; font-weight:700;
+  }
+  .novo .btn-novo::-webkit-details-marker { display:none; }
+  .novo .btn-novo:hover { background:#991b1b; }
+  .novo[open] .btn-novo { border-radius:8px 8px 0 0; }
+
+  .painel {
+    background:#f8fafc; border:1px solid #e2e8f0;
+    border-radius:0 12px 12px 12px; padding:20px 24px;
+  }
+
+  .campo label { display:block; font-size:12px; font-weight:700; color:#555; margin-bottom:5px; }
+  .campo input[type=text], .campo textarea {
+    width:100%; border:1px solid #cbd5e1; border-radius:8px;
+    padding:8px 10px; font-size:14px; background:#fff;
+    box-sizing:border-box; font-family:inherit; margin-bottom:14px;
+  }
+  .campo textarea { resize:vertical; min-height:300px; }
+
+  /* a estratégia aberta ganha a tela toda: o texto é longo e colado de fora */
+  .item-corpo .campo textarea { min-height:70vh; }
+
+  .btn-salvar {
+    background:#b91c1c; color:#fff; border:none; border-radius:8px;
+    padding:0 22px; height:38px; font-size:14px; font-weight:700; cursor:pointer;
+  }
+  .btn-salvar:hover { background:#991b1b; }
+
+  .lista { max-width:1400px; }
+  .item {
+    background:#fff; border:1px solid #e2e8f0; border-radius:12px;
+    padding:16px 20px; margin-bottom:14px;
+  }
+  .item summary {
+    cursor:pointer; font-size:18px; font-weight:700; list-style:none;
+  }
+  .item summary::-webkit-details-marker { display:none; }
+  .item summary::before { content:"▸ "; color:#b91c1c; }
+  .item[open] summary::before { content:"▾ "; }
+  .item-corpo { margin-top:16px; border-top:1px solid #eee; padding-top:16px; }
+
+  .status-ativa   { color:#166534; font-weight:800; font-size:13px; }
+  .status-inativa { color:#991b1b; font-weight:800; font-size:13px; }
+
+  .checkbox-linha { display:flex; align-items:center; gap:8px; margin-bottom:14px; }
+  .checkbox-linha label { font-size:13px; font-weight:700; color:#555; }
+
+  .vazio {
+    max-width:1400px; padding:18px; background:#fff;
+    border:1px solid #e2e8f0; border-radius:12px; color:#666;
+  }
+</style>
+
+<div class="pagina-titulo">Estratégia</div>
+<div class="pagina-sub"><strong>Empresa:</strong> {{ nome_empresa }}</div>
+
+{% if sucesso %}<div class="toast toast-ok">{{ sucesso }}</div>{% endif %}
+{% if erro %}<div class="toast toast-err">{{ erro }}</div>{% endif %}
+
+<details class="novo" {% if abrir_novo %}open{% endif %}>
+  <summary class="btn-novo">+ Nova estratégia</summary>
+  <div class="painel">
+    <form method="POST">
+      <input type="hidden" name="acao" value="incluir">
+      <div class="campo">
+        <label>Título</label>
+        <input type="text" name="titulo" placeholder="Ex.: Plano de expansão 2027, Estratégia comercial..." required>
+
+        <label>Descrição</label>
+        <textarea name="descricao" placeholder="Cole aqui o texto da estratégia." required></textarea>
+      </div>
+      <button type="submit" class="btn-salvar">Cadastrar</button>
+    </form>
+  </div>
+</details>
+
+{% if estrategias %}
+  <div class="lista">
+    {% for e in estrategias %}
+      <details class="item">
+        <summary>
+          {{ e.titulo }}
+          {% if e.ativo %}
+            <span class="status-ativa">Ativa</span>
+          {% else %}
+            <span class="status-inativa">Inativa</span>
+          {% endif %}
+        </summary>
+
+        <div class="item-corpo">
+          <form method="POST">
+            <input type="hidden" name="acao" value="editar">
+            <input type="hidden" name="id" value="{{ e.id }}">
+            <div class="campo">
+              <label>Título</label>
+              <input type="text" name="titulo" value="{{ e.titulo }}" required>
+
+              <label>Descrição</label>
+              <textarea name="descricao" required>{{ e.descricao }}</textarea>
+            </div>
+
+            <div class="checkbox-linha">
+              <input type="checkbox" name="ativo" id="ativo_{{ e.id }}" {% if e.ativo %}checked{% endif %}>
+              <label for="ativo_{{ e.id }}">Ativa</label>
+            </div>
+
+            <button type="submit" class="btn-salvar">Salvar</button>
+          </form>
+        </div>
+      </details>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="vazio">Nenhuma estratégia cadastrada ainda.</div>
+{% endif %}
+
+{% endblock %}

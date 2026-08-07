@@ -36,6 +36,7 @@
     filter: brightness(0.95);
   }
 
+  .btn-estrategia   { background: #b91c1c; }
   .btn-melhorias    { background: #1d4ed8; }
   .btn-recorrencias { background: #0f766e; }
   .btn-configuracoes { background: #6b7280; }
@@ -47,6 +48,9 @@
   <div class="empresa"><strong>Empresa:</strong> {{ nome_empresa }}</div>
 
   <div class="menu-botoes">
+    <a class="btn-estrategia" href="{{ url_for('projetos.estrategia') }}">
+      Estratégia
+    </a>
     <a class="btn-melhorias" href="{{ url_for('projetos.melhorias_continuas') }}">
       Melhorias Contínuas
     </a>

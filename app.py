@@ -72,66 +72,88 @@ app.teardown_appcontext(fechar_conexao_da_requisicao)
 @app.context_processor
 def _injetar_atalhos_topo():
     """
-    Disponibiliza `pode_atalho_financas` e `pode_atalho_agenda` para toda
-    página que estende base.html, para os ícones de atalho da barra superior.
+    Disponibiliza `pode_atalho_financas`, `pode_atalho_agenda` e
+    `pode_atalho_journal` para toda página que estende base.html, para os
+    ícones de atalho da barra superior.
     """
     from flask import session
 
     id_usuario = session.get("id_usuario")
     cod_empresa = session.get("cod_empresa")
     if not id_usuario or not cod_empresa:
-        return {"pode_atalho_agenda": False, "pode_atalho_financas": False}
+        return {
+            "pode_atalho_agenda": False,
+            "pode_atalho_financas": False,
+            "pode_atalho_journal": False,
+        }
 
     if str(session.get("tipo_global") or "").strip().lower() == "superusuario":
-        return {"pode_atalho_agenda": True, "pode_atalho_financas": True}
+        return {
+            "pode_atalho_agenda": True,
+            "pode_atalho_financas": True,
+            "pode_atalho_journal": True,
+        }
 
     cod_empresa = str(cod_empresa).strip()
 
     # Isto roda em TODA página que estende o base.html. Consultar o banco a
     # cada render custava ~100 ms para decidir se aparece um ícone na barra.
     # Fica guardado na sessão, amarrado ao usuário e à empresa: trocar de
-    # empresa refaz a checagem. As duas permissões saem de UMA consulta só,
-    # então o segundo ícone não acrescenta nada ao tempo de carga. O acesso em
+    # empresa refaz a checagem. Todas as permissões saem de UMA consulta só,
+    # então cada ícone novo não acrescenta nada ao tempo de carga. O acesso em
     # si continua sendo verificado nas rotas — aqui é só a exibição do atalho.
     cache = session.get("_atalhos_topo")
-    if isinstance(cache, list) and len(cache) == 4:
-        u_cache, e_cache, agenda_cache, financas_cache = cache
+    if isinstance(cache, list) and len(cache) == 5:
+        u_cache, e_cache, agenda_cache, financas_cache, journal_cache = cache
         if u_cache == id_usuario and e_cache == cod_empresa:
             return {
                 "pode_atalho_agenda": agenda_cache,
                 "pode_atalho_financas": financas_cache,
+                "pode_atalho_journal": journal_cache,
             }
 
     pode_agenda = False
     pode_financas = False
+    pode_journal = False
     try:
         from db import get_connection
         cur = get_connection().cursor()
         try:
             cur.execute("""
-                SELECT opcao
+                SELECT sistema, opcao
                 FROM usuarios_permissoes
                 WHERE id_usuario = %s
                   AND cod_empresa = %s
-                  AND sistema = 'CANIVETE'
-                  AND opcao IN ('MENU', 'AGENDA', 'FINANCAS_PESSOAIS_MENU')
                   AND ativo = TRUE
+                  AND (
+                        (sistema = 'CANIVETE'
+                         AND opcao IN ('MENU', 'AGENDA', 'FINANCAS_PESSOAIS_MENU'))
+                     OR (sistema = 'PROJETOS' AND opcao = 'MENU')
+                  )
             """, (id_usuario, cod_empresa))
-            liberadas = {r[0] for r in cur.fetchall()}
+            liberadas = {(r[0], r[1]) for r in cur.fetchall()}
         finally:
             cur.close()
-        pode_agenda = "AGENDA" in liberadas
+        pode_agenda = ("CANIVETE", "AGENDA") in liberadas
         # o atalho entra no Canivete Suíço, então exige acesso ao módulo
         # além do acesso à própria tela de Finanças Pessoais
-        pode_financas = "MENU" in liberadas and "FINANCAS_PESSOAIS_MENU" in liberadas
+        pode_financas = (
+            ("CANIVETE", "MENU") in liberadas
+            and ("CANIVETE", "FINANCAS_PESSOAIS_MENU") in liberadas
+        )
+        # Project Journal fica no módulo Projetos, protegido por PROJETOS/MENU
+        pode_journal = ("PROJETOS", "MENU") in liberadas
     except Exception:
         pass
 
     session.pop("_atalho_agenda", None)   # cache antigo, só da agenda
-    session["_atalhos_topo"] = [id_usuario, cod_empresa, pode_agenda, pode_financas]
+    session["_atalhos_topo"] = [
+        id_usuario, cod_empresa, pode_agenda, pode_financas, pode_journal,
+    ]
     return {
         "pode_atalho_agenda": pode_agenda,
         "pode_atalho_financas": pode_financas,
+        "pode_atalho_journal": pode_journal,
     }
 
 

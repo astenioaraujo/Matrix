@@ -47,6 +47,72 @@ def menu_projetos():
     )
 
 
+# ─── ESTRATÉGIA ──────────────────────────────────────────────────────────────
+# Mesmo padrão do cadastro de Compliance: título + texto colado, acumulando
+# um registro por estratégia, com edição embutida na lista.
+
+@projetos_bp.route("/estrategia", methods=["GET", "POST"])
+def estrategia():
+    redir = _checar_acesso()
+    if redir:
+        return redir
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    erro = sucesso = None
+    abrir_novo = False
+
+    try:
+        acao = request.form.get("acao") if request.method == "POST" else None
+
+        if acao in ("incluir", "editar"):
+            titulo    = (request.form.get("titulo") or "").strip()
+            descricao = (request.form.get("descricao") or "").strip()
+
+            if not titulo or not descricao:
+                erro = "Informe título e descrição."
+                # cadastro recusado: reabre o formulário para não perder a viagem
+                abrir_novo = acao == "incluir"
+            elif acao == "incluir":
+                cur.execute("""
+                    INSERT INTO projetos_estrategias (cod_empresa, titulo, descricao)
+                    VALUES (%s, %s, %s)
+                """, (cod_empresa, titulo, descricao))
+                conn.commit()
+                sucesso = "Estratégia cadastrada."
+            else:
+                ativo = request.form.get("ativo") == "on"
+                cur.execute("""
+                    UPDATE projetos_estrategias
+                    SET titulo=%s, descricao=%s, ativo=%s, atualizado_em=NOW()
+                    WHERE id=%s AND cod_empresa=%s
+                """, (titulo, descricao, ativo, request.form.get("id"), cod_empresa))
+                conn.commit()
+                sucesso = "Estratégia atualizada."
+
+        cur.execute("""
+            SELECT id, titulo, descricao, ativo
+            FROM projetos_estrategias
+            WHERE cod_empresa = %s
+            ORDER BY ativo DESC, titulo
+        """, (cod_empresa,))
+        estrategias = cur.fetchall()
+
+    finally:
+        cur.close(); conn.close()
+
+    return render_template(
+        "projetos/estrategia.html",
+        nome_empresa=session.get("nome_empresa"),
+        estrategias=estrategias,
+        erro=erro,
+        sucesso=sucesso,
+        abrir_novo=abrir_novo,
+        url_voltar=url_for("projetos.menu_projetos"),
+    )
+
+
 # ─── MELHORIAS CONTÍNUAS ─────────────────────────────────────────────────────
 
 @projetos_bp.route("/melhorias-continuas")
