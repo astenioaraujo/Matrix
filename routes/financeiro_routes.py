@@ -6133,13 +6133,15 @@ def montar_bloco_dia(data_atual, contas, indicadores, codigos_filiais,
         extras = float(r["extras"]) if r else 0.0
         emprestimos_devolucoes = float(r["emprestimos_devolucoes"]) if r else 0.0
         despesas = float(r["despesas"]) if r else 0.0
+        despesas_caixa = float(r["despesas_caixa"]) if r else 0.0
 
         valores_informados_bloco[f] = {
             "perdas_sobras": perdas_sobras,
             "extras": extras,
             "emprestimos_devolucoes": emprestimos_devolucoes,
             "despesas": despesas,
-            "variacao_final": variacao_total[f] + perdas_sobras + extras + emprestimos_devolucoes - despesas,
+            "despesas_caixa": despesas_caixa,
+            "variacao_final": variacao_total[f] + perdas_sobras + extras + emprestimos_devolucoes - despesas - despesas_caixa,
         }
 
     return {
@@ -6845,7 +6847,7 @@ def api_consultar_saldos():
         linhas_recebiveis = cur.fetchall()
 
         cur.execute("""
-            SELECT cod_filial, data, perdas_sobras, extras, emprestimos_devolucoes, despesas
+            SELECT cod_filial, data, perdas_sobras, extras, emprestimos_devolucoes, despesas, despesas_caixa
             FROM valores_informados
             WHERE cod_empresa = %s AND cod_filial = ANY(%s) AND data BETWEEN %s AND %s
         """, (cod_empresa, codigos_filiais, data_inicio, data_fim))
@@ -7077,25 +7079,27 @@ def api_lancar_valores_informados():
                 extras = float(item.get("extras") or 0)
                 emprestimos_devolucoes = float(item.get("emprestimos_devolucoes") or 0)
                 despesas = float(item.get("despesas") or 0)
+                despesas_caixa = float(item.get("despesas_caixa") or 0)
             except (KeyError, TypeError, ValueError):
                 return jsonify({"ok": False, "erro": "Lançamento inválido: informe cod_filial e os valores informados."}), 400
 
             if cod_filial not in filiais_ok:
                 return jsonify({"ok": False, "erro": f"Filial {cod_filial} não permitida para este usuário."}), 403
 
-            registros.append((cod_empresa, cod_filial, data_lancamento, perdas_sobras, extras, emprestimos_devolucoes, despesas, id_usuario))
+            registros.append((cod_empresa, cod_filial, data_lancamento, perdas_sobras, extras, emprestimos_devolucoes, despesas, despesas_caixa, id_usuario))
 
         execute_batch(cur, """
             INSERT INTO valores_informados (
-                cod_empresa, cod_filial, data, perdas_sobras, extras, emprestimos_devolucoes, despesas, usuario_lancamento
+                cod_empresa, cod_filial, data, perdas_sobras, extras, emprestimos_devolucoes, despesas, despesas_caixa, usuario_lancamento
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (cod_empresa, cod_filial, data)
             DO UPDATE SET
                 perdas_sobras = EXCLUDED.perdas_sobras,
                 extras = EXCLUDED.extras,
                 emprestimos_devolucoes = EXCLUDED.emprestimos_devolucoes,
                 despesas = EXCLUDED.despesas,
+                despesas_caixa = EXCLUDED.despesas_caixa,
                 usuario_lancamento = EXCLUDED.usuario_lancamento,
                 atualizado_em = NOW()
         """, registros, page_size=100)

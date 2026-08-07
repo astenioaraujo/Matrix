@@ -749,6 +749,7 @@
       { campo: "extras", label: "Extras" },
       { campo: "emprestimos_devolucoes", label: "Empréstimos (+) / Devoluções (−)" },
       { campo: "despesas", label: "Despesas" },
+      { campo: "despesas_caixa", label: "Despesas do Caixa" },
     ];
 
     let corpo = "";
@@ -1125,7 +1126,7 @@
 
     if (tipo === "informado") {
       const registro = dia.valores_informados[codFilial] || {
-        perdas_sobras: 0, extras: 0, emprestimos_devolucoes: 0, despesas: 0,
+        perdas_sobras: 0, extras: 0, emprestimos_devolucoes: 0, despesas: 0, despesas_caixa: 0,
       };
       const lancamento = {
         cod_filial: codFilial,
@@ -1133,6 +1134,7 @@
         extras: registro.extras || 0,
         emprestimos_devolucoes: registro.emprestimos_devolucoes || 0,
         despesas: registro.despesas || 0,
+        despesas_caixa: registro.despesas_caixa || 0,
       };
       lancamento[campo] = novoValor;
       url = "/api/saldos/valores-informados";

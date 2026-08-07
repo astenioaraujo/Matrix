@@ -104,6 +104,7 @@ CREATE TABLE valores_informados (
     extras                   numeric NOT NULL DEFAULT 0,  -- aportes/aplicações
     emprestimos_devolucoes   numeric NOT NULL DEFAULT 0,  -- empréstimos(+) / devoluções(-)
     despesas                 numeric NOT NULL DEFAULT 0,
+    despesas_caixa           numeric NOT NULL DEFAULT 0,
     usuario_lancamento       integer REFERENCES usuarios (id_usuario),
     criado_em                timestamp without time zone DEFAULT now(),
     atualizado_em            timestamp without time zone DEFAULT now(),

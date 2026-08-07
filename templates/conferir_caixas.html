@@ -96,20 +96,68 @@
      dela mesma — não tem legenda separada, o rótulo já é a legenda. */
   .resumo-pizza-bloco { flex:0 0 auto; margin-left:24px; }
   .resumo-pizza-bloco svg { display:block; overflow:visible; }
-  table.caixas { border-collapse:collapse; font-size:13px; min-width:100%; font-family:Arial,sans-serif; }
+  /* width:max-content, e não min-width:100%: com min-width:100% a tabela se
+     esticava até a largura da tela e o espaço sobrando era repartido entre as
+     colunas, engordando todas elas e anulando qualquer min-width menor. */
+  /* table-layout:fixed (mesmo padrão de matricial.html): sem ele o layout
+     automático ignora a largura pedida sempre que o conteúdo é mais largo, e
+     as colunas voltam a sair cada uma de um tamanho. */
+  table.caixas { border-collapse:collapse; font-size:13px; width:1px; max-width:none; table-layout:fixed; font-family:Arial,sans-serif; }
   table.caixas th, table.caixas td { border:1px solid #bbb; padding:0; white-space:nowrap; }
   table.caixas thead th {
     background:#14114f; color:#fff; font-weight:700;
     padding:8px 10px; text-align:center; position:sticky; top:0; z-index:2;
-    min-width:96px; box-sizing:border-box;
+    min-width:75px; box-sizing:border-box;
   }
   table.caixas thead th.col-data { min-width:110px; }
+
+  /* ── Largura única para TODA coluna de valor ──────────────────────────────
+     Largura fixa (não só piso): com min-width cada coluna crescia até o seu
+     próprio conteúdo — nome do cabeçalho, maior número do mês — e o grid saía
+     com cada coluna de um tamanho. Aqui width = min = max, então todas ficam
+     idênticas, e o nome que não couber quebra em duas linhas no cabeçalho.
+     Vale para formas, controles adicionais, TOTAL, TOTAL CX e FALTAS. */
+  col.cg-valor  { width:98px; }
+  col.cg-data   { width:110px; }
+  /* 72px: os dois botões somam 43px e em 48px ficavam colados nas bordas */
+  col.cg-editar { width:72px; }
+  col.cg-sep    { width:8px; }
+  /* a tira da coluna fechada também é decidida no <col> */
+  col.col-fechada { width:24px; }
+  /* Número não pode vazar da célula: o layout fixo não realarga a coluna, o
+     texto é que invadiria a vizinha. Só no corpo — no cabeçalho o overflow
+     precisa continuar visível para a dica do hover poder sair da célula. */
+  table.caixas tbody td { overflow:hidden; }
+  /* Cabeçalhos de nome longo (FALTAS / SOBRAS, TOTAL CX) quebram em duas
+     linhas em vez de alargar a coluna. */
+  table.caixas thead th.col-total,
+  table.caixas thead th.col-totalcx,
+  table.caixas thead th.col-faltas {
+    white-space:normal; overflow-wrap:break-word;
+    font-size:12px; line-height:1.15; padding:6px 4px;
+  }
+  /* Com a coluna estreita, o número precisa caber em 75px: 12px de fonte e
+     8px de recuo dão conta de valores na casa das centenas de milhar. */
+  table.caixas td.td-valor, table.caixas td.td-ctrl,
+  table.caixas td.td-total, table.caixas td.td-totalcx,
+  table.caixas td.td-faltas, table.caixas td.td-readonly,
+  table.caixas td.td-ctrl-ro, table.caixas td.td-totalcx-ro,
+  table.caixas td.td-valor input, table.caixas td.td-ctrl input,
+  table.caixas td.td-totalcx input { font-size:12px; }
 
   /* ── Abrir/fechar colunas de forma de recebimento ──────────────────────
      O checkbox mora dentro do cabeçalho, encostado à esquerda, e o nome da
      forma fica centralizado no espaço que sobra. */
   table.caixas thead th[data-col],
-  table.caixas thead th[data-col-ctrl] { position:relative; padding-left:24px; }
+  table.caixas thead th[data-col-ctrl] { position:relative; padding-left:22px; padding-right:6px; }
+  /* A largura da coluna era ditada pelo nome da forma numa linha só ("DINHEIRO
+     DO COFRE" etc.) — o min-width nunca chegava a valer. Deixando o nome
+     quebrar em duas linhas, a coluna cai para a largura de fato pretendida. */
+  table.caixas thead th[data-col] .th-nome,
+  table.caixas thead th[data-col-ctrl] .th-nome {
+    display:block; white-space:normal; overflow-wrap:break-word;
+    font-size:12px; line-height:1.15; letter-spacing:0;
+  }
   .chk-col {
     position:absolute; left:6px; top:50%; transform:translateY(-50%);
     width:13px; height:13px; margin:0; cursor:pointer; accent-color:#fff;
@@ -184,6 +232,26 @@
   .chk-dias input { width:13px; height:13px; margin:0; cursor:pointer; accent-color:#4338ca; }
   .chk-dias:hover { color:#14114f; }
   table.caixas.so-recentes tbody tr.dia-antigo { display:none; }
+
+  /* Chave "ocultar colunas comprimidas": some de vez com as tiras das colunas
+     fechadas, colando uma coluna aberta na outra. É só exibição — desmarcar
+     traz as tiras de volta (o estado aberta/fechada continua no servidor). */
+  /* Com o layout fixo NÃO dá para tirar a célula com display:none: as células
+     seguintes escorregam para as colunas erradas do colgroup e o grid quebra
+     (cabeçalho gigante, coluna sumindo à toa). A coluna é zerada no <col> e a
+     célula fica no lugar, sem largura, sem borda e sem conteúdo. */
+  /* !important porque a regra .col-fechada da tira de 24px também é important */
+  table.caixas.ocultar-fechadas col.col-fechada {
+    width:0 !important; min-width:0 !important; max-width:0 !important;
+  }
+  table.caixas.ocultar-fechadas th.col-fechada,
+  table.caixas.ocultar-fechadas td.col-fechada {
+    width:0 !important; min-width:0 !important; max-width:0 !important;
+    padding:0 !important; border-left:none !important; border-right:none !important;
+    overflow:hidden !important;
+  }
+  table.caixas.ocultar-fechadas th.col-fechada > * { display:none !important; }
+
   table.caixas thead th.col-ctrl-info    { background:#4b5563; }
   table.caixas thead th.col-ctrl-receita { background:#166534; }
   table.caixas thead th.col-ctrl-despesa { background:#7f1d1d; }
@@ -192,14 +260,18 @@
      antes as células somente-leitura (aba de totais) encolhiam porque o texto
      era mais estreito que o <input> das células editáveis. */
   td.td-sep { background:#e5e7eb !important; width:8px; min-width:8px; padding:0; border:1px solid #bbb !important; }
-  td.td-ctrl { text-align:right; padding:0; min-width:96px; box-sizing:border-box; }
+  td.td-ctrl { text-align:right; padding:0; min-width:75px; box-sizing:border-box; }
+  /* size:1 no HTML + min-width:0 aqui: sem isso o <input> declara largura
+     intrínseca de ~20 caracteres (~175px) e é ELA que dita a largura da coluna
+     no layout automático da tabela — o width:100% não conta para esse cálculo.
+     Era por isso que só a aba de totais (texto puro) encolhia. */
   td.td-ctrl input {
-    width:100%; height:34px; border:none; background:transparent;
-    text-align:right; padding:0 10px; font-size:13px; font-family:Arial,sans-serif;
+    width:100%; min-width:0; height:34px; border:none; background:transparent;
+    text-align:right; padding:0 8px; font-size:13px; font-family:Arial,sans-serif;
     outline:none; box-sizing:border-box;
   }
   td.td-ctrl input:focus { background:#fffde7; box-shadow:inset 0 0 0 2px #facc15; }
-  td.td-ctrl-ro { text-align:right; padding:0 10px; color:#333; height:34px; box-sizing:border-box; vertical-align:middle; min-width:96px; }
+  table.caixas td.td-ctrl-ro { text-align:right; padding:0 10px; color:#333; height:34px; box-sizing:border-box; vertical-align:middle; min-width:75px; }
   table.caixas tbody td { background:#fff; }
   table.caixas tbody tr:hover td { background:#fffbea; }
 
@@ -208,32 +280,32 @@
   table.caixas.tbl-editavel tbody tr:nth-child(even) td { background:#f9f9f9; }
   table.caixas.tbl-total    tbody tr:nth-child(even) td { background:#eafaf0; }
 
-  td.td-data { text-align:center; font-weight:700; color:#333; padding:0 10px; background:#f1f5f9 !important; width:110px; min-width:110px; height:34px; box-sizing:border-box; vertical-align:middle; }
+  td.td-data { text-align:center; font-weight:700; color:#333; padding:0 8px; background:#f1f5f9 !important; width:110px; min-width:110px; height:34px; box-sizing:border-box; vertical-align:middle; }
   td.td-data.hoje { background:#fef9c3 !important; color:#854d0e; }
 
-  td.td-valor { text-align:right; padding:0; min-width:96px; box-sizing:border-box; }
+  td.td-valor { text-align:right; padding:0; min-width:75px; box-sizing:border-box; }
   td.td-valor input {
-    width:100%; height:34px; border:none; background:transparent;
-    text-align:right; padding:0 10px; font-size:13px; font-family:Arial,sans-serif;
+    width:100%; min-width:0; height:34px; border:none; background:transparent;
+    text-align:right; padding:0 8px; font-size:13px; font-family:Arial,sans-serif;
     outline:none; box-sizing:border-box;
   }
   td.td-valor input:focus { background:#fffde7; box-shadow:inset 0 0 0 2px #facc15; }
 
-  td.td-total    { text-align:right; padding:0 10px; font-weight:700; color:#1d4ed8; background:#eff6ff !important; height:34px; box-sizing:border-box; vertical-align:middle; min-width:96px; }
-  td.td-totalcx  { text-align:right; padding:0; background:#f0fdf4 !important; min-width:96px; box-sizing:border-box; }
+  table.caixas td.td-total    { text-align:right; padding:0 10px; font-weight:700; color:#1d4ed8; background:#eff6ff !important; height:34px; box-sizing:border-box; vertical-align:middle; min-width:75px; }
+  td.td-totalcx  { text-align:right; padding:0; background:#f0fdf4 !important; min-width:75px; box-sizing:border-box; }
   td.td-totalcx input {
-    width:100%; height:34px; border:none; background:transparent;
-    text-align:right; padding:0 10px; font-size:13px; font-family:Arial,sans-serif;
+    width:100%; min-width:0; height:34px; border:none; background:transparent;
+    text-align:right; padding:0 8px; font-size:13px; font-family:Arial,sans-serif;
     outline:none; box-sizing:border-box; color:#166534; font-weight:700;
   }
   td.td-totalcx input:focus { background:#dcfce7; box-shadow:inset 0 0 0 2px #16a34a; }
-  td.td-faltas { text-align:right; padding:0 10px; font-weight:700; height:34px; box-sizing:border-box; vertical-align:middle; min-width:96px; }
+  table.caixas td.td-faltas { text-align:right; padding:0 10px; font-weight:700; height:34px; box-sizing:border-box; vertical-align:middle; min-width:75px; }
   td.td-faltas.positivo { color:#166534; background:#f0fdf4 !important; }
   td.td-faltas.negativo { color:#b91c1c; background:#fef2f2 !important; }
   td.td-faltas.zero     { color:#888;    background:#f8fafc !important; }
 
-  td.td-readonly     { text-align:right; padding:0 10px; color:#333; height:34px; box-sizing:border-box; vertical-align:middle; min-width:96px; }
-  td.td-totalcx-ro   { text-align:right; padding:0 10px; font-weight:700; color:#166534; background:#f0fdf4 !important; height:34px; box-sizing:border-box; vertical-align:middle; min-width:96px; }
+  table.caixas td.td-readonly     { text-align:right; padding:0 10px; color:#333; height:34px; box-sizing:border-box; vertical-align:middle; min-width:75px; }
+  table.caixas td.td-totalcx-ro   { text-align:right; padding:0 10px; font-weight:700; color:#166534; background:#f0fdf4 !important; height:34px; box-sizing:border-box; vertical-align:middle; min-width:75px; }
 
   /* Valor zero/ausente: um traço discreto, não o travessão largo de antes */
   .tracinho { color:#bbb; font-size:11px; font-weight:400; }
@@ -253,7 +325,9 @@
     border:none !important; border-top:1px solid #e5e7eb !important;
     background:#f8fafc !important; color:#94a3b8 !important;
     font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
-    padding:5px 10px; text-align:right; height:auto;
+    padding:5px 6px; text-align:right; height:auto;
+    /* nome longo quebra em duas linhas — com a coluna fixa, nowrap cortava */
+    white-space:normal; overflow-wrap:break-word; line-height:1.2;
   }
   tr.linha-legenda td.td-data { text-align:center; }
 
@@ -275,14 +349,14 @@
 
   /* ── Botões "editar" e "visualizar" (abrem os painéis abaixo da grade) ── */
   th.col-editar, td.td-editar {
-    width:48px; min-width:48px; padding:0 !important; text-align:center;
+    width:72px; min-width:72px; padding:0 4px !important; text-align:center;
   }
   .btn-editar-dia, .btn-visualizar-dia {
     background:none; border:1px solid #cbd5e1; border-radius:5px;
     width:20px; height:20px; line-height:1; font-size:11px; color:#64748b;
     cursor:pointer; padding:0; vertical-align:middle;
   }
-  .btn-editar-dia { margin-right:3px; }
+  .btn-editar-dia { margin-right:8px; }
   .btn-editar-dia:hover { background:#eef2ff; border-color:#6366f1; color:#4338ca; }
   .btn-visualizar-dia:hover { background:#f0fdf4; border-color:#16a34a; color:#166534; }
 
@@ -308,8 +382,21 @@
   }
   .btn-editar-dia:disabled:hover { background:none; border-color:#e2e8f0; color:#64748b; }
 
-  /* célula cujo valor vem de um detalhamento (soma de várias linhas) */
-  td.tem-detalhe { box-shadow: inset 3px 0 0 #6366f1; }
+  /* Célula cujo valor vem de um detalhamento (soma de várias linhas).
+     Antes era uma barra na borda esquerda (inset box-shadow) — colava na
+     linha da coluna vizinha e parecia um separador de colunas. Agora é um
+     canto dobrado no alto à esquerda, dentro da célula, longe do número
+     (que é alinhado à direita). Pseudo-elemento, e não background-image,
+     porque a regra de hover da linha redefine o background da célula e
+     apagaria o desenho. */
+  table.caixas td.tem-detalhe { position:relative; }
+  table.caixas td.tem-detalhe::after {
+    content:''; position:absolute; left:2px; top:2px;
+    border-left:5px solid #6366f1; border-bottom:5px solid transparent;
+    pointer-events:none;
+  }
+  /* na tira de 24px da coluna fechada o canto não tem o que marcar */
+  table.caixas td.tem-detalhe.col-fechada::after { display:none; }
 
   /* ── Painel de detalhamento (abre abaixo da grade) ──
      Fundo cinza no painel inteiro, para destacar dos cartões brancos de
@@ -513,6 +600,25 @@
 
 <div class="tbl-wrapper">
   <table class="caixas {{ 'tbl-editavel' if editavel else 'tbl-total' }}">
+    {# Com table-layout:fixed quem manda na largura é o colgroup — a primeira
+       linha do thead é a dos títulos, toda em colspan, e não serve de base.
+       Os <col> de valor levam o mesmo data-col/data-col-ctrl das células, então
+       alternarColuna() já os pega e a tira de 24px continua funcionando. #}
+    <colgroup>
+      <col class="cg-data">
+      {% if visualizar %}<col class="cg-editar">{% endif %}
+      {% for f in formas %}
+        <col data-col="{{ f.id }}" class="cg-valor {{ 'col-fechada' if f.id in colunas_fechadas else '' }}">
+      {% endfor %}
+      <col class="cg-valor"><col class="cg-valor"><col class="cg-valor">
+      {% if controles %}
+        <col class="cg-sep">
+        <col class="cg-data">
+        {% for c in controles %}
+          <col data-col-ctrl="{{ c.id }}" class="cg-valor {{ 'col-fechada' if c.id in controles_fechados else '' }}">
+        {% endfor %}
+      {% endif %}
+    </colgroup>
     <thead>
       <!-- Título de cada bloco, fora do cabeçalho de colunas: texto solto,
            alinhado à esquerda, começando em cima da DATA do próprio bloco. -->
@@ -531,6 +637,11 @@
               Só os últimos {{ dias_recentes|length }} dias
             </label>
           {% endif %}
+          <label class="chk-dias" title="Some com as tiras das colunas fechadas, colando uma coluna aberta na outra">
+            <input type="checkbox" id="chk-ocultar-fechadas"
+                   onchange="alternarOcultarFechadas(this.checked)">
+            Ocultar colunas comprimidas
+          </label>
         </th>
         {% if controles %}
           <th></th>
@@ -632,7 +743,7 @@
             {% set cel_travada = (not dia_editavel) or tem_det %}
             {% if editavel %}
             <td class="td-valor {{ 'tem-detalhe' if tem_det else '' }} {{ 'td-travada' if cel_travada else '' }} {{ 'col-fechada' if fechada else '' }}" data-col="{{ f.id }}">
-              <input type="text" class="cel-forma {{ 'cel-travada' if cel_travada else '' }}" data-forma="{{ f.id }}"
+              <input type="text" size="1" class="cel-forma {{ 'cel-travada' if cel_travada else '' }}" data-forma="{{ f.id }}"
                      value="{{ '{:,.2f}'.format(v).replace(',','X').replace('.',',').replace('X','.') if v else '' }}"
                      placeholder="{{ '' if cel_travada else '0,00' }}"
                      {% if cel_travada %}readonly tabindex="-1"
@@ -648,7 +759,7 @@
 
           {% if editavel %}
           <td class="td-totalcx {{ 'td-travada' if not dia_editavel else '' }}">
-            <input type="text" class="cel-totalcx {{ 'cel-travada' if not dia_editavel else '' }}"
+            <input type="text" size="1" class="cel-totalcx {{ 'cel-travada' if not dia_editavel else '' }}"
                    value="{{ '{:,.2f}'.format(tcx).replace(',','X').replace('.',',').replace('X','.') if tcx else '' }}"
                    placeholder="{{ '' if not dia_editavel else '0,00' }}"
                    {% if not dia_editavel %}readonly tabindex="-1"
@@ -678,7 +789,7 @@
               {% set c_fechada = c.id in controles_fechados %}
               {% if editavel %}
               <td class="td-ctrl {{ 'tem-detalhe' if tem_det_c else '' }} {{ 'td-travada' if cel_travada_c else '' }} {{ 'col-fechada' if c_fechada else '' }}" data-col-ctrl="{{ c.id }}">
-                <input type="text" class="cel-ctrl {{ 'cel-travada' if cel_travada_c else '' }}" data-controle="{{ c.id }}"
+                <input type="text" size="1" class="cel-ctrl {{ 'cel-travada' if cel_travada_c else '' }}" data-controle="{{ c.id }}"
                        value="{{ '{:,.2f}'.format(cv).replace(',','X').replace('.',',').replace('X','.') if cv else '' }}"
                        placeholder="{{ '' if cel_travada_c else '0,00' }}"
                        {% if cel_travada_c %}readonly tabindex="-1"
@@ -1009,6 +1120,7 @@
      a linha de TOTAL continua sendo a do mês inteiro, não a soma do que
      está à vista. */
   const CHAVE_DIAS_RECENTES = 'matrx.conferir_caixas.so_recentes';
+  const CHAVE_OCULTAR_FECHADAS = 'matrx.conferir_caixas.ocultar_fechadas';
 
   function alternarDiasRecentes(soRecentes) {
     const tabela = document.querySelector('table.caixas');
@@ -1034,6 +1146,26 @@
     chk.checked = true;
     const tabela = document.querySelector('table.caixas');
     if (tabela) tabela.classList.add('so-recentes');
+  })();
+
+  /* Ocultar/mostrar as tiras das colunas fechadas. Só exibição, com a mesma
+     memória de sessão da chave de dias (troca de filial/mês recarrega tudo). */
+  function alternarOcultarFechadas(ocultar) {
+    const tabela = document.querySelector('table.caixas');
+    if (tabela) tabela.classList.toggle('ocultar-fechadas', ocultar);
+    try { sessionStorage.setItem(CHAVE_OCULTAR_FECHADAS, ocultar ? '1' : '0'); }
+    catch (e) { /* navegador sem sessionStorage: só perde a memória */ }
+  }
+
+  (function restaurarOcultarFechadas() {
+    const chk = document.getElementById('chk-ocultar-fechadas');
+    if (!chk) return;
+    let salvo = null;
+    try { salvo = sessionStorage.getItem(CHAVE_OCULTAR_FECHADAS); } catch (e) {}
+    if (salvo !== '1') return;
+    chk.checked = true;
+    const tabela = document.querySelector('table.caixas');
+    if (tabela) tabela.classList.add('ocultar-fechadas');
   })();
 
   function alternarColuna(tipo, idItem, mostrar) {
