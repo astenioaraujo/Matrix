@@ -220,6 +220,21 @@
     min-width:0;
   }
 
+  /* Nome da filial repetido no alto das últimas colunas de cada bloco.
+     O texto vai num <span> posicionado (a célula é só a âncora): com
+     table-layout:fixed o nome não pode ditar largura nenhuma, e assim ele
+     cresce para a esquerda, por cima do espaço vazio da linha de títulos,
+     em vez de esticar ou vazar da coluna. */
+  table.caixas thead tr.linha-titulo-bloco th.th-rot-filial {
+    position:relative; padding:2px 0 6px;
+  }
+  .rot-filial {
+    position:absolute; right:0; bottom:4px;
+    background:#166534; color:#fff;
+    font-size:12px; font-weight:800; letter-spacing:.04em;
+    white-space:nowrap; padding:2px 8px; border-radius:6px;
+  }
+
   /* Chave "só os últimos dias": esconde as linhas dos dias mais antigos,
      puxando o fim do mês para perto do cabeçalho. É só exibição — a linha
      de TOTAL continua somando o mês inteiro. */
@@ -627,8 +642,23 @@
       {% set dias_recentes = datas | select('ge', edicao_ini) | select('le', hoje) | list %}
       {% set pode_encolher = hoje in datas and datas|length > dias_recentes|length %}
 
+      {# Nome da aba aberta (filial, ou área/total quando não há filial). Vai
+         repetido no alto das duas últimas colunas de cada bloco: rolando a
+         grade para a direita, a barra de abas some da vista e não dava mais
+         pra saber de qual posto era a coluna em que se estava digitando. #}
+      {% set rot = namespace(v='') %}
+      {% for a in areas %}
+        {% if area_sel != 'TODOS' and a.id_area|string == area_sel %}
+          {% if not cod_filial_atual %}{% set rot.v = a.nome_area ~ ' — TOTAL' %}{% endif %}
+          {% for f in a.filiais %}
+            {% if f.cod_filial|string == cod_filial_atual|string %}{% set rot.v = f.nome_filial %}{% endif %}
+          {% endfor %}
+        {% endif %}
+      {% endfor %}
+      {% if not rot.v %}{% set rot.v = 'TODAS AS ÁREAS' %}{% endif %}
+
       <tr class="linha-titulo-bloco">
-        <th colspan="{{ 1 + (1 if visualizar else 0) + formas|length + 3 }}">
+        <th colspan="{{ 1 + (1 if visualizar else 0) + formas|length + 2 }}">
           CONTROLES
           {% if pode_encolher %}
             <label class="chk-dias" title="Esconde os dias mais antigos e deixa só os {{ dias_recentes|length }} últimos">
@@ -643,9 +673,13 @@
             Ocultar colunas comprimidas
           </label>
         </th>
+        {# em cima de FALTAS / SOBRAS #}
+        <th class="th-rot-filial"><span class="rot-filial">{{ rot.v }}</span></th>
         {% if controles %}
           <th></th>
-          <th colspan="{{ 1 + controles|length }}">CONTROLES ADICIONAIS</th>
+          <th colspan="{{ controles|length }}">CONTROLES ADICIONAIS</th>
+          {# em cima da última coluna dos controles adicionais #}
+          <th class="th-rot-filial"><span class="rot-filial">{{ rot.v }}</span></th>
         {% endif %}
       </tr>
       <!-- Linha única de nomes de coluna: os dois blocos seguem o mesmo
