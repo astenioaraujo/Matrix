@@ -59,6 +59,12 @@
 .ag-proj-painel.oculto .ag-proj-seletor,
 .ag-proj-painel.oculto .ag-proj-nav { display: none; }
 
+/* filtro de bloco: mostra só metas, só recorrências ou só eventuais,
+   em todos os projetos de uma vez */
+.ag-proj-painel.so-metas     .ag-proj-bloco:not(.metas),
+.ag-proj-painel.so-recs      .ag-proj-bloco:not(.recs),
+.ag-proj-painel.so-eventuais .ag-proj-bloco:not(.eventuais) { display: none; }
+
 /* modo tira: um projeto por vez, com setas */
 .ag-proj-lista { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
 .ag-proj-lista > .ag-proj-card { flex: 1 1 300px; min-width: 290px; }
@@ -783,6 +789,13 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
         <option value="{{ p.id }}">{{ p.nome }}</option>
         {% endfor %}
       </select>
+      <select id="proj-bloco" class="ag-proj-seletor"
+              title="Quais blocos mostrar" onchange="aplicarModoProjetos()">
+        <option value="todos">Tudo</option>
+        <option value="metas">Metas</option>
+        <option value="recs">Recorrências</option>
+        <option value="eventuais">Eventuais</option>
+      </select>
       <span class="ag-proj-nav">
         <button class="ag-proj-ico" title="Projeto anterior" onclick="navProjeto(-1)">◀</button>
         <span class="ag-proj-nav-pos" id="proj-nav-pos"></span>
@@ -1336,7 +1349,8 @@ function aplicarModoProjetos() {
   const lista  = document.getElementById('proj-lista');
   const chk    = document.getElementById('proj-mostrar');
   const sel    = document.getElementById('proj-seletor');
-  if (!painel || !lista || !chk || !sel) return;
+  const blo    = document.getElementById('proj-bloco');
+  if (!painel || !lista || !chk || !sel || !blo) return;
 
   // primeira carga: pega o que ficou guardado
   if (!painel.dataset.iniciado) {
@@ -1344,9 +1358,14 @@ function aplicarModoProjetos() {
     chk.checked = localStorage.getItem('agendaProjMostrar') !== '0';
     const guardado = localStorage.getItem('agendaProjSel') || 'todos';
     if ([...sel.options].some(o => o.value === guardado)) sel.value = guardado;
+    blo.value = localStorage.getItem('agendaProjBloco') || 'todos';
   }
   localStorage.setItem('agendaProjMostrar', chk.checked ? '1' : '0');
   localStorage.setItem('agendaProjSel', sel.value);
+  localStorage.setItem('agendaProjBloco', blo.value);
+
+  ['so-metas', 'so-recs', 'so-eventuais'].forEach(c => painel.classList.remove(c));
+  if (blo.value !== 'todos') painel.classList.add('so-' + blo.value);
 
   painel.classList.toggle('oculto', !chk.checked);
 
