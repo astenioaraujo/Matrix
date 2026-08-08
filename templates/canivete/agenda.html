@@ -5,7 +5,181 @@
 <style>
 * { box-sizing: border-box; }
 
-.ag-wrap { max-width: 1180px; margin: 0; padding: 0 8px 60px; }
+/* a agenda é larga por natureza (grade + Projetos ao lado): a página
+   rola na horizontal em vez de espremer ou quebrar as colunas */
+.ag-wrap { width: max-content; min-width: 100%; margin: 0; padding: 0 8px 60px; }
+
+/* ── COLUNA PROJETOS ──
+   Terceira coluna, mas fora da tabela: a grade prende a altura das
+   células (Recorrentes e Programação do Dia acompanham a linha da
+   semana), e os projetos precisam crescer sozinhos. Por isso o painel
+   fica DEPOIS da grade inteira — sem espremer nem cobrir a coluna da
+   Programação do Dia — com rolagem própria.
+   O visual segue o mesmo padrão das outras duas colunas: cabeçalho
+   em caixa alta, caixa de fundo claro com borda grossa e cantos retos. */
+.ag-conteudo { display: flex; flex-wrap: nowrap; align-items: flex-start; gap: 24px; }
+/* a grade tem largura própria (1180px de projeto, mas o conteúdo das
+   células pode exigir mais); o painel entra DEPOIS dela inteira */
+.ag-conteudo > .ag-grade-box { flex: 0 0 auto; width: 1180px; }
+
+.ag-proj-painel {
+  /* lado a lado: ocupa a sobra da linha, para caber mais de um projeto.
+     Na tira, um projeto por vez numa faixa estreita. */
+  /* em "Todos" cabe mais de um projeto lado a lado; com um projeto
+     selecionado a faixa fica estreita (.modo-tira) */
+  flex: 0 0 700px; align-self: flex-start;
+  /* sem altura fixa nem rolagem própria: com muitos projetos a lista
+     precisa continuar descendo com a página. Preso a uma caixa de uma
+     tela de altura, o conteúdo era cortado no meio (o 3º projeto sumia). */
+}
+/* mesmo cabeçalho dos <th> da grade */
+.ag-proj-cab {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 800; color: #7e22ce;
+  text-transform: uppercase; letter-spacing: .06em;
+  /* 22px da faixa do nome do mês + o mesmo padding dos <th>: assim a
+     primeira caixa de projeto começa na mesma altura das outras colunas */
+  padding: 26px 0 6px;
+  border-bottom: 2px solid #e2e8f0;
+}
+.ag-proj-ico {
+  background: none; border: none; cursor: pointer;
+  font-size: 12px; color: #c084fc; padding: 1px 3px; line-height: 1;
+}
+.ag-proj-ico:hover { color: #6b21a8; }
+.ag-proj-espaco { flex: 1; }
+.ag-proj-check { width: 13px; height: 13px; accent-color: #7e22ce; cursor: pointer; margin: 0; }
+.ag-proj-seletor {
+  height: 20px; border: 1px solid #ddd6fe; border-radius: 5px;
+  background: #fff; font-family: inherit; font-size: 10px; font-weight: 700;
+  color: #6b21a8; padding: 0 3px; max-width: 150px;
+}
+/* desmarcado: some tudo, fica só a faixa do cabeçalho */
+.ag-proj-painel.oculto .ag-proj-lista,
+.ag-proj-painel.oculto .ag-proj-seletor,
+.ag-proj-painel.oculto .ag-proj-nav { display: none; }
+
+/* modo tira: um projeto por vez, com setas */
+.ag-proj-lista { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+.ag-proj-lista > .ag-proj-card { flex: 1 1 300px; min-width: 290px; }
+.ag-proj-lista.tira .ag-proj-card { display: none; }
+.ag-proj-lista.tira .ag-proj-card.ativo { display: block; flex-basis: 100%; }
+.ag-proj-painel.modo-tira { flex: 0 0 340px; }
+
+.ag-proj-nav { display: none; align-items: center; gap: 4px; }
+.ag-proj-painel.modo-tira .ag-proj-nav { display: flex; }
+.ag-proj-nav-pos { font-size: 10px; font-weight: 700; color: #a855f7; }
+
+/* caixa do projeto: mesmo desenho de .ag-rec / .ag-dia */
+.ag-proj-card {
+  background: #f5f3ff;
+  border-left: 2px solid #c4b5fd;
+  border-right: 2px solid #c4b5fd;
+  border-top: 3px solid #a78bfa;
+  border-bottom: 3px solid #a78bfa;
+  padding: 4px 5px;
+}
+.ag-proj-nome {
+  font-size: 16px; font-weight: 800; color: #dc2626;
+  text-transform: uppercase; letter-spacing: .02em;
+  display: flex; align-items: center; gap: 4px;
+  padding-bottom: 3px; margin-bottom: 3px;
+  border-bottom: 1px dashed #c4b5fd;
+}
+.ag-proj-nome span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+.ag-proj-bloco { margin-top: 6px; padding: 3px 4px; }
+.ag-proj-bloco-tit {
+  font-size: 9px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .05em;
+  display: flex; align-items: center; gap: 4px; margin-bottom: 2px;
+}
+/* cada bloco puxa a cor da coluna que ele imita */
+.ag-proj-bloco.metas     { background: #ecfdf5; border: 1px solid #86efac; }
+.ag-proj-bloco.metas     .ag-proj-bloco-tit { color: #15803d; }
+.ag-proj-bloco.recs      { background: #dbeafe; border: 1px solid #93c5fd; }
+.ag-proj-bloco.recs      .ag-proj-bloco-tit { color: #1d4ed8; }
+.ag-proj-bloco.eventuais { background: #fefce8; border: 1px solid #fde68a; }
+.ag-proj-bloco.eventuais .ag-proj-bloco-tit { color: #a16207; }
+
+/* seletor de período e olho: só aparecem quando há algo concluído */
+.ag-proj-periodo {
+  display: none; height: 18px; border: 1px solid #ddd6fe; border-radius: 4px;
+  background: #fff; font-family: inherit; font-size: 9px; font-weight: 700;
+  color: #6b21a8; padding: 0 2px;
+}
+.ag-proj-card.ver-concluidas .ag-proj-periodo { display: inline-block; }
+.ag-proj-olho { display: none; opacity: .45; }
+.ag-proj-card.tem-concluida .ag-proj-olho { display: inline-block; }
+.ag-proj-card.ver-concluidas .ag-proj-olho { opacity: 1; }
+
+/* linha = check + texto — mesmo padrão da programação do dia */
+.ag-proj-linha { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; }
+/* concluída/cancelada sai da lista; o olho traz de volta (dentro do período) */
+.ag-proj-linha.feito,
+.ag-proj-linha.cancelada { display: none; }
+.ag-proj-card.ver-concluidas .ag-proj-linha.feito,
+.ag-proj-card.ver-concluidas .ag-proj-linha.cancelada { display: flex; }
+.ag-proj-card.ver-concluidas .ag-proj-linha.fora-periodo { display: none; }
+.ag-proj-linha.feito { background: #cbd5e1; border-radius: 4px; }
+.ag-proj-linha.feito .ag-proj-txt,
+.ag-proj-linha.feito .ag-proj-rec-txt { color: #64748b; text-decoration: line-through; }
+.ag-proj-linha.cancelada .ag-proj-rec-txt,
+.ag-proj-linha.cancelada .ag-proj-txt { color: #94a3b8; text-decoration: line-through; }
+.ag-proj-linha.atrasada .ag-proj-rec-txt { color: #b91c1c; }
+.ag-proj-chk {
+  background: none; border: none; cursor: pointer;
+  font-size: 11px; color: #cbd5e1; padding: 0 2px; line-height: 1; flex-shrink: 0;
+}
+.ag-proj-chk.on { color: #475569; }
+.ag-proj-chk:hover { color: #6b21a8; }
+.ag-proj-bloco.metas .ag-proj-chk { color: #86efac; }
+.ag-proj-bloco.recs  .ag-proj-chk { color: #93c5fd; }
+.ag-proj-bloco.eventuais .ag-proj-chk { color: #fcd34d; }
+.ag-proj-bloco .ag-proj-chk.on { color: #475569; }
+.ag-proj-x {
+  background: none; border: none; cursor: pointer;
+  font-size: 11px; color: #cbd5e1; padding: 0 2px; line-height: 1; flex-shrink: 0;
+}
+.ag-proj-x:hover { color: #dc2626; }
+/* seta ▼ — só na primeira linha do bloco: manda essa tarefa para o fim
+   da fila e sobe as outras (jeito rápido de despriorizar) */
+.ag-proj-desce {
+  display: none; background: none; border: none; cursor: pointer;
+  font-size: 9px; color: #a1a1aa; padding: 0 1px; line-height: 1; flex-shrink: 0;
+}
+.ag-proj-linha.primeira .ag-proj-desce { display: inline-block; }
+.ag-proj-desce:hover { color: #6b21a8; }
+.ag-proj-txt {
+  flex: 1; min-width: 0;
+  border: none; outline: none; background: transparent;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  color: #14532d; padding: 2px 0;
+}
+.ag-proj-bloco.eventuais .ag-proj-txt { color: #713f12; }
+.ag-proj-rec-txt {
+  flex: 1; min-width: 0;
+  font-size: 13px; font-weight: 600; color: #1e3a8a;
+}
+.ag-proj-add {
+  display: block; width: 100%; text-align: center;
+  font-size: 11px; background: none; border: none;
+  cursor: pointer; padding: 2px 0; color: #cbd5e1;
+}
+.ag-proj-bloco.metas .ag-proj-add     { color: #86efac; }
+.ag-proj-bloco.metas .ag-proj-add:hover { color: #15803d; }
+.ag-proj-bloco.eventuais .ag-proj-add { color: #fcd34d; }
+.ag-proj-bloco.eventuais .ag-proj-add:hover { color: #a16207; }
+.ag-proj-carregar {
+  display: block; width: 100%; margin-top: 3px;
+  font-size: 10px; font-weight: 700; color: #1d4ed8;
+  background: #bfdbfe; border: none; border-radius: 5px;
+  cursor: pointer; padding: 3px 0;
+}
+.ag-proj-carregar[disabled] { color: #94a3b8; background: #e2e8f0; cursor: not-allowed; }
+.ag-proj-vazio { font-size: 11px; color: #a1a1aa; padding: 6px 2px; }
+
+
 
 /* cabeçalho */
 .ag-header {
@@ -72,9 +246,10 @@
 .ag-grade tbody td:nth-child(5) { border-right: 4px solid #94a3b8; }
 /* ── COLUNA RECORRENTES ── */
 .col-gap { width: 24px; background: #f4f4f4 !important; border: none !important; padding: 0 !important; }
-.ag-grade thead th { width: 10.85%; }
+.ag-grade thead th { width: 8.72%; }
+.ag-grade thead th.col-gap { width: 24px; }
 .ag-grade th.th-rec {
-  color: #1d4ed8; font-weight: 800; width: 21.7%;
+  color: #1d4ed8; font-weight: 800; width: 17.44%;
 }
 tr.sep-mes-spacer td.td-rec-label { color: #1d4ed8; }
 
@@ -139,12 +314,11 @@ tr.sep-mes-spacer td.td-rec-label { color: #1d4ed8; }
 
 /* ── COLUNA PROGRAMAÇÃO DO DIA (caixa única, sempre a de hoje) ── */
 .ag-dia-vazio { background:#f4f4f4 !important; border:none !important; padding:0 !important; }
-.ag-grade th.th-dia { color: #15803d; font-weight: 800; width: 21.7%; }
+.ag-grade th.th-dia { color: #15803d; font-weight: 800; width: 17.44%; }
 tr.sep-mes-spacer td.td-dia-label { color: #15803d; }
 
 .ag-dia {
   vertical-align: top;
-  display: flex; flex-direction: column;
   background: #ecfdf5;              /* verde bem clarinho, opaco */
   border-left: 2px solid #86efac;
   border-right: 2px solid #86efac;
@@ -152,6 +326,9 @@ tr.sep-mes-spacer td.td-dia-label { color: #15803d; }
   border-bottom: 3px solid #4ade80;
   padding: 4px 5px; position: relative;
 }
+
+/* o td estica com a linha; o conteúdo em coluna fica no wrapper */
+.ag-dia-corpo { display: flex; flex-direction: column; }
 
 /* pendentes primeiro (order 0), depois o separador (order 1),
    depois as concluídas (order 2) — reordena sem mexer no DOM */
@@ -363,6 +540,8 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
       onclick="moverSemana(1)">▼</button>
   </div>
 
+  <div class="ag-conteudo">
+  <div class="ag-grade-box">
   <!-- GRADE MENSAL -->
   <table class="ag-grade">
     <thead>
@@ -561,6 +740,7 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
         <td class="col-gap"></td>
         {% if tem_hoje.v %}
         <td class="ag-dia" id="dia-prog" data-dia="{{ hoje }}">
+          <div class="ag-dia-corpo">
           {% for it in programacao_hoje %}
           <div class="ag-dia-linha {{ 'feito' if it.concluido else '' }}"
                data-id="{{ it.id }}" data-codigo="{{ it.codigo }}"
@@ -576,6 +756,7 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
           {% endfor %}
           <div class="ag-dia-separador"></div>
           <button class="ag-dia-add" onclick="addDiaLinha()">＋</button>
+          </div>
         </td>
         {% else %}
         <td class="ag-dia-vazio"></td>
@@ -584,7 +765,164 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
     {% endfor %}
     </tbody>
   </table>
+  </div>{# /ag-grade-box #}
 
+  {# ── COLUNA PROJETOS — painel próprio, sem a amarra de altura da grade ── #}
+  <div class="ag-proj-painel" id="proj-painel">
+    <div class="ag-proj-cab">
+      <input type="checkbox" id="proj-mostrar" class="ag-proj-check"
+             title="Mostrar / esconder os projetos" onchange="aplicarModoProjetos()">
+      <span class="ag-proj-cab-tit">Projetos</span>
+      <button class="ag-proj-ico" title="Gerenciar projetos"
+        onclick="abrirModalProjetos()">⚙</button>
+      <span class="ag-proj-espaco"></span>
+      <select id="proj-seletor" class="ag-proj-seletor"
+              title="Todos os projetos ou apenas um" onchange="aplicarModoProjetos()">
+        <option value="todos">Todos</option>
+        {% for p in projetos %}
+        <option value="{{ p.id }}">{{ p.nome }}</option>
+        {% endfor %}
+      </select>
+      <span class="ag-proj-nav">
+        <button class="ag-proj-ico" title="Projeto anterior" onclick="navProjeto(-1)">◀</button>
+        <span class="ag-proj-nav-pos" id="proj-nav-pos"></span>
+        <button class="ag-proj-ico" title="Próximo projeto" onclick="navProjeto(1)">▶</button>
+      </span>
+    </div>
+
+    <div class="ag-proj-lista" id="proj-lista">
+      {% for p in projetos %}
+      <div class="ag-proj-card" id="proj-{{ p.id }}" data-id="{{ p.id }}">
+        <div class="ag-proj-nome">
+          <span title="{{ p.nome }}">{{ p.nome }}</span>
+          <select class="ag-proj-periodo" onchange="filtrarConcluidas(this)"
+                  title="Período das concluídas">
+            <option value="mes">Este mês</option>
+            <option value="3">3 meses</option>
+            <option value="6">6 meses</option>
+            <option value="12">12 meses</option>
+            <option value="tudo">Tudo</option>
+          </select>
+          <button class="ag-proj-ico ag-proj-olho" title="Ver as concluídas"
+            onclick="alternarConcluidas(this)">👁</button>
+        </div>
+
+        {# METAS #}
+        <div class="ag-proj-bloco metas" data-bloco="meta">
+          <div class="ag-proj-bloco-tit"><span>Metas</span></div>
+          {% for t in p.metas %}
+          <div class="ag-proj-linha {{ 'feito' if t.concluido else '' }} {{ 'cancelada' if t.cancelado else '' }}"
+               data-id="{{ t.id }}" data-texto="{{ t.texto }}"
+               data-cancelado="{{ '1' if t.cancelado else '' }}"
+               data-quando="{{ t.quando }}">
+            <button class="ag-proj-chk {{ 'on' if t.concluido else '' }}"
+              onclick="toggleProjTarefa(this)">✔</button>
+            <input class="ag-proj-txt" type="text" value="{{ t.texto }}"
+              onblur="salvarProjTarefa(this)" onkeydown="projTarefaKeydown(event, this)">
+            <button class="ag-proj-desce" title="Mandar para o fim da lista"
+              onclick="mandarParaOFim(this, 'tarefa')">▼</button>
+            <button class="ag-proj-x" title="Cancelar"
+              onclick="cancelarProjTarefa(this)">✖</button>
+          </div>
+          {% endfor %}
+          <button class="ag-proj-add"
+            onclick="addProjTarefa({{ p.id }}, 'meta')">＋</button>
+        </div>
+
+        {# RECORRÊNCIAS MENSAIS #}
+        <div class="ag-proj-bloco recs">
+          <div class="ag-proj-bloco-tit">
+            <span>Recorrências mensais</span>
+            <span class="ag-proj-espaco"></span>
+            <button class="ag-proj-ico" title="Configurar recorrências"
+              onclick="abrirModalRecs({{ p.id }})">⚙</button>
+          </div>
+          {% for r in p.recorrencias %}
+          <div class="ag-proj-linha {{ 'feito' if r.situacao == 'concluida' else '' }}
+                      {{ 'cancelada' if r.situacao == 'cancelada' else '' }}
+                      {{ 'atrasada' if r.atrasada and r.situacao == 'pendente' else '' }}"
+               data-exec="{{ r.id_execucao }}" data-rec="{{ r.id_recorrencia }}"
+               data-situacao="{{ r.situacao }}"
+               data-quando="{{ r.quando }}">
+            <button class="ag-proj-chk {{ 'on' if r.situacao == 'concluida' else '' }}"
+              onclick="toggleProjRec(this)">✔</button>
+            <span class="ag-proj-rec-txt">{{ r.texto }}{% if r.atrasada %} ({{ r.competencia[5:7] }}/{{ r.competencia[0:4] }}){% endif %}</span>
+            <button class="ag-proj-desce" title="Mandar para o fim da lista"
+              onclick="mandarParaOFim(this, 'recorrencia')">▼</button>
+            <button class="ag-proj-x" title="Cancelar recorrência do mês"
+              onclick="cancelarProjRec(this)">✖</button>
+          </div>
+          {% else %}
+          <div class="ag-proj-vazio">Nenhuma recorrência neste mês.</div>
+          {% endfor %}
+          {% if p.pode_carregar %}
+          <button class="ag-proj-carregar"
+            onclick="carregarRecsMes({{ p.id }})"
+            {{ 'disabled' if p.trava_pendencia else '' }}
+            title="{{ 'Conclua ou cancele as pendências do mês anterior.' if p.trava_pendencia else 'Carregar as recorrências deste mês' }}">
+            ⟳ Carregar recorrências do mês
+          </button>
+          {% endif %}
+        </div>
+
+        {# TAREFAS EVENTUAIS #}
+        <div class="ag-proj-bloco eventuais" data-bloco="eventual">
+          <div class="ag-proj-bloco-tit"><span>Tarefas eventuais</span></div>
+          {% for t in p.eventuais %}
+          <div class="ag-proj-linha {{ 'feito' if t.concluido else '' }} {{ 'cancelada' if t.cancelado else '' }}"
+               data-id="{{ t.id }}" data-texto="{{ t.texto }}"
+               data-cancelado="{{ '1' if t.cancelado else '' }}"
+               data-quando="{{ t.quando }}">
+            <button class="ag-proj-chk {{ 'on' if t.concluido else '' }}"
+              onclick="toggleProjTarefa(this)">✔</button>
+            <input class="ag-proj-txt" type="text" value="{{ t.texto }}"
+              onblur="salvarProjTarefa(this)" onkeydown="projTarefaKeydown(event, this)">
+            <button class="ag-proj-desce" title="Mandar para o fim da lista"
+              onclick="mandarParaOFim(this, 'tarefa')">▼</button>
+            <button class="ag-proj-x" title="Cancelar"
+              onclick="cancelarProjTarefa(this)">✖</button>
+          </div>
+          {% endfor %}
+          <button class="ag-proj-add"
+            onclick="addProjTarefa({{ p.id }}, 'eventual')">＋</button>
+        </div>
+      </div>
+      {% else %}
+      <div class="ag-proj-vazio">
+        Nenhum projeto ainda. Clique na ⚙ para criar o primeiro.
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  </div>{# /ag-conteudo #}
+
+</div>
+
+<!-- MODAL DE PROJETOS -->
+<div class="ag-modal-bg" id="modal-proj-bg">
+  <div class="ag-modal">
+    <h3>⚙ Projetos</h3>
+    <div id="modal-proj-lista"></div>
+    <button class="ag-slot-add-btn" onclick="addLinhaProjeto()">＋ Novo projeto</button>
+    <div class="ag-modal-footer">
+      <button class="ag-cancel" onclick="fecharModalProjetos()">Fechar</button>
+      <button class="ag-save" onclick="salvarModalProjetos()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DE RECORRÊNCIAS MENSAIS -->
+<div class="ag-modal-bg" id="modal-recs-bg">
+  <div class="ag-modal">
+    <h3 id="modal-recs-titulo">⚙ Recorrências mensais</h3>
+    <div id="modal-recs-lista"></div>
+    <button class="ag-slot-add-btn" onclick="addLinhaRec()">＋ Adicionar recorrência</button>
+    <div class="ag-modal-footer">
+      <button class="ag-cancel" onclick="fecharModalRecs()">Cancelar</button>
+      <button class="ag-save" onclick="salvarModalRecs()">Salvar</button>
+    </div>
+  </div>
 </div>
 
 <!-- MODAL DE HORÁRIOS -->
@@ -826,7 +1164,8 @@ function addDiaLinha() {
       onblur="salvarDia(this)" onkeydown="diaKeydown(event, this)">
     <input class="ag-dia-cod" type="text" maxlength="2"
       title="D: repete todo dia · DU: repete em dias úteis · em branco não repete." onblur="salvarDia(this)">`;
-  cel.insertBefore(div, cel.querySelector('.ag-dia-separador'));
+  cel.querySelector('.ag-dia-corpo')
+     .insertBefore(div, cel.querySelector('.ag-dia-separador'));
 
   div._criando = post(URL_DIA_CRIAR, {texto: '', codigo: '', dia}).then(res => {
     if (res && res.id) {
@@ -963,6 +1302,397 @@ function salvarModal() {
 
 document.getElementById('modal-bg').addEventListener('click', e => {
   if (e.target === e.currentTarget) fecharModal();
+});
+
+/* ── PROJETOS ───────────────────────────────────────────────
+   Painel próprio ao lado da grade. Dois modos de apresentação:
+   lado a lado (padrão) ou tira única com setas — a escolha fica
+   no navegador, em localStorage. */
+const PROJETOS = {{ projetos | tojson }};
+const URL_PROJ_CRIAR      = "{{ url_for('canivete.agenda_projeto_criar') }}";
+const URL_PROJ_RENOMEAR   = "{{ url_for('canivete.agenda_projeto_renomear') }}";
+const URL_PROJ_EXCLUIR    = "{{ url_for('canivete.agenda_projeto_excluir') }}";
+const URL_PROJ_TAR_CRIAR  = "{{ url_for('canivete.agenda_projeto_tarefa_criar') }}";
+const URL_PROJ_TAR_SALVAR = "{{ url_for('canivete.agenda_projeto_tarefa_salvar') }}";
+const URL_PROJ_TAR_CONC   = "{{ url_for('canivete.agenda_projeto_tarefa_concluir') }}";
+const URL_PROJ_TAR_EXCL   = "{{ url_for('canivete.agenda_projeto_tarefa_excluir') }}";
+const URL_PROJ_TAR_CANCELAR = "{{ url_for('canivete.agenda_projeto_tarefa_cancelar') }}";
+const URL_PROJ_ITEM_FIM   = "{{ url_for('canivete.agenda_projeto_item_para_o_fim') }}";
+const URL_PROJ_RECS_SALVAR   = "{{ url_for('canivete.agenda_projeto_recorrencias_salvar') }}";
+const URL_PROJ_REC_SITUACAO  = "{{ url_for('canivete.agenda_projeto_recorrencia_situacao') }}";
+const URL_PROJ_RECS_CARREGAR = "{{ url_for('canivete.agenda_projeto_recorrencias_carregar') }}";
+
+/* ── modo de apresentação ─────────────────────────────────────
+   O checkbox liga/desliga a coluna inteira. Com ela ligada, o
+   seletor escolhe entre ver todos os projetos ou um só — e nesse
+   caso as setas ◀ ▶ andam de projeto em projeto. Tudo fica
+   guardado no navegador (localStorage). */
+function cardsProjetos() {
+  return [...document.querySelectorAll('#proj-lista .ag-proj-card')];
+}
+
+function aplicarModoProjetos() {
+  const painel = document.getElementById('proj-painel');
+  const lista  = document.getElementById('proj-lista');
+  const chk    = document.getElementById('proj-mostrar');
+  const sel    = document.getElementById('proj-seletor');
+  if (!painel || !lista || !chk || !sel) return;
+
+  // primeira carga: pega o que ficou guardado
+  if (!painel.dataset.iniciado) {
+    painel.dataset.iniciado = '1';
+    chk.checked = localStorage.getItem('agendaProjMostrar') !== '0';
+    const guardado = localStorage.getItem('agendaProjSel') || 'todos';
+    if ([...sel.options].some(o => o.value === guardado)) sel.value = guardado;
+  }
+  localStorage.setItem('agendaProjMostrar', chk.checked ? '1' : '0');
+  localStorage.setItem('agendaProjSel', sel.value);
+
+  painel.classList.toggle('oculto', !chk.checked);
+
+  const um    = sel.value !== 'todos';
+  const cards = cardsProjetos();
+  lista.classList.toggle('tira', um);
+  painel.classList.toggle('modo-tira', um);
+  cards.forEach(c => c.classList.toggle('ativo', um && c.dataset.id === sel.value));
+
+  const pos = document.getElementById('proj-nav-pos');
+  if (pos) {
+    const i = cards.findIndex(c => c.dataset.id === sel.value);
+    pos.textContent = um && i >= 0 ? (i + 1) + '/' + cards.length : '';
+  }
+}
+
+/* setas: só fazem sentido com um projeto selecionado */
+function navProjeto(n) {
+  const sel   = document.getElementById('proj-seletor');
+  const cards = cardsProjetos();
+  if (!sel || !cards.length) return;
+  let i = cards.findIndex(c => c.dataset.id === sel.value);
+  if (i < 0) i = 0;                       // estava em "Todos": entra no 1º
+  else i = (i + n + cards.length) % cards.length;
+  sel.value = cards[i].dataset.id;
+  aplicarModoProjetos();
+}
+
+document.addEventListener('DOMContentLoaded', aplicarModoProjetos);
+
+/* ── concluídas: somem da lista; o 👁 traz de volta ───────────
+   O período vale para a data da conclusão (nas recorrências, a
+   competência do mês). Sem data — coisa concluída antes de existir
+   esse controle — só aparece em "Tudo". */
+function limiteDoPeriodo(valor) {
+  const hoje = new Date();
+  if (valor === 'tudo') return null;
+  if (valor === 'mes')  return new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  return new Date(hoje.getFullYear(), hoje.getMonth() - (parseInt(valor, 10) - 1), 1);
+}
+
+function atualizarConcluidas(card) {
+  if (!card) return;
+  const linhas = [...card.querySelectorAll('.ag-proj-linha')];
+  const feitas = linhas.filter(l => l.classList.contains('feito')
+                                 || l.classList.contains('cancelada'));
+  card.classList.toggle('tem-concluida', feitas.length > 0);
+  if (!feitas.length) card.classList.remove('ver-concluidas');
+
+  const sel   = card.querySelector('.ag-proj-periodo');
+  const corte = limiteDoPeriodo(sel ? sel.value : 'mes');
+  feitas.forEach(l => {
+    const q = l.dataset.quando;
+    const fora = corte && (!q || new Date(q + 'T12:00:00') < corte);
+    l.classList.toggle('fora-periodo', !!fora);
+  });
+  // linha pendente nunca fica de fora do período
+  linhas.filter(l => !feitas.includes(l)).forEach(l => l.classList.remove('fora-periodo'));
+  marcarPrimeiras(card);
+}
+
+function alternarConcluidas(btn) {
+  const card = btn.closest('.ag-proj-card');
+  card.classList.toggle('ver-concluidas');
+  atualizarConcluidas(card);
+}
+
+function filtrarConcluidas(sel) {
+  atualizarConcluidas(sel.closest('.ag-proj-card'));
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.ag-proj-card').forEach(atualizarConcluidas);
+});
+
+/* A grade tem largura mínima própria: o conteúdo das células não encolhe
+   além de certo ponto e a tabela acaba maior que a caixa. Sem isso ela
+   passava por baixo do painel de Projetos, escondendo a coluna da
+   Programação do Dia. Aqui a caixa passa a valer a largura real da grade. */
+function ajustarLarguraGrade() {
+  const box = document.querySelector('.ag-grade-box');
+  const tab = document.querySelector('.ag-grade');
+  if (!box || !tab) return;
+  box.style.width = '';
+  const largura = Math.ceil(tab.getBoundingClientRect().width);
+  box.style.width = largura + 'px';
+}
+document.addEventListener('DOMContentLoaded', ajustarLarguraGrade);
+window.addEventListener('resize', ajustarLarguraGrade);
+
+/* ── seta ▼: primeira linha do bloco vai para o fim ───────────
+   A marcação de "primeira" é sempre da primeira linha VISÍVEL do
+   bloco — concluída ou cancelada escondida não conta. */
+function marcarPrimeiras(card) {
+  if (!card) return;
+  card.querySelectorAll('.ag-proj-bloco').forEach(bloco => {
+    const linhas = [...bloco.querySelectorAll('.ag-proj-linha')];
+    linhas.forEach(l => l.classList.remove('primeira'));
+    const visivel = linhas.find(l => !l.classList.contains('feito')
+                                  && !l.classList.contains('cancelada'));
+    if (visivel) visivel.classList.add('primeira');
+  });
+}
+
+function mandarParaOFim(btn, tipo) {
+  const linha = btn.closest('.ag-proj-linha');
+  const bloco = btn.closest('.ag-proj-bloco');
+  const card  = btn.closest('.ag-proj-card');
+  const id    = tipo === 'tarefa' ? linha.dataset.id : linha.dataset.rec;
+  if (!id) return;
+
+  // último lugar do bloco: antes do ＋ / do botão de carregar o mês
+  const rodape = bloco.querySelector('.ag-proj-add, .ag-proj-carregar');
+  if (rodape) bloco.insertBefore(linha, rodape);
+  else        bloco.appendChild(linha);
+
+  marcarPrimeiras(card);
+  post(URL_PROJ_ITEM_FIM, {tipo, id});
+}
+
+/* ── metas e eventuais ── */
+function salvarProjTarefa(campo) {
+  const linha = campo.closest('.ag-proj-linha');
+  const texto = campo.value.trim();
+  const pronto = linha._criando || Promise.resolve();
+  pronto.then(() => {
+    const id = linha.dataset.id;
+    if (!id) return;
+    if (!texto) { excluirProjTarefa(linha); return; }
+    if (texto === (linha.dataset.texto || '')) return;
+    return post(URL_PROJ_TAR_SALVAR, {id, texto}).then(() => {
+      linha.dataset.texto = texto;
+    });
+  });
+}
+
+function excluirProjTarefa(linha) {
+  const id = linha.dataset.id;
+  linha.remove();
+  if (id) post(URL_PROJ_TAR_EXCL, {id});
+}
+
+function toggleProjTarefa(btn) {
+  const linha = btn.closest('.ag-proj-linha');
+  const id    = linha.dataset.id;
+  if (!id) return;
+  const on = !btn.classList.contains('on');
+  btn.classList.toggle('on', on);
+  linha.classList.toggle('feito', on);
+  linha.dataset.quando = on ? new Date().toISOString().slice(0, 10) : '';
+  atualizarConcluidas(linha.closest('.ag-proj-card'));
+  post(URL_PROJ_TAR_CONC, {id, concluido: on ? '1' : '0'});
+}
+
+/* ✖ da meta / tarefa eventual: cancela sem apagar (o 👁 mostra de volta).
+   Clicando de novo numa cancelada, ela volta para a lista. */
+function cancelarProjTarefa(btn) {
+  const linha = btn.closest('.ag-proj-linha');
+  const id    = linha.dataset.id;
+  if (!id) { linha.remove(); return; }       // linha nova, ainda sem texto
+  const jaCancelada = linha.dataset.cancelado === '1';
+  if (!jaCancelada && !confirm('Cancelar esta tarefa?')) return;
+
+  linha.dataset.cancelado = jaCancelada ? '' : '1';
+  linha.dataset.quando = jaCancelada ? '' : new Date().toISOString().slice(0, 10);
+  linha.classList.toggle('cancelada', !jaCancelada);
+  if (!jaCancelada) {
+    linha.classList.remove('feito');
+    linha.querySelector('.ag-proj-chk').classList.remove('on');
+  }
+  atualizarConcluidas(linha.closest('.ag-proj-card'));
+  post(URL_PROJ_TAR_CANCELAR, {id, cancelado: jaCancelada ? '0' : '1'});
+}
+
+function addProjTarefa(id_projeto, bloco) {
+  const card = document.getElementById('proj-' + id_projeto);
+  if (!card) return;
+  const cel = card.querySelector(`.ag-proj-bloco[data-bloco="${bloco}"]`);
+  const div = document.createElement('div');
+  div.className = 'ag-proj-linha';
+  div.innerHTML = `
+    <button class="ag-proj-chk" onclick="toggleProjTarefa(this)">✔</button>
+    <input class="ag-proj-txt" type="text"
+      onblur="salvarProjTarefa(this)" onkeydown="projTarefaKeydown(event, this)">
+    <button class="ag-proj-desce" title="Mandar para o fim da lista"
+      onclick="mandarParaOFim(this, 'tarefa')">▼</button>
+    <button class="ag-proj-x" title="Cancelar" onclick="cancelarProjTarefa(this)">✖</button>`;
+  cel.insertBefore(div, cel.querySelector('.ag-proj-add'));
+
+  div._criando = post(URL_PROJ_TAR_CRIAR, {id_projeto, bloco, texto: ''}).then(res => {
+    if (res && res.id) { div.dataset.id = res.id; div.dataset.texto = ''; }
+  });
+  atualizarConcluidas(card);
+  marcarPrimeiras(card);
+  div.querySelector('.ag-proj-txt').focus();
+  return div;
+}
+
+function projTarefaKeydown(ev, inp) {
+  const card  = inp.closest('.ag-proj-card');
+  const bloco = inp.closest('.ag-proj-bloco').dataset.bloco;
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    inp.blur();
+    addProjTarefa(card.dataset.id, bloco);
+  } else if (ev.key === 'Backspace' && inp.value === '') {
+    ev.preventDefault();
+    const linha    = inp.closest('.ag-proj-linha');
+    const anterior = linha.previousElementSibling;
+    excluirProjTarefa(linha);
+    if (anterior && anterior.classList.contains('ag-proj-linha')) {
+      anterior.querySelector('.ag-proj-txt')?.focus();
+    }
+  }
+}
+
+/* ── recorrências mensais ── */
+function toggleProjRec(btn) {
+  const linha = btn.closest('.ag-proj-linha');
+  const id    = linha.dataset.exec;
+  if (!id) return;
+  const on = !btn.classList.contains('on');
+  const situacao = on ? 'concluida' : 'pendente';
+  btn.classList.toggle('on', on);
+  linha.classList.toggle('feito', on);
+  linha.classList.remove('cancelada');
+  linha.dataset.situacao = situacao;
+  atualizarConcluidas(linha.closest('.ag-proj-card'));
+  post(URL_PROJ_REC_SITUACAO, {id, situacao});
+}
+
+function cancelarProjRec(btn) {
+  const linha = btn.closest('.ag-proj-linha');
+  const id    = linha.dataset.exec;
+  if (!id) return;
+  const cancelada = linha.dataset.situacao === 'cancelada';
+  const situacao  = cancelada ? 'pendente' : 'cancelada';
+  if (!cancelada && !confirm('Cancelar esta recorrência no mês?')) return;
+  linha.dataset.situacao = situacao;
+  linha.classList.toggle('cancelada', !cancelada);
+  linha.classList.remove('feito');
+  linha.querySelector('.ag-proj-chk').classList.remove('on');
+  post(URL_PROJ_REC_SITUACAO, {id, situacao}).then(() => window.location.reload());
+}
+
+function carregarRecsMes(id_projeto) {
+  post(URL_PROJ_RECS_CARREGAR, {id_projeto}).then(res => {
+    if (res && res.ok) window.location.reload();
+    else alert((res && res.erro) || 'Não foi possível carregar.');
+  });
+}
+
+/* ── modal: gerenciar projetos ── */
+function abrirModalProjetos() {
+  const cont = document.getElementById('modal-proj-lista');
+  cont.innerHTML = '';
+  PROJETOS.forEach(p => addLinhaProjeto(p.id, p.nome));
+  if (!PROJETOS.length) addLinhaProjeto();
+  document.getElementById('modal-proj-bg').classList.add('open');
+}
+
+function fecharModalProjetos() {
+  document.getElementById('modal-proj-bg').classList.remove('open');
+}
+
+function addLinhaProjeto(id = '', nome = '') {
+  const div = document.createElement('div');
+  div.className = 'ag-slot-row';
+  div.dataset.id = id;
+  div.innerHTML = `
+    <input class="ag-slot-inp-tar" type="text" placeholder="Nome do projeto" value="${nome.replace(/"/g, '&quot;')}">
+    <button class="ag-slot-del" title="Remover projeto"
+      onclick="this.closest('.ag-slot-row').remove()">×</button>`;
+  document.getElementById('modal-proj-lista').appendChild(div);
+  div.querySelector('input').focus();
+}
+
+function salvarModalProjetos() {
+  const linhas = [...document.querySelectorAll('#modal-proj-lista .ag-slot-row')];
+  const vistos = new Set();
+  const acoes  = [];
+
+  linhas.forEach(l => {
+    const nome = l.querySelector('input').value.trim();
+    const id   = l.dataset.id;
+    if (!nome) return;
+    if (id) {
+      vistos.add(String(id));
+      const antigo = (PROJETOS.find(p => String(p.id) === String(id)) || {}).nome;
+      if (nome !== antigo) acoes.push(post(URL_PROJ_RENOMEAR, {id, nome}));
+    } else {
+      acoes.push(post(URL_PROJ_CRIAR, {nome}));
+    }
+  });
+  // projeto tirado da lista sai da tela (o histórico continua no banco)
+  PROJETOS.forEach(p => {
+    if (!vistos.has(String(p.id))) acoes.push(post(URL_PROJ_EXCLUIR, {id: p.id}));
+  });
+
+  Promise.all(acoes).then(() => window.location.reload());
+  fecharModalProjetos();
+}
+
+/* ── modal: recorrências mensais de um projeto ── */
+let _projRec = null;
+
+function abrirModalRecs(id_projeto) {
+  _projRec = id_projeto;
+  const p = PROJETOS.find(x => String(x.id) === String(id_projeto));
+  document.getElementById('modal-recs-titulo').textContent =
+    '⚙ Recorrências mensais — ' + (p ? p.nome : '');
+  const cont = document.getElementById('modal-recs-lista');
+  cont.innerHTML = '';
+  (p ? p.modelos : []).forEach(m => addLinhaRec(m.id, m.texto));
+  if (!p || !p.modelos.length) addLinhaRec();
+  document.getElementById('modal-recs-bg').classList.add('open');
+}
+
+function fecharModalRecs() {
+  document.getElementById('modal-recs-bg').classList.remove('open');
+}
+
+function addLinhaRec(id = '', texto = '') {
+  const div = document.createElement('div');
+  div.className = 'ag-slot-row';
+  div.dataset.id = id;
+  div.innerHTML = `
+    <input class="ag-slot-inp-tar" type="text" placeholder="O que repete todo mês" value="${texto.replace(/"/g, '&quot;')}">
+    <button class="ag-slot-del" onclick="this.closest('.ag-slot-row').remove()">×</button>`;
+  document.getElementById('modal-recs-lista').appendChild(div);
+}
+
+function salvarModalRecs() {
+  const itens = [...document.querySelectorAll('#modal-recs-lista .ag-slot-row')]
+    .map(l => ({id: l.dataset.id || null, texto: l.querySelector('input').value.trim()}))
+    .filter(i => i.texto);
+  post(URL_PROJ_RECS_SALVAR, {id_projeto: _projRec, itens: JSON.stringify(itens)})
+    .then(() => window.location.reload());
+  fecharModalRecs();
+}
+
+document.getElementById('modal-proj-bg').addEventListener('click', e => {
+  if (e.target === e.currentTarget) fecharModalProjetos();
+});
+document.getElementById('modal-recs-bg').addEventListener('click', e => {
+  if (e.target === e.currentTarget) fecharModalRecs();
 });
 </script>
 {% endblock %}

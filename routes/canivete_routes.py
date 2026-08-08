@@ -737,6 +737,10 @@ def agenda():
     """, ([t["id"] for t in tarefas_dia] or [-1], hoje))
     execs_dia = {e["id_tarefa"]: e["concluido"] for e in cur.fetchall()}
 
+    # projetos (3ª coluna) — pode carregar as recorrências do mês sozinho
+    projetos, competencia = _dados_projetos(cur, id_usuario, hoje)
+
+    conn.commit()
     cur.close(); conn.close()
 
     # distribuir as tarefas nas semanas certas de cada mês
@@ -829,6 +833,8 @@ def agenda():
         recorrentes=recorrentes,
         indice_semana=indice_semana,
         programacao_hoje=programacao_hoje,
+        projetos=projetos,
+        competencia_projetos=competencia.isoformat(),
         url_voltar=url_for("canivete.menu_canivete"),
     )
 
@@ -1253,3 +1259,508 @@ def agenda_salvar_slots():
     """, (id_usuario, data_str, turno, _json_agenda.dumps(slots), _json_agenda.dumps(slots)))
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True})
+
+
+# ─────────────────────────────────────────────────────────────
+#  PROJETOS DA AGENDA
+#
+#  Terceira coluna da agenda. Diferente de Recorrentes e da
+#  Programação do Dia, não fica preso à altura das linhas da
+#  grade — é um painel próprio, ao lado da tabela.
+#
+#  Cada projeto tem 3 blocos: metas, recorrências mensais e
+#  tarefas eventuais. Tudo por USUÁRIO (não tem cod_empresa).
+# ─────────────────────────────────────────────────────────────
+
+def _competencia_atual(hoje=None):
+    """Competência = 1º dia do mês corrente."""
+    h = hoje or date.today()
+    return date(h.year, h.month, 1)
+
+
+def _projeto_do_usuario(cur, id_projeto, id_usuario) -> bool:
+    cur.execute("SELECT 1 FROM agenda_projetos WHERE id=%s AND id_usuario=%s",
+                (id_projeto, id_usuario))
+    return cur.fetchone() is not None
+
+
+def _carregar_recorrencias(cur, id_projeto, competencia) -> int:
+    """
+    Cria as execuções da competência para as recorrências ativas do projeto.
+    Idempotente (ON CONFLICT DO NOTHING). Devolve quantas nasceram.
+    """
+    cur.execute("""
+        INSERT INTO agenda_proj_rec_execucoes (id_recorrencia, competencia)
+        SELECT r.id, %s
+        FROM agenda_proj_recorrencias r
+        WHERE r.id_projeto=%s AND r.ativo AND COALESCE(TRIM(r.texto),'') <> ''
+        ON CONFLICT (id_recorrencia, competencia) DO NOTHING
+    """, (competencia, id_projeto))
+    n = cur.rowcount or 0
+    cur.execute("UPDATE agenda_projetos SET competencia=%s WHERE id=%s",
+                (competencia, id_projeto))
+    return n
+
+
+def _tem_pendencia_anterior(cur, id_projeto, competencia) -> bool:
+    """Sobrou recorrência pendente de competência anterior à informada?"""
+    cur.execute("""
+        SELECT 1
+        FROM agenda_proj_rec_execucoes e
+        JOIN agenda_proj_recorrencias r ON r.id = e.id_recorrencia
+        WHERE r.id_projeto=%s AND e.competencia < %s AND e.situacao='pendente'
+        LIMIT 1
+    """, (id_projeto, competencia))
+    return cur.fetchone() is not None
+
+
+def _tarefas_bloco(tarefas, id_projeto, bloco):
+    """Metas ou eventuais de um projeto, com a data da conclusão (para o filtro)."""
+    return [
+        {
+            "id":        t["id"],
+            "texto":     t["texto"] or "",
+            "concluido": t["concluido"],
+            "cancelado": t["cancelado"],
+            # data de saída da lista: serve ao filtro por período do 👁
+            "quando":    (t["cancelado_em"] or t["concluido_em"]).date().isoformat()
+                         if (t["cancelado_em"] or t["concluido_em"]) else "",
+        }
+        for t in tarefas
+        if t["id_projeto"] == id_projeto and t["bloco"] == bloco
+    ]
+
+
+def _dados_projetos(cur, id_usuario, hoje=None):
+    """
+    Monta a lista de projetos com os 3 blocos preenchidos.
+
+    Na virada do mês as recorrências do novo mês entram sozinhas — mas só
+    se o mês anterior estiver zerado (tudo concluído ou cancelado). Se ficou
+    pendência, o projeto marca `pode_carregar` e o usuário decide quando
+    carregar pelo botão.
+    """
+    comp = _competencia_atual(hoje)
+
+    cur.execute("""
+        SELECT id, nome, ordem, competencia
+        FROM agenda_projetos
+        WHERE id_usuario=%s AND ativo
+        ORDER BY ordem, id
+    """, (id_usuario,))
+    projetos = cur.fetchall()
+    if not projetos:
+        return [], comp
+
+    # carga automática do mês, projeto a projeto
+    for p in projetos:
+        if p["competencia"] == comp:
+            continue
+        if not _tem_pendencia_anterior(cur, p["id"], comp):
+            _carregar_recorrencias(cur, p["id"], comp)
+            p["competencia"] = comp
+
+    ids = [p["id"] for p in projetos]
+
+    cur.execute("""
+        SELECT id, id_projeto, bloco, texto, concluido, concluido_em,
+               cancelado, cancelado_em, ordem
+        FROM agenda_proj_tarefas
+        WHERE id_projeto = ANY(%s)
+        ORDER BY ordem, id
+    """, (ids,))
+    tarefas = cur.fetchall()
+
+    cur.execute("""
+        SELECT r.id, r.id_projeto, r.texto, r.ordem,
+               e.id AS id_execucao, e.competencia, e.situacao
+        FROM agenda_proj_recorrencias r
+        JOIN agenda_proj_rec_execucoes e ON e.id_recorrencia = r.id
+        WHERE r.id_projeto = ANY(%s)
+          AND (e.competencia >= %s OR e.situacao = 'pendente')
+        ORDER BY e.competencia, r.ordem, r.id
+    """, (ids, comp.replace(year=comp.year - 1)))
+    execucoes = cur.fetchall()
+
+    # modelos das recorrências (para a engrenagem)
+    cur.execute("""
+        SELECT id, id_projeto, texto, ordem
+        FROM agenda_proj_recorrencias
+        WHERE id_projeto = ANY(%s) AND ativo
+        ORDER BY ordem, id
+    """, (ids,))
+    modelos = cur.fetchall()
+
+    saida = []
+    for p in projetos:
+        recs = [
+            {
+                "id_execucao":    e["id_execucao"],
+                "id_recorrencia": e["id"],
+                "texto":       e["texto"] or "",
+                "situacao":    e["situacao"],
+                "competencia": e["competencia"].isoformat(),
+                "quando":      e["competencia"].isoformat(),
+                "atrasada":    e["competencia"] < comp,
+            }
+            for e in execucoes if e["id_projeto"] == p["id"]
+        ]
+        pendentes_atras = any(r["atrasada"] and r["situacao"] == "pendente" for r in recs)
+        saida.append({
+            "id":    p["id"],
+            "nome":  p["nome"],
+            "metas":     _tarefas_bloco(tarefas, p["id"], "meta"),
+            "eventuais": _tarefas_bloco(tarefas, p["id"], "eventual"),
+            "recorrencias": recs,
+            "modelos": [
+                {"id": m["id"], "texto": m["texto"] or ""}
+                for m in modelos if m["id_projeto"] == p["id"]
+            ],
+            # botão só faz sentido quando o mês ainda não entrou
+            "pode_carregar":   p["competencia"] != comp,
+            "trava_pendencia": pendentes_atras,
+        })
+    return saida, comp
+
+
+@canivete_bp.route("/agenda/projeto/criar", methods=["POST"])
+def agenda_projeto_criar():
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+    nome = (request.form.get("nome") or "").strip()
+    if not nome:
+        return jsonify({"ok": False, "erro": "Informe o nome do projeto."})
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("""
+        INSERT INTO agenda_projetos (id_usuario, nome, ordem, competencia)
+        VALUES (%s, %s,
+                COALESCE((SELECT MAX(ordem)+1 FROM agenda_projetos WHERE id_usuario=%s), 10),
+                %s)
+        RETURNING id
+    """, (id_usuario, nome, id_usuario, _competencia_atual()))
+    novo = cur.fetchone()["id"]
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True, "id": novo})
+
+
+@canivete_bp.route("/agenda/projeto/renomear", methods=["POST"])
+def agenda_projeto_renomear():
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+    id_projeto = request.form.get("id")
+    nome = (request.form.get("nome") or "").strip()
+    if not id_projeto or not nome:
+        return jsonify({"ok": False, "erro": "Informe o nome do projeto."})
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("UPDATE agenda_projetos SET nome=%s WHERE id=%s AND id_usuario=%s",
+                (nome, id_projeto, id_usuario))
+    ok = cur.rowcount > 0
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": ok})
+
+
+@canivete_bp.route("/agenda/projeto/excluir", methods=["POST"])
+def agenda_projeto_excluir():
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+    id_projeto = request.form.get("id")
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    # inativa em vez de apagar: preserva o histórico das recorrências
+    cur.execute("UPDATE agenda_projetos SET ativo=FALSE WHERE id=%s AND id_usuario=%s",
+                (id_projeto, id_usuario))
+    ok = cur.rowcount > 0
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": ok})
+
+
+@canivete_bp.route("/agenda/projeto/tarefa/criar", methods=["POST"])
+def agenda_projeto_tarefa_criar():
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+    id_projeto = request.form.get("id_projeto")
+    bloco      = (request.form.get("bloco") or "").strip()
+    texto      = (request.form.get("texto") or "").strip()
+    if bloco not in ("meta", "eventual"):
+        return jsonify({"ok": False, "erro": "bloco inválido"})
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    if not _projeto_do_usuario(cur, id_projeto, id_usuario):
+        cur.close(); conn.close()
+        return jsonify({"ok": False}), 403
+    cur.execute("""
+        INSERT INTO agenda_proj_tarefas (id_projeto, bloco, texto, ordem)
+        VALUES (%s, %s, %s,
+                COALESCE((SELECT MAX(ordem)+1 FROM agenda_proj_tarefas
+                          WHERE id_projeto=%s AND bloco=%s), 10))
+        RETURNING id
+    """, (id_projeto, bloco, texto, id_projeto, bloco))
+    novo = cur.fetchone()["id"]
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True, "id": novo})
+
+
+@canivete_bp.route("/agenda/projeto/tarefa/salvar", methods=["POST"])
+def agenda_projeto_tarefa_salvar():
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+    id_tarefa  = request.form.get("id")
+    texto      = (request.form.get("texto") or "").strip()
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("""
+        UPDATE agenda_proj_tarefas t SET texto=%s
+        FROM agenda_projetos p
+        WHERE t.id=%s AND p.id=t.id_projeto AND p.id_usuario=%s
+    """, (texto, id_tarefa, id_usuario))
+    ok = cur.rowcount > 0
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": ok})
+
+
+@canivete_bp.route("/agenda/projeto/tarefa/concluir", methods=["POST"])
+def agenda_projeto_tarefa_concluir():
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+    id_tarefa  = request.form.get("id")
+    concluido  = request.form.get("concluido") == "1"
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("""
+        UPDATE agenda_proj_tarefas t
+        SET concluido=%s, concluido_em = CASE WHEN %s THEN now() ELSE NULL END
+        FROM agenda_projetos p
+        WHERE t.id=%s AND p.id=t.id_projeto AND p.id_usuario=%s
+    """, (concluido, concluido, id_tarefa, id_usuario))
+    ok = cur.rowcount > 0
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": ok})
+
+
+@canivete_bp.route("/agenda/projeto/tarefa/cancelar", methods=["POST"])
+def agenda_projeto_tarefa_cancelar():
+    """Cancela (ou reabre) uma meta / tarefa eventual — não apaga."""
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+    id_tarefa  = request.form.get("id")
+    cancelado  = request.form.get("cancelado") == "1"
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("""
+        UPDATE agenda_proj_tarefas t
+        SET cancelado=%s,
+            cancelado_em = CASE WHEN %s THEN now() ELSE NULL END,
+            concluido    = CASE WHEN %s THEN FALSE ELSE t.concluido END
+        FROM agenda_projetos p
+        WHERE t.id=%s AND p.id=t.id_projeto AND p.id_usuario=%s
+    """, (cancelado, cancelado, cancelado, id_tarefa, id_usuario))
+    ok = cur.rowcount > 0
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": ok})
+
+
+@canivete_bp.route("/agenda/projeto/tarefa/excluir", methods=["POST"])
+def agenda_projeto_tarefa_excluir():
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+    id_tarefa  = request.form.get("id")
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("""
+        DELETE FROM agenda_proj_tarefas t
+        USING agenda_projetos p
+        WHERE t.id=%s AND p.id=t.id_projeto AND p.id_usuario=%s
+    """, (id_tarefa, id_usuario))
+    ok = cur.rowcount > 0
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": ok})
+
+
+@canivete_bp.route("/agenda/projeto/item/mandar-para-o-fim", methods=["POST"])
+def agenda_projeto_item_para_o_fim():
+    """
+    Manda a primeira linha do bloco para o fim da fila (a seta ▼).
+    Serve aos três blocos: metas, recorrências mensais e eventuais.
+    """
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+    tipo = (request.form.get("tipo") or "").strip()
+    id_item = request.form.get("id")
+    if tipo not in ("tarefa", "recorrencia"):
+        return jsonify({"ok": False, "erro": "tipo inválido"})
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    if tipo == "tarefa":
+        cur.execute("""
+            UPDATE agenda_proj_tarefas t
+            SET ordem = COALESCE((SELECT MAX(o.ordem) FROM agenda_proj_tarefas o
+                                  WHERE o.id_projeto=t.id_projeto AND o.bloco=t.bloco), 0) + 10
+            FROM agenda_projetos p
+            WHERE t.id=%s AND p.id=t.id_projeto AND p.id_usuario=%s
+        """, (id_item, id_usuario))
+    else:
+        cur.execute("""
+            UPDATE agenda_proj_recorrencias r
+            SET ordem = COALESCE((SELECT MAX(o.ordem) FROM agenda_proj_recorrencias o
+                                  WHERE o.id_projeto=r.id_projeto), 0) + 10
+            FROM agenda_projetos p
+            WHERE r.id=%s AND p.id=r.id_projeto AND p.id_usuario=%s
+        """, (id_item, id_usuario))
+    ok = cur.rowcount > 0
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": ok})
+
+
+@canivete_bp.route("/agenda/projeto/recorrencias/salvar", methods=["POST"])
+def agenda_projeto_recorrencias_salvar():
+    """
+    Grava a lista inteira de recorrências mensais do projeto (a janela da
+    engrenagem manda tudo). O que sumiu da lista é inativado — as execuções
+    já lançadas continuam de pé.
+    """
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+    id_projeto = request.form.get("id_projeto")
+    try:
+        itens = _json_agenda.loads(request.form.get("itens") or "[]")
+    except Exception:
+        return jsonify({"ok": False, "erro": "itens inválidos"})
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    if not _projeto_do_usuario(cur, id_projeto, id_usuario):
+        cur.close(); conn.close()
+        return jsonify({"ok": False}), 403
+
+    mantidos = []
+    for ordem, it in enumerate(itens, start=1):
+        texto = (it.get("texto") or "").strip()
+        if not texto:
+            continue
+        rid = it.get("id")
+        if rid:
+            cur.execute("""
+                UPDATE agenda_proj_recorrencias
+                SET texto=%s, ordem=%s, ativo=TRUE
+                WHERE id=%s AND id_projeto=%s
+            """, (texto, ordem * 10, rid, id_projeto))
+            if cur.rowcount:
+                mantidos.append(int(rid))
+                continue
+        cur.execute("""
+            INSERT INTO agenda_proj_recorrencias (id_projeto, texto, ordem)
+            VALUES (%s,%s,%s) RETURNING id
+        """, (id_projeto, texto, ordem * 10))
+        mantidos.append(cur.fetchone()[0])
+
+    cur.execute("""
+        UPDATE agenda_proj_recorrencias SET ativo=FALSE
+        WHERE id_projeto=%s AND NOT (id = ANY(%s))
+    """, (id_projeto, mantidos or [-1]))
+
+    # recorrência nova entra já no mês corrente, se o mês já foi carregado
+    cur.execute("SELECT competencia FROM agenda_projetos WHERE id=%s", (id_projeto,))
+    comp_projeto = cur.fetchone()[0]
+    comp = _competencia_atual()
+    if comp_projeto == comp:
+        cur.execute("""
+            INSERT INTO agenda_proj_rec_execucoes (id_recorrencia, competencia)
+            SELECT r.id, %s FROM agenda_proj_recorrencias r
+            WHERE r.id_projeto=%s AND r.ativo
+            ON CONFLICT (id_recorrencia, competencia) DO NOTHING
+        """, (comp, id_projeto))
+    # execução pendente de recorrência inativada não faz mais sentido
+    cur.execute("""
+        DELETE FROM agenda_proj_rec_execucoes e
+        USING agenda_proj_recorrencias r
+        WHERE e.id_recorrencia=r.id AND r.id_projeto=%s
+          AND NOT r.ativo AND e.situacao='pendente'
+    """, (id_projeto,))
+
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True})
+
+
+@canivete_bp.route("/agenda/projeto/recorrencia/situacao", methods=["POST"])
+def agenda_projeto_recorrencia_situacao():
+    """Concluir, cancelar ou reabrir a execução do mês."""
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+    id_exec    = request.form.get("id")
+    situacao   = (request.form.get("situacao") or "").strip()
+    if situacao not in ("pendente", "concluida", "cancelada"):
+        return jsonify({"ok": False, "erro": "situação inválida"})
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("""
+        UPDATE agenda_proj_rec_execucoes e SET situacao=%s
+        FROM agenda_proj_recorrencias r, agenda_projetos p
+        WHERE e.id=%s AND r.id=e.id_recorrencia
+          AND p.id=r.id_projeto AND p.id_usuario=%s
+    """, (situacao, id_exec, id_usuario))
+    ok = cur.rowcount > 0
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": ok})
+
+
+@canivete_bp.route("/agenda/projeto/recorrencias/carregar", methods=["POST"])
+def agenda_projeto_recorrencias_carregar():
+    """
+    Carga manual das recorrências do mês. Só passa se o mês anterior estiver
+    zerado — pendência velha tem que ser concluída ou cancelada antes.
+    """
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+    id_projeto = request.form.get("id_projeto")
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    if not _projeto_do_usuario(cur, id_projeto, id_usuario):
+        cur.close(); conn.close()
+        return jsonify({"ok": False}), 403
+
+    comp = _competencia_atual()
+    if _tem_pendencia_anterior(cur, id_projeto, comp):
+        cur.close(); conn.close()
+        return jsonify({"ok": False,
+                        "erro": "Conclua ou cancele as recorrências pendentes "
+                                "do mês anterior antes de carregar o mês."})
+    n = _carregar_recorrencias(cur, id_projeto, comp)
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True, "criadas": n})
