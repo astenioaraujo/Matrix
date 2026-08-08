@@ -454,14 +454,6 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
   background-repeat: no-repeat;
 }
 
-/* Olho do cabeçalho (ao lado de DOM): esconde os dias já concluídos.
-   O quadrado continua lá, do mesmo tamanho e com as mesmas bordas —
-   só fica em branco, para a semana não perder o alinhamento. */
-.ag-grade.ocultar-dias-feitos .ag-cell.dia-concluido { background: var(--bg, #f4f4f4); }
-.ag-grade.ocultar-dias-feitos .ag-cell.dia-concluido::after { content: none; }
-.ag-grade.ocultar-dias-feitos .ag-cell.dia-concluido > * { visibility: hidden; }
-.ag-grade.ocultar-dias-feitos .ag-rec-olho { opacity: 1; }
-
 /* dia inteiro concluído: um único X vermelho cobrindo a célula toda,
    e os X de cada turno saem de cena */
 .ag-cell.dia-concluido .ag-turno.concluido { background-image: none; }
@@ -590,12 +582,7 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
           <span class="sep-mes-nome">
             {%- if loop.index0 == f.col -%}{{ meses_pt[f.mes-1] }} {{ f.ano }}{%- endif -%}
           </span>
-          <span class="sep-dia-nome">{{ d }}
-            {%- if loop.index0 == 6 %}
-            <button class="ag-rec-olho" title="Esconder / mostrar os dias concluídos"
-              onclick="alternarDiasFeitos()">👁</button>
-            {%- endif %}
-          </span>
+          <span class="sep-dia-nome">{{ d }}</span>
         </th>
         {% endfor %}
         <th class="col-gap"></th>
@@ -633,12 +620,7 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
           <span class="sep-mes-nome">
             {%- if loop.index0 == p.col -%}{{ meses_pt[p.mes-1] }} {{ p.ano }}{%- endif -%}
           </span>
-          <span class="sep-dia-nome">{{ d }}
-            {%- if loop.index0 == 6 %}
-            <button class="ag-rec-olho" title="Esconder / mostrar os dias concluídos"
-              onclick="alternarDiasFeitos()">👁</button>
-            {%- endif %}
-          </span>
+          <span class="sep-dia-nome">{{ d }}</span>
         </td>
         {% endfor %}
         <td class="col-gap"></td>
@@ -1127,23 +1109,6 @@ function alternarDiaConcluidas() {
 }
 
 document.addEventListener('DOMContentLoaded', aplicarDiaConcluidas);
-
-/* Olho ao lado de DOM: some com os dias já concluídos (os que estão
-   riscados com o X vermelho), deixando o quadrado em branco. */
-function aplicarDiasFeitos() {
-  const grade = document.querySelector('.ag-grade');
-  if (!grade) return;
-  grade.classList.toggle('ocultar-dias-feitos',
-                         localStorage.getItem('agendaOcultarDiasFeitos') === '1');
-}
-
-function alternarDiasFeitos() {
-  const ocultar = localStorage.getItem('agendaOcultarDiasFeitos') === '1';
-  localStorage.setItem('agendaOcultarDiasFeitos', ocultar ? '0' : '1');
-  aplicarDiasFeitos();
-}
-
-document.addEventListener('DOMContentLoaded', aplicarDiasFeitos);
 
 /* Nova tarefa — sugere S1; em branco significa "não repete" */
 function addRecLinha(semana) {
