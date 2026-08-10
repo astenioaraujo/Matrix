@@ -805,6 +805,8 @@ def agenda():
             slots = _json_agenda.loads(r2["slots"] or "[]") if isinstance(r2["slots"], str) else (r2["slots"] or [])
         except Exception:
             slots = []
+        # o que foi salvo fora de ordem antes desta correção também sai ordenado
+        slots.sort(key=lambda x: (x or {}).get("hora") or "99:99")
         blocos[key] = {
             "conteudo":  r2["conteudo"] or "",
             "quebrado":  r2["quebrado"],
@@ -1245,6 +1247,10 @@ def agenda_salvar_slots():
         slots = _json_agenda.loads(slots_str)
     except Exception:
         return jsonify({"ok": False, "erro": "slots inválidos"})
+
+    # sempre em ordem de horário — quem digitou fora de ordem (16:00 depois
+    # das 17:00) não precisa se preocupar. Sem hora vai para o fim.
+    slots.sort(key=lambda s: (s or {}).get("hora") or "99:99")
 
     if turno not in ("manha", "tarde", "noturno") or not data_str:
         return jsonify({"ok": False})

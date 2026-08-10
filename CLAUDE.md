@@ -93,6 +93,28 @@ Primeiro item do menu do Financeiro. Tabelas em `migrations/criar_tabelas_saldos
 
 ---
 
+# Módulo Vendas
+
+## Parâmetros (origem da importação do painel)
+
+`vendas_parametros` (`migrations/criar_tabela_vendas_parametros.sql`), uma linha por empresa. Hoje só `sistema_origem_painel`: `WEBPOSTOS` (EMP010/011/011ADM/012) ou `OCLOSET` (EMP013). Empresa sem linha = WebPostos. Tela em `Vendas → Parâmetros` (`templates/vendas_parametros.html`, permissão `VENDAS/PARAMETROS` 770). Os rótulos saem de `SISTEMAS_ORIGEM_PAINEL`; o selo "Origem: …" nas telas de importação vem do template global `origem_painel_empresa()` (cacheado em `g`).
+
+## Importar Painel — O Closet (EMP013)
+
+`GET/POST /vendas/painel/importar` decide o formato pela origem da empresa: WebPostos segue no fluxo Excel de sempre; `OCLOSET` cai em `importar_painel_ocloset` + `templates/vendas_importar_painel_ocloset.html`.
+
+O arquivo é o CSV "vendas item por pagamento" (`;`, uma linha por item). Lido por `ler_csv_ocloset`:
+
+- **quantidade** = número de linhas
+- **valor** = soma de `Total do item` — **não** de `Líquido recebido`, que se repete em todas as linhas da mesma nota (somar a coluna multiplicaria a venda) e vem vazio em itens sem pagamento
+- **custo** = soma de `Custo total`; vazio ou zero vira metade do valor do item (equivale a metade do preço unitário por peça)
+- **margem bruta** = valor − custo
+- **dias** = datas distintas no arquivo (não o intervalo do calendário)
+
+Sem filtro de Status — todas as linhas entram. A projeção do mês é a média diária × dias do mês informado; `dia_base` gravado em `vendas_painel_importacoes` é a quantidade de dias lidos. EMP013 tem uma filial só (cod_filial 1); com mais de uma, tudo vai para a primeira e a tela avisa.
+
+---
+
 # Módulo RH
 
 ## Funções (descrição livre)

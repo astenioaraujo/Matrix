@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .card-param {
+    max-width: 760px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 22px;
+  }
+
+  .bloco-titulo {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .bloco-obs {
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 14px;
+  }
+
+  .opcao {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+  }
+
+  .opcao:hover {
+    background: #f7f7f7;
+  }
+
+  .acoes {
+    margin-top: 18px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .btn-acao {
+    display: inline-block;
+    padding: 10px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    border: 1px solid #c7c7c7;
+    background: #f7f7f7;
+    color: #1f3c88;
+    cursor: pointer;
+  }
+
+  .btn-salvar {
+    background: #2e9b57;
+    color: #fff;
+    border-color: #2e9b57;
+  }
+
+  .btn-salvar:hover {
+    background: #25834a;
+    border-color: #25834a;
+  }
+
+  .flash-msg {
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-weight: 600;
+  }
+
+  .flash-success {
+    background: #e6f4ea;
+    color: #1e6b34;
+    border: 1px solid #b7dfc2;
+  }
+
+  .flash-error {
+    background: #fdeaea;
+    color: #9f2f2f;
+    border: 1px solid #efc2c2;
+  }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">Parâmetros de Vendas</div>
+  <div class="pagina-subtitulo">
+    Empresa: <strong>{{ nome_empresa }}</strong>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="card-param">
+    <form method="post">
+      <div class="bloco-titulo">Origem da importação do painel</div>
+      <div class="bloco-obs">
+        Define o formato de arquivo esperado na tela “Importar Painel”.
+      </div>
+
+      {% for chave, rotulo in sistemas_origem.items() %}
+        <label class="opcao">
+          <input type="radio" name="sistema_origem_painel" value="{{ chave }}"
+                 {% if chave == sistema_origem_atual %}checked{% endif %}>
+          <span>{{ rotulo }}</span>
+        </label>
+      {% endfor %}
+
+      <div class="acoes">
+        <button type="submit" class="btn-acao btn-salvar">Salvar</button>
+        <a class="btn-acao" href="{{ url_for('sistema.menu_vendas') }}">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}

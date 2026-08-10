@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, session, redirect, url_for, request, flash
+from flask import Blueprint, render_template, session, redirect, url_for, request, flash, g
 from security_helpers import permissao_obrigatoria
 import psycopg2
 from psycopg2.extras import RealDictCursor, execute_values
@@ -8,6 +8,8 @@ import os
 import re
 import uuid
 import calendar
+import csv
+import io
 
 from collections import defaultdict
 from datetime import date, timedelta, datetime
@@ -436,6 +438,183 @@ def inserir_importacao_painel(
         float(mb_proj),
         data_brasil
     ))
+
+
+# =========================
+# PARÂMETROS DE VENDAS (por empresa)
+# =========================
+# Origem da importação do painel. A chave é o que fica gravado em
+# vendas_parametros.sistema_origem_painel; o valor é o rótulo da tela.
+SISTEMAS_ORIGEM_PAINEL = {
+    "WEBPOSTOS": "WebPostos",
+    "OCLOSET": "Sistema O Closet",
+}
+
+SISTEMA_ORIGEM_PAINEL_PADRAO = "WEBPOSTOS"
+
+
+def obter_sistema_origem_painel(cod_empresa):
+    """Empresa sem linha em vendas_parametros cai no padrão (WebPostos)."""
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            SELECT sistema_origem_painel
+            FROM vendas_parametros
+            WHERE cod_empresa = %s
+        """, (cod_empresa,))
+        linha = cur.fetchone()
+    finally:
+        cur.close()
+        conn.close()
+
+    if not linha:
+        return SISTEMA_ORIGEM_PAINEL_PADRAO
+
+    sistema = str(linha[0] or "").strip().upper()
+    if sistema not in SISTEMAS_ORIGEM_PAINEL:
+        return SISTEMA_ORIGEM_PAINEL_PADRAO
+
+    return sistema
+
+
+@vendas_bp.app_template_global("origem_painel_empresa")
+def origem_painel_empresa():
+    """Origem do painel da empresa da sessão, para os templates.
+
+    Cacheada em `g` porque a tela de importação chama mais de uma vez por
+    requisição e a consulta é sempre a mesma.
+    """
+    if "cod_empresa" not in session:
+        return {"sistema": SISTEMA_ORIGEM_PAINEL_PADRAO,
+                "rotulo": SISTEMAS_ORIGEM_PAINEL[SISTEMA_ORIGEM_PAINEL_PADRAO]}
+
+    if not hasattr(g, "_origem_painel"):
+        sistema = obter_sistema_origem_painel(str(session["cod_empresa"]).strip())
+        g._origem_painel = {
+            "sistema": sistema,
+            "rotulo": SISTEMAS_ORIGEM_PAINEL[sistema],
+        }
+
+    return g._origem_painel
+
+
+def gravar_sistema_origem_painel(cod_empresa, sistema):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            INSERT INTO vendas_parametros (cod_empresa, sistema_origem_painel)
+            VALUES (%s, %s)
+            ON CONFLICT (cod_empresa)
+            DO UPDATE SET
+                sistema_origem_painel = EXCLUDED.sistema_origem_painel,
+                atualizado_em = now()
+        """, (cod_empresa, sistema))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
+
+
+# =========================
+# LEITURA DO CSV DO O CLOSET
+# =========================
+# Colunas do relatório "vendas item por pagamento": uma linha por item vendido.
+COLUNAS_CSV_OCLOSET = {
+    "data": "Data",
+    "preco_unitario": "Preço unitário",
+    "total_item": "Total do item",
+    "custo_total": "Custo total",
+}
+
+
+def ler_csv_ocloset(conteudo_bytes):
+    """Resume o CSV de itens do O Closet no que o painel precisa.
+
+    - quantidade: uma peça por linha do arquivo
+    - valor: soma de "Total do item"
+    - custo: soma de "Custo total"; quando vier vazio ou zero, metade do
+      valor do item (o equivalente a metade do preço unitário por peça)
+    - dias: quantidade de datas distintas presentes no arquivo
+    """
+    texto = None
+    for codificacao in ("utf-8-sig", "latin-1"):
+        try:
+            texto = conteudo_bytes.decode(codificacao)
+            break
+        except UnicodeDecodeError:
+            continue
+
+    if texto is None:
+        raise ValueError("Não foi possível ler o arquivo (codificação desconhecida).")
+
+    leitor = csv.DictReader(io.StringIO(texto), delimiter=";")
+
+    cabecalho = [str(c or "").strip() for c in (leitor.fieldnames or [])]
+    faltando = [
+        nome for nome in COLUNAS_CSV_OCLOSET.values()
+        if nome not in cabecalho
+    ]
+    if faltando:
+        raise ValueError(
+            "O arquivo não tem as colunas esperadas do O Closet: "
+            + ", ".join(faltando)
+        )
+
+    quantidade = 0
+    valor = Decimal("0")
+    custo = Decimal("0")
+    custo_estimado_linhas = 0
+    datas = set()
+
+    for linha in leitor:
+        if linha is None:
+            continue
+
+        data_txt = str(linha.get(COLUNAS_CSV_OCLOSET["data"]) or "").strip()
+        total_txt = str(linha.get(COLUNAS_CSV_OCLOSET["total_item"]) or "").strip()
+
+        # Linha totalmente em branco no fim do arquivo
+        if not data_txt and not total_txt:
+            continue
+
+        try:
+            datas.add(datetime.strptime(data_txt, "%d/%m/%Y").date())
+        except ValueError:
+            raise ValueError(f"Data inválida no arquivo: {data_txt!r}")
+
+        valor_item = para_decimal(total_txt)
+        custo_item = para_decimal(linha.get(COLUNAS_CSV_OCLOSET["custo_total"]))
+
+        if custo_item <= 0:
+            custo_item = (valor_item / Decimal("2")).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+            custo_estimado_linhas += 1
+
+        quantidade += 1
+        valor += valor_item
+        custo += custo_item
+
+    if quantidade == 0:
+        raise ValueError("O arquivo não tem linhas de venda.")
+
+    return {
+        "quantidade": quantidade,
+        "valor": valor,
+        "custo": custo,
+        "margem_bruta": valor - custo,
+        "dias": len(datas),
+        "data_inicial": min(datas),
+        "data_final": max(datas),
+        "custo_estimado_linhas": custo_estimado_linhas,
+    }
 
 
 def obter_nome_mes_abrev(mes):
@@ -906,6 +1085,197 @@ def vendas_painel():
 
 
 # =========================
+# PARÂMETROS DE VENDAS
+# =========================
+@vendas_bp.route("/parametros", methods=["GET", "POST"])
+@permissao_obrigatoria("VENDAS", "PARAMETROS", redirecionar_para="sistema.menu_vendas")
+def vendas_parametros():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    if request.method == "POST":
+        sistema = str(request.form.get("sistema_origem_painel") or "").strip().upper()
+
+        if sistema not in SISTEMAS_ORIGEM_PAINEL:
+            flash("Selecione um sistema de origem válido.", "error")
+        else:
+            try:
+                gravar_sistema_origem_painel(cod_empresa, sistema)
+                g.pop("_origem_painel", None)
+                flash("Parâmetros salvos.", "success")
+            except Exception as e:
+                flash(f"Erro ao salvar: {e}", "error")
+
+        return redirect(url_for("vendas.vendas_parametros"))
+
+    return render_template(
+        "vendas_parametros.html",
+        nome_empresa=session.get("nome_empresa", ""),
+        sistemas_origem=SISTEMAS_ORIGEM_PAINEL,
+        sistema_origem_atual=obter_sistema_origem_painel(cod_empresa),
+        url_voltar=url_for("sistema.menu_vendas"),
+        texto_voltar="← Voltar"
+    )
+
+
+# =========================
+# IMPORTAÇÃO DO PAINEL — O CLOSET
+# =========================
+def importar_painel_ocloset(cod_empresa, nome_empresa, padrao):
+    """Importa o CSV de itens do O Closet para o painel sintético.
+
+    O painel guarda valores projetados para o mês inteiro; aqui a média diária
+    (dividida pelos dias distintos do arquivo) é multiplicada pelos dias do mês.
+    """
+    def pagina(**kw):
+        base = {
+            "nome_empresa": nome_empresa,
+            "ano_sugerido": padrao["ano"],
+            "mes_sugerido": padrao["mes"],
+            "dias_mes_sugerido": padrao["dias_mes"],
+            "url_voltar": url_for("sistema.menu_vendas"),
+            "texto_voltar": "← Voltar",
+        }
+        base.update(kw)
+        return render_template("vendas_importar_painel_ocloset.html", **base)
+
+    if request.method == "GET":
+        return pagina()
+
+    arquivo = request.files.get("arquivo")
+    ano_txt = (request.form.get("ano") or "").strip()
+    mes_txt = (request.form.get("mes") or "").strip()
+    dias_mes_txt = (request.form.get("dias_mes") or "").strip()
+
+    if not arquivo or arquivo.filename == "":
+        flash("Selecione um arquivo.", "error")
+        return pagina()
+
+    if not (ano_txt.isdigit() and mes_txt.isdigit() and dias_mes_txt.isdigit()):
+        flash("Informe ano, mês e dias do mês válidos.", "error")
+        return pagina()
+
+    ano = int(ano_txt)
+    mes = int(mes_txt)
+    dias_mes = int(dias_mes_txt)
+
+    if mes < 1 or mes > 12:
+        flash("O mês deve estar entre 1 e 12.", "error")
+        return pagina()
+
+    if dias_mes < 1 or dias_mes > 31:
+        flash("Dias do mês inválido.", "error")
+        return pagina()
+
+    try:
+        resumo = ler_csv_ocloset(arquivo.read())
+    except Exception as e:
+        flash(f"Erro ao ler o arquivo: {e}", "error")
+        return pagina(ano_sugerido=ano, mes_sugerido=mes, dias_mes_sugerido=dias_mes)
+
+    dias = resumo["dias"]
+    quantidade_dia = Decimal(resumo["quantidade"]) / Decimal(dias)
+    valor_dia = resumo["valor"] / Decimal(dias)
+    mb_dia = resumo["margem_bruta"] / Decimal(dias)
+
+    def projetar(valor_diario):
+        return (valor_diario * Decimal(dias_mes)).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+
+    quantidade_proj = projetar(quantidade_dia)
+    valor_proj = projetar(valor_dia)
+    mb_proj = projetar(mb_dia)
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT cod_filial
+            FROM filiais
+            WHERE cod_empresa = %s
+              AND ativo = TRUE
+            ORDER BY cod_filial
+        """, (cod_empresa,))
+        filiais = cur.fetchall()
+
+        if not filiais:
+            flash("Nenhuma filial ativa cadastrada para a empresa.", "error")
+            return pagina(ano_sugerido=ano, mes_sugerido=mes, dias_mes_sugerido=dias_mes)
+
+        if len(filiais) > 1:
+            flash(
+                "A empresa tem mais de uma filial ativa; o arquivo do O Closet não "
+                "separa por filial e tudo foi lançado na primeira "
+                f"(filial {filiais[0]['cod_filial']}).",
+                "warning"
+            )
+
+        cod_filial = filiais[0]["cod_filial"]
+
+        cur2 = conn.cursor()
+
+        limpar_importacao_mes(cur2, cod_empresa, ano, mes)
+
+        upsert(cur2, "vendas_unidades_sintetico", "quantidade_vendida",
+               cod_empresa, cod_filial, ano, mes, float(quantidade_proj))
+        upsert(cur2, "vendas_valores_sintetico", "valor_vendido",
+               cod_empresa, cod_filial, ano, mes, float(valor_proj))
+        upsert(cur2, "vendas_mb_sintetico", "margem_bruta",
+               cod_empresa, cod_filial, ano, mes, float(mb_proj))
+
+        inserir_importacao_painel(
+            cur2, cod_empresa, ano, mes, dias, dias_mes,
+            quantidade_proj, valor_proj, mb_proj
+        )
+
+        conn.commit()
+        cur2.close()
+
+        flash(
+            "Conferência da importação — "
+            f"Período: {resumo['data_inicial'].strftime('%d/%m/%Y')} a "
+            f"{resumo['data_final'].strftime('%d/%m/%Y')} ({dias} dias com venda) | "
+            f"Qtd lida: {resumo['quantidade']} | "
+            f"Vlr lido: {formatar_numero_br(float(resumo['valor']))} | "
+            f"Custo: {formatar_numero_br(float(resumo['custo']))} | "
+            f"MB lida: {formatar_numero_br(float(resumo['margem_bruta']))} | "
+            f"Qtd/dia: {formatar_numero_br(float(quantidade_dia))} | "
+            f"MB/dia: {formatar_numero_br(float(mb_dia))}",
+            "warning"
+        )
+
+        if resumo["custo_estimado_linhas"]:
+            flash(
+                f"{resumo['custo_estimado_linhas']} itens estavam sem preço de compra — "
+                "o custo desses itens foi estimado em metade do valor de venda.",
+                "warning"
+            )
+
+        flash(
+            "Importação concluída. Projeção para o mês: "
+            f"Qtd {formatar_numero_br(float(quantidade_proj))} | "
+            f"Vlr {formatar_numero_br(float(valor_proj))} | "
+            f"MB {formatar_numero_br(float(mb_proj))} "
+            f"({dias} dias lidos / {dias_mes} dias do mês).",
+            "success"
+        )
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro: {e}", "error")
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return pagina(ano_sugerido=ano, mes_sugerido=mes, dias_mes_sugerido=dias_mes)
+
+
+# =========================
 # IMPORTAÇÃO DO PAINEL
 # =========================
 @vendas_bp.route("/painel/importar", methods=["GET", "POST"])
@@ -917,6 +1287,9 @@ def vendas_importar_painel():
     cod_empresa = str(session["cod_empresa"]).strip()
     nome_empresa = session.get("nome_empresa", "")
     padrao = obter_parametros_padrao_importacao()
+
+    if obter_sistema_origem_painel(cod_empresa) == "OCLOSET":
+        return importar_painel_ocloset(cod_empresa, nome_empresa, padrao)
 
     if request.method == "GET":
         return render_template(

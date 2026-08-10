@@ -315,6 +315,19 @@ tr.sep-mes-spacer td.td-rec-label { color: #1d4ed8; }
 }
 .ag-rec-olho:hover { opacity: .8; }
 .ag-grade.ver-rec-concluidas .ag-rec-olho { opacity: 1; }
+/* SC: só a semana corrente. As outras semanas ficam em branco, mas a
+   célula continua no lugar para a grade não perder o alinhamento. */
+.ag-rec-sc {
+  font-size: 8px; font-weight: 800; color: #93c5fd; cursor: pointer;
+  letter-spacing: 0; vertical-align: middle; user-select: none;
+}
+.ag-rec-sc input { width: 9px; height: 9px; margin: 0 1px 0 3px; accent-color: #1d4ed8;
+                   vertical-align: middle; cursor: pointer; }
+.ag-grade.rec-so-corrente .ag-rec:not(.semana-corrente) {
+  background: var(--bg, #f4f4f4); border-color: #e2e8f0;
+}
+.ag-grade.rec-so-corrente .ag-rec:not(.semana-corrente) > * { visibility: hidden; }
+
 /* concluída sai da lista até alguém apertar o olho */
 .ag-rec-linha.feito { display: none; }
 .ag-grade.ver-rec-concluidas .ag-rec-linha.feito { display: flex; }
@@ -603,7 +616,9 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
           <span class="sep-mes-nome"></span>
           <span class="sep-dia-nome">Recorrentes
             <button class="ag-rec-olho" title="Ver também as concluídas"
-              onclick="alternarRecConcluidas()">👁</button>
+              onclick="alternarRecConcluidas()">👁</button><label class="ag-rec-sc"
+              title="Mostrar só a semana corrente"><input type="checkbox"
+              onchange="alternarRecCorrente(this)">SC</label>
           </span>
         </th>
         <th class="col-gap"></th>
@@ -646,7 +661,9 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
           <span class="sep-mes-nome"></span>
           <span class="sep-dia-nome">Recorrentes
             <button class="ag-rec-olho" title="Ver também as concluídas"
-              onclick="alternarRecConcluidas()">👁</button>
+              onclick="alternarRecConcluidas()">👁</button><label class="ag-rec-sc"
+              title="Mostrar só a semana corrente"><input type="checkbox"
+              onchange="alternarRecCorrente(this)">SC</label>
           </span>
         </td>
         <td class="col-gap"></td>
@@ -769,7 +786,7 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
         {% set sem_ini = semana[0].isoformat() %}
         {% set itens = recorrentes.get(sem_ini, []) %}
         <td class="col-gap"></td>
-        <td class="ag-rec {{ 'rec-passada' if sem_ini < semana_atual else '' }}"
+        <td class="ag-rec {{ 'rec-passada' if sem_ini < semana_atual else '' }} {{ 'semana-corrente' if sem_ini == semana_atual else '' }}"
             id="rec-{{ sem_ini }}" data-semana="{{ sem_ini }}"
             data-indice="{{ indice_semana.get(sem_ini, 1) }}">
           {% for it in itens %}
@@ -1112,6 +1129,23 @@ function alternarRecConcluidas() {
 
 document.addEventListener('DOMContentLoaded', aplicarRecConcluidas);
 
+/* SC (semana corrente): marcado, a coluna Recorrentes mostra só a
+   semana de hoje; desmarcado, mostra todas as semanas à frente. */
+function aplicarRecCorrente() {
+  const grade = document.querySelector('.ag-grade');
+  if (!grade) return;
+  const so = localStorage.getItem('agendaRecSoCorrente') === '1';
+  grade.classList.toggle('rec-so-corrente', so);
+  document.querySelectorAll('.ag-rec-sc input').forEach(c => { c.checked = so; });
+}
+
+function alternarRecCorrente(chk) {
+  localStorage.setItem('agendaRecSoCorrente', chk.checked ? '1' : '0');
+  aplicarRecCorrente();
+}
+
+document.addEventListener('DOMContentLoaded', aplicarRecCorrente);
+
 /* mesmo olho para a coluna Programação do Dia */
 function aplicarDiaConcluidas() {
   const grade = document.querySelector('.ag-grade');
@@ -1406,6 +1440,8 @@ function salvarModal() {
     const tarefa = r.querySelector('.ag-slot-inp-tar').value.trim();
     if (hora || tarefa) slots.push({hora, tarefa});
   });
+  // ordena por horário; sem hora fica no fim
+  slots.sort((a, b) => (a.hora || '99:99').localeCompare(b.hora || '99:99'));
   post(URL_SLOTS, {data: _md, turno: _mt, slots: JSON.stringify(slots)})
     .then(() => window.location.reload());
   fecharModal();

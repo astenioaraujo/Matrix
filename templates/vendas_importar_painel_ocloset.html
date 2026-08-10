@@ -33,7 +33,6 @@
     margin-bottom: 6px;
   }
 
-  .linha-form input[type="text"],
   .linha-form input[type="number"],
   .linha-form input[type="file"] {
     width: 100%;
@@ -67,10 +66,6 @@
     background: #f7f7f7;
     color: #1f3c88;
     cursor: pointer;
-  }
-
-  .btn-acao:hover {
-    background: #ededed;
   }
 
   .btn-importar {
@@ -109,25 +104,20 @@
     border: 1px solid #f0d58a;
   }
 
-  .lista-erros {
-    margin-top: 18px;
-    padding-left: 20px;
+  .obs-campo {
+    margin-top: 6px;
+    font-size: 13px;
+    color: #666;
   }
 
   .selo-origem {
     display: inline-block;
     padding: 4px 10px;
     border-radius: 999px;
-    background: #e3f2fd;
-    color: #0d47a1;
+    background: #ede7f6;
+    color: #4527a0;
     font-weight: 700;
     font-size: 13px;
-  }
-
-  .obs-campo {
-    margin-top: 6px;
-    font-size: 13px;
-    color: #666;
   }
 
   @media (max-width: 700px) {
@@ -171,39 +161,29 @@
         </div>
       </div>
 
-      <div class="grid-2">
-        <div class="linha-form">
-          <label for="dia_base">Dia base da projeção</label>
-          <input type="number" id="dia_base" name="dia_base" min="1" max="31" value="{{ dia_base_sugerido or '' }}" required>
-          <div class="obs-campo">Normalmente o dia de ontem.</div>
-        </div>
-
-        <div class="linha-form">
-          <label for="dias_mes">Dias totais do mês</label>
-          <input type="number" id="dias_mes" name="dias_mes" min="1" max="31" value="{{ dias_mes_sugerido or '' }}" required>
-          <div class="obs-campo">Normalmente o último dia do mês.</div>
+      <div class="linha-form">
+        <label for="dias_mes">Dias totais do mês</label>
+        <input type="number" id="dias_mes" name="dias_mes" min="1" max="31" value="{{ dias_mes_sugerido or '' }}" required>
+        <div class="obs-campo">
+          A base da projeção é a média por dia do arquivo — os dias com venda são
+          contados automaticamente, não precisa informar dia base.
         </div>
       </div>
 
       <div class="linha-form">
-        <label for="arquivo">Arquivo Excel</label>
-        <input type="file" id="arquivo" name="arquivo" accept=".xlsx,.xlsm,.xltx,.xltm" required>
+        <label for="arquivo">Arquivo CSV do O Closet</label>
+        <input type="file" id="arquivo" name="arquivo" accept=".csv,text/csv" required>
+        <div class="obs-campo">
+          Relatório de vendas por item (colunas Data, Preço unitário, Total do item
+          e Custo total). Itens sem preço de compra entram com metade do valor de
+          venda como custo.
+        </div>
       </div>
 
       <div class="acoes">
         <button type="submit" class="btn-acao btn-importar">Importar</button>
       </div>
-
     </form>
-
-    {% if filiais_nao_encontradas %}
-      <h3 style="margin-top:24px;">Filiais não encontradas no arquivo</h3>
-      <ul class="lista-erros">
-        {% for item in filiais_nao_encontradas %}
-          <li>{{ item }}</li>
-        {% endfor %}
-      </ul>
-    {% endif %}
   </div>
 </div>
 
