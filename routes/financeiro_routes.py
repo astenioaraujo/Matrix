@@ -8,6 +8,8 @@ from psycopg2.extras import RealDictCursor, execute_batch
 from db import get_connection
 from security_helpers import usuario_tem_permissao, permissao_obrigatoria
 from services.dashboard_service import montar_dashboard
+from services.estoques_service import totais_estoque_rs
+from services.bloqueios_service import datas_bloqueio_pendentes
 from utils.formatters import formatar_numero_br, formatar_int
 
 financeiro_bp = Blueprint("financeiro", __name__)
@@ -6825,7 +6827,7 @@ def api_consultar_saldos():
         contas = cur.fetchall()
 
         cur.execute("""
-            SELECT id_indicador_recebivel, nome, ordem
+            SELECT id_indicador_recebivel, nome, ordem, origem_estoque
             FROM indicadores_recebiveis
             WHERE cod_empresa = %s AND ativo = TRUE
             ORDER BY ordem, nome
@@ -6859,6 +6861,20 @@ def api_consultar_saldos():
             WHERE cod_empresa = %s AND data_inicio BETWEEN %s AND %s
         """, (cod_empresa, data_inicio, data_fim))
         datas_inicio_competencia = {r["data_inicio"] for r in cur.fetchall()}
+
+        # Importar valores de estoque exige tudo bloqueado em Operações ATÉ a
+        # data — um dia aberto lá atrás ainda muda compras e trânsito.
+        datas_bloqueadas_operacoes = {
+            d for d in datas_consultadas
+            if not datas_bloqueio_pendentes(cur, cod_empresa, d)
+        }
+
+        cur.execute("""
+            SELECT data, id_indicador_recebivel
+            FROM saldos_importacoes_estoque
+            WHERE cod_empresa = %s AND id_area = %s AND data = ANY(%s)
+        """, (cod_empresa, id_area, datas_consultadas))
+        importados = {(r["data"], r["id_indicador_recebivel"]) for r in cur.fetchall()}
     finally:
         cur.close()
         conn.close()
@@ -6877,7 +6893,7 @@ def api_consultar_saldos():
 
     dias = []
     for data_atual, data_anterior in dias_uteis:
-        dias.append(montar_bloco_dia(
+        bloco = montar_bloco_dia(
             data_atual, contas, indicadores, codigos_filiais,
             bancarios_por_dia.get(data_atual, []),
             recebiveis_por_dia.get(data_atual, []),
@@ -6885,8 +6901,13 @@ def api_consultar_saldos():
             bancarios_por_dia.get(data_anterior, []),
             recebiveis_por_dia.get(data_anterior, []),
             data_atual in datas_inicio_competencia,
-        ))
-        data_atual += timedelta(days=1)
+        )
+        # Importação dos valores de estoque (Operações): só quando a data está
+        # bloqueada lá; importado = linha travada e botão "Desfazer importação".
+        bloco["bloqueio_operacoes"] = data_atual in datas_bloqueadas_operacoes
+        for linha in bloco["recebiveis"]:
+            linha["importado"] = (data_atual, linha["id_indicador_recebivel"]) in importados
+        dias.append(bloco)
 
     return jsonify({
         "ok": True,
@@ -7024,6 +7045,25 @@ def api_lancar_saldos_recebiveis():
 
             registros.append((cod_empresa, cod_filial, data_lancamento, id_indicador_recebivel, valor_banco, valor_sistema, id_usuario))
 
+        # Linha importada de Operações não aceita digitação: só depois de
+        # "Desfazer importação". A tela já deixa o campo readonly; aqui é a
+        # trava de verdade, que vale também para chamada direta à API.
+        cur.execute("""
+            SELECT i.id_indicador_recebivel, af.cod_filial
+              FROM saldos_importacoes_estoque i
+              JOIN areas_filiais af
+                ON af.cod_empresa = i.cod_empresa AND af.id_area = i.id_area
+             WHERE i.cod_empresa = %s AND i.data = %s
+        """, (cod_empresa, data_lancamento))
+        travados = {(int(r[0]), int(r[1])) for r in cur.fetchall()}
+
+        for registro in registros:
+            if (registro[3], registro[1]) in travados:
+                return jsonify({
+                    "ok": False,
+                    "erro": "Linha importada de Operações. Desfaça a importação antes de editar.",
+                }), 403
+
         execute_batch(cur, """
             INSERT INTO saldos_recebiveis (
                 cod_empresa, cod_filial, data, id_indicador_recebivel, valor_banco, valor_sistema, usuario_lancamento
@@ -7045,6 +7085,189 @@ def api_lancar_saldos_recebiveis():
         conn.close()
 
     return jsonify({"ok": True, "quantidade": len(registros)})
+
+
+# =========================
+# IMPORTAÇÃO DOS VALORES DE ESTOQUE (OPERAÇÕES → SALDOS)
+# =========================
+def _contexto_importacao_estoque(cur, cod_empresa, dados):
+    """Valida o pedido de importar/desfazer e devolve o que os dois lados usam.
+
+    Levanta ErroConsulta com a mensagem pronta quando algo não bate.
+    """
+    id_area = dados.get("id_area")
+    origem = str(dados.get("origem") or "").strip().upper()
+
+    try:
+        id_area = int(id_area)
+    except (TypeError, ValueError):
+        raise ErroConsulta("Informe id_area.", 400)
+
+    data_ref = validar_lancamento_data(dados)
+    if not data_ref:
+        raise ErroConsulta("Informe a data no formato YYYY-MM-DD.", 400)
+
+    # Mesma trava de datas do lançamento manual (dois últimos dias úteis).
+    data_minima = data_minima_editavel(cod_empresa)
+    if data_ref < data_minima:
+        raise ErroConsulta(
+            f"Data bloqueada para edição. Só é possível lançar a partir de {data_minima.strftime('%d/%m/%Y')}.", 403)
+
+    cur.execute("""
+        SELECT id_indicador_recebivel, nome
+          FROM indicadores_recebiveis
+         WHERE cod_empresa = %s AND ativo = TRUE AND origem_estoque = %s
+    """, (cod_empresa, origem))
+    indicador = cur.fetchone()
+    if not indicador:
+        raise ErroConsulta("Nenhum indicador de recebível está ligado a esta origem de estoque.", 400)
+
+    filiais = filiais_permitidas_usuario(cur, cod_empresa, id_area)
+    if not filiais:
+        raise ErroConsulta("Nenhuma filial disponível para esta área.", 403)
+
+    codigos_filiais = [int(f["cod_filial"]) for f in filiais]
+
+    # cod_filiais_permitidas_lancamento lê por posição (r[0]); precisa de
+    # cursor comum, não do RealDictCursor usado aqui.
+    cur_simples = cur.connection.cursor()
+    try:
+        filiais_ok = cod_filiais_permitidas_lancamento(cur_simples, cod_empresa)
+    finally:
+        cur_simples.close()
+    if not set(codigos_filiais) <= filiais_ok:
+        raise ErroConsulta("Área fora das suas permissões de lançamento.", 403)
+
+    return {
+        "id_area": id_area,
+        "data": data_ref,
+        "id_indicador": indicador["id_indicador_recebivel"],
+        "codigos_filiais": codigos_filiais,
+    }
+
+
+def _gravar_valores_recebivel(cur, cod_empresa, data_ref, id_indicador, valores_por_filial, id_usuario):
+    """Grava (banco = sistema, como no lançamento manual) o valor de cada filial."""
+    execute_batch(cur, """
+        INSERT INTO saldos_recebiveis (
+            cod_empresa, cod_filial, data, id_indicador_recebivel, valor_banco, valor_sistema, usuario_lancamento
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (cod_empresa, cod_filial, data, id_indicador_recebivel)
+        DO UPDATE SET
+            valor_banco = EXCLUDED.valor_banco,
+            valor_sistema = EXCLUDED.valor_sistema,
+            usuario_lancamento = EXCLUDED.usuario_lancamento,
+            atualizado_em = NOW()
+    """, [
+        (cod_empresa, cod_filial, data_ref, id_indicador, valor, valor, id_usuario)
+        for cod_filial, valor in valores_por_filial.items()
+    ], page_size=100)
+
+
+@financeiro_bp.route("/api/saldos/importar-estoque", methods=["POST"])
+@permissao_obrigatoria("FINANCEIRO", "LANCAMENTO_SALDOS")
+def api_importar_estoque_saldos():
+    """Puxa de Operações o valor de Compra de Combustível / Em Trânsito / Estoque.
+
+    Só quando a data está BLOQUEADA em Operações (nada mais muda lá) e as
+    células ainda estão zeradas — importação não sobrescreve digitação.
+    """
+    cod_empresa = str(session["cod_empresa"]).strip()
+    id_usuario = session["id_usuario"]
+    dados = request.get_json(silent=True) or {}
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        ctx = _contexto_importacao_estoque(cur, cod_empresa, dados)
+        data_ref = ctx["data"]
+        codigos_filiais = ctx["codigos_filiais"]
+
+        pendentes = datas_bloqueio_pendentes(cur, cod_empresa, data_ref)
+        if pendentes:
+            faltam = ", ".join(d.strftime("%d/%m") for d in pendentes[:5])
+            resto = f" (+{len(pendentes) - 5})" if len(pendentes) > 5 else ""
+            raise ErroConsulta(
+                "Para importar, tudo precisa estar bloqueado em Operações até "
+                f"{data_ref.strftime('%d/%m/%Y')}. Ainda aberto: {faltam}{resto}.", 409)
+
+        cur.execute("""
+            SELECT COALESCE(SUM(ABS(valor_banco) + ABS(valor_sistema)), 0) AS soma
+              FROM saldos_recebiveis
+             WHERE cod_empresa = %s AND data = %s
+               AND id_indicador_recebivel = %s AND cod_filial = ANY(%s)
+        """, (cod_empresa, data_ref, ctx["id_indicador"], codigos_filiais))
+        if float(cur.fetchone()["soma"] or 0) != 0:
+            raise ErroConsulta("Já existem valores lançados nesta linha. Zere-os antes de importar.", 409)
+
+        totais = totais_estoque_rs(cur, cod_empresa, data_ref, codigos_filiais)
+        origem = str(dados.get("origem") or "").strip().upper()
+        valores = {f: round(totais[f][origem], 2) for f in codigos_filiais}
+
+        _gravar_valores_recebivel(cur, cod_empresa, data_ref, ctx["id_indicador"], valores, id_usuario)
+
+        cur.execute("""
+            INSERT INTO saldos_importacoes_estoque
+                (cod_empresa, data, id_area, id_indicador_recebivel, id_usuario)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (cod_empresa, data, id_area, id_indicador_recebivel)
+            DO UPDATE SET id_usuario = EXCLUDED.id_usuario, criado_em = NOW()
+        """, (cod_empresa, data_ref, ctx["id_area"], ctx["id_indicador"], id_usuario))
+
+        conn.commit()
+    except ErroConsulta as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), e.status
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True, "valores": valores})
+
+
+@financeiro_bp.route("/api/saldos/importar-estoque", methods=["DELETE"])
+@permissao_obrigatoria("FINANCEIRO", "LANCAMENTO_SALDOS")
+def api_desfazer_importacao_estoque():
+    """Zera a linha importada e libera o botão de importar de novo."""
+    cod_empresa = str(session["cod_empresa"]).strip()
+    id_usuario = session["id_usuario"]
+    dados = request.get_json(silent=True) or {}
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        ctx = _contexto_importacao_estoque(cur, cod_empresa, dados)
+
+        cur.execute("""
+            DELETE FROM saldos_importacoes_estoque
+             WHERE cod_empresa = %s AND data = %s
+               AND id_area = %s AND id_indicador_recebivel = %s
+        """, (cod_empresa, ctx["data"], ctx["id_area"], ctx["id_indicador"]))
+
+        if cur.rowcount == 0:
+            raise ErroConsulta("Esta linha não veio de importação.", 409)
+
+        _gravar_valores_recebivel(
+            cur, cod_empresa, ctx["data"], ctx["id_indicador"],
+            {f: 0.0 for f in ctx["codigos_filiais"]}, id_usuario,
+        )
+
+        conn.commit()
+    except ErroConsulta as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), e.status
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True})
 
 
 @financeiro_bp.route("/api/saldos/valores-informados", methods=["PUT"])

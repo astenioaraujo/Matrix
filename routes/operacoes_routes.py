@@ -1,9 +1,17 @@
 from flask import Blueprint, render_template, session, redirect, url_for, flash, request
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import RealDictCursor, execute_batch
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 
 from db import get_connection
+from services.estoques_service import linhas_estoque
+from services.bloqueios_service import (
+    DIAS_LIMITE_BLOQUEIO,
+    data_bloqueada,
+    data_limite_bloqueio,
+    datas_bloqueadas,
+    msg_data_bloqueada,
+)
 from security_helpers import (
     permissao_obrigatoria,
     usuario_tem_permissao,
@@ -66,6 +74,16 @@ def datas_medicao_permitidas(cur, cod_empresa, hoje=None):
     return permitidas
 
 
+DIAS_SEMANA_OPERACOES = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira",
+                         "Sexta-feira", "Sábado", "Domingo"]
+
+MESES_OPERACOES = [
+    (1, "Janeiro"), (2, "Fevereiro"), (3, "Março"), (4, "Abril"),
+    (5, "Maio"), (6, "Junho"), (7, "Julho"), (8, "Agosto"),
+    (9, "Setembro"), (10, "Outubro"), (11, "Novembro"), (12, "Dezembro"),
+]
+
+
 #------------------------------------------
 # MENU OPERACOES
 #------------------------------------------
@@ -101,6 +119,7 @@ def menu_operacoes():
             "pode_consultar_emprestimos": True,
             "pode_consultar_saldo_emprestimos": True,
             "pode_configuracoes": True,
+            "pode_bloquear_movimentacoes": True,
         }
     else:
         permissoes = {
@@ -156,6 +175,9 @@ def menu_operacoes():
             "pode_configuracoes": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "CONFIGURACOES"
             ),
+            "pode_bloquear_movimentacoes": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "BLOQUEAR_MOVIMENTACOES"
+            ),
         }
 
     return render_template(
@@ -202,6 +224,7 @@ def informar_medicoes():
 
     # BLOQUEIO REMOVIDO
     bloqueado_horario = False
+    bloqueada = False
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -303,7 +326,13 @@ def informar_medicoes():
                     "quantidade_vendida": r["quantidade_vendida"],
                 }
 
+        bloqueada = data_bloqueada(cur, cod_empresa, data_medicao)
+
         if request.method == "POST":
+            if data_bloqueada(cur, cod_empresa, data_medicao):
+                flash(msg_data_bloqueada(data_medicao), "error")
+                return redirect(url_for("operacoes.informar_medicoes", data_medicao=data_medicao.isoformat()))
+
             try:
                 cod_filial = int(request.form.get("cod_filial") or 0)
             except ValueError:
@@ -392,6 +421,8 @@ def informar_medicoes():
         data_medicao_iso=data_medicao.isoformat(),
         datas_permitidas=datas_permitidas,
         bloqueado_horario=bloqueado_horario,
+        bloqueada=bloqueada,
+        msg_bloqueio=msg_data_bloqueada(data_medicao) if bloqueada else "",
         filiais=filiais,
         filial_sel=filial_sel,
         produtos=produtos,
@@ -717,6 +748,8 @@ def informar_preco_compra():
             for r in rows
         }
 
+        bloqueada = data_bloqueada(cur, cod_empresa, data_sel)
+
     finally:
         cur.close()
         conn.close()
@@ -728,6 +761,8 @@ def informar_preco_compra():
         data_sel=data_sel,
         produtos=produtos,
         precos_existentes=precos_existentes,
+        bloqueada=bloqueada,
+        msg_bloqueio=msg_data_bloqueada(data_sel) if bloqueada else "",
         url_voltar=url_for("operacoes.menu_operacoes"),
         texto_voltar="← Voltar",
     )
@@ -971,6 +1006,7 @@ def informar_compras_combustiveis():
     data_sel = (request.values.get("data") or "").strip()
     if not data_sel:
         data_sel = (hoje_br() - timedelta(days=1)).isoformat()
+    bloqueada = False
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -1028,7 +1064,13 @@ def informar_compras_combustiveis():
         """, (cod_empresa,))
         fornecedores = cur.fetchall() or []
 
+        bloqueada = data_bloqueada(cur, cod_empresa, data_sel)
+
         if request.method == "POST":
+            if bloqueada:
+                flash(msg_data_bloqueada(data_sel), "error")
+                return redirect(url_for("operacoes.informar_compras_combustiveis", data=data_sel))
+
             id_compra_txt = (request.form.get("id_compra") or "").strip()
             cod_filial = int(request.form.get("cod_filial") or 0)
             cod_produto = (request.form.get("cod_produto") or "").strip()
@@ -1211,6 +1253,8 @@ def informar_compras_combustiveis():
         cod_empresa=cod_empresa,
         nome_empresa=nome_empresa,
         data_sel=data_sel,
+        bloqueada=bloqueada,
+        msg_bloqueio=msg_data_bloqueada(data_sel) if bloqueada else "",
         filiais=filiais,
         produtos=produtos,
         fornecedores=fornecedores,
@@ -1607,6 +1651,19 @@ def excluir_compra_combustivel(id_compra):
     cur = conn.cursor()
 
     try:
+        # a trava vale pela data da própria compra, não pela data em tela
+        cur.execute("""
+            SELECT data_compra
+            FROM compras_combustiveis
+            WHERE id_compra = %s
+              AND cod_empresa = %s
+        """, (id_compra, cod_empresa))
+        linha = cur.fetchone()
+
+        if linha and data_bloqueada(cur, cod_empresa, linha[0]):
+            flash(msg_data_bloqueada(linha[0]), "error")
+            return redirect(url_for("operacoes.informar_compras_combustiveis", data=data_sel))
+
         cur.execute("""
             DELETE FROM compras_combustiveis
             WHERE id_compra = %s
@@ -1653,6 +1710,7 @@ def informar_descarregos_combustiveis():
     data_sel = (request.values.get("data") or "").strip()
     if not data_sel:
         data_sel = (hoje_br() - timedelta(days=1)).isoformat()
+    bloqueada = False
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -1726,7 +1784,12 @@ def informar_descarregos_combustiveis():
         # -----------------------------------
         # POST (SALVAR DESCARREGO)
         # -----------------------------------
+        bloqueada = data_bloqueada(cur, cod_empresa, data_sel)
+
         if request.method == "POST":
+            if bloqueada:
+                flash(msg_data_bloqueada(data_sel), "error")
+                return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
 
             id_compra_txt = (request.form.get("id_compra") or "").strip()
             cod_filial_descarga_txt = (request.form.get("cod_filial_descarga") or "").strip()
@@ -1897,6 +1960,8 @@ def informar_descarregos_combustiveis():
         cod_empresa=cod_empresa,
         nome_empresa=nome_empresa,
         data_sel=data_sel,
+        bloqueada=bloqueada,
+        msg_bloqueio=msg_data_bloqueada(data_sel) if bloqueada else "",
         filiais=filiais,
         compras=compras,
         descarregos=descarregos,
@@ -2245,7 +2310,7 @@ def excluir_descarrego_combustivel(id_descarrego):
 
     try:
         cur.execute("""
-            SELECT id_compra
+            SELECT id_compra, data_descarrego
             FROM descarregos_combustiveis
             WHERE id_descarrego = %s
               AND cod_empresa = %s
@@ -2255,6 +2320,11 @@ def excluir_descarrego_combustivel(id_descarrego):
 
         if not row:
             flash("Descarrego não encontrado.", "error")
+            return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
+
+        # a trava vale pela data do próprio descarrego, não pela data em tela
+        if data_bloqueada(cur, cod_empresa, row["data_descarrego"]):
+            flash(msg_data_bloqueada(row["data_descarrego"]), "error")
             return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
 
         id_compra = row["id_compra"]
@@ -2325,347 +2395,17 @@ def consultar_estoques():
 
     try:
         if tipo_global == "superusuario":
-            filtro_filiais_sql = ""
-            params_filiais = []
+            codigos_filiais = None
         else:
-            filiais_permitidas = [
+            codigos_filiais = [
                 int(x) for x in usuario_filiais_ativas(id_usuario, cod_empresa)
             ]
 
-            if not filiais_permitidas:
+            if not codigos_filiais:
                 flash("Você não possui filiais habilitadas.", "error")
                 return redirect(url_for("operacoes.menu_operacoes"))
 
-            filtro_filiais_sql = "AND f.cod_filial = ANY(%s)"
-            params_filiais = [filiais_permitidas]
-
-        sql = f"""
-            WITH base AS (
-                SELECT
-                    f.cod_filial,
-                    f.nome_filial,
-                    c.cod_produto,
-                    c.descricao AS produto,
-                    COALESCE(ct.capacidade_tanque, 0) AS capacidade_tanque
-                FROM filiais f
-                JOIN capacidade_tanques ct
-                  ON ct.cod_empresa = f.cod_empresa
-                 AND ct.cod_filial = f.cod_filial
-                JOIN combustiveis c
-                  ON c.cod_empresa = ct.cod_empresa
-                 AND c.cod_produto = ct.cod_produto
-                WHERE f.cod_empresa = %s
-                  AND f.ativo = TRUE
-                  AND COALESCE(ct.capacidade_tanque, 0) > 0
-                  {filtro_filiais_sql}
-            ),
-
-            medicao_anterior AS (
-                SELECT
-                    cod_filial,
-                    cod_produto,
-                    SUM(COALESCE(quantidade_medida, 0)) AS medicao_anterior
-                FROM medicoes
-                WHERE cod_empresa = %s
-                  AND data_medicao = %s
-                GROUP BY cod_filial, cod_produto
-            ),
-
-            vendas AS (
-                SELECT
-                    cod_filial,
-                    CASE
-                        WHEN POSITION('S10' IN txt) > 0 THEN 'C5'
-                        WHEN POSITION('S500' IN txt) > 0 THEN 'C4'
-                        WHEN POSITION('ADIT' IN txt) > 0 THEN 'C2'
-                        WHEN POSITION('ETAN' IN txt) > 0 THEN 'C3'
-                        WHEN POSITION('PODIUM' IN txt) > 0 THEN 'C6'
-                        WHEN POSITION('GASOL' IN txt) > 0 THEN 'C1'
-                        ELSE NULL
-                    END AS cod_produto,
-                    SUM(COALESCE(quantidade, 0)) AS vendas
-                FROM (
-                    SELECT
-                        cod_filial,
-                        quantidade,
-                        REGEXP_REPLACE(
-                            UPPER(COALESCE(descricao, '')),
-                            '[^A-Z0-9]',
-                            '',
-                            'g'
-                        ) AS txt
-                    FROM vendas_diarias
-                    WHERE cod_empresa = %s
-                    AND data = %s
-                ) vd
-                GROUP BY
-                    cod_filial,
-                    CASE
-                        WHEN POSITION('S10' IN txt) > 0 THEN 'C5'
-                        WHEN POSITION('S500' IN txt) > 0 THEN 'C4'
-                        WHEN POSITION('ADIT' IN txt) > 0 THEN 'C2'
-                        WHEN POSITION('ETAN' IN txt) > 0 THEN 'C3'
-                        WHEN POSITION('PODIUM' IN txt) > 0 THEN 'C6'
-                        WHEN POSITION('GASOL' IN txt) > 0 THEN 'C1'
-                        ELSE NULL
-                    END
-            ),
-
-            media_vendas AS (
-                SELECT
-                    cod_filial,
-                    CASE
-                        WHEN POSITION('S10' IN txt) > 0 THEN 'C5'
-                        WHEN POSITION('S500' IN txt) > 0 THEN 'C4'
-                        WHEN POSITION('ADIT' IN txt) > 0 THEN 'C2'
-                        WHEN POSITION('ETAN' IN txt) > 0 THEN 'C3'
-                        WHEN POSITION('PODIUM' IN txt) > 0 THEN 'C6'
-                        WHEN POSITION('GASOL' IN txt) > 0 THEN 'C1'
-                        ELSE NULL
-                    END AS cod_produto,
-
-                    SUM(COALESCE(quantidade, 0))
-                    / NULLIF(COUNT(DISTINCT data), 0) AS media_vendas_dia
-
-                FROM (
-                    SELECT
-                        cod_filial,
-                        quantidade,
-                        data,
-                        REGEXP_REPLACE(
-                            UPPER(COALESCE(descricao, '')),
-                            '[^A-Z0-9]',
-                            '',
-                            'g'
-                        ) AS txt
-                    FROM vendas_diarias
-                    WHERE cod_empresa = %s
-                    AND data >= %s
-                    AND data <= %s
-                ) vd
-
-                GROUP BY
-                    cod_filial,
-                    CASE
-                        WHEN POSITION('S10' IN txt) > 0 THEN 'C5'
-                        WHEN POSITION('S500' IN txt) > 0 THEN 'C4'
-                        WHEN POSITION('ADIT' IN txt) > 0 THEN 'C2'
-                        WHEN POSITION('ETAN' IN txt) > 0 THEN 'C3'
-                        WHEN POSITION('PODIUM' IN txt) > 0 THEN 'C6'
-                        WHEN POSITION('GASOL' IN txt) > 0 THEN 'C1'
-                        ELSE NULL
-                    END
-            ),
-
-            compras_dia AS (
-                SELECT
-                    cod_filial,
-                    cod_produto,
-                    SUM(COALESCE(quantidade_comprada, 0)) AS compras,
-                    SUM(COALESCE(valor_comprado, 0)) AS compras_rs
-                FROM compras_combustiveis
-                WHERE cod_empresa = %s
-                  AND data_compra = %s
-                GROUP BY cod_filial, cod_produto
-            ),
-
-            transito AS (
-                SELECT
-                    cc.cod_filial,
-                    cc.cod_produto,
-                    SUM(
-                        COALESCE(cc.quantidade_comprada, 0)
-                        - COALESCE(d.total_descarregado, 0)
-                    ) AS estoque_transito
-                FROM compras_combustiveis cc
-                LEFT JOIN (
-                    SELECT
-                        id_compra,
-                        cod_empresa,
-                        SUM(COALESCE(quantidade_descarregada, 0)) AS total_descarregado
-                    FROM descarregos_combustiveis
-                    WHERE cod_empresa = %s
-                    GROUP BY id_compra, cod_empresa
-                ) d
-                  ON d.cod_empresa = cc.cod_empresa
-                 AND d.id_compra = cc.id_compra
-                WHERE cc.cod_empresa = %s
-                  AND cc.data_compra < %s
-                  AND COALESCE(cc.status, 'ABERTA') = 'ABERTA'
-                GROUP BY cc.cod_filial, cc.cod_produto
-            ),
-
-            descarregos AS (
-                SELECT
-                    cod_filial_descarga AS cod_filial,
-                    cod_produto,
-                    SUM(COALESCE(quantidade_descarregada, 0)) AS descarregos
-                FROM descarregos_combustiveis
-                WHERE cod_empresa = %s
-                  AND data_descarrego = %s
-                GROUP BY cod_filial_descarga, cod_produto
-            ),
-
-            medicao_atual AS (
-                SELECT
-                    cod_filial,
-                    cod_produto,
-                    SUM(COALESCE(quantidade_medida, 0)) AS medicao_atual
-                FROM medicoes
-                WHERE cod_empresa = %s
-                  AND data_medicao = %s
-                GROUP BY cod_filial, cod_produto
-            ),
-
-            ultima_compra AS (
-                SELECT DISTINCT ON (cod_filial, cod_produto)
-                    cod_filial,
-                    cod_produto,
-                    COALESCE(preco_unitario, 0) AS preco_ultima_compra
-                FROM compras_combustiveis
-                WHERE cod_empresa = %s
-                  AND data_compra <= %s
-                ORDER BY cod_filial, cod_produto, data_compra DESC, id_compra DESC
-            ),
-
-            preco_data AS (
-                SELECT DISTINCT ON (cod_produto)
-                    cod_produto,
-                    COALESCE(preco_compra, 0) AS preco_tabela
-                FROM precos_compra
-                WHERE cod_empresa = %s
-                AND data_preco <= %s
-                ORDER BY cod_produto, data_preco DESC
-            ),
-
-            ultima_compra_empresa AS (
-                SELECT DISTINCT ON (cod_produto)
-                    cod_produto,
-                    COALESCE(preco_unitario, 0) AS preco_empresa
-                FROM compras_combustiveis
-                WHERE cod_empresa = %s
-                  AND data_compra <= %s
-                  AND COALESCE(preco_unitario, 0) > 0
-                ORDER BY cod_produto, data_compra DESC, id_compra DESC
-            )
-
-            SELECT
-                b.cod_filial,
-                b.nome_filial,
-                b.cod_produto,
-                b.produto,
-                b.capacidade_tanque,
-
-                COALESCE(ma.medicao_anterior, 0) AS medicao_anterior,
-                COALESCE(v.vendas, 0) AS vendas,
-                COALESCE(mv.media_vendas_dia, 0) AS media_vendas_dia,
-                COALESCE(cd.compras, 0) AS compras,
-                COALESCE(t.estoque_transito, 0) AS estoque_transito,
-                COALESCE(ds.descarregos, 0) AS descarregos,
-
-                (
-                    COALESCE(ma.medicao_anterior, 0)
-                    - COALESCE(v.vendas, 0)
-                    + COALESCE(cd.compras, 0)
-                    + COALESCE(t.estoque_transito, 0)
-                    + COALESCE(ds.descarregos, 0)
-                ) AS estoque_calculado,
-
-                COALESCE(mat.medicao_atual, 0) AS medicao_atual,
-
-                COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, uce.preco_empresa, 0) AS preco_ultima_compra,
-
-                COALESCE(mat.medicao_atual, 0)
-                * COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, uce.preco_empresa, 0) AS estoque_atual_rs,
-                (
-                    COALESCE(mat.medicao_atual, 0)
-                    - (
-                        COALESCE(ma.medicao_anterior, 0)
-                        + COALESCE(ds.descarregos, 0)
-                        - COALESCE(v.vendas, 0)
-                    )
-                )
-                * COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, uce.preco_empresa, 0) AS perda_sobra_rs,
-
-                COALESCE(cd.compras_rs, 0) AS compras_rs,
-
-                COALESCE(t.estoque_transito, 0)
-                * COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, uce.preco_empresa, 0) AS transito_rs
-
-            FROM base b
-
-            LEFT JOIN medicao_anterior ma
-              ON ma.cod_filial = b.cod_filial
-             AND ma.cod_produto = b.cod_produto
-
-            LEFT JOIN vendas v
-              ON v.cod_filial = b.cod_filial
-             AND v.cod_produto = b.cod_produto
-
-            LEFT JOIN media_vendas mv
-              ON mv.cod_filial = b.cod_filial
-             AND mv.cod_produto = b.cod_produto
-
-            LEFT JOIN compras_dia cd
-              ON cd.cod_filial = b.cod_filial
-             AND cd.cod_produto = b.cod_produto
-
-            LEFT JOIN transito t
-              ON t.cod_filial = b.cod_filial
-             AND t.cod_produto = b.cod_produto
-
-            LEFT JOIN descarregos ds
-              ON ds.cod_filial = b.cod_filial
-             AND ds.cod_produto = b.cod_produto
-
-            LEFT JOIN medicao_atual mat
-              ON mat.cod_filial = b.cod_filial
-             AND mat.cod_produto = b.cod_produto
-
-            LEFT JOIN ultima_compra uc
-              ON uc.cod_filial = b.cod_filial
-             AND uc.cod_produto = b.cod_produto
-
-            LEFT JOIN preco_data pd
-              ON pd.cod_produto = b.cod_produto
-
-            LEFT JOIN ultima_compra_empresa uce
-              ON uce.cod_produto = b.cod_produto
-
-            ORDER BY b.cod_filial, b.cod_produto
-        """
-
-        params = (
-            [cod_empresa]
-            + params_filiais
-            + [
-                cod_empresa, data_anterior,  # medicao_anterior
-
-                cod_empresa, data_anterior,  # vendas
-
-                cod_empresa,
-                data_base - timedelta(days=7),
-                data_anterior,               # media_vendas
-
-                cod_empresa, data_anterior,  # compras_dia
-
-                cod_empresa,                 # transito subquery
-                cod_empresa, data_anterior,  # transito
-
-                cod_empresa, data_anterior,  # descarregos
-
-                cod_empresa, data_sel,       # medicao_atual
-
-                cod_empresa, data_anterior,  # ultima_compra
-
-                cod_empresa, data_sel,       # preco_data
-
-                cod_empresa, data_anterior,  # ultima_compra_empresa
-            ]
-        )
-
-        cur.execute(sql, params)
-        linhas = cur.fetchall() or []
+        linhas = linhas_estoque(cur, cod_empresa, data_base, codigos_filiais)
 
         for l in linhas:
 
@@ -3791,6 +3531,9 @@ def ajax_salvar_preco_compra():
     cur = conn.cursor()
 
     try:
+        if data_bloqueada(cur, cod_empresa, data_preco):
+            return {"ok": False, "erro": msg_data_bloqueada(data_preco)}, 403
+
         cur.execute("""
             INSERT INTO precos_compra (
                 cod_empresa,
@@ -3891,6 +3634,9 @@ def ajax_salvar_medicao():
 
         if data_medicao not in datas_permitidas:
             return {"ok": False, "erro": "Data de medição não permitida."}, 400
+
+        if data_bloqueada(cur, cod_empresa, data_medicao):
+            return {"ok": False, "erro": msg_data_bloqueada(data_medicao)}, 403
         cur.execute(
             """
             INSERT INTO medicoes (
@@ -4172,3 +3918,188 @@ def excluir_feriado_operacoes(id_feriado):
         conn.close()
 
     return redirect(url_for("operacoes.feriados_operacoes"))
+
+# ---------------------------------------
+# BLOQUEAR MOVIMENTAÇÕES
+# ---------------------------------------
+@operacoes_bp.route("/bloqueios")
+@permissao_obrigatoria(
+    "OPERACOES",
+    "BLOQUEAR_MOVIMENTACOES",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def bloquear_movimentacoes():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    hoje = hoje_br()
+
+    try:
+        ano = int(request.args.get("ano") or hoje.year)
+        mes = int(request.args.get("mes") or hoje.month)
+    except ValueError:
+        ano, mes = hoje.year, hoje.month
+
+    if not 1 <= mes <= 12:
+        mes = hoje.month
+
+    primeiro_dia = date(ano, mes, 1)
+    ultimo_dia = date(ano + (mes == 12), (mes % 12) + 1, 1) - timedelta(days=1)
+
+    todas_as_datas = []
+    data_atual = primeiro_dia
+    while data_atual <= ultimo_dia:
+        todas_as_datas.append(data_atual)
+        data_atual += timedelta(days=1)
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        bloqueadas = datas_bloqueadas(cur, cod_empresa, todas_as_datas)
+    finally:
+        cur.close()
+        conn.close()
+
+    limite = data_limite_bloqueio(hoje)
+
+    dias = [{
+        "data": d.isoformat(),
+        "data_br": d.strftime("%d/%m/%Y"),
+        "dia_semana": DIAS_SEMANA_OPERACOES[d.weekday()],
+        "fim_de_semana": d.weekday() >= 5,
+        "bloqueada": d in bloqueadas,
+        # passou da janela: bloqueado sozinho, sem opção de reabrir
+        "automatica": d < limite,
+    } for d in todas_as_datas]
+
+    return render_template(
+        "bloquear_movimentacoes.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=session.get("nome_empresa", ""),
+        ano=ano,
+        mes=mes,
+        anos=list(range(hoje.year - 3, hoje.year + 2)),
+        meses=MESES_OPERACOES,
+        dias=dias,
+        dias_limite=DIAS_LIMITE_BLOQUEIO,
+        data_limite_br=limite.strftime("%d/%m/%Y"),
+        url_voltar=url_for("operacoes.menu_operacoes"),
+        texto_voltar="← Voltar",
+    )
+
+
+@operacoes_bp.route("/bloqueios/bloquear-ate", methods=["POST"])
+@permissao_obrigatoria(
+    "OPERACOES",
+    "BLOQUEAR_MOVIMENTACOES",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def bloquear_ate_data():
+    """Fecha de uma vez a data escolhida e tudo que ainda estiver aberto atrás.
+
+    É o atalho para a regra da importação em Saldos, que exige a corrente
+    inteira fechada. Só precisa varrer até o limite do bloqueio automático —
+    antes dele já está tudo fechado sozinho.
+    """
+    if "cod_empresa" not in session:
+        return {"ok": False, "erro": "Sessão expirada"}, 401
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    dados = request.get_json(silent=True) or {}
+
+    try:
+        data_ref = date.fromisoformat(str(dados.get("data") or "").strip())
+    except ValueError:
+        return {"ok": False, "erro": "Data inválida."}, 400
+
+    limite = data_limite_bloqueio()
+
+    datas = []
+    dia = data_ref
+    while dia >= limite:
+        datas.append(dia)
+        dia -= timedelta(days=1)
+
+    if not datas:
+        return {"ok": True, "bloqueadas": 0}
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        execute_batch(cur, """
+            INSERT INTO operacoes_bloqueios (cod_empresa, data, id_usuario)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (cod_empresa, data) DO NOTHING
+        """, [(cod_empresa, d, session["id_usuario"]) for d in datas], page_size=100)
+
+        conn.commit()
+        return {"ok": True, "bloqueadas": len(datas)}
+
+    except Exception as e:
+        conn.rollback()
+        return {"ok": False, "erro": str(e)}, 500
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+@operacoes_bp.route("/bloqueios/alternar", methods=["POST"])
+@permissao_obrigatoria(
+    "OPERACOES",
+    "BLOQUEAR_MOVIMENTACOES",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def alternar_bloqueio_movimentacoes():
+    if "cod_empresa" not in session:
+        return {"ok": False, "erro": "Sessão expirada"}, 401
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    dados = request.get_json(silent=True) or {}
+
+    try:
+        data_ref = date.fromisoformat(str(dados.get("data") or "").strip())
+    except ValueError:
+        return {"ok": False, "erro": "Data inválida."}, 400
+
+    bloquear = bool(dados.get("bloquear"))
+
+    if not bloquear and data_ref < data_limite_bloqueio():
+        return {
+            "ok": False,
+            "erro": f"{data_ref.strftime('%d/%m/%Y')} passou de {DIAS_LIMITE_BLOQUEIO} dias "
+                    "e não pode mais ser desbloqueada.",
+        }, 403
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        if bloquear:
+            cur.execute("""
+                INSERT INTO operacoes_bloqueios (cod_empresa, data, id_usuario)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (cod_empresa, data)
+                DO UPDATE SET id_usuario = EXCLUDED.id_usuario,
+                              atualizado_em = NOW()
+            """, (cod_empresa, data_ref, session["id_usuario"]))
+        else:
+            cur.execute("""
+                DELETE FROM operacoes_bloqueios
+                WHERE cod_empresa = %s
+                  AND data = %s
+            """, (cod_empresa, data_ref))
+
+        conn.commit()
+        return {"ok": True, "bloqueada": bloquear}
+
+    except Exception as e:
+        conn.rollback()
+        return {"ok": False, "erro": str(e)}, 500
+
+    finally:
+        cur.close()
+        conn.close()

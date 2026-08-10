@@ -67,6 +67,17 @@
     border-color: #693d1a;
   }
 
+  /* 🔴 BLOQUEAR MOVIMENTAÇÕES */
+  .btn-bloquear {
+    background: #c0392b;
+    border: 1px solid #a5311f;
+  }
+
+  .btn-bloquear:hover {
+    background: #a5311f;
+    border-color: #8c2919;
+  }
+
   /* 🔶 CONFIGURAÇÕES (marrom forte) */
   .btn-config {
     background: #4E3322;
@@ -173,6 +184,12 @@
   {% endif %}
 
   
+  {% if pode_bloquear_movimentacoes %}
+    <a href="{{ url_for('operacoes.bloquear_movimentacoes') }}" class="btn-bloquear">
+      Bloquear Movimentações
+    </a>
+  {% endif %}
+
   {% if pode_configuracoes %}
     <a href="{{ url_for('operacoes.menu_configuracoes') }}" class="btn-config">
       Configurações de Operações

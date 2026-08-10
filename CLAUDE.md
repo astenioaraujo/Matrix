@@ -71,6 +71,8 @@ Primeiro item do menu do Financeiro. Tabelas em `migrations/criar_tabelas_saldos
 
 **Trava de datas**: só dá para lançar/editar os **dois últimos dias úteis** (numa segunda-feira, sexta e quinta — antes eram dias corridos, o que numa segunda liberava sábado e domingo, dias que a tela nem gera mais). Um usuário com `CADASTRO_CONTAS_BANCARIAS` pode liberar temporariamente uma data mais antiga na aba "Liberação Temporária"; a liberação **expira sozinha em 1 hora**, checada por horário (`saldos_liberacao_temporaria.ativado_em`), sem rotina em background. A trava real está nos 3 endpoints de lançamento (403), não só na tela.
 
+**Importar valores de estoque (Operações → Saldos)**: as linhas de recebíveis marcadas com `indicadores_recebiveis.origem_estoque` (`COMPRA`, `TRANSITO`, `ESTOQUE` — na EMP010, "Compra Combustível", "Em Trânsito" e "Estoque") ganham um botão **Importar** na coluna TOTAL, só no modo Bancos e em dia editável. Ele puxa os mesmos números da **Consulta de Estoques** (`compras_rs`, `transito_rs`, `estoque_atual_rs`, com a data lida exatamente como a tela de estoques exibe: medição da data, compras/trânsito do dia anterior), por filial da área. Condições: **tudo** precisa estar bloqueado em Operações **até** a data (não só ela — um dia aberto lá atrás ainda muda compras e trânsito; a varredura é `datas_bloqueio_pendentes`, que para nos 10 dias do bloqueio automático em vez de percorrer o histórico) e a linha precisa estar **zerada** (não sobrescreve digitação). Depois de importar, os campos ficam travados e o botão vira **Desfazer importação**, que zera a linha e libera de novo. Tabelas: `saldos_importacoes_estoque` (uma linha por empresa/data/área/indicador) e a coluna nova em `indicadores_recebiveis` (`migrations/criar_importacao_estoque_saldos.sql`). Endpoints `POST/DELETE /api/saldos/importar-estoque` (`LANCAMENTO_SALDOS`). A trava de edição de linha importada também vale em `PUT /api/saldos/recebiveis` (403), não só na tela.
+
 **Carga histórica (Junho/26)**: `migrations/seed_saldos_junho26.sql`, gerado de duas planilhas reais (Área I - Thalyta, Área II - Carol). Rodar **depois** de `criar_tabelas_saldos.sql`. Faltam os dias **30 e 31/05/2026** (gap real; precisaria das planilhas originais para reprocessar).
 
 ### Bugs corrigidos em Saldos (não reintroduzir)
@@ -90,6 +92,24 @@ Primeiro item do menu do Financeiro. Tabelas em `migrations/criar_tabelas_saldos
 ## Exclusões de lançamentos
 
 `GET/POST /exclusoes`. No primeiro acesso, sugere o **último** período com dados (`ORDER BY ano DESC, mes DESC LIMIT 1`) — mesmo critério da consulta matricial. Antes não marcava nada e o navegador exibia a primeira `<option>`, que no combo de meses (crescente) era o mês **mais antigo**; além disso a grade não vinha filtrada. A sugestão só entra quando ano e mês vêm ambos vazios.
+
+---
+
+# Módulo Operações
+
+## Bloquear Movimentações
+
+Botão vermelho no menu de Operações (`OPERACOES/BLOQUEAR_MOVIMENTACOES` 490). Tela `templates/bloquear_movimentacoes.html` (`GET /operacoes/bloqueios`): seletor de mês/ano e um checkbox "Bloqueado" por dia do mês, salvo na hora por `POST /operacoes/bloqueios/alternar`.
+
+- Bloqueio é **por empresa e por data** (`operacoes_bloqueios`, uma linha = bloqueado; desbloquear apaga a linha). `migrations/criar_tabela_operacoes_bloqueios.sql`.
+- Botão **"Bloquear tudo até aqui"** em cada linha (`POST /operacoes/bloqueios/bloquear-ate`): fecha aquela data e todas as abertas atrás dela, parando no limite do bloqueio automático. É o atalho para a regra da importação em Saldos; sem ele seria um clique por dia, fins de semana inclusive. Idempotente (`ON CONFLICT DO NOTHING`), e a tela recarrega porque o intervalo pode passar do mês exibido.
+- **Bloqueio automático após 10 dias** (`DIAS_LIMITE_BLOQUEIO`, em `services/bloqueios_service.py`): data mais antiga que isso conta como bloqueada esteja ou não na tabela, e o endpoint recusa desbloquear (403). Na tela esses dias aparecem marcados, desabilitados e com o selo "automático". As regras ficam todas nesse serviço (`data_bloqueada`, `datas_bloqueadas`, `datas_bloqueio_pendentes`, `msg_data_bloqueada`) porque Operações e Financeiro precisam da **mesma** conta.
+- Data bloqueada não grava mais nada em Informar Medições, Informar Preço de Compra, Informar Compras e Informar Descarregos — as telas continuam abrindo, com aviso e campos desabilitados. A trava real está nos **7 pontos de gravação** (POST das 4 telas, os 2 ajax-salvar e as 2 exclusões), via `data_bloqueada()` / `msg_data_bloqueada()`. Nas exclusões vale a data do **próprio lançamento**, não a data em tela.
+- É o que libera a importação dos valores de estoque em Financeiro → Saldos.
+
+## Consulta de Estoques
+
+A consulta grande saiu da rota para `services/estoques_service.py` (`linhas_estoque`, `totais_estoque_rs`): a importação em Saldos usa a **mesma** função, para os números não divergirem com o tempo. O cursor precisa ser `RealDictCursor`.
 
 ---
 

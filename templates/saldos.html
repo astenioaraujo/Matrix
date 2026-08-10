@@ -114,6 +114,38 @@
     color: #fff;
   }
 
+  table.tabela-saldos td.acao-importar {
+    border: none;
+    background: transparent;
+    text-align: left;
+    padding-left: 8px;
+    white-space: nowrap;
+  }
+
+  .btn-importar {
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 6px;
+    border: 1px solid #1565c0;
+    background: #1565c0;
+    color: #fff;
+    cursor: pointer;
+  }
+
+  .btn-importar:disabled {
+    background: #cfd8dc;
+    border-color: #b0bec5;
+    color: #607d8b;
+    cursor: not-allowed;
+  }
+
+  .btn-importar.desfazer {
+    background: #fff;
+    color: #b71c1c;
+    border-color: #b71c1c;
+  }
+
   .btn-salvar {
     padding: 10px 18px;
     border-radius: 10px;
@@ -592,8 +624,11 @@
     //  - contas bancárias, só as marcadas como "Espelhar no Sistema" no cadastro.
     const ehEspelho = modo === "sistema" &&
       (tipo === "recebivel" || (tipo === "bancario" && linha.espelhar_sistema));
-    const soLeitura = !editavel || ehEspelho;
-    const dica = ehEspelho ? ' title="Espelho do lado Bancos — edite em Bancos"' : "";
+    // Linha importada de Operações não se digita: primeiro "Desfazer importação".
+    const soLeitura = !editavel || ehEspelho || linha.importado;
+    const dica = linha.importado
+      ? ' title="Valor importado de Operações — use Desfazer importação para editar"'
+      : (ehEspelho ? ' title="Espelho do lado Bancos — edite em Bancos"' : "");
     return `<td class="valor"><input type="text" class="input-valor" data-tipo="${tipo}" data-campo="${campo}" data-data="${dataStr}" data-cod-filial="${fid}" data-id-item="${linha.id_item}" value="${formatarBR(valor)}"${dica} ${soLeitura ? "readonly" : ""}></td>`;
   }
 
@@ -605,16 +640,44 @@
     return `<td class="valor total">${formatarBR(total)}</td>`;
   }
 
+  /* Compra de Combustível, Em Trânsito e Estoque podem vir prontos de
+     Operações (mesmos números da Consulta de Estoques, em R$). Só aparece
+     no modo Bancos, num dia ainda editável e com as movimentações daquele
+     dia BLOQUEADAS em Operações — antes disso os números ainda mudam lá. */
+  function celulaImportar(linha, dataStr, bloqueioOperacoes) {
+    return `<td class="acao-importar">${botaoImportar(linha, dataStr, bloqueioOperacoes)}</td>`;
+  }
+
+  function botaoImportar(linha, dataStr, bloqueioOperacoes) {
+    if (!linha.origem_estoque) return "";
+
+    if (linha.importado) {
+      return `<button type="button" class="btn-importar desfazer" data-origem="${linha.origem_estoque}" data-data="${dataStr}" data-acao="desfazer">↩ Desfazer importação</button>`;
+    }
+
+    if (!bloqueioOperacoes) {
+      return `<button type="button" class="btn-importar" disabled title="Só depois de bloquear em Operações tudo até esta data">Importar</button>`;
+    }
+
+    return `<button type="button" class="btn-importar" data-origem="${linha.origem_estoque}" data-data="${dataStr}" data-acao="importar">Importar</button>`;
+  }
+
   const LARGURA_ROTULO = 220;
   const LARGURA_COL = 110;
 
-  function colgroupComTotal(filiais, modo) {
+  const LARGURA_COL_IMPORTAR = 170;
+
+  function colgroupComTotal(filiais, modo, colunaImportar) {
     const n = modo === "lado_a_lado" ? 2 : 1;
     let cols = `<col style="width:${LARGURA_ROTULO}px">`;
     filiais.forEach(() => {
       for (let i = 0; i < n; i++) cols += `<col style="width:${LARGURA_COL}px">`;
     });
     for (let i = 0; i < n; i++) cols += `<col style="width:${LARGURA_COL}px">`;
+    // Coluna de ação depois do TOTAL: o botão fica FORA da célula de total,
+    // que é só número. As larguras anteriores são fixas, então a tabela de
+    // Contas Bancárias (sem essa coluna) continua alinhada com esta.
+    if (colunaImportar) cols += `<col style="width:${LARGURA_COL_IMPORTAR}px">`;
     return `<colgroup>${cols}</colgroup>`;
   }
 
@@ -652,7 +715,7 @@
     return `<thead>${linhaNomes}${subhead}</thead>`;
   }
 
-  function construirLinhaResumo(rotulo, dados, filiais, modo, comDivergencia) {
+  function construirLinhaResumo(rotulo, dados, filiais, modo, comDivergencia, colunaImportar) {
     const classeLinha = comDivergencia ? "linha-total" : "linha-subtotal";
     let linha = `<tr class="${classeLinha}"><td class="rotulo">${rotulo}</td>`;
     filiais.forEach(f => {
@@ -673,24 +736,30 @@
       const totalCampo = modo === "banco" ? "total_banco" : "total_sistema";
       linha += `<td class="valor total">${formatarBR(dados[totalCampo])}</td>`;
     }
+    if (colunaImportar) linha += `<td class="acao-importar"></td>`;
     linha += "</tr>";
     return linha;
   }
 
-  function montarTabelaBloco(titulo, linhas, subtotal, tipo, dataStr, filiais, modo, editavel, mostrarCabecalho, totalGeral, mostrarBotaoDuplicar) {
+  function montarTabelaBloco(titulo, linhas, subtotal, tipo, dataStr, filiais, modo, editavel, mostrarCabecalho, totalGeral, mostrarBotaoDuplicar, bloqueioOperacoes) {
     const { cols, subhead } = theadColunas(filiais, modo);
+
+    // Coluna de importação só existe quando há botão para mostrar: linha ligada
+    // a uma origem de estoque, modo Bancos e dia ainda editável.
+    const colunaImportar = modo === "banco" && editavel && linhas.some(l => l.origem_estoque);
 
     let corpo = "";
     linhas.forEach(linha => {
       corpo += `<tr><td class="rotulo">${escapeHtml(linha.label)}</td>`;
       filiais.forEach(f => { corpo += celulaLinha(linha, f, tipo, dataStr, modo, editavel); });
       corpo += celulaTotalLinha(linha, modo);
+      if (colunaImportar) corpo += celulaImportar(linha, dataStr, bloqueioOperacoes);
       corpo += "</tr>";
     });
 
-    corpo += construirLinhaResumo("SUBTOTAL", subtotal, filiais, modo, false);
+    corpo += construirLinhaResumo("SUBTOTAL", subtotal, filiais, modo, false, colunaImportar);
     if (totalGeral) {
-      corpo += construirLinhaResumo("TOTAL", totalGeral, filiais, modo, true);
+      corpo += construirLinhaResumo("TOTAL", totalGeral, filiais, modo, true, colunaImportar);
     }
 
     const botaoDuplicar = mostrarBotaoDuplicar
@@ -701,7 +770,7 @@
       <div class="bloco-titulo">${titulo}${botaoDuplicar}</div>
       <div class="table-wrapper">
         <table class="tabela-saldos ${classeModo(modo)}">
-          ${colgroupComTotal(filiais, modo)}
+          ${colgroupComTotal(filiais, modo, colunaImportar)}
           ${montarThead(cols, subhead, mostrarCabecalho)}
           <tbody>${corpo}</tbody>
         </table>
@@ -802,7 +871,7 @@
     // Sem Estoques e Recebíveis não há TOTAL: ele soma os dois blocos, e sozinho
     // em cima das Contas Bancárias repetiria o SUBTOTAL delas.
     const blocoRecebiveis = MOSTRAR_RECEBIVEIS
-      ? montarTabelaBloco("Estoques e Recebíveis", dia.recebiveis, dia.subtotal_recebiveis, "recebivel", dia.data, filiais, modo, editavel, false, dia.total, podeDuplicarRecebiveis)
+      ? montarTabelaBloco("Estoques e Recebíveis", dia.recebiveis, dia.subtotal_recebiveis, "recebivel", dia.data, filiais, modo, editavel, false, dia.total, podeDuplicarRecebiveis, dia.bloqueio_operacoes)
       : "";
 
     return `
@@ -851,6 +920,7 @@
 
     ligarEventosCampos(container);
     ligarBotoesDuplicar(container);
+    ligarBotoesImportar(container);
 
     aplicarMapaCalorVariacao();
     aplicarMapaCalorColunaTotal();
@@ -917,6 +987,38 @@
         salvarValor(this);
       });
     });
+  }
+
+  function ligarBotoesImportar(escopo) {
+    escopo.querySelectorAll(".btn-importar[data-acao]").forEach(btn => {
+      btn.addEventListener("click", function () {
+        importarEstoque(this.dataset.data, this.dataset.origem, this.dataset.acao);
+      });
+    });
+  }
+
+  async function importarEstoque(dataStr, origem, acao) {
+    const status = document.getElementById("statusSaldos");
+    status.textContent = acao === "importar" ? "Importando de Operações..." : "Desfazendo importação...";
+    status.classList.remove("erro");
+
+    try {
+      const dados = await fetchJson("/api/saldos/importar-estoque", {
+        method: acao === "importar" ? "POST" : "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: dataStr, id_area: Number(document.getElementById("selArea").value), origem: origem }),
+      });
+      if (dados.ok) {
+        status.textContent = acao === "importar" ? "Valores importados de Operações." : "Importação desfeita.";
+        await carregarSaldos();
+      } else {
+        status.textContent = dados.erro || "Erro na importação.";
+        status.classList.add("erro");
+      }
+    } catch (e) {
+      status.textContent = e.message || "Erro na importação.";
+      status.classList.add("erro");
+    }
   }
 
   function ligarBotoesDuplicar(escopo) {
@@ -998,6 +1100,7 @@
 
     ligarEventosCampos(cardNovo);
     ligarBotoesDuplicar(cardNovo);
+    ligarBotoesImportar(cardNovo);
     aplicarMapaCalorVariacao();
     aplicarMapaCalorColunaTotal();
     restaurarFoco(foco);

@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .painel-filtro {
+    max-width: 760px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+  }
+
+  .linha-filtros {
+    display: grid;
+    grid-template-columns: 200px 160px auto;
+    gap: 18px;
+    align-items: end;
+  }
+
+  .campo label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .campo select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px;
+  }
+
+  .btn-filtrar {
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid #1565c0;
+    background: #1565c0;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .aviso {
+    max-width: 760px;
+    background: #fdecea;
+    border: 1px solid #f5c6c2;
+    color: #7d2119;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 18px;
+  }
+
+  table.tabela-bloqueios {
+    max-width: 760px;
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+
+  table.tabela-bloqueios th,
+  table.tabela-bloqueios td {
+    border: 1px solid #e0e0e0;
+    padding: 8px 12px;
+    text-align: left;
+  }
+
+  table.tabela-bloqueios th {
+    background: #c0392b;
+    color: #fff;
+    font-weight: 700;
+  }
+
+  tr.fim-de-semana td {
+    background: #fafafa;
+    color: #888;
+  }
+
+  tr.bloqueada td {
+    background: #fdecea;
+  }
+
+  tr.automatica td {
+    background: #eceff1;
+    color: #546e7a;
+  }
+
+  .selo-automatico {
+    font-size: 11px;
+    font-weight: 700;
+    color: #546e7a;
+  }
+
+  td.col-bloqueio {
+    width: 140px;
+    text-align: center;
+  }
+
+  th.col-ate, td.col-ate {
+    width: 200px;
+    text-align: center;
+  }
+
+  .btn-ate {
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 8px;
+    border: 1px solid #c0392b;
+    background: #fff;
+    color: #c0392b;
+    cursor: pointer;
+  }
+
+  .btn-ate:hover {
+    background: #c0392b;
+    color: #fff;
+  }
+
+  .status-msg {
+    max-width: 760px;
+    margin: 12px 0;
+    font-weight: 700;
+    color: #1b5e20;
+    min-height: 20px;
+  }
+
+  .status-msg.erro { color: #b71c1c; }
+</style>
+
+<div class="pagina-titulo">Bloquear Movimentações</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="aviso">
+  Data bloqueada não aceita mais alterações em Informar Medições, Informar Preço de
+  Compra, Informar Compras e Informar Descarregos — as telas continuam abrindo, só
+  não gravam. É também o que libera a importação dos valores de estoque em
+  Financeiro → Saldos, que só é permitida quando <strong>tudo até a data</strong>
+  está bloqueado. Datas anteriores a {{ data_limite_br }} ({{ dias_limite }} dias)
+  já ficam bloqueadas sozinhas e não podem mais ser reabertas.
+</div>
+
+<div class="painel-filtro">
+  <form method="get" class="linha-filtros">
+    <div class="campo">
+      <label for="mes">Mês</label>
+      <select name="mes" id="mes">
+        {% for numero, nome in meses %}
+          <option value="{{ numero }}" {% if numero == mes %}selected{% endif %}>{{ nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="campo">
+      <label for="ano">Ano</label>
+      <select name="ano" id="ano">
+        {% for a in anos %}
+          <option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="campo">
+      <button type="submit" class="btn-filtrar">Filtrar</button>
+    </div>
+  </form>
+</div>
+
+<div class="status-msg" id="statusBloqueios"></div>
+
+<table class="tabela-bloqueios">
+  <thead>
+    <tr>
+      <th>Data</th>
+      <th>Dia da semana</th>
+      <th class="col-bloqueio">Bloqueado</th>
+      <th class="col-ate"></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for d in dias %}
+      <tr class="{% if d.fim_de_semana %}fim-de-semana{% endif %} {% if d.bloqueada %}bloqueada{% endif %} {% if d.automatica %}automatica{% endif %}" data-data="{{ d.data }}">
+        <td>{{ d.data_br }}</td>
+        <td>{{ d.dia_semana }}</td>
+        <td class="col-bloqueio">
+          {% if d.automatica %}
+            <input type="checkbox" checked disabled title="Passou de {{ dias_limite }} dias — bloqueio automático">
+            <span class="selo-automatico">automático</span>
+          {% else %}
+            <input type="checkbox" class="chk-bloqueio" data-data="{{ d.data }}" {% if d.bloqueada %}checked{% endif %}>
+          {% endif %}
+        </td>
+        <td class="col-ate">
+          {% if not d.automatica %}
+            <button type="button" class="btn-ate" data-data="{{ d.data }}" data-data-br="{{ d.data_br }}">
+              Bloquear tudo até aqui
+            </button>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+  const status = document.getElementById("statusBloqueios");
+
+  document.querySelectorAll(".chk-bloqueio").forEach(chk => {
+    chk.addEventListener("change", async function () {
+      const linha = this.closest("tr");
+      const bloquear = this.checked;
+
+      status.textContent = "Salvando...";
+      status.classList.remove("erro");
+
+      try {
+        const resp = await fetch("{{ url_for('operacoes.alternar_bloqueio_movimentacoes') }}", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data: this.dataset.data, bloquear: bloquear }),
+        });
+        const dados = await resp.json();
+
+        if (dados.ok) {
+          linha.classList.toggle("bloqueada", bloquear);
+          status.textContent = bloquear ? "Data bloqueada." : "Data desbloqueada.";
+        } else {
+          this.checked = !bloquear;   // desfaz o clique: o servidor não gravou
+          status.textContent = dados.erro || "Erro ao salvar.";
+          status.classList.add("erro");
+        }
+      } catch (e) {
+        this.checked = !bloquear;
+        status.textContent = "Erro ao salvar.";
+        status.classList.add("erro");
+      }
+    });
+  });
+
+  /* Fecha a data e tudo que ainda estiver aberto atrás dela (até o limite do
+     bloqueio automático) — é o que a importação de estoque em Saldos exige.
+     Recarrega a página porque o intervalo pode passar do mês em tela. */
+  document.querySelectorAll(".btn-ate").forEach(btn => {
+    btn.addEventListener("click", function () {
+      const data = this.dataset.data;
+      // modal padrão do sistema (base.html), no lugar do confirm() do navegador
+      mostrarConfirmacaoGlobal(
+        "BLOQUEAR MOVIMENTAÇÕES",
+        `Bloquear <strong>${this.dataset.dataBr}</strong> e todas as datas abertas anteriores?`,
+        () => bloquearAte(data)
+      );
+    });
+  });
+
+  async function bloquearAte(data) {
+    status.textContent = "Bloqueando...";
+    status.classList.remove("erro");
+
+    try {
+      const resp = await fetch("{{ url_for('operacoes.bloquear_ate_data') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: data }),
+      });
+      const dados = await resp.json();
+
+      if (dados.ok) {
+        window.location.reload();
+      } else {
+        status.textContent = dados.erro || "Erro ao bloquear.";
+        status.classList.add("erro");
+      }
+    } catch (e) {
+      status.textContent = "Erro ao bloquear.";
+      status.classList.add("erro");
+    }
+  }
+</script>
+
+{% endblock %}

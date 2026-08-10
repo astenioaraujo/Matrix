@@ -92,6 +92,12 @@
   <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
 </div>
 
+{% if bloqueada %}
+  <div style="max-width:900px;background:#fdecea;border:1px solid #f5c6c2;color:#7d2119;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-weight:600;">
+    {{ msg_bloqueio }}
+  </div>
+{% endif %}
+
 <div class="painel">
 
 <form method="get">
@@ -182,7 +188,7 @@
 <td>-</td>
 
 <td>
-<button class="btn">Adicionar</button>
+{% if bloqueada %}Bloqueada{% else %}<button class="btn">Adicionar</button>{% endif %}
 </td>
 
 </form>
@@ -272,7 +278,7 @@
 </td>
 
 <td>
-  {% if not bloqueado %}
+  {% if not bloqueado and not bloqueada %}
     <button type="submit" class="btn">Salvar</button>
   
     <button

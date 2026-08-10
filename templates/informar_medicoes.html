@@ -183,6 +183,9 @@
             Alterações bloqueadas. A medição só pode ser alterada até 10:00.
           </div>
         {% endif %}
+        {% if bloqueada %}
+          <div class="aviso-bloqueio">{{ msg_bloqueio }}</div>
+        {% endif %}
       </div>
     </div>
 
@@ -225,7 +228,7 @@
                     data-campo="quantidade_medida"
                     name="med_{{ p.cod_produto }}"
                     value="{{ med.get('quantidade_medida', '') }}"
-                    {% if bloqueado_horario %}disabled{% endif %}
+                    {% if bloqueado_horario or bloqueada %}disabled{% endif %}
                   >
                 </td>
 
@@ -238,7 +241,7 @@
                     data-campo="quantidade_descarregada"
                     name="desc_{{ p.cod_produto }}"
                     value="{{ med.get('quantidade_descarregada', '') }}"
-                    {% if bloqueado_horario %}disabled{% endif %}
+                    {% if bloqueado_horario or bloqueada %}disabled{% endif %}
                   >
                 </td>
 
@@ -251,7 +254,7 @@
                     data-campo="quantidade_vendida"
                     name="vend_{{ p.cod_produto }}"
                     value="{{ med.get('quantidade_vendida', '') }}"
-                    {% if bloqueado_horario %}disabled{% endif %}
+                    {% if bloqueado_horario or bloqueada %}disabled{% endif %}
                   >
                   <span class="status-salvo" id="status_{{ p.cod_produto }}"></span>
                 </td>

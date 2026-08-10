@@ -46,6 +46,12 @@
   <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
 </div>
 
+{% if bloqueada %}
+  <div style="max-width:900px;background:#fdecea;border:1px solid #f5c6c2;color:#7d2119;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-weight:600;">
+    {{ msg_bloqueio }}
+  </div>
+{% endif %}
+
 <div class="painel-form">
   <div class="linha-topo">
     <div class="campo">
@@ -89,6 +95,7 @@
             class="input-preco campo-valor"
             data-cod-produto="{{ p.cod_produto }}"
             value="{{ precos_existentes.get(p.cod_produto|string, '') }}"
+            {% if bloqueada %}disabled{% endif %}
           >
           <span class="status-salvo" id="status_{{ p.cod_produto }}"></span>
         </td>
