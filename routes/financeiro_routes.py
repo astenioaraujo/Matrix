@@ -7332,7 +7332,11 @@ def api_importar_estoque_saldos():
         if float(cur.fetchone()["soma"] or 0) != 0:
             raise ErroConsulta("Já existem valores lançados nesta linha. Zere-os antes de importar.", 409)
 
-        totais = totais_estoque_rs(cur, cod_empresa, data_ref, codigos_filiais)
+        # A Consulta de Estoques é sempre um dia à frente do saldo: o saldo do
+        # dia 10 fecha com o relatório de estoques do dia 11, que traz a
+        # medição da manhã do 11 (o fechamento do 10) e as compras e o
+        # trânsito do próprio dia 10.
+        totais = totais_estoque_rs(cur, cod_empresa, data_ref + timedelta(days=1), codigos_filiais)
         origem = str(dados.get("origem") or "").strip().upper()
         valores = {f: round(totais[f][origem], 2) for f in codigos_filiais}
 
