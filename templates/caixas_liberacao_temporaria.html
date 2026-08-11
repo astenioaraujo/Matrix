@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 8px; color: #111; }
+  .pagina-subtitulo { font-size: 20px; margin-bottom: 24px; color: #222; }
+
+  .bloco {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 20px;
+    max-width: 900px;
+  }
+
+  .topo-bloco { margin-bottom: 14px; }
+
+  .btn-novo {
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn-novo:hover { filter: brightness(0.92); }
+
+  .linha-form-acesso {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+
+  .linha-form-acesso input[type="date"] {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #bbb;
+  }
+
+  .status-msg { font-size: 13px; margin-top: 10px; color: #1e6b34; min-height: 18px; }
+  .status-msg.erro { color: #9f2f2f; }
+</style>
+
+<div class="pagina-titulo">Liberação Temporária</div>
+
+<div class="pagina-subtitulo">
+  <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<div class="bloco">
+  <div class="topo-bloco">
+    Normalmente só é possível digitar o caixa dos últimos {{ dias_edicao }} dias. Liberar aqui permite
+    editar a partir de uma data mais antiga — mas dura só <strong>{{ horas_liberacao }} horas</strong>
+    depois de ativado, voltando sozinho ao normal em seguida.
+  </div>
+
+  <div class="linha-form-acesso">
+    <input type="date" id="dataLiberacaoDesde">
+    <button type="button" class="btn-novo" id="btnLiberarTemp">Liberar Temporariamente</button>
+  </div>
+
+  <div id="statusLiberacaoAtual" style="margin-bottom:14px; font-weight:700;"></div>
+  <div class="status-msg" id="statusLiberacaoTemp"></div>
+</div>
+
+<script>
+  const HORAS_LIBERACAO = {{ horas_liberacao }};
+
+  async function fetchJson(url, opcoes) {
+    const resp = await fetch(url, opcoes);
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+    }
+    return resp.json();
+  }
+
+  function mostrarStatus(idStatus, mensagem, erro) {
+    const el = document.getElementById(idStatus);
+    el.textContent = mensagem;
+    el.classList.toggle("erro", !!erro);
+    if (!erro) setTimeout(() => { el.textContent = ""; }, 2500);
+  }
+
+  function formatarDataBR(dataIso) {
+    const [ano, mes, dia] = dataIso.split("-");
+    return `${dia}/${mes}/${ano}`;
+  }
+
+  async function carregarStatusLiberacaoTemp() {
+    const elStatus = document.getElementById("statusLiberacaoAtual");
+    try {
+      const data = await fetchJson("/api/caixas/liberacao-temporaria");
+      if (data.ativa) {
+        const expira = new Date(data.expira_em);
+        const hora = String(expira.getHours()).padStart(2, "0") + ":" + String(expira.getMinutes()).padStart(2, "0");
+        elStatus.textContent = `Liberação ATIVA (por ${data.ativado_por}): desde ${formatarDataBR(data.data_liberada_desde)}, expira às ${hora}.`;
+        elStatus.style.color = "#8a4b00";
+      } else {
+        elStatus.textContent = `Sem liberação ativa. Hoje só é possível digitar a partir de ${formatarDataBR(data.data_minima_editavel)}.`;
+        elStatus.style.color = "#444";
+      }
+    } catch (e) {
+      mostrarStatus("statusLiberacaoTemp", e.message || "Erro ao carregar.", true);
+    }
+  }
+
+  async function ativarLiberacaoTemp() {
+    const dataLiberacao = document.getElementById("dataLiberacaoDesde").value;
+    if (!dataLiberacao) {
+      mostrarStatus("statusLiberacaoTemp", "Selecione a data.", true);
+      return;
+    }
+    try {
+      const data = await fetchJson("/api/caixas/liberacao-temporaria", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data_liberada_desde: dataLiberacao }),
+      });
+      if (data.ok) {
+        mostrarStatus("statusLiberacaoTemp", `Liberado com sucesso por ${HORAS_LIBERACAO} horas.`, false);
+        carregarStatusLiberacaoTemp();
+      } else {
+        mostrarStatus("statusLiberacaoTemp", data.erro || "Erro ao liberar.", true);
+      }
+    } catch (e) {
+      mostrarStatus("statusLiberacaoTemp", e.message || "Erro ao liberar.", true);
+    }
+  }
+
+  document.getElementById("btnLiberarTemp").addEventListener("click", ativarLiberacaoTemp);
+
+  carregarStatusLiberacaoTemp();
+</script>
+
+{% endblock %}
