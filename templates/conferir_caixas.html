@@ -120,7 +120,9 @@
   col.cg-valor  { width:98px; }
   col.cg-data   { width:110px; }
   /* 72px: os dois botões somam 43px e em 48px ficavam colados nas bordas */
-  col.cg-editar { width:72px; }
+  col.cg-editar { width:100px; }
+  /* sem ✎ e 👁 (telas de total) sobra só o Σ — coluna estreita */
+  col.cg-editar.so-soma { width:34px; }
   col.cg-sep    { width:8px; }
   /* a tira da coluna fechada também é decidida no <col> */
   col.col-fechada { width:24px; }
@@ -364,8 +366,10 @@
 
   /* ── Botões "editar" e "visualizar" (abrem os painéis abaixo da grade) ── */
   th.col-editar, td.td-editar {
-    width:72px; min-width:72px; padding:0 4px !important; text-align:center;
+    width:100px; min-width:100px; padding:0 4px !important; text-align:center;
   }
+  th.col-editar.so-soma, td.td-editar.so-soma { width:34px; min-width:34px; }
+  td.td-editar.so-soma .btn-somar-dia { margin-left:0; }
   .btn-editar-dia, .btn-visualizar-dia {
     background:none; border:1px solid #cbd5e1; border-radius:5px;
     width:20px; height:20px; line-height:1; font-size:11px; color:#64748b;
@@ -382,6 +386,59 @@
     background:#dcfce7; border-color:#16a34a; color:#15803d; font-weight:700;
   }
   .btn-visualizar-dia.tem-soma:hover { background:#bbf7d0; }
+
+  /* ── Somatório de células (o "marcar e somar" do Excel) ───────────────
+     Nas telas com filial as células são inputs: arrastar o mouse por cima
+     só põe o cursor dentro do campo, não dá pra selecionar um intervalo.
+     Então o Σ da linha liga um modo de seleção: aparece uma caixinha no
+     canto de cada número e a barra flutuante vai somando o que for
+     marcado. */
+  .btn-somar-dia {
+    background:none; border:1px solid #cbd5e1; border-radius:5px;
+    width:20px; height:20px; line-height:1; font-size:12px; color:#64748b;
+    cursor:pointer; padding:0; vertical-align:middle; margin-left:8px;
+    font-weight:700;
+  }
+  .btn-somar-dia:hover { background:#fff7ed; border-color:#f97316; color:#c2410c; }
+  .btn-somar-dia.ativo {
+    background:#fed7aa; border-color:#ea580c; color:#9a3412;
+  }
+
+  /* Célula elegível durante o modo soma: a caixinha fica no canto superior
+     direito e o input para de receber clique (senão o clique cai no campo
+     de digitação em vez de marcar). */
+  tr.linha-somando td.som-alvo { position:relative; cursor:pointer; }
+  tr.linha-somando td.som-alvo > input { pointer-events:none; }
+  tr.linha-somando td.som-alvo::before {
+    content:''; position:absolute; top:1px; right:1px;
+    width:9px; height:9px; border:1px solid #ea580c; border-radius:2px;
+    background:#fff; box-sizing:border-box;
+  }
+  tr.linha-somando td.som-alvo.som-marcada {
+    background:#ffedd5 !important; box-shadow:inset 0 0 0 1px #ea580c;
+  }
+  tr.linha-somando td.som-alvo.som-marcada::before {
+    background:#ea580c;
+    /* o "tique" é desenhado com uma borda em L girada */
+    box-shadow:inset 0 0 0 1px #ea580c;
+  }
+  tr.linha-somando td.som-alvo.som-marcada > input { color:#9a3412; font-weight:700; }
+
+  #barra-soma {
+    display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    background:#fff; border:1px solid #ea580c; border-radius:10px;
+    box-shadow:0 4px 14px rgba(0,0,0,.18); padding:8px 14px; z-index:1000;
+    font-size:12px; color:#7c2d12; display:none; align-items:center; gap:14px;
+  }
+  #barra-soma.visivel { display:flex; }
+  #barra-soma .bs-sigma { font-size:16px; font-weight:800; color:#ea580c; }
+  #barra-soma .bs-valor { font-size:16px; font-weight:800; color:#9a3412; font-variant-numeric:tabular-nums; }
+  #barra-soma .bs-qtd { color:#a16207; }
+  #barra-soma button {
+    background:#fff7ed; border:1px solid #fdba74; border-radius:6px;
+    padding:4px 10px; font-size:11px; font-weight:700; color:#c2410c; cursor:pointer;
+  }
+  #barra-soma button:hover { background:#fed7aa; }
 
   /* ── Bloqueios de digitação ───────────────────────────────────────────
      Dia fora do prazo (só ontem, anteontem e o dia anterior são digitáveis)
@@ -621,7 +678,9 @@
        alternarColuna() já os pega e a tira de 24px continua funcionando. #}
     <colgroup>
       <col class="cg-data">
-      {% if visualizar %}<col class="cg-editar">{% endif %}
+      {# Coluna de ações (✎ / 👁 / Σ). O Σ existe em qualquer tela, inclusive
+         nas de total (só leitura), então a coluna é sempre gerada. #}
+      <col class="cg-editar {{ '' if visualizar else 'so-soma' }}">
       {% for f in formas %}
         <col data-col="{{ f.id }}" class="cg-valor {{ 'col-fechada' if f.id in colunas_fechadas else '' }}">
       {% endfor %}
@@ -658,7 +717,7 @@
       {% if not rot.v %}{% set rot.v = 'TODAS AS ÁREAS' %}{% endif %}
 
       <tr class="linha-titulo-bloco">
-        <th colspan="{{ 1 + (1 if visualizar else 0) + formas|length + 2 }}">
+        <th colspan="{{ 2 + formas|length + 2 }}">
           CONTROLES
           {% if pode_encolher %}
             <label class="chk-dias" title="Esconde os dias mais antigos e deixa só os {{ dias_recentes|length }} últimos">
@@ -686,7 +745,7 @@
            padrão, com o nome de cada coluna na mesma altura da DATA. -->
       <tr>
         <th class="col-data">DATA</th>
-        {% if visualizar %}<th class="col-editar"></th>{% endif %}
+        <th class="col-editar {{ '' if visualizar else 'so-soma' }}"></th>
         {% for f in formas %}
           {% set fechada = f.id in colunas_fechadas %}
           {% set travada = f.id in formas_com_valor %}
@@ -753,8 +812,8 @@
 
           <td class="td-data {% if d == hoje %}hoje{% endif %}">{{ data_cell(d) }}</td>
 
-          {% if visualizar %}
-          <td class="td-editar">
+          <td class="td-editar {{ '' if visualizar else 'so-soma' }}">
+            {% if visualizar %}
             {% if editavel %}
             <button type="button" class="btn-editar-dia"
               {% if not dia_editavel %}disabled{% endif %}
@@ -765,8 +824,13 @@
             <button type="button" class="btn-visualizar-dia {{ 'tem-soma' if tem_soma else '' }}"
               onclick="abrirVisualizar('{{ d.strftime('%Y-%m-%d') }}')"
               title="{% if tem_soma %}Este dia tem item com mais de um lançamento (soma){% else %}Ver o detalhamento deste dia{% endif %}">👁</button>
+            {% endif %}
+            {# Somatório da linha: liga as caixinhas de seleção nas células
+               deste dia e mostra a soma do que for marcado. #}
+            <button type="button" class="btn-somar-dia"
+              onclick="alternarSomaLinha(this)"
+              title="Somar células deste dia">Σ</button>
           </td>
-          {% endif %}
 
           {% for f in formas %}
             {% set v = vals.get(f.id, 0)|float %}
@@ -842,7 +906,7 @@
       {% set fg = tot_total.v - tot_totalcx.v %}
       <tr class="linha-total">
         <td class="td-data">TOTAL</td>
-        {% if visualizar %}<td></td>{% endif %}
+        <td class="td-editar {{ '' if visualizar else 'so-soma' }}"></td>
         {% for f in formas %}
           {% set sf = namespace(v=0) %}
           {% for d in datas %}{% set sf.v = sf.v + (valores.get(d,{}).get(f.id,0)|float) %}{% endfor %}
@@ -870,7 +934,7 @@
            pra saber qual coluna é qual -->
       <tr class="linha-legenda">
         <td class="td-data">Data</td>
-        {% if visualizar %}<td></td>{% endif %}
+        <td class="td-editar {{ '' if visualizar else 'so-soma' }}"></td>
         {% for f in formas %}<td data-col="{{ f.id }}" class="{{ 'col-fechada' if f.id in colunas_fechadas else '' }}">{{ f.nome }}</td>{% endfor %}
         <td>Total</td>
         <td>Total Cx</td>
@@ -946,6 +1010,15 @@
 </div>
 {% endif %}
 
+<!-- Barra do somatório: só aparece com algum dia em modo de seleção -->
+<div id="barra-soma">
+  <span class="bs-sigma">Σ</span>
+  <span class="bs-valor" id="bs-valor">0,00</span>
+  <span class="bs-qtd" id="bs-qtd">nenhuma célula marcada</span>
+  <button type="button" onclick="limparSomaSelecao()">Limpar</button>
+  <button type="button" onclick="encerrarSoma()">✕ Fechar</button>
+</div>
+
 <div class="badge-salvo" id="badge-salvo">✔ Salvo</div>
 <div class="badge-erro"  id="badge-erro">✘ Erro ao salvar</div>
 
@@ -971,6 +1044,81 @@
     if (!v) return '';
     return Math.abs(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   }
+
+  /* ── SOMATÓRIO DE CÉLULAS (o "marcar e somar" do Excel) ───────────────
+     Nas telas com filial cada número é um <input>: passar o mouse por cima
+     só põe o cursor dentro do campo, não seleciona nada. O Σ da linha liga
+     um modo de seleção — a célula vira clicável (o input para de receber o
+     clique), ganha uma caixinha no canto e a barra flutuante soma o que
+     estiver marcado. Vale para qualquer linha, inclusive nas telas de
+     total, que são só leitura. Nada disso toca no banco: é só na tela. */
+  const CEL_SOMAVEL = '.td-valor,.td-readonly,.td-total,.td-totalcx,' +
+                      '.td-totalcx-ro,.td-faltas,.td-ctrl,.td-ctrl-ro';
+
+  function valorCelulaSoma(td) {
+    const inp = td.querySelector('input');
+    if (inp) return parseBR(inp.value);
+    const txt = (td.textContent || '').trim();
+    if (!txt || txt === '–' || txt === '-') return 0;
+    const neg = txt.startsWith('(');
+    return (neg ? -1 : 1) * parseBR(txt.replace(/[()]/g, ''));
+  }
+
+  function fmtSoma(v) {
+    const s = Math.abs(v).toLocaleString('pt-BR',
+      {minimumFractionDigits:2, maximumFractionDigits:2});
+    return (v < -0.005 ? '-' : '') + s;
+  }
+
+  function atualizarBarraSoma() {
+    const barra = document.getElementById('barra-soma');
+    const marcadas = document.querySelectorAll('td.som-marcada');
+    let total = 0;
+    marcadas.forEach(td => { total += valorCelulaSoma(td); });
+    document.getElementById('bs-valor').textContent = fmtSoma(total);
+    document.getElementById('bs-qtd').textContent =
+      marcadas.length === 0 ? 'nenhuma célula marcada'
+      : marcadas.length === 1 ? '1 célula marcada'
+      : marcadas.length + ' células marcadas';
+    const algumaLinha = document.querySelector('tr.linha-somando');
+    barra.classList.toggle('visivel', !!algumaLinha);
+  }
+
+  function alternarSomaLinha(botao) {
+    const tr = botao.closest('tr');
+    const ligando = !tr.classList.contains('linha-somando');
+    tr.classList.toggle('linha-somando', ligando);
+    botao.classList.toggle('ativo', ligando);
+    tr.querySelectorAll(CEL_SOMAVEL).forEach(td => {
+      /* coluna fechada fica comprimida numa tira de 24px — não dá pra
+         marcar o que não se enxerga */
+      if (td.classList.contains('col-fechada')) return;
+      td.classList.toggle('som-alvo', ligando);
+      if (!ligando) td.classList.remove('som-marcada');
+    });
+    atualizarBarraSoma();
+  }
+
+  function limparSomaSelecao() {
+    document.querySelectorAll('td.som-marcada')
+            .forEach(td => td.classList.remove('som-marcada'));
+    atualizarBarraSoma();
+  }
+
+  /* Fecha o modo em todas as linhas de uma vez — evita ter que voltar em
+     cada Σ ligado. */
+  function encerrarSoma() {
+    document.querySelectorAll('tr.linha-somando .btn-somar-dia.ativo')
+            .forEach(b => alternarSomaLinha(b));
+  }
+
+  document.addEventListener('click', function (ev) {
+    const td = ev.target.closest ? ev.target.closest('td.som-alvo') : null;
+    if (!td || !td.closest('tr.linha-somando')) return;
+    ev.preventDefault();
+    td.classList.toggle('som-marcada');
+    atualizarBarraSoma();
+  });
 
   /* ── RESUMO POR ORIGEM DO DINHEIRO ────────────────────────────────────
      Tabela + pizza a partir de [{rotulo, valor, percentual}]. A pizza é um
