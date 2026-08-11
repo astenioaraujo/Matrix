@@ -118,6 +118,66 @@
 .ag-proj-olho { display: none; opacity: .45; }
 .ag-proj-card.tem-concluida .ag-proj-olho { display: inline-block; }
 .ag-proj-card.ver-concluidas .ag-proj-olho { opacity: 1; }
+.ag-proj-jnl-btn { opacity: .5; }
+.ag-proj-card.jnl-aberto .ag-proj-jnl-btn { opacity: 1; }
+
+/* ── Journal do projeto: caixa própria, abaixo dos 3 blocos ──────
+   Fica dentro do .ag-proj-card só para herdar o mostra/esconde da
+   tira; visualmente é outro box (fundo e borda próprios). */
+.ag-proj-jnl {
+  display: none;
+  margin: 8px -5px -4px;                /* estoura o padding do card */
+  background: #fff;
+  border-top: 3px solid #a78bfa;
+  padding: 5px 6px 6px;
+}
+.ag-proj-card.jnl-aberto .ag-proj-jnl { display: block; }
+.ag-proj-jnl-tit {
+  font-size: 9px; font-weight: 800; color: #6b21a8;
+  text-transform: uppercase; letter-spacing: .05em;
+  display: flex; align-items: center; gap: 4px; margin-bottom: 4px;
+}
+.ag-proj-jnl-form { display: flex; gap: 4px; align-items: flex-start; margin-bottom: 5px; }
+.ag-proj-jnl-form input[type=date] {
+  flex: 0 0 96px; height: 22px; box-sizing: border-box;
+  border: 1px solid #ddd6fe; border-radius: 4px; background: #faf5ff;
+  font-family: inherit; font-size: 10px; font-weight: 700; color: #6b21a8; padding: 0 2px;
+}
+.ag-proj-jnl-form textarea {
+  flex: 1; min-width: 0; min-height: 22px; height: 22px; resize: vertical;
+  border: 1px solid #ddd6fe; border-radius: 4px; background: #faf5ff;
+  font-family: inherit; font-size: 11px; color: #3b0764; padding: 3px 4px;
+  box-sizing: border-box;
+}
+/* na edição o texto já vem preenchido e costuma ser longo: a faixa de
+   uma linha esconde o que se está mexendo. Abre para 3 linhas. */
+.ag-proj-jnl[data-editando] .ag-proj-jnl-form textarea { height: 52px; }
+.ag-proj-jnl-form button {
+  flex: 0 0 auto; height: 22px; border: none; border-radius: 4px;
+  background: #7c3aed; color: #fff; font-size: 11px; font-weight: 800;
+  cursor: pointer; padding: 0 8px;
+}
+.ag-proj-jnl-form button:hover { background: #6d28d9; }
+.ag-proj-jnl-lista { display: flex; flex-direction: column; gap: 2px; }
+.ag-proj-jnl-item {
+  display: flex; align-items: flex-start; gap: 4px;
+  font-size: 11px; color: #1e293b;
+  border-bottom: 1px dotted #e9d5ff; padding-bottom: 2px;
+}
+.ag-proj-jnl-data { flex: 0 0 auto; font-weight: 800; color: #7c3aed; white-space: nowrap; }
+.ag-proj-jnl-desc { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; }
+.ag-proj-jnl-item button {
+  flex: 0 0 auto; background: none; border: none; cursor: pointer;
+  font-size: 10px; color: #c4b5fd; padding: 0 1px; line-height: 1;
+}
+.ag-proj-jnl-item button:hover { color: #7c3aed; }
+.ag-proj-jnl-vazio { font-size: 10px; color: #a1a1aa; font-style: italic; }
+.ag-proj-jnl-rodape { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
+.ag-proj-jnl-mais {
+  background: none; border: none; cursor: pointer; padding: 0;
+  font-size: 10px; font-weight: 700; color: #7c3aed;
+}
+.ag-proj-jnl-erro { font-size: 10px; font-weight: 700; color: #b91c1c; }
 
 /* linha = check + texto — mesmo padrão da programação do dia */
 .ag-proj-linha { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; }
@@ -883,6 +943,8 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
           </select>
           <button class="ag-proj-ico ag-proj-olho" title="Ver as concluídas"
             onclick="alternarConcluidas(this)">👁</button>
+          <button class="ag-proj-ico ag-proj-jnl-btn" title="Journal do projeto"
+            onclick="alternarJournal(this)">📓</button>
         </div>
 
         {# METAS #}
@@ -963,6 +1025,27 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
           {% endfor %}
           <button class="ag-proj-add"
             onclick="addProjTarefa({{ p.id }}, 'eventual')">＋</button>
+        </div>
+
+        {# JOURNAL — preenchido por JS ao abrir o 📓 #}
+        <div class="ag-proj-jnl" data-limite="{{ journal_ultimas }}">
+          <div class="ag-proj-jnl-tit">
+            <span>Journal</span>
+            <span class="ag-proj-espaco"></span>
+            <span class="ag-proj-jnl-erro"></span>
+          </div>
+          <div class="ag-proj-jnl-form">
+            <input type="date" value="{{ hoje }}">
+            <textarea placeholder="Registrar ocorrência..."
+              onkeydown="journalKeydown(event, this)"></textarea>
+            <button type="button" onclick="salvarJournal(this)">＋</button>
+          </div>
+          <div class="ag-proj-jnl-lista"></div>
+          <div class="ag-proj-jnl-rodape">
+            <button class="ag-proj-jnl-mais" onclick="alternarJournalTudo(this)">
+              👁 Ver mais
+            </button>
+          </div>
         </div>
       </div>
       {% else %}
@@ -1468,6 +1551,9 @@ const URL_PROJ_ITEM_FIM   = "{{ url_for('canivete.agenda_projeto_item_para_o_fim
 const URL_PROJ_RECS_SALVAR   = "{{ url_for('canivete.agenda_projeto_recorrencias_salvar') }}";
 const URL_PROJ_REC_SITUACAO  = "{{ url_for('canivete.agenda_projeto_recorrencia_situacao') }}";
 const URL_PROJ_RECS_CARREGAR = "{{ url_for('canivete.agenda_projeto_recorrencias_carregar') }}";
+const URL_PROJ_JNL_LISTAR  = "{{ url_for('canivete.agenda_projeto_journal_listar') }}";
+const URL_PROJ_JNL_SALVAR  = "{{ url_for('canivete.agenda_projeto_journal_salvar') }}";
+const URL_PROJ_JNL_EXCLUIR = "{{ url_for('canivete.agenda_projeto_journal_excluir') }}";
 
 /* ── modo de apresentação ─────────────────────────────────────
    O checkbox liga/desliga a coluna inteira. Com ela ligada, o
@@ -1569,6 +1655,158 @@ function alternarConcluidas(btn) {
 
 function filtrarConcluidas(sel) {
   atualizarConcluidas(sel.closest('.ag-proj-card'));
+}
+
+/* ── Journal do projeto ───────────────────────────────────────
+   O 📓 isola o projeto (como se o seletor tivesse escolhido só
+   ele) e abre a caixa de journal embaixo, com as últimas
+   ocorrências. O 👁 do rodapé alterna entre as últimas N e tudo.
+   A lista sempre vem do servidor — inclusive depois de gravar,
+   porque 'editável' é decidido lá (data do banco, não do micro). */
+function journalBox(card) { return card.querySelector('.ag-proj-jnl'); }
+
+function journalErro(box, msg) {
+  box.querySelector('.ag-proj-jnl-erro').textContent = msg || '';
+}
+
+function alternarJournal(btn) {
+  const card = btn.closest('.ag-proj-card');
+  const abrir = !card.classList.contains('jnl-aberto');
+  // abrir o journal isola o projeto: a caixa precisa da largura toda
+  if (abrir) {
+    const sel = document.getElementById('proj-seletor');
+    if (sel && sel.value !== card.dataset.id
+            && [...sel.options].some(o => o.value === card.dataset.id)) {
+      sel.value = card.dataset.id;
+      aplicarModoProjetos();
+    }
+  }
+  card.classList.toggle('jnl-aberto', abrir);
+  if (abrir) carregarJournal(card);
+}
+
+function alternarJournalTudo(btn) {
+  const card = btn.closest('.ag-proj-card');
+  const box  = journalBox(card);
+  box.dataset.limite = box.dataset.limite === '0' ? '{{ journal_ultimas }}' : '0';
+  carregarJournal(card);
+}
+
+function pintarJournal(card, dados) {
+  const box   = journalBox(card);
+  const lista = box.querySelector('.ag-proj-jnl-lista');
+  lista.innerHTML = '';
+  if (!dados.registros.length) {
+    const vazio = document.createElement('div');
+    vazio.className = 'ag-proj-jnl-vazio';
+    vazio.textContent = 'Nenhuma ocorrência registrada.';
+    lista.appendChild(vazio);
+  }
+  dados.registros.forEach(r => {
+    const item = document.createElement('div');
+    item.className = 'ag-proj-jnl-item';
+
+    const dt = document.createElement('span');
+    dt.className = 'ag-proj-jnl-data';
+    dt.textContent = r.data_br;
+
+    const ds = document.createElement('span');
+    ds.className = 'ag-proj-jnl-desc';
+    ds.textContent = r.descricao;
+
+    item.appendChild(dt);
+    item.appendChild(ds);
+
+    // editar/excluir só no mesmo dia da criação, como no Project Journal
+    if (r.editavel) {
+      const ed = document.createElement('button');
+      ed.title = 'Editar'; ed.textContent = '✎';
+      ed.onclick = () => editarJournal(card, r);
+      const ex = document.createElement('button');
+      ex.title = 'Excluir'; ex.textContent = '✖';
+      ex.onclick = () => excluirJournal(card, r.id);
+      item.appendChild(ed);
+      item.appendChild(ex);
+    }
+    lista.appendChild(item);
+  });
+
+  const mais    = box.querySelector('.ag-proj-jnl-mais');
+  const vendoTudo = box.dataset.limite === '0';
+  const escondidas = dados.total - dados.registros.length;
+  mais.style.display = (vendoTudo || escondidas > 0) ? '' : 'none';
+  mais.textContent = vendoTudo
+    ? '👁 Ver só as últimas'
+    : '👁 Ver mais (' + escondidas + ')';
+}
+
+function dadosJournal(card, extras) {
+  const box = journalBox(card);
+  const d = new FormData();
+  d.append('id_projeto', card.dataset.id);
+  d.append('limite', box.dataset.limite);
+  for (const k in (extras || {})) d.append(k, extras[k]);
+  return d;
+}
+
+function chamarJournal(card, url, extras) {
+  return fetch(url, { method: 'POST', body: dadosJournal(card, extras) })
+    .then(r => r.json())
+    .then(j => {
+      const box = journalBox(card);
+      journalErro(box, j.ok ? '' : (j.erro || 'Não foi possível salvar.'));
+      if (j.ok) pintarJournal(card, j);
+      return j;
+    })
+    .catch(() => journalErro(journalBox(card), 'Falha de conexão.'));
+}
+
+function carregarJournal(card) {
+  return chamarJournal(card, URL_PROJ_JNL_LISTAR);
+}
+
+function editarJournal(card, r) {
+  const box = journalBox(card);
+  box.dataset.editando = r.id;
+  box.querySelector('input[type=date]').value = r.data;
+  const txt = box.querySelector('textarea');
+  txt.value = r.descricao;
+  txt.focus();
+  box.querySelector('.ag-proj-jnl-form button').textContent = '✔';
+}
+
+function limparFormJournal(box) {
+  delete box.dataset.editando;
+  box.querySelector('textarea').value = '';
+  box.querySelector('.ag-proj-jnl-form button').textContent = '＋';
+}
+
+function salvarJournal(btn) {
+  const card = btn.closest('.ag-proj-card');
+  const box  = journalBox(card);
+  const data = box.querySelector('input[type=date]').value;
+  const desc = box.querySelector('textarea').value.trim();
+  if (!data || !desc) { journalErro(box, 'Preencha a data e a descrição.'); return; }
+  const extras = { data: data, descricao: desc };
+  if (box.dataset.editando) extras.id = box.dataset.editando;
+  chamarJournal(card, URL_PROJ_JNL_SALVAR, extras).then(j => {
+    if (j && j.ok) limparFormJournal(box);
+  });
+}
+
+/* Enter grava, Shift+Enter quebra linha */
+function journalKeydown(ev, txt) {
+  if (ev.key === 'Enter' && !ev.shiftKey) {
+    ev.preventDefault();
+    salvarJournal(txt.closest('.ag-proj-jnl-form').querySelector('button'));
+  }
+}
+
+function excluirJournal(card, id) {
+  if (!confirm('Excluir esta ocorrência?')) return;
+  const box = journalBox(card);
+  if (box.dataset.editando === String(id)) limparFormJournal(box);
+  chamarJournal(card, URL_PROJ_JNL_EXCLUIR, { id: id });
 }
 
 document.addEventListener('DOMContentLoaded', () => {

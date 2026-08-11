@@ -837,6 +837,7 @@ def agenda():
         programacao_hoje=programacao_hoje,
         projetos=projetos,
         competencia_projetos=competencia.isoformat(),
+        journal_ultimas=JOURNAL_ULTIMAS,
         url_voltar=url_for("canivete.menu_canivete"),
     )
 
@@ -1770,3 +1771,143 @@ def agenda_projeto_recorrencias_carregar():
     n = _carregar_recorrencias(cur, id_projeto, comp)
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True, "criadas": n})
+
+
+# ─── JOURNAL DO PROJETO ──────────────────────────────────────────────────────
+#  Equivalente ao Project Journal de Projetos, mas por usuário e por projeto
+#  da agenda. A tela pede as últimas N ocorrências (limite=0 traz tudo).
+#  'editavel' vem do banco, no mesmo critério do UPDATE/DELETE: calcular em
+#  Python usaria o fuso da máquina, que difere do UTC do banco.
+
+JOURNAL_ULTIMAS = 5
+
+
+def _journal_registros(cur, id_projeto, limite):
+    sql = """
+        SELECT id, data, descricao,
+               (criado_em::date = CURRENT_DATE) AS editavel
+        FROM agenda_proj_journal
+        WHERE id_projeto = %s
+        ORDER BY data DESC, id DESC
+    """
+    params = [id_projeto]
+    if limite:
+        sql += " LIMIT %s"
+        params.append(limite)
+    cur.execute(sql, params)
+    return [
+        {
+            "id": r["id"],
+            "data": r["data"].isoformat(),
+            "data_br": r["data"].strftime("%d/%m/%Y"),
+            "descricao": r["descricao"],
+            "editavel": bool(r["editavel"]),
+        }
+        for r in cur.fetchall()
+    ]
+
+
+def _journal_resposta(cur, id_projeto, limite):
+    cur.execute("SELECT COUNT(*) AS n FROM agenda_proj_journal WHERE id_projeto=%s",
+                (id_projeto,))
+    total = cur.fetchone()["n"]
+    return {"ok": True, "total": total, "limite": limite,
+            "registros": _journal_registros(cur, id_projeto, limite)}
+
+
+def _journal_limite():
+    """0 = tudo; qualquer outro valor cai no padrão de últimas ocorrências."""
+    try:
+        limite = int(request.form.get("limite") or JOURNAL_ULTIMAS)
+    except ValueError:
+        limite = JOURNAL_ULTIMAS
+    return 0 if limite <= 0 else limite
+
+
+@canivete_bp.route("/agenda/projeto/journal/listar", methods=["POST"])
+def agenda_projeto_journal_listar():
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+    id_projeto = request.form.get("id_projeto")
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if not _projeto_do_usuario(cur, id_projeto, id_usuario):
+            return jsonify({"ok": False}), 403
+        return jsonify(_journal_resposta(cur, id_projeto, _journal_limite()))
+    finally:
+        cur.close(); conn.close()
+
+
+@canivete_bp.route("/agenda/projeto/journal/salvar", methods=["POST"])
+def agenda_projeto_journal_salvar():
+    """Inclui (sem id) ou edita (com id) uma ocorrência."""
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+    id_projeto = request.form.get("id_projeto")
+    id_reg     = (request.form.get("id") or "").strip()
+    data_str   = (request.form.get("data") or "").strip()
+    descricao  = (request.form.get("descricao") or "").strip()
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if not _projeto_do_usuario(cur, id_projeto, id_usuario):
+            return jsonify({"ok": False}), 403
+        if not data_str or not descricao:
+            return jsonify({"ok": False, "erro": "Preencha a data e a descrição."})
+
+        if id_reg:
+            # só edita no mesmo dia em que o registro foi criado — a condição
+            # vai no próprio UPDATE para não depender do que a tela mandou
+            cur.execute("""
+                UPDATE agenda_proj_journal
+                SET data=%s, descricao=%s, atualizado_em=now()
+                WHERE id=%s AND id_projeto=%s
+                  AND criado_em::date = CURRENT_DATE
+            """, (data_str, descricao, id_reg, id_projeto))
+            if not cur.rowcount:
+                return jsonify({"ok": False,
+                                "erro": "Só é possível editar registros criados hoje."})
+        else:
+            cur.execute("""
+                INSERT INTO agenda_proj_journal (id_projeto, data, descricao)
+                VALUES (%s, %s, %s)
+            """, (id_projeto, data_str, descricao))
+        conn.commit()
+        return jsonify(_journal_resposta(cur, id_projeto, _journal_limite()))
+    finally:
+        cur.close(); conn.close()
+
+
+@canivete_bp.route("/agenda/projeto/journal/excluir", methods=["POST"])
+def agenda_projeto_journal_excluir():
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+    id_projeto = request.form.get("id_projeto")
+    id_reg     = request.form.get("id")
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if not _projeto_do_usuario(cur, id_projeto, id_usuario):
+            return jsonify({"ok": False}), 403
+        # só apaga no mesmo dia em que o registro foi criado
+        cur.execute("""
+            DELETE FROM agenda_proj_journal
+            WHERE id=%s AND id_projeto=%s AND criado_em::date = CURRENT_DATE
+        """, (id_reg, id_projeto))
+        if not cur.rowcount:
+            return jsonify({"ok": False,
+                            "erro": "Só é possível excluir registros criados hoje."})
+        conn.commit()
+        return jsonify(_journal_resposta(cur, id_projeto, _journal_limite()))
+    finally:
+        cur.close(); conn.close()
