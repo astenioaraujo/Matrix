@@ -11,8 +11,8 @@
         <label for="filial">Filial</label><br>
         <select id="filial" name="filial">
           <option value="">(Todas)</option>
-          {% for f in filiais %}
-            <option value="{{ f }}" {% if f == filial_sel %}selected{% endif %}>{{ f }}</option>
+          {% for cod, nome in filiais %}
+            <option value="{{ cod }}" {% if cod == filial_sel %}selected{% endif %}>{{ cod }} - {{ nome }}</option>
           {% endfor %}
         </select>
       </div>
@@ -21,8 +21,8 @@
         <label for="grupo">Grupo</label><br>
         <select id="grupo" name="grupo">
           <option value="">(Todos)</option>
-          {% for g in grupos %}
-            <option value="{{ g }}" {% if g == grupo_sel %}selected{% endif %}>{{ g }}</option>
+          {% for cod, abrev, desc in grupos %}
+            <option value="{{ cod }}" {% if cod == grupo_sel %}selected{% endif %}>{{ cod }} - {{ abrev }}</option>
           {% endfor %}
         </select>
       </div>
@@ -31,20 +31,30 @@
         <label for="conta">Conta</label><br>
         <select id="conta" name="conta">
           <option value="">(Todas)</option>
-          {% for c in contas %}
-            <option value="{{ c }}" {% if c == conta_sel %}selected{% endif %}>{{ c }}</option>
+          {% for gcod, cod, desc in contas %}
+            <option value="{{ gcod }}.{{ cod }}" {% if gcod ~ '.' ~ cod == conta_sel %}selected{% endif %}>{{ gcod }}.{{ cod }}{% if desc %} - {{ desc }}{% endif %}</option>
           {% endfor %}
         </select>
       </div>
 
       <div>
-        <label for="data_ini">Data inicial</label><br>
-        <input type="date" id="data_ini" name="data_ini" value="{{ data_ini }}">
+        <label for="ano">Ano</label><br>
+        <select id="ano" name="ano">
+          <option value="">(Todos)</option>
+          {% for a in anos %}
+            <option value="{{ a }}" {% if a == ano_sel %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
       </div>
 
       <div>
-        <label for="data_fim">Data final</label><br>
-        <input type="date" id="data_fim" name="data_fim" value="{{ data_fim }}">
+        <label for="mes">Mês</label><br>
+        <select id="mes" name="mes">
+          <option value="">(Todos)</option>
+          {% for num, nome in meses %}
+            <option value="{{ num }}" {% if num == mes_sel %}selected{% endif %}>{{ nome }}</option>
+          {% endfor %}
+        </select>
       </div>
 
       <div>
@@ -102,16 +112,20 @@
             <td>
               <form method="post" action="{{ url_for('financeiro.atualizar_lancamento', id_lancamento=row[12]) }}" style="margin:0;">
                 <select name="grupo">
-                  {% for g in grupos %}
-                    <option value="{{ g }}" {% if g == row[9] %}selected{% endif %}>{{ g }}</option>
+                  {% for cod, abrev, desc in grupos %}
+                    <option value="{{ cod }}" {% if cod == row[9]|string %}selected{% endif %}>{{ cod }} - {{ abrev }}</option>
                   {% endfor %}
                 </select>
             </td>
 
             <td>
                 <select name="conta">
-                  {% for c in contas %}
-                    <option value="{{ c }}" {% if c == row[10] %}selected{% endif %}>{{ c }}</option>
+                  {% for gcod, grupo_contas in contas_por_grupo %}
+                    <optgroup label="Grupo {{ gcod }}">
+                      {% for cod, desc in grupo_contas %}
+                        <option value="{{ cod }}" {% if gcod == row[9]|string and cod == row[10]|string %}selected{% endif %}>{{ cod }}{% if desc %} - {{ desc }}{% endif %}</option>
+                      {% endfor %}
+                    </optgroup>
                   {% endfor %}
                 </select>
             </td>
@@ -125,8 +139,8 @@
                 <input type="hidden" name="filial" value="{{ filial_sel }}">
                 <input type="hidden" name="filtro_grupo" value="{{ grupo_sel }}">
                 <input type="hidden" name="filtro_conta" value="{{ conta_sel }}">
-                <input type="hidden" name="data_ini" value="{{ data_ini }}">
-                <input type="hidden" name="data_fim" value="{{ data_fim }}">
+                <input type="hidden" name="filtro_ano" value="{{ ano_sel }}">
+                <input type="hidden" name="filtro_mes" value="{{ mes_sel }}">
                 <input type="hidden" name="busca" value="{{ busca }}">
                 <button type="submit" class="btn btn-secondary">Salvar</button>
               </form>
@@ -152,8 +166,8 @@
                          filial=filial_sel,
                          grupo=grupo_sel,
                          conta=conta_sel,
-                         data_ini=data_ini,
-                         data_fim=data_fim,
+                         ano=ano_sel,
+                         mes=mes_sel,
                          busca=busca) }}"
       >⟨ Anterior</a>
     {% else %}
@@ -170,8 +184,8 @@
                          filial=filial_sel,
                          grupo=grupo_sel,
                          conta=conta_sel,
-                         data_ini=data_ini,
-                         data_fim=data_fim,
+                         ano=ano_sel,
+                         mes=mes_sel,
                          busca=busca) }}"
       >Próxima ⟩</a>
     {% else %}

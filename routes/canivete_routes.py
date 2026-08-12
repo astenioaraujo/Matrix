@@ -1558,8 +1558,13 @@ def agenda_projeto_tarefa_concluir():
         SET concluido=%s, concluido_em = CASE WHEN %s THEN now() ELSE NULL END
         FROM agenda_projetos p
         WHERE t.id=%s AND p.id=t.id_projeto AND p.id_usuario=%s
+        RETURNING t.id_projeto, t.texto
     """, (concluido, concluido, id_tarefa, id_usuario))
-    ok = cur.rowcount > 0
+    linha = cur.fetchone()
+    ok = linha is not None
+    # concluir vira ocorrência no journal do projeto; reabrir não desfaz
+    if ok and concluido:
+        _journal_anotar_conclusao(cur, linha[0], linha[1])
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": ok})
 
@@ -1738,8 +1743,13 @@ def agenda_projeto_recorrencia_situacao():
         FROM agenda_proj_recorrencias r, agenda_projetos p
         WHERE e.id=%s AND r.id=e.id_recorrencia
           AND p.id=r.id_projeto AND p.id_usuario=%s
+        RETURNING r.id_projeto, r.texto
     """, (situacao, id_exec, id_usuario))
-    ok = cur.rowcount > 0
+    linha = cur.fetchone()
+    ok = linha is not None
+    # só a conclusão vira ocorrência no journal — cancelar/reabrir não
+    if ok and situacao == "concluida":
+        _journal_anotar_conclusao(cur, linha[0], linha[1])
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": ok})
 
@@ -1780,6 +1790,42 @@ def agenda_projeto_recorrencias_carregar():
 #  Python usaria o fuso da máquina, que difere do UTC do banco.
 
 JOURNAL_ULTIMAS = 5
+JOURNAL_MARCA_CONCLUIDA = "✔"
+
+
+def _journal_anotar_conclusao(cur, id_projeto, texto):
+    """
+    Toda tarefa concluída (meta, recorrência ou eventual) vira uma linha no
+    journal do projeto, no registro do dia: se ainda não existe registro para
+    hoje, abre um; se já existe, acrescenta no fim.
+
+    A data é a do banco (CURRENT_DATE), a mesma que decide o 'editável' — em
+    Python viria do fuso da máquina. Repetir a conclusão (desmarcar e marcar
+    de novo) não duplica a linha.
+    """
+    texto = (texto or "").strip()
+    if not texto:
+        return
+    linha = JOURNAL_MARCA_CONCLUIDA + " " + texto
+
+    cur.execute("""
+        UPDATE agenda_proj_journal
+        SET descricao = descricao || E'\n' || %s, atualizado_em = now()
+        WHERE id = (SELECT id FROM agenda_proj_journal
+                    WHERE id_projeto=%s AND data=CURRENT_DATE
+                    ORDER BY id LIMIT 1)
+          AND descricao NOT LIKE '%%' || %s || '%%'
+    """, (linha, id_projeto, linha))
+    if cur.rowcount:
+        return
+
+    # rowcount 0 = ou não há registro hoje (abre um), ou a linha já está lá
+    cur.execute("""
+        INSERT INTO agenda_proj_journal (id_projeto, data, descricao)
+        SELECT %s, CURRENT_DATE, %s
+        WHERE NOT EXISTS (SELECT 1 FROM agenda_proj_journal
+                          WHERE id_projeto=%s AND data=CURRENT_DATE)
+    """, (id_projeto, linha, id_projeto))
 
 
 def _journal_registros(cur, id_projeto, limite):

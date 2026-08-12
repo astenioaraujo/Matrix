@@ -841,6 +841,22 @@ def classificacoes_automaticas():
         """, (cod_empresa,))
         classificacoes = cur.fetchall()
 
+        # opções dos seletores: código + descrição (contas são por empresa)
+        cur.execute("""
+            SELECT cod_grupo, COALESCE(descricao, abreviatura)
+            FROM grupos_gerenciais
+            ORDER BY cod_grupo
+        """)
+        opcoes_grupos = cur.fetchall()
+
+        cur.execute("""
+            SELECT cod_grupo, cod_conta, COALESCE(descricao, '')
+            FROM contas_gerenciais
+            WHERE cod_empresa = %s
+            ORDER BY cod_grupo, cod_conta
+        """, (cod_empresa,))
+        opcoes_contas = cur.fetchall()
+
     finally:
         cur.close()
         conn.close()
@@ -848,6 +864,8 @@ def classificacoes_automaticas():
     return render_template(
         "classificacoes_automaticas.html",
         classificacoes=classificacoes,
+        opcoes_grupos=opcoes_grupos,
+        opcoes_contas=opcoes_contas,
         mensagem=mensagem,
         erro=erro,
         empresa_ativa=session["cod_empresa"],
@@ -860,6 +878,14 @@ def classificacoes_automaticas():
 # =========================
 # LANÇAMENTOS
 # =========================
+MESES_LANCAMENTOS = [
+    ("1", "01 - Janeiro"), ("2", "02 - Fevereiro"), ("3", "03 - Março"),
+    ("4", "04 - Abril"), ("5", "05 - Maio"), ("6", "06 - Junho"),
+    ("7", "07 - Julho"), ("8", "08 - Agosto"), ("9", "09 - Setembro"),
+    ("10", "10 - Outubro"), ("11", "11 - Novembro"), ("12", "12 - Dezembro"),
+]
+
+
 @financeiro_bp.route("/lancamentos")
 def listar_lancamentos():
     if "cod_empresa" not in session:
@@ -874,63 +900,95 @@ def listar_lancamentos():
     filial_sel = (request.args.get("filial") or "").strip()
     grupo_sel = (request.args.get("grupo") or "").strip()
     conta_sel = (request.args.get("conta") or "").strip()
-    data_ini = (request.args.get("data_ini") or "").strip()
-    data_fim = (request.args.get("data_fim") or "").strip()
+    ano_sel = (request.args.get("ano") or "").strip()
+    mes_sel = (request.args.get("mes") or "").strip()
     busca = (request.args.get("busca") or "").strip()
 
     conn = get_connection()
     cur = conn.cursor()
 
     try:
+        # Filiais: o filtro é pelo código; o rótulo mostra código + nome.
         cur.execute("""
-            SELECT DISTINCT nome_filial
+            SELECT CAST(cod_filial AS TEXT), MAX(nome_filial)
             FROM lancamentos
             WHERE cod_empresa = %s
-              AND COALESCE(TRIM(nome_filial), '') <> ''
-            ORDER BY nome_filial
+              AND cod_filial IS NOT NULL
+            GROUP BY cod_filial
+            ORDER BY
+                CASE WHEN CAST(cod_filial AS TEXT) ~ '^[0-9]+$'
+                     THEN CAST(CAST(cod_filial AS TEXT) AS INTEGER) END,
+                CAST(cod_filial AS TEXT)
         """, (cod_empresa,))
-        filiais = [r[0] for r in cur.fetchall()]
+        filiais = cur.fetchall()
+
+        # Grupos e contas saem do cadastro gerencial, com número e descrição.
+        cur.execute("""
+            SELECT CAST(cod_grupo AS TEXT), abreviatura, descricao
+            FROM grupos_gerenciais
+            ORDER BY cod_grupo
+        """)
+        grupos = cur.fetchall()
 
         cur.execute("""
-            SELECT DISTINCT grupo
-            FROM lancamentos
+            SELECT CAST(cod_grupo AS TEXT), CAST(cod_conta AS TEXT),
+                   COALESCE(descricao, '')
+            FROM contas_gerenciais
             WHERE cod_empresa = %s
-              AND grupo IS NOT NULL
-            ORDER BY grupo
+            ORDER BY
+                CASE WHEN CAST(cod_grupo AS TEXT) ~ '^[0-9]+$'
+                     THEN CAST(CAST(cod_grupo AS TEXT) AS INTEGER) END,
+                CASE WHEN CAST(cod_conta AS TEXT) ~ '^[0-9]+$'
+                     THEN CAST(CAST(cod_conta AS TEXT) AS INTEGER) END,
+                CAST(cod_conta AS TEXT)
         """, (cod_empresa,))
-        grupos = [r[0] for r in cur.fetchall()]
+        contas = cur.fetchall()
+
+        # Mesmas contas agrupadas por grupo, para os optgroups da edição.
+        contas_por_grupo = []
+        for gcod, ccod, desc in contas:
+            if not contas_por_grupo or contas_por_grupo[-1][0] != gcod:
+                contas_por_grupo.append((gcod, []))
+            contas_por_grupo[-1][1].append((ccod, desc))
 
         cur.execute("""
-            SELECT DISTINCT conta
+            SELECT DISTINCT ano
             FROM lancamentos
             WHERE cod_empresa = %s
-              AND conta IS NOT NULL
-            ORDER BY conta
+              AND ano IS NOT NULL
+            ORDER BY ano DESC
         """, (cod_empresa,))
-        contas = [r[0] for r in cur.fetchall()]
+        anos = [str(r[0]) for r in cur.fetchall()]
 
         where = ["cod_empresa = %s"]
         params = [cod_empresa]
 
         if filial_sel:
-            where.append("nome_filial = %s")
+            where.append("CAST(cod_filial AS TEXT) = %s")
             params.append(filial_sel)
 
         if grupo_sel:
             where.append("CAST(grupo AS TEXT) = %s")
             params.append(grupo_sel)
 
+        # O código da conta se repete entre grupos, então o filtro vem como
+        # "grupo.conta" e amarra os dois.
         if conta_sel:
-            where.append("CAST(conta AS TEXT) = %s")
-            params.append(conta_sel)
+            if "." in conta_sel:
+                g_conta, c_conta = conta_sel.split(".", 1)
+                where.append("CAST(grupo AS TEXT) = %s AND CAST(conta AS TEXT) = %s")
+                params.extend([g_conta, c_conta])
+            else:
+                where.append("CAST(conta AS TEXT) = %s")
+                params.append(conta_sel)
 
-        if data_ini:
-            where.append("data >= %s")
-            params.append(data_ini)
+        if ano_sel:
+            where.append("CAST(ano AS TEXT) = %s")
+            params.append(ano_sel)
 
-        if data_fim:
-            where.append("data <= %s")
-            params.append(data_fim)
+        if mes_sel:
+            where.append("CAST(mes AS INTEGER) = %s")
+            params.append(int(mes_sel))
 
         if busca:
             where.append("""
@@ -1002,11 +1060,14 @@ def listar_lancamentos():
         filiais=filiais,
         grupos=grupos,
         contas=contas,
+        contas_por_grupo=contas_por_grupo,
+        anos=anos,
+        meses=MESES_LANCAMENTOS,
         filial_sel=filial_sel,
         grupo_sel=grupo_sel,
         conta_sel=conta_sel,
-        data_ini=data_ini,
-        data_fim=data_fim,
+        ano_sel=ano_sel,
+        mes_sel=mes_sel,
         busca=busca,
         empresa_ativa=session["cod_empresa"],
         nome_empresa_ativa=session["nome_empresa"],
@@ -1055,8 +1116,8 @@ def atualizar_lancamento(id_lancamento):
         filial=request.form.get("filial", ""),
         grupo=request.form.get("filtro_grupo", ""),
         conta=request.form.get("filtro_conta", ""),
-        data_ini=request.form.get("data_ini", ""),
-        data_fim=request.form.get("data_fim", ""),
+        ano=request.form.get("filtro_ano", ""),
+        mes=request.form.get("filtro_mes", ""),
         busca=request.form.get("busca", "")
     ))
 

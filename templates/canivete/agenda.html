@@ -1765,6 +1765,12 @@ function carregarJournal(card) {
   return chamarJournal(card, URL_PROJ_JNL_LISTAR);
 }
 
+/* concluir tarefa escreve no journal do projeto (quem faz isso é o
+   servidor); com a caixa aberta, ela precisa refletir na hora */
+function recarregarJournalSeAberto(card) {
+  if (card && card.classList.contains('jnl-aberto')) carregarJournal(card);
+}
+
 function editarJournal(card, r) {
   const box = journalBox(card);
   box.dataset.editando = r.id;
@@ -1888,8 +1894,10 @@ function toggleProjTarefa(btn) {
   btn.classList.toggle('on', on);
   linha.classList.toggle('feito', on);
   linha.dataset.quando = on ? new Date().toISOString().slice(0, 10) : '';
-  atualizarConcluidas(linha.closest('.ag-proj-card'));
-  post(URL_PROJ_TAR_CONC, {id, concluido: on ? '1' : '0'});
+  const card = linha.closest('.ag-proj-card');
+  atualizarConcluidas(card);
+  post(URL_PROJ_TAR_CONC, {id, concluido: on ? '1' : '0'})
+    .then(() => { if (on) recarregarJournalSeAberto(card); });
 }
 
 /* ✖ da meta / tarefa eventual: cancela sem apagar (o 👁 mostra de volta).
@@ -1965,8 +1973,10 @@ function toggleProjRec(btn) {
   linha.classList.toggle('feito', on);
   linha.classList.remove('cancelada');
   linha.dataset.situacao = situacao;
-  atualizarConcluidas(linha.closest('.ag-proj-card'));
-  post(URL_PROJ_REC_SITUACAO, {id, situacao});
+  const card = linha.closest('.ag-proj-card');
+  atualizarConcluidas(card);
+  post(URL_PROJ_REC_SITUACAO, {id, situacao})
+    .then(() => { if (on) recarregarJournalSeAberto(card); });
 }
 
 function cancelarProjRec(btn) {
