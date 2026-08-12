@@ -131,7 +131,7 @@
   border-top: 3px solid #a78bfa;
   padding: 5px 6px 6px;
 }
-.ag-proj-card.jnl-aberto .ag-proj-jnl { display: block; }
+.jnl-aberto > .ag-proj-jnl { display: block; }
 .ag-proj-jnl-tit {
   font-size: 9px; font-weight: 800; color: #6b21a8;
   text-transform: uppercase; letter-spacing: .05em;
@@ -143,17 +143,17 @@
   border: 1px solid #ddd6fe; border-radius: 4px; background: #faf5ff;
   font-family: inherit; font-size: 10px; font-weight: 700; color: #6b21a8; padding: 0 2px;
 }
+/* já nasce com 3 linhas: uma faixa de uma linha esconde o que se está
+   digitando. A lista de ocorrências desce, e não tem problema. */
 .ag-proj-jnl-form textarea {
-  flex: 1; min-width: 0; min-height: 22px; height: 22px; resize: vertical;
+  flex: 1; min-width: 0; min-height: 52px; height: 52px; resize: vertical;
   border: 1px solid #ddd6fe; border-radius: 4px; background: #faf5ff;
   font-family: inherit; font-size: 11px; color: #3b0764; padding: 3px 4px;
   box-sizing: border-box;
 }
-/* na edição o texto já vem preenchido e costuma ser longo: a faixa de
-   uma linha esconde o que se está mexendo. Abre para 3 linhas. */
-.ag-proj-jnl[data-editando] .ag-proj-jnl-form textarea { height: 52px; }
 .ag-proj-jnl-form button {
-  flex: 0 0 auto; height: 22px; border: none; border-radius: 4px;
+  /* acompanha a altura da faixa de texto, para não ficar solto no topo */
+  flex: 0 0 auto; align-self: stretch; height: auto; border: none; border-radius: 4px;
   background: #7c3aed; color: #fff; font-size: 11px; font-weight: 800;
   cursor: pointer; padding: 0 8px;
 }
@@ -171,6 +171,21 @@
   font-size: 10px; color: #c4b5fd; padding: 0 1px; line-height: 1;
 }
 .ag-proj-jnl-item button:hover { color: #7c3aed; }
+.ag-dia-jnl { border-top-color: #4ade80; }
+.ag-dia-jnl .ag-proj-jnl-tit { color: #15803d; }
+.ag-dia-jnl .ag-proj-jnl-data { color: #15803d; }
+.ag-dia-jnl .ag-proj-jnl-mais { color: #15803d; }
+.ag-dia-jnl input[type=date], .ag-dia-jnl textarea {
+  border-color: #bbf7d0; background: #f0fdf4; color: #14532d;
+}
+.ag-dia-jnl .ag-proj-jnl-form button { background: #16a34a; }
+.ag-dia-jnl .ag-proj-jnl-form button:hover { background: #15803d; }
+.ag-dia-jnl .ag-proj-jnl-item { border-bottom-color: #d1fae5; }
+.ag-dia-jnl .ag-proj-jnl-item button { color: #86efac; }
+.ag-dia-jnl .ag-proj-jnl-item button:hover { color: #15803d; }
+.ag-dia-jnl-btn { opacity: .45; }
+/* o 📓 do dia mora no cabeçalho, fora da coluna: quem acende é a grade */
+.ag-grade.jnl-dia-aberto .ag-dia-jnl-btn { opacity: 1; }
 .ag-proj-jnl-vazio { font-size: 10px; color: #a1a1aa; font-style: italic; }
 .ag-proj-jnl-rodape { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
 .ag-proj-jnl-mais {
@@ -686,7 +701,9 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
           <span class="sep-mes-nome"></span>
           <span class="sep-dia-nome">Programação do Dia
             <button class="ag-rec-olho" title="Ver também as concluídas"
-              onclick="alternarDiaConcluidas()">👁</button>
+              onclick="alternarDiaConcluidas()">👁</button><button
+              class="ag-rec-olho ag-dia-jnl-btn" title="Journal do dia"
+              onclick="alternarJournalDia()">📓</button>
           </span>
         </th>
       </tr>
@@ -731,7 +748,9 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
           <span class="sep-mes-nome"></span>
           <span class="sep-dia-nome">Programação do Dia
             <button class="ag-rec-olho" title="Ver também as concluídas"
-              onclick="alternarDiaConcluidas()">👁</button>
+              onclick="alternarDiaConcluidas()">👁</button><button
+              class="ag-rec-olho ag-dia-jnl-btn" title="Journal do dia"
+              onclick="alternarJournalDia()">📓</button>
           </span>
         </td>
       </tr>
@@ -888,6 +907,30 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
           <div class="ag-dia-separador"></div>
           <button class="ag-dia-add" onclick="addDiaLinha()">＋</button>
           </div>
+
+          {# JOURNAL DO DIA — mesma caixa dos projetos, preenchida por JS #}
+          <div class="ag-proj-jnl ag-dia-jnl" data-limite="{{ journal_ultimas }}"
+               data-url-listar="{{ url_for('canivete.agenda_dia_journal_listar') }}"
+               data-url-salvar="{{ url_for('canivete.agenda_dia_journal_salvar') }}"
+               data-url-excluir="{{ url_for('canivete.agenda_dia_journal_excluir') }}">
+            <div class="ag-proj-jnl-tit">
+              <span>Journal</span>
+              <span class="ag-proj-espaco"></span>
+              <span class="ag-proj-jnl-erro"></span>
+            </div>
+            <div class="ag-proj-jnl-form">
+              <input type="date" value="{{ hoje }}">
+              <textarea placeholder="Registrar ocorrência..."
+                onkeydown="journalKeydown(event, this)"></textarea>
+              <button type="button" onclick="salvarJournal(this)">＋</button>
+            </div>
+            <div class="ag-proj-jnl-lista"></div>
+            <div class="ag-proj-jnl-rodape">
+              <button class="ag-proj-jnl-mais" onclick="alternarJournalTudo(this)">
+                👁 Ver mais
+              </button>
+            </div>
+          </div>
         </td>
         {% else %}
         <td class="ag-dia-vazio"></td>
@@ -1028,7 +1071,11 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
         </div>
 
         {# JOURNAL — preenchido por JS ao abrir o 📓 #}
-        <div class="ag-proj-jnl" data-limite="{{ journal_ultimas }}">
+        <div class="ag-proj-jnl" data-limite="{{ journal_ultimas }}"
+             data-projeto="{{ p.id }}"
+             data-url-listar="{{ url_for('canivete.agenda_projeto_journal_listar') }}"
+             data-url-salvar="{{ url_for('canivete.agenda_projeto_journal_salvar') }}"
+             data-url-excluir="{{ url_for('canivete.agenda_projeto_journal_excluir') }}">
           <div class="ag-proj-jnl-tit">
             <span>Journal</span>
             <span class="ag-proj-espaco"></span>
@@ -1369,14 +1416,16 @@ function excluirDia(linha) {
    sem precisar mover o nó no DOM */
 function toggleDiaLinha(btn) {
   const linha = btn.closest('.ag-dia-linha');
-  const dia   = btn.closest('.ag-dia').dataset.dia;
+  const cel   = btn.closest('.ag-dia');
+  const dia   = cel.dataset.dia;
   const id    = linha.dataset.id;
   if (!id) return;
   const on = !btn.classList.contains('on');
   btn.classList.toggle('on', on);
   linha.classList.toggle('feito', on);
   atualizarSeparadorDia();
-  post(URL_DIA_CONCLUIR, {id, dia, concluido: on ? '1' : '0'});
+  post(URL_DIA_CONCLUIR, {id, dia, concluido: on ? '1' : '0'})
+    .then(() => { if (on) recarregarJournalSeAberto(cel); });
 }
 
 /* Nova tarefa do dia — sem código sugerido: em branco só vale para hoje */
@@ -1657,22 +1706,26 @@ function filtrarConcluidas(sel) {
   atualizarConcluidas(sel.closest('.ag-proj-card'));
 }
 
-/* ── Journal do projeto ───────────────────────────────────────
-   O 📓 isola o projeto (como se o seletor tivesse escolhido só
-   ele) e abre a caixa de journal embaixo, com as últimas
-   ocorrências. O 👁 do rodapé alterna entre as últimas N e tudo.
-   A lista sempre vem do servidor — inclusive depois de gravar,
-   porque 'editável' é decidido lá (data do banco, não do micro). */
-function journalBox(card) { return card.querySelector('.ag-proj-jnl'); }
+/* ── Journal: projetos e Programação do Dia ───────────────────
+   Mesma caixa nos dois lugares. Cada caixa carrega no dataset o
+   que muda entre eles: as URLs e, no projeto, o id. O 📓 isola o
+   projeto (a caixa precisa da largura toda) e abre o journal
+   embaixo, com as últimas ocorrências; o 👁 do rodapé alterna
+   entre as últimas N e o histórico inteiro. A lista sempre vem do
+   servidor — inclusive depois de gravar, porque é lá que se
+   decide o que ainda é editável. */
+function journalBox(el) {
+  return el.classList.contains('ag-proj-jnl') ? el : el.querySelector('.ag-proj-jnl');
+}
 
 function journalErro(box, msg) {
   box.querySelector('.ag-proj-jnl-erro').textContent = msg || '';
 }
 
+/* 📓 do projeto: abrir isola o projeto no seletor */
 function alternarJournal(btn) {
-  const card = btn.closest('.ag-proj-card');
+  const card  = btn.closest('.ag-proj-card');
   const abrir = !card.classList.contains('jnl-aberto');
-  // abrir o journal isola o projeto: a caixa precisa da largura toda
   if (abrir) {
     const sel = document.getElementById('proj-seletor');
     if (sel && sel.value !== card.dataset.id
@@ -1682,18 +1735,27 @@ function alternarJournal(btn) {
     }
   }
   card.classList.toggle('jnl-aberto', abrir);
-  if (abrir) carregarJournal(card);
+  if (abrir) carregarJournal(journalBox(card));
+}
+
+/* 📓 da Programação do Dia: a coluna existe só na semana de hoje */
+function alternarJournalDia() {
+  const cel = document.getElementById('dia-prog');
+  if (!cel) return;
+  const abrir = !cel.classList.contains('jnl-aberto');
+  cel.classList.toggle('jnl-aberto', abrir);
+  const grade = document.querySelector('.ag-grade');
+  if (grade) grade.classList.toggle('jnl-dia-aberto', abrir);
+  if (abrir) carregarJournal(journalBox(cel));
 }
 
 function alternarJournalTudo(btn) {
-  const card = btn.closest('.ag-proj-card');
-  const box  = journalBox(card);
+  const box = journalBox(btn.closest('.ag-proj-jnl'));
   box.dataset.limite = box.dataset.limite === '0' ? '{{ journal_ultimas }}' : '0';
-  carregarJournal(card);
+  carregarJournal(box);
 }
 
-function pintarJournal(card, dados) {
-  const box   = journalBox(card);
+function pintarJournal(box, dados) {
   const lista = box.querySelector('.ag-proj-jnl-lista');
   lista.innerHTML = '';
   if (!dados.registros.length) {
@@ -1721,18 +1783,18 @@ function pintarJournal(card, dados) {
     if (r.editavel) {
       const ed = document.createElement('button');
       ed.title = 'Editar'; ed.textContent = '✎';
-      ed.onclick = () => editarJournal(card, r);
+      ed.onclick = () => editarJournal(box, r);
       const ex = document.createElement('button');
       ex.title = 'Excluir'; ex.textContent = '✖';
-      ex.onclick = () => excluirJournal(card, r.id);
+      ex.onclick = () => excluirJournal(box, r.id);
       item.appendChild(ed);
       item.appendChild(ex);
     }
     lista.appendChild(item);
   });
 
-  const mais    = box.querySelector('.ag-proj-jnl-mais');
-  const vendoTudo = box.dataset.limite === '0';
+  const mais       = box.querySelector('.ag-proj-jnl-mais');
+  const vendoTudo  = box.dataset.limite === '0';
   const escondidas = dados.total - dados.registros.length;
   mais.style.display = (vendoTudo || escondidas > 0) ? '' : 'none';
   mais.textContent = vendoTudo
@@ -1740,39 +1802,36 @@ function pintarJournal(card, dados) {
     : '👁 Ver mais (' + escondidas + ')';
 }
 
-function dadosJournal(card, extras) {
-  const box = journalBox(card);
+function dadosJournal(box, extras) {
   const d = new FormData();
-  d.append('id_projeto', card.dataset.id);
+  if (box.dataset.projeto) d.append('id_projeto', box.dataset.projeto);
   d.append('limite', box.dataset.limite);
   for (const k in (extras || {})) d.append(k, extras[k]);
   return d;
 }
 
-function chamarJournal(card, url, extras) {
-  return fetch(url, { method: 'POST', body: dadosJournal(card, extras) })
+function chamarJournal(box, url, extras) {
+  return fetch(url, { method: 'POST', body: dadosJournal(box, extras) })
     .then(r => r.json())
     .then(j => {
-      const box = journalBox(card);
       journalErro(box, j.ok ? '' : (j.erro || 'Não foi possível salvar.'));
-      if (j.ok) pintarJournal(card, j);
+      if (j.ok) pintarJournal(box, j);
       return j;
     })
-    .catch(() => journalErro(journalBox(card), 'Falha de conexão.'));
+    .catch(() => journalErro(box, 'Falha de conexão.'));
 }
 
-function carregarJournal(card) {
-  return chamarJournal(card, URL_PROJ_JNL_LISTAR);
+function carregarJournal(box) {
+  return chamarJournal(box, box.dataset.urlListar);
 }
 
-/* concluir tarefa escreve no journal do projeto (quem faz isso é o
-   servidor); com a caixa aberta, ela precisa refletir na hora */
-function recarregarJournalSeAberto(card) {
-  if (card && card.classList.contains('jnl-aberto')) carregarJournal(card);
+/* concluir tarefa escreve no journal (quem faz isso é o servidor);
+   com a caixa aberta, ela precisa refletir na hora */
+function recarregarJournalSeAberto(el) {
+  if (el && el.classList.contains('jnl-aberto')) carregarJournal(journalBox(el));
 }
 
-function editarJournal(card, r) {
-  const box = journalBox(card);
+function editarJournal(box, r) {
   box.dataset.editando = r.id;
   box.querySelector('input[type=date]').value = r.data;
   const txt = box.querySelector('textarea');
@@ -1788,15 +1847,15 @@ function limparFormJournal(box) {
 }
 
 function salvarJournal(btn) {
-  const card = btn.closest('.ag-proj-card');
-  const box  = journalBox(card);
+  const box  = btn.closest('.ag-proj-jnl');
   const data = box.querySelector('input[type=date]').value;
   const desc = box.querySelector('textarea').value.trim();
   if (!data || !desc) { journalErro(box, 'Preencha a data e a descrição.'); return; }
   const extras = { data: data, descricao: desc };
   if (box.dataset.editando) extras.id = box.dataset.editando;
-  chamarJournal(card, URL_PROJ_JNL_SALVAR, extras).then(j => {
+  return chamarJournal(box, box.dataset.urlSalvar, extras).then(j => {
     if (j && j.ok) limparFormJournal(box);
+    return j;
   });
 }
 
@@ -1808,11 +1867,10 @@ function journalKeydown(ev, txt) {
   }
 }
 
-function excluirJournal(card, id) {
+function excluirJournal(box, id) {
   if (!confirm('Excluir esta ocorrência?')) return;
-  const box = journalBox(card);
   if (box.dataset.editando === String(id)) limparFormJournal(box);
-  chamarJournal(card, URL_PROJ_JNL_EXCLUIR, { id: id });
+  chamarJournal(box, box.dataset.urlExcluir, { id: id });
 }
 
 document.addEventListener('DOMContentLoaded', () => {

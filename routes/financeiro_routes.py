@@ -4055,7 +4055,10 @@ def conferir_caixas():
                 # esse Number como string no formato JS puro ("78.89", ponto
                 # decimal, sem separador de milhar). Tratar aqui como se
                 # fosse texto no formato brasileiro multiplicava por 100.
-                try: return float(v or "0")
+                # Negativo só existe pelo detalhamento (onde a observação
+                # explica o porquê). Digitado direto na grade, o sinal cai —
+                # a tela também já mostra o número sem sinal.
+                try: return abs(float(v or "0"))
                 except: return 0.0
 
             # Célula alimentada por detalhamento: o valor é a soma das linhas,
@@ -4191,6 +4194,12 @@ def conferir_caixas():
             except ValueError:
                 area_sel, filial_sel = "TODOS", ""
         if area_sel == "TODOS" and not ve_resumo:
+            area_sel, filial_sel = str(areas[0]["id_area"]), ""
+        # Empresa com uma área só (Vilela): "todas as áreas" seria a mesma
+        # coisa que a área única, com um clique a mais. Abre direto nela.
+        # Só quando a tela não pediu área nenhuma — trocar para "TODOS" na
+        # mão continua valendo.
+        if area_sel == "TODOS" and len(areas) == 1 and "area" not in request.args:
             area_sel, filial_sel = str(areas[0]["id_area"]), ""
 
         # A filial pedida precisa pertencer à área selecionada.
@@ -4807,6 +4816,15 @@ def api_caixas_detalhe_salvar():
         valor = float(request.form.get("valor") or "0")
     except ValueError:
         valor = 0.0
+
+    # Valor negativo é aceito aqui (e só aqui), mas nunca solto: a observação
+    # é o que justifica o abatimento na célula da grade.
+    if valor < 0 and not observacao:
+        return jsonify({
+            "ok": False,
+            "erro": "Escreva na coluna Observação o motivo do valor negativo — "
+                    "sem isso o abatimento não é gravado."
+        }), 400
 
     tabela_det, campo_id = _tabela_detalhe(tipo)
 
@@ -6544,11 +6562,14 @@ class ErroConsulta(Exception):
         self.status = status
 
 
-def _coletar_variacoes(cod_empresa, id_competencia):
+def _coletar_variacoes(cod_empresa, id_competencia, recuo=0):
     """Dados crus das duas telas de variação: período, janela e saldos.
 
     A janela comparada usa só dias em que TODAS as áreas visíveis lançaram —
     nas duas pontas, senão área atrasada entra zerada e inventa variação.
+
+    `recuo` empurra a ponta final N dias completos para trás (a setinha da
+    tela): o dia mais recente costuma ainda estar sendo digitado.
     """
 
     conn = get_connection()
@@ -6631,10 +6652,16 @@ def _coletar_variacoes(cod_empresa, id_competencia):
         """, (cod_empresa, data_inicio, data_fim))
         feriados = {linha["data"] for linha in cur.fetchall()}
 
-        datas_completas = [d for d, ids in areas_por_data.items()
-                           if ids >= set(ids_areas) and eh_dia_util(d, feriados)]
-        data_final = max(datas_completas) if datas_completas else None
-        data_inicial_efetiva = min(datas_completas) if datas_completas else data_inicio
+        datas_completas = sorted(d for d, ids in areas_por_data.items()
+                                 if ids >= set(ids_areas) and eh_dia_util(d, feriados))
+        data_inicial_efetiva = datas_completas[0] if datas_completas else data_inicio
+
+        # A ponta final nunca pode encostar na inicial: as candidatas são as
+        # datas depois dela (com uma só data completa, início = fim, como antes).
+        candidatas_fim = datas_completas[1:] or datas_completas
+        recuo = max(0, min(int(recuo or 0), len(candidatas_fim) - 1)) if candidatas_fim else 0
+        data_final = candidatas_fim[-1 - recuo] if candidatas_fim else None
+        pode_recuar = recuo + 1 < len(candidatas_fim)
 
         cur.execute("""
             SELECT id_indicador_recebivel, nome
@@ -6686,6 +6713,8 @@ def _coletar_variacoes(cod_empresa, id_competencia):
         "indicadores": indicadores,
         "data_inicial_efetiva": data_inicial_efetiva,
         "data_final": data_final,
+        "recuo": recuo,
+        "pode_recuar": pode_recuar,
         "bancarios": bancarios,
         "recebiveis": recebiveis,
         "antecipacoes": antecipacoes,
@@ -6702,9 +6731,10 @@ def api_consultar_variacoes():
     """
     cod_empresa = str(session["cod_empresa"]).strip()
     id_competencia = request.args.get("id_competencia", type=int)
+    recuo = request.args.get("recuo", type=int) or 0
 
     try:
-        dados = _coletar_variacoes(cod_empresa, id_competencia)
+        dados = _coletar_variacoes(cod_empresa, id_competencia, recuo)
     except ErroConsulta as e:
         return jsonify({"ok": False, "erro": str(e)}), e.status
 
@@ -6795,6 +6825,8 @@ def api_consultar_variacoes():
         },
         "data_inicio": data_inicial_efetiva.isoformat(),
         "data_final": data_final.isoformat() if data_final else None,
+        "recuo": dados["recuo"],
+        "pode_recuar": dados["pode_recuar"],
         "areas": [{"id_area": a["id_area"], "nome_area": a["nome_area"]} for a in areas],
         "linhas": linhas,
         "total": total,

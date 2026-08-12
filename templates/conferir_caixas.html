@@ -364,6 +364,24 @@
   .badge-salvo { display:none; font-size:11px; color:#16a34a; font-weight:700; position:fixed; bottom:20px; right:24px; background:#fff; border:1px solid #16a34a; border-radius:8px; padding:8px 14px; box-shadow:0 3px 10px rgba(0,0,0,.15); z-index:999; }
   .badge-erro  { display:none; font-size:11px; color:#dc2626; font-weight:700; position:fixed; bottom:20px; right:24px; background:#fff; border:1px solid #dc2626; border-radius:8px; padding:8px 14px; box-shadow:0 3px 10px rgba(0,0,0,.15); z-index:999; }
 
+  /* Aviso da própria tela, no lugar do alert() do navegador — que vinha com
+     "localhost:5001 diz" no topo e obrigava a clicar OK pra continuar. */
+  .aviso-tela {
+    display:none; position:fixed; bottom:20px; right:24px; z-index:1000;
+    max-width:360px; background:#fff; border:1px solid #dc2626;
+    border-left:5px solid #dc2626; border-radius:8px; padding:12px 40px 12px 14px;
+    box-shadow:0 6px 18px rgba(0,0,0,.18); font-size:13px; color:#374151;
+    line-height:1.45; animation:aviso-entra .18s ease-out;
+  }
+  .aviso-tela .aviso-titulo { font-weight:800; color:#b91c1c; font-size:12px;
+    text-transform:uppercase; letter-spacing:.4px; margin-bottom:4px; }
+  .aviso-tela .aviso-fechar {
+    position:absolute; top:6px; right:8px; border:0; background:none; cursor:pointer;
+    font-size:16px; line-height:1; color:#9ca3af; padding:2px 4px;
+  }
+  .aviso-tela .aviso-fechar:hover { color:#374151; }
+  @keyframes aviso-entra { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+
   /* ── Botões "editar" e "visualizar" (abrem os painéis abaixo da grade) ── */
   th.col-editar, td.td-editar {
     width:100px; min-width:100px; padding:0 4px !important; text-align:center;
@@ -1021,6 +1039,11 @@
 
 <div class="badge-salvo" id="badge-salvo">✔ Salvo</div>
 <div class="badge-erro"  id="badge-erro">✘ Erro ao salvar</div>
+<div class="aviso-tela" id="aviso-tela" role="alert">
+  <button type="button" class="aviso-fechar" onclick="fecharAviso()" title="Fechar">✕</button>
+  <div class="aviso-titulo" id="aviso-titulo">Não foi possível salvar</div>
+  <div id="aviso-texto"></div>
+</div>
 
 <script>
   const URL_SALVAR = "{{ url_for('financeiro.conferir_caixas') }}";
@@ -1040,9 +1063,18 @@
   {% endif %}
 
   function parseBR(v) { return parseFloat((v||'0').replace(/\./g,'').replace(',','.')) || 0; }
+
+  /* Valor digitado direto na grade: negativo não entra. Quem precisa lançar
+     um abatimento faz pelo ✎, onde a observação é obrigatória (e a célula
+     passa a ser soma do detalhamento, travada na grade). */
+  function parseBRGrade(v) { return Math.abs(parseBR(v)); }
+  /* Mantém o sinal: um total de célula pode ser negativo quando o
+     detalhamento tem linha de abatimento. O Math.abs de antes mostrava
+     -1.000,00 como 1.000,00 — a tela mentia sobre o que estava gravado. */
   function fmtBR(v) {
     if (!v) return '';
-    return Math.abs(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const s = Math.abs(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+    return (v < 0 ? '-' : '') + s;
   }
 
   /* ── SOMATÓRIO DE CÉLULAS (o "marcar e somar" do Excel) ───────────────
@@ -1271,6 +1303,22 @@
     const el = document.getElementById(ok?'badge-salvo':'badge-erro');
     el.style.display='block'; setTimeout(()=>el.style.display='none',1800);
   }
+
+  /* Aviso na própria tela. O alert() do navegador anunciava o endereço do
+     servidor ("localhost:5001 diz…") e travava a digitação até clicar OK. */
+  let avisoTimer = null;
+  function avisar(texto, titulo) {
+    document.getElementById('aviso-titulo').textContent = titulo || 'Não foi possível salvar';
+    document.getElementById('aviso-texto').textContent  = texto;
+    const el = document.getElementById('aviso-tela');
+    el.style.display = 'block';
+    clearTimeout(avisoTimer);
+    avisoTimer = setTimeout(fecharAviso, 7000);
+  }
+  function fecharAviso() {
+    clearTimeout(avisoTimer);
+    document.getElementById('aviso-tela').style.display = 'none';
+  }
   function rowInfo(inp) {
     const tr = inp.closest('tr');
     return { data: tr.dataset.data, filial: tr.dataset.filial };
@@ -1371,7 +1419,7 @@
           `.chk-col[data-tipo="${tipo}"][data-item="${idItem}"]`);
         if (chk) chk.checked = !mostrar;
         celulas().forEach(el => el.classList.toggle('col-fechada', mostrar));
-        alert(res.erro || 'Não foi possível gravar.');
+        avisar(res.erro || 'Não foi possível gravar.');
       })
       .catch(() => badge(false));
   }
@@ -1384,7 +1432,7 @@
   function salvarCelula(inp) {
     if (travada(inp)) return;
     const {data,filial}=rowInfo(inp);
-    const v=parseBR(inp.value); inp.value=v?fmtBR(v):'';
+    const v=parseBRGrade(inp.value); inp.value=v?fmtBR(v):'';
     recalcTotal(inp.closest('tr'));
     const fd=new FormData();
     fd.append('tipo','forma'); fd.append('cod_filial',filial);
@@ -1394,7 +1442,7 @@
   function salvarTotalCx(inp) {
     if (travada(inp)) return;
     const {data,filial}=rowInfo(inp);
-    const v=parseBR(inp.value); inp.value=v?fmtBR(v):'';
+    const v=parseBRGrade(inp.value); inp.value=v?fmtBR(v):'';
     recalcFalta(inp.closest('tr'));
     const fd=new FormData();
     fd.append('tipo','total_cx'); fd.append('cod_filial',filial);
@@ -1405,7 +1453,7 @@
   function salvarControle(inp) {
     if (travada(inp)) return;
     const {data,filial}=rowInfo(inp);
-    const v=parseBR(inp.value); inp.value=v?fmtBR(v):'';
+    const v=parseBRGrade(inp.value); inp.value=v?fmtBR(v):'';
     const fd=new FormData();
     fd.append('tipo','controle'); fd.append('cod_filial',filial);
     fd.append('data',data); fd.append('id_controle',inp.dataset.controle); fd.append('valor',v);
@@ -1415,7 +1463,7 @@
   document.querySelectorAll('input.cel-forma,input.cel-totalcx,input.cel-ctrl').forEach(inp=>{
     inp.addEventListener('focus',function(){
       if (travada(this)) { this.blur(); return; }
-      const v=parseBR(this.value); this.value=v?v.toFixed(2).replace('.',','):''; this.select();
+      const v=parseBRGrade(this.value); this.value=v?v.toFixed(2).replace('.',','):''; this.select();
     });
     inp.addEventListener('keydown',function(e){
       if(e.key==='Enter'){e.preventDefault();this.blur();}
@@ -1500,7 +1548,7 @@
       .then(res => {
         badge(!!res.ok);
         if (res.ok) obs.dataset.salvo = obs.value;
-        else alert(res.erro || 'Não foi possível gravar a observação.');
+        else avisar(res.erro || 'Não foi possível gravar a observação.');
       })
       .catch(() => badge(false));
   }
@@ -1685,6 +1733,15 @@
     const valor = parseBR(valEl.value);
     valEl.value = valor ? valor.toFixed(2).replace('.',',') : '';
 
+    /* Negativo é permitido no detalhamento, mas só acompanhado da
+       observação que explica o abatimento — mesma regra do servidor. */
+    if (valor < 0 && !observacao) {
+      avisar('Escreva na coluna Observação o motivo do valor negativo — ' +
+             'sem isso o abatimento não é gravado.', 'Falta a observação');
+      obsEl.focus();
+      return;
+    }
+
     const fd = new FormData();
     fd.append('tipo', tipo); fd.append('cod_filial', FILIAL_ATUAL);
     fd.append('data', pdDataAtual); fd.append('id_item', idItem);
@@ -1695,7 +1752,7 @@
       .then(r => r.json())
       .then(res => {
         badge(!!res.ok);
-        if (!res.ok) return;
+        if (!res.ok) { if (res.erro) avisar(res.erro); return; }
         if (res.id && !linha.dataset.id) linha.dataset.id = res.id;
         if (!observacao && !valor && linha.dataset.id) {
           // ficou em branco: o servidor apagou a linha — some com ela aqui também

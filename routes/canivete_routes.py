@@ -1149,7 +1149,12 @@ def agenda_dia_concluir():
         WHERE EXISTS (SELECT 1 FROM agenda_dia_tarefas WHERE id=%s AND id_usuario=%s)
         ON CONFLICT (id_tarefa, dia)
         DO UPDATE SET concluido = EXCLUDED.concluido
-    """, (id_tarefa, dia, concluido, id_tarefa, id_usuario))
+        RETURNING (SELECT texto FROM agenda_dia_tarefas WHERE id=%s)
+    """, (id_tarefa, dia, concluido, id_tarefa, id_usuario, id_tarefa))
+    linha = cur.fetchone()
+    # concluir vira ocorrência no journal do dia; desmarcar não desfaz
+    if linha and concluido:
+        _journal_anotar_conclusao(JOURNAL_DIA, cur, id_usuario, linha[0])
     conn.commit()
     cur.close(); conn.close()
     return jsonify({"ok": True})
@@ -1564,7 +1569,7 @@ def agenda_projeto_tarefa_concluir():
     ok = linha is not None
     # concluir vira ocorrência no journal do projeto; reabrir não desfaz
     if ok and concluido:
-        _journal_anotar_conclusao(cur, linha[0], linha[1])
+        _journal_anotar_conclusao(JOURNAL_PROJETO, cur, linha[0], linha[1])
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": ok})
 
@@ -1749,7 +1754,7 @@ def agenda_projeto_recorrencia_situacao():
     ok = linha is not None
     # só a conclusão vira ocorrência no journal — cancelar/reabrir não
     if ok and situacao == "concluida":
-        _journal_anotar_conclusao(cur, linha[0], linha[1])
+        _journal_anotar_conclusao(JOURNAL_PROJETO, cur, linha[0], linha[1])
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": ok})
 
@@ -1782,61 +1787,68 @@ def agenda_projeto_recorrencias_carregar():
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True, "criadas": n})
 
-
-# ─── JOURNAL DO PROJETO ──────────────────────────────────────────────────────
-#  Equivalente ao Project Journal de Projetos, mas por usuário e por projeto
-#  da agenda. A tela pede as últimas N ocorrências (limite=0 traz tudo).
-#  'editavel' vem do banco, no mesmo critério do UPDATE/DELETE: calcular em
-#  Python usaria o fuso da máquina, que difere do UTC do banco.
+# ─── JOURNAL (projetos e Programação do Dia) ─────────────────────────────────
+#  Equivalente ao Project Journal de Projetos, mas dentro da agenda e sempre
+#  por usuário. São dois escopos, com o mesmo comportamento:
+#    projeto — agenda_proj_journal, chaveado por id_projeto
+#    dia     — agenda_dia_journal, chaveado por id_usuario (a Programação do
+#              Dia não é um projeto; a coluna é do próprio usuário)
+#  A tela pede as últimas N ocorrências (limite=0 traz tudo). 'editavel' vem
+#  do banco, no mesmo critério do UPDATE/DELETE: calcular em Python usaria o
+#  fuso da máquina, que difere do UTC do banco.
 
 JOURNAL_ULTIMAS = 5
 JOURNAL_MARCA_CONCLUIDA = "✔"
 
+JOURNAL_PROJETO = ("agenda_proj_journal", "id_projeto")
+JOURNAL_DIA     = ("agenda_dia_journal",  "id_usuario")
 
-def _journal_anotar_conclusao(cur, id_projeto, texto):
+
+def _journal_anotar_conclusao(escopo, cur, dono, texto):
     """
-    Toda tarefa concluída (meta, recorrência ou eventual) vira uma linha no
-    journal do projeto, no registro do dia: se ainda não existe registro para
-    hoje, abre um; se já existe, acrescenta no fim.
+    Tarefa concluída vira uma linha no journal, no registro do dia: se ainda
+    não existe registro para hoje, abre um; se já existe, acrescenta no fim.
 
     A data é a do banco (CURRENT_DATE), a mesma que decide o 'editável' — em
     Python viria do fuso da máquina. Repetir a conclusão (desmarcar e marcar
     de novo) não duplica a linha.
     """
+    tabela, coluna = escopo
     texto = (texto or "").strip()
     if not texto:
         return
     linha = JOURNAL_MARCA_CONCLUIDA + " " + texto
 
-    cur.execute("""
-        UPDATE agenda_proj_journal
+    cur.execute(f"""
+        UPDATE {tabela}
         SET descricao = descricao || E'\n' || %s, atualizado_em = now()
-        WHERE id = (SELECT id FROM agenda_proj_journal
-                    WHERE id_projeto=%s AND data=CURRENT_DATE
+        WHERE id = (SELECT id FROM {tabela}
+                    WHERE {coluna}=%s AND data=CURRENT_DATE
                     ORDER BY id LIMIT 1)
           AND descricao NOT LIKE '%%' || %s || '%%'
-    """, (linha, id_projeto, linha))
+    """, (linha, dono, linha))
     if cur.rowcount:
         return
 
     # rowcount 0 = ou não há registro hoje (abre um), ou a linha já está lá
-    cur.execute("""
-        INSERT INTO agenda_proj_journal (id_projeto, data, descricao)
+    cur.execute(f"""
+        INSERT INTO {tabela} ({coluna}, data, descricao)
         SELECT %s, CURRENT_DATE, %s
-        WHERE NOT EXISTS (SELECT 1 FROM agenda_proj_journal
-                          WHERE id_projeto=%s AND data=CURRENT_DATE)
-    """, (id_projeto, linha, id_projeto))
+        WHERE NOT EXISTS (SELECT 1 FROM {tabela}
+                          WHERE {coluna}=%s AND data=CURRENT_DATE)
+    """, (dono, linha, dono))
 
 
-def _journal_registros(cur, id_projeto, limite):
-    sql = """
+def _journal_registros(escopo, cur, dono, limite):
+    tabela, coluna = escopo
+    sql = f"""
         SELECT id, data, descricao,
                (criado_em::date = CURRENT_DATE) AS editavel
-        FROM agenda_proj_journal
-        WHERE id_projeto = %s
+        FROM {tabela}
+        WHERE {coluna} = %s
         ORDER BY data DESC, id DESC
     """
-    params = [id_projeto]
+    params = [dono]
     if limite:
         sql += " LIMIT %s"
         params.append(limite)
@@ -1853,12 +1865,12 @@ def _journal_registros(cur, id_projeto, limite):
     ]
 
 
-def _journal_resposta(cur, id_projeto, limite):
-    cur.execute("SELECT COUNT(*) AS n FROM agenda_proj_journal WHERE id_projeto=%s",
-                (id_projeto,))
+def _journal_resposta(escopo, cur, dono, limite):
+    tabela, coluna = escopo
+    cur.execute(f"SELECT COUNT(*) AS n FROM {tabela} WHERE {coluna}=%s", (dono,))
     total = cur.fetchone()["n"]
     return {"ok": True, "total": total, "limite": limite,
-            "registros": _journal_registros(cur, id_projeto, limite)}
+            "registros": _journal_registros(escopo, cur, dono, limite)}
 
 
 def _journal_limite():
@@ -1870,65 +1882,80 @@ def _journal_limite():
     return 0 if limite <= 0 else limite
 
 
+def _journal_salvar(escopo, cur, dono):
+    """Inclui (sem id) ou edita (com id). Devolve erro ou None."""
+    tabela, coluna = escopo
+    id_reg    = (request.form.get("id") or "").strip()
+    data_str  = (request.form.get("data") or "").strip()
+    descricao = (request.form.get("descricao") or "").strip()
+    if not data_str or not descricao:
+        return "Preencha a data e a descrição."
+
+    if id_reg:
+        # só edita no mesmo dia em que o registro foi criado — a condição vai
+        # no próprio UPDATE para não depender do que a tela mandou
+        cur.execute(f"""
+            UPDATE {tabela}
+            SET data=%s, descricao=%s, atualizado_em=now()
+            WHERE id=%s AND {coluna}=%s AND criado_em::date = CURRENT_DATE
+        """, (data_str, descricao, id_reg, dono))
+        if not cur.rowcount:
+            return "Só é possível editar registros criados hoje."
+    else:
+        cur.execute(f"""
+            INSERT INTO {tabela} ({coluna}, data, descricao) VALUES (%s, %s, %s)
+        """, (dono, data_str, descricao))
+    return None
+
+
+def _journal_excluir(escopo, cur, dono):
+    tabela, coluna = escopo
+    # só apaga no mesmo dia em que o registro foi criado
+    cur.execute(f"""
+        DELETE FROM {tabela}
+        WHERE id=%s AND {coluna}=%s AND criado_em::date = CURRENT_DATE
+    """, (request.form.get("id"), dono))
+    if not cur.rowcount:
+        return "Só é possível excluir registros criados hoje."
+    return None
+
+
+# ── journal do projeto ───────────────────────────────────────────────────────
+
+def _journal_projeto(acao):
+    """Tronco comum das 3 rotas: valida o projeto e responde a lista."""
+    id_usuario = session["id_usuario"]
+    id_projeto = request.form.get("id_projeto")
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if not _projeto_do_usuario(cur, id_projeto, id_usuario):
+            return jsonify({"ok": False}), 403
+        erro = acao(JOURNAL_PROJETO, cur, id_projeto) if acao else None
+        if erro:
+            return jsonify({"ok": False, "erro": erro})
+        conn.commit()
+        return jsonify(_journal_resposta(JOURNAL_PROJETO, cur, id_projeto,
+                                         _journal_limite()))
+    finally:
+        cur.close(); conn.close()
+
+
 @canivete_bp.route("/agenda/projeto/journal/listar", methods=["POST"])
 def agenda_projeto_journal_listar():
     r = _checar_login()
     if r:
         return jsonify({"ok": False}), 401
-    id_usuario = session["id_usuario"]
-    id_projeto = request.form.get("id_projeto")
-
-    conn = get_connection()
-    cur  = conn.cursor(cursor_factory=RealDictCursor)
-    try:
-        if not _projeto_do_usuario(cur, id_projeto, id_usuario):
-            return jsonify({"ok": False}), 403
-        return jsonify(_journal_resposta(cur, id_projeto, _journal_limite()))
-    finally:
-        cur.close(); conn.close()
+    return _journal_projeto(None)
 
 
 @canivete_bp.route("/agenda/projeto/journal/salvar", methods=["POST"])
 def agenda_projeto_journal_salvar():
-    """Inclui (sem id) ou edita (com id) uma ocorrência."""
     r = _checar_login()
     if r:
         return jsonify({"ok": False}), 401
-    id_usuario = session["id_usuario"]
-    id_projeto = request.form.get("id_projeto")
-    id_reg     = (request.form.get("id") or "").strip()
-    data_str   = (request.form.get("data") or "").strip()
-    descricao  = (request.form.get("descricao") or "").strip()
-
-    conn = get_connection()
-    cur  = conn.cursor(cursor_factory=RealDictCursor)
-    try:
-        if not _projeto_do_usuario(cur, id_projeto, id_usuario):
-            return jsonify({"ok": False}), 403
-        if not data_str or not descricao:
-            return jsonify({"ok": False, "erro": "Preencha a data e a descrição."})
-
-        if id_reg:
-            # só edita no mesmo dia em que o registro foi criado — a condição
-            # vai no próprio UPDATE para não depender do que a tela mandou
-            cur.execute("""
-                UPDATE agenda_proj_journal
-                SET data=%s, descricao=%s, atualizado_em=now()
-                WHERE id=%s AND id_projeto=%s
-                  AND criado_em::date = CURRENT_DATE
-            """, (data_str, descricao, id_reg, id_projeto))
-            if not cur.rowcount:
-                return jsonify({"ok": False,
-                                "erro": "Só é possível editar registros criados hoje."})
-        else:
-            cur.execute("""
-                INSERT INTO agenda_proj_journal (id_projeto, data, descricao)
-                VALUES (%s, %s, %s)
-            """, (id_projeto, data_str, descricao))
-        conn.commit()
-        return jsonify(_journal_resposta(cur, id_projeto, _journal_limite()))
-    finally:
-        cur.close(); conn.close()
+    return _journal_projeto(_journal_salvar)
 
 
 @canivete_bp.route("/agenda/projeto/journal/excluir", methods=["POST"])
@@ -1936,24 +1963,46 @@ def agenda_projeto_journal_excluir():
     r = _checar_login()
     if r:
         return jsonify({"ok": False}), 401
+    return _journal_projeto(_journal_excluir)
+
+
+# ── journal da Programação do Dia ────────────────────────────────────────────
+
+def _journal_dia(acao):
     id_usuario = session["id_usuario"]
-    id_projeto = request.form.get("id_projeto")
-    id_reg     = request.form.get("id")
 
     conn = get_connection()
     cur  = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        if not _projeto_do_usuario(cur, id_projeto, id_usuario):
-            return jsonify({"ok": False}), 403
-        # só apaga no mesmo dia em que o registro foi criado
-        cur.execute("""
-            DELETE FROM agenda_proj_journal
-            WHERE id=%s AND id_projeto=%s AND criado_em::date = CURRENT_DATE
-        """, (id_reg, id_projeto))
-        if not cur.rowcount:
-            return jsonify({"ok": False,
-                            "erro": "Só é possível excluir registros criados hoje."})
+        erro = acao(JOURNAL_DIA, cur, id_usuario) if acao else None
+        if erro:
+            return jsonify({"ok": False, "erro": erro})
         conn.commit()
-        return jsonify(_journal_resposta(cur, id_projeto, _journal_limite()))
+        return jsonify(_journal_resposta(JOURNAL_DIA, cur, id_usuario,
+                                         _journal_limite()))
     finally:
         cur.close(); conn.close()
+
+
+@canivete_bp.route("/agenda/dia/journal/listar", methods=["POST"])
+def agenda_dia_journal_listar():
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    return _journal_dia(None)
+
+
+@canivete_bp.route("/agenda/dia/journal/salvar", methods=["POST"])
+def agenda_dia_journal_salvar():
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    return _journal_dia(_journal_salvar)
+
+
+@canivete_bp.route("/agenda/dia/journal/excluir", methods=["POST"])
+def agenda_dia_journal_excluir():
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    return _journal_dia(_journal_excluir)

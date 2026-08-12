@@ -31,6 +31,12 @@
   .pos { color: #6aa84f; }
   th.col-variacao { color: #6aa84f; }
 
+  .seta-data { background: none; border: 1px solid #cfd8dc; border-radius: 6px; color: #5b2d8e;
+               font-size: 14px; line-height: 1; padding: 3px 7px; cursor: pointer; margin-left: 14px; }
+  .seta-data + .seta-data { margin-left: 6px; }
+  .seta-data:hover:not(:disabled) { background: #f0eaf7; }
+  .seta-data:disabled { color: #c3cbd2; border-color: #e6ebef; cursor: default; }
+
   .aviso { color: #8a6d3b; background: #fcf8e3; border: 1px solid #faebcc; border-radius: 8px; padding: 10px 12px; max-width: 1100px; margin-bottom: 18px; }
   .status-msg { font-size: 14px; color: #b3261e; min-height: 20px; }
 </style>
@@ -59,7 +65,11 @@
 </div>
 
 <div id="blocoFim" class="bloco" style="display:none">
-  <div class="data-bloco" id="dataFim"></div>
+  <div class="data-bloco">
+    <span id="dataFim"></span>
+    <button type="button" id="btnRecuar" class="seta-data" title="Voltar um dia">▲</button>
+    <button type="button" id="btnAvancar" class="seta-data" title="Avançar um dia">▼</button>
+  </div>
   <table><colgroup id="colsFim"></colgroup><thead id="cabFim"></thead><tbody id="corpoFim"></tbody></table>
 </div>
 
@@ -79,9 +89,19 @@
     return v < 0 ? `(${txt})` : txt;
   }
 
+  const DIAS_SEMANA = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira",
+                       "Quinta-feira", "Sexta-feira", "Sábado"];
+
   function formatarData(iso) {
     const [a, m, d] = iso.split("-");
     return `${d}/${m}/${a.substring(2)}`;
+  }
+
+  // Título dos blocos: data + dia da semana. Monta a data em horário local
+  // (new Date("AAAA-MM-DD") é UTC e adianta/atrasa o dia).
+  function formatarDataComDia(iso) {
+    const [a, m, d] = iso.split("-").map(Number);
+    return `${formatarData(iso)} - ${DIAS_SEMANA[new Date(a, m - 1, d).getDay()]}`;
   }
 
   function celulaValor(v, classe) {
@@ -130,6 +150,9 @@
     </tr>`;
   }
 
+  // Quantos dias completos a ponta final está recuada (as setinhas do bloco).
+  let recuo = 0;
+
   async function carregar() {
     const id = document.getElementById("selPeriodo").value;
     const status = document.getElementById("status");
@@ -141,7 +164,7 @@
 
     let dados;
     try {
-      const resp = await fetch(`/api/saldos/variacoes?id_competencia=${id}`);
+      const resp = await fetch(`/api/saldos/variacoes?id_competencia=${id}&recuo=${recuo}`);
       dados = await resp.json();
       if (!resp.ok || !dados.ok) throw new Error(dados.erro || "Erro ao consultar.");
     } catch (e) {
@@ -151,7 +174,7 @@
       return;
     }
 
-    document.getElementById("dataInicio").textContent = formatarData(dados.data_inicio);
+    document.getElementById("dataInicio").textContent = formatarDataComDia(dados.data_inicio);
     document.getElementById("colsInicio").innerHTML = montarColgroup(dados.areas);
     document.getElementById("cabInicio").innerHTML = montarCabecalho(dados.areas, false);
     document.getElementById("corpoInicio").innerHTML = montarCorpo(dados, "inicio", false);
@@ -164,7 +187,11 @@
       return;
     }
 
-    document.getElementById("dataFim").textContent = formatarData(dados.data_final);
+    document.getElementById("dataFim").textContent = formatarDataComDia(dados.data_final);
+    // O servidor devolve o recuo já limitado (não passa da data inicial).
+    recuo = dados.recuo || 0;
+    document.getElementById("btnRecuar").disabled = !dados.pode_recuar;
+    document.getElementById("btnAvancar").disabled = recuo === 0;
     document.getElementById("colsFim").innerHTML = montarColgroup(dados.areas);
     document.getElementById("cabFim").innerHTML = montarCabecalho(dados.areas, true);
     document.getElementById("corpoFim").innerHTML = montarCorpo(dados, "fim", true);
@@ -178,7 +205,10 @@
         + ", mas nesse dia nem todas as áreas tinham lançamento; usada a data "
         + formatarData(dados.data_inicio) + ".");
     }
-    if (dados.data_final !== dados.periodo.data_fim) {
+    if (recuo > 0) {
+      recados.push("Data final recuada manualmente para " + formatarData(dados.data_final)
+        + " (▼ para voltar ao dia mais recente).");
+    } else if (dados.data_final !== dados.periodo.data_fim) {
       recados.push("Última data com lançamento de todas as áreas: "
         + formatarData(dados.data_final) + ". O período vai até "
         + formatarData(dados.periodo.data_fim) + ".");
@@ -189,7 +219,11 @@
     }
   }
 
-  document.getElementById("selPeriodo").addEventListener("change", carregar);
+  document.getElementById("selPeriodo").addEventListener("change", () => { recuo = 0; carregar(); });
+  document.getElementById("btnRecuar").addEventListener("click", () => { recuo += 1; carregar(); });
+  document.getElementById("btnAvancar").addEventListener("click", () => {
+    if (recuo > 0) { recuo -= 1; carregar(); }
+  });
   carregar();
 </script>
 
