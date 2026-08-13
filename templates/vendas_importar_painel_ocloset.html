@@ -34,6 +34,7 @@
   }
 
   .linha-form input[type="number"],
+  .linha-form input[type="date"],
   .linha-form input[type="file"] {
     width: 100%;
     box-sizing: border-box;
@@ -159,6 +160,25 @@
           <label for="mes">Mês</label>
           <input type="number" id="mes" name="mes" min="1" max="12" value="{{ mes_sugerido or '' }}" required>
         </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="linha-form">
+          <label for="data_inicial">Data inicial (corte)</label>
+          <input type="date" id="data_inicial" name="data_inicial"
+                 value="{{ data_inicial_sugerida or '' }}" required>
+        </div>
+
+        <div class="linha-form">
+          <label for="data_final">Data final (corte)</label>
+          <input type="date" id="data_final" name="data_final"
+                 value="{{ data_final_sugerida or '' }}" required>
+        </div>
+      </div>
+
+      <div class="linha-form obs-campo" style="margin-top:-8px;">
+        Linhas do arquivo com data fora desse intervalo são desconsideradas.
+        O padrão é do primeiro dia do mês atual até hoje.
       </div>
 
       <div class="linha-form">

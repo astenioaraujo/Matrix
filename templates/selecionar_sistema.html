@@ -96,6 +96,7 @@
   .btn-treinamentos { background: #2563eb; }
   .btn-canivete { background: #475569; }
   .btn-projetos { background: #b45309; }
+  .btn-mercado { background: #0369a1; }
 
   @media (max-width: 700px) {
     .pagina-wrap {
@@ -213,6 +214,13 @@
         <a class="btn-sistema btn-projetos" href="{{ url_for('projetos.menu_projetos') }}">
           <div class="btn-icone">📋</div>
           <div>Projetos</div>
+        </a>
+      {% endif %}
+
+      {% if pode_mercado %}
+        <a class="btn-sistema btn-mercado" href="{{ url_for('mercado.menu_mercado') }}">
+          <div class="btn-icone">🏪</div>
+          <div>Mercado</div>
         </a>
       {% endif %}
 

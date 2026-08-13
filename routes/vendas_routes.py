@@ -534,7 +534,7 @@ COLUNAS_CSV_OCLOSET = {
 }
 
 
-def ler_csv_ocloset(conteudo_bytes):
+def ler_csv_ocloset(conteudo_bytes, data_inicial=None, data_final=None):
     """Resume o CSV de itens do O Closet no que o painel precisa.
 
     - quantidade: uma peça por linha do arquivo
@@ -542,6 +542,10 @@ def ler_csv_ocloset(conteudo_bytes):
     - custo: soma de "Custo total"; quando vier vazio ou zero, metade do
       valor do item (o equivalente a metade do preço unitário por peça)
     - dias: quantidade de datas distintas presentes no arquivo
+
+    O relatório do O Closet costuma vir com um intervalo maior que o mês que
+    se quer importar; linhas com data fora de ``data_inicial``/``data_final``
+    são descartadas (quando informadas) e contadas em ``linhas_fora_periodo``.
     """
     texto = None
     for codificacao in ("utf-8-sig", "latin-1"):
@@ -571,6 +575,7 @@ def ler_csv_ocloset(conteudo_bytes):
     valor = Decimal("0")
     custo = Decimal("0")
     custo_estimado_linhas = 0
+    linhas_fora_periodo = 0
     datas = set()
 
     for linha in leitor:
@@ -585,9 +590,16 @@ def ler_csv_ocloset(conteudo_bytes):
             continue
 
         try:
-            datas.add(datetime.strptime(data_txt, "%d/%m/%Y").date())
+            data_linha = datetime.strptime(data_txt, "%d/%m/%Y").date()
         except ValueError:
             raise ValueError(f"Data inválida no arquivo: {data_txt!r}")
+
+        if (data_inicial and data_linha < data_inicial) or \
+           (data_final and data_linha > data_final):
+            linhas_fora_periodo += 1
+            continue
+
+        datas.add(data_linha)
 
         valor_item = para_decimal(total_txt)
         custo_item = para_decimal(linha.get(COLUNAS_CSV_OCLOSET["custo_total"]))
@@ -603,6 +615,11 @@ def ler_csv_ocloset(conteudo_bytes):
         custo += custo_item
 
     if quantidade == 0:
+        if linhas_fora_periodo:
+            raise ValueError(
+                "Nenhuma venda do arquivo está dentro do período informado "
+                f"({linhas_fora_periodo} linhas ficaram fora)."
+            )
         raise ValueError("O arquivo não tem linhas de venda.")
 
     return {
@@ -614,6 +631,7 @@ def ler_csv_ocloset(conteudo_bytes):
         "data_inicial": min(datas),
         "data_final": max(datas),
         "custo_estimado_linhas": custo_estimado_linhas,
+        "linhas_fora_periodo": linhas_fora_periodo,
     }
 
 
@@ -1129,12 +1147,19 @@ def importar_painel_ocloset(cod_empresa, nome_empresa, padrao):
     O painel guarda valores projetados para o mês inteiro; aqui a média diária
     (dividida pelos dias distintos do arquivo) é multiplicada pelos dias do mês.
     """
+    hoje = date.today()
+
     def pagina(**kw):
         base = {
             "nome_empresa": nome_empresa,
             "ano_sugerido": padrao["ano"],
             "mes_sugerido": padrao["mes"],
             "dias_mes_sugerido": padrao["dias_mes"],
+            # Corte padrão: do primeiro dia do mês atual até ontem — o dia de
+            # hoje ainda está em andamento e entraria pela metade. O relatório
+            # do O Closet costuma vir com um intervalo maior.
+            "data_inicial_sugerida": hoje.replace(day=1).isoformat(),
+            "data_final_sugerida": (hoje - timedelta(days=1)).isoformat(),
             "url_voltar": url_for("sistema.menu_vendas"),
             "texto_voltar": "← Voltar",
         }
@@ -1148,14 +1173,39 @@ def importar_painel_ocloset(cod_empresa, nome_empresa, padrao):
     ano_txt = (request.form.get("ano") or "").strip()
     mes_txt = (request.form.get("mes") or "").strip()
     dias_mes_txt = (request.form.get("dias_mes") or "").strip()
+    data_inicial_txt = (request.form.get("data_inicial") or "").strip()
+    data_final_txt = (request.form.get("data_final") or "").strip()
+
+    # Mantém o que o usuário digitou quando a página é redesenhada
+    eco = {
+        "data_inicial_sugerida": data_inicial_txt,
+        "data_final_sugerida": data_final_txt,
+    }
 
     if not arquivo or arquivo.filename == "":
         flash("Selecione um arquivo.", "error")
-        return pagina()
+        return pagina(**eco)
 
     if not (ano_txt.isdigit() and mes_txt.isdigit() and dias_mes_txt.isdigit()):
         flash("Informe ano, mês e dias do mês válidos.", "error")
-        return pagina()
+        return pagina(**eco)
+
+    try:
+        data_inicial = date.fromisoformat(data_inicial_txt)
+        data_final = date.fromisoformat(data_final_txt)
+    except ValueError:
+        flash("Informe a data inicial e a data final do corte.", "error")
+        return pagina(**eco)
+
+    if data_inicial > data_final:
+        flash("A data inicial não pode ser maior que a data final.", "error")
+        return pagina(**eco)
+
+    eco.update({
+        "ano_sugerido": int(ano_txt),
+        "mes_sugerido": int(mes_txt),
+        "dias_mes_sugerido": int(dias_mes_txt),
+    })
 
     ano = int(ano_txt)
     mes = int(mes_txt)
@@ -1163,19 +1213,23 @@ def importar_painel_ocloset(cod_empresa, nome_empresa, padrao):
 
     if mes < 1 or mes > 12:
         flash("O mês deve estar entre 1 e 12.", "error")
-        return pagina()
+        return pagina(**eco)
 
     if dias_mes < 1 or dias_mes > 31:
         flash("Dias do mês inválido.", "error")
-        return pagina()
+        return pagina(**eco)
 
     try:
-        resumo = ler_csv_ocloset(arquivo.read())
+        resumo = ler_csv_ocloset(arquivo.read(), data_inicial, data_final)
     except Exception as e:
         flash(f"Erro ao ler o arquivo: {e}", "error")
-        return pagina(ano_sugerido=ano, mes_sugerido=mes, dias_mes_sugerido=dias_mes)
+        return pagina(**eco)
 
-    dias = resumo["dias"]
+    # Base da média: dias CORRIDOS do corte, da data inicial até o último dia
+    # com venda no arquivo. Dia sem venda nenhuma também é dia decorrido do mês
+    # e precisa entrar no divisor — usar só os dias com venda inflava a média.
+    dias = (resumo["data_final"] - data_inicial).days + 1
+    dias_com_venda = resumo["dias"]
     quantidade_dia = Decimal(resumo["quantidade"]) / Decimal(dias)
     valor_dia = resumo["valor"] / Decimal(dias)
     mb_dia = resumo["margem_bruta"] / Decimal(dias)
@@ -1204,7 +1258,7 @@ def importar_painel_ocloset(cod_empresa, nome_empresa, padrao):
 
         if not filiais:
             flash("Nenhuma filial ativa cadastrada para a empresa.", "error")
-            return pagina(ano_sugerido=ano, mes_sugerido=mes, dias_mes_sugerido=dias_mes)
+            return pagina(**eco)
 
         if len(filiais) > 1:
             flash(
@@ -1238,7 +1292,8 @@ def importar_painel_ocloset(cod_empresa, nome_empresa, padrao):
         flash(
             "Conferência da importação — "
             f"Período: {resumo['data_inicial'].strftime('%d/%m/%Y')} a "
-            f"{resumo['data_final'].strftime('%d/%m/%Y')} ({dias} dias com venda) | "
+            f"{resumo['data_final'].strftime('%d/%m/%Y')} "
+            f"({dias} dias corridos, {dias_com_venda} com venda) | "
             f"Qtd lida: {resumo['quantidade']} | "
             f"Vlr lido: {formatar_numero_br(float(resumo['valor']))} | "
             f"Custo: {formatar_numero_br(float(resumo['custo']))} | "
@@ -1247,6 +1302,14 @@ def importar_painel_ocloset(cod_empresa, nome_empresa, padrao):
             f"MB/dia: {formatar_numero_br(float(mb_dia))}",
             "warning"
         )
+
+        if resumo["linhas_fora_periodo"]:
+            flash(
+                f"{resumo['linhas_fora_periodo']} linhas do arquivo estavam fora do "
+                f"corte {data_inicial.strftime('%d/%m/%Y')} a "
+                f"{data_final.strftime('%d/%m/%Y')} e foram desconsideradas.",
+                "warning"
+            )
 
         if resumo["custo_estimado_linhas"]:
             flash(
@@ -1260,7 +1323,7 @@ def importar_painel_ocloset(cod_empresa, nome_empresa, padrao):
             f"Qtd {formatar_numero_br(float(quantidade_proj))} | "
             f"Vlr {formatar_numero_br(float(valor_proj))} | "
             f"MB {formatar_numero_br(float(mb_proj))} "
-            f"({dias} dias lidos / {dias_mes} dias do mês).",
+            f"(média de {dias} dias corridos x {dias_mes} dias do mês).",
             "success"
         )
 
@@ -1272,7 +1335,7 @@ def importar_painel_ocloset(cod_empresa, nome_empresa, padrao):
         cur.close()
         conn.close()
 
-    return pagina(ano_sugerido=ano, mes_sugerido=mes, dias_mes_sugerido=dias_mes)
+    return pagina(**eco)
 
 
 # =========================

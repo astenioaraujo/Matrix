@@ -48,10 +48,12 @@ def menu_vistorias():
 
     if tipo_global == "superusuario":
         pode_configurar_checklists = True
+        pode_programar_vistorias = True
         pode_executar_vistorias = True
         pode_consultar_vistorias = True
     else:
         pode_configurar_checklists = usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "CONFIGURAR_CHECKLISTS")
+        pode_programar_vistorias = usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "PROGRAMAR_VISTORIAS")
         pode_executar_vistorias = usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "EXECUTAR_VISTORIAS")
         pode_consultar_vistorias = usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "CONSULTAR_VISTORIAS")
 
@@ -61,6 +63,7 @@ def menu_vistorias():
         url_voltar=url_for("sistema.selecionar_sistema"),
         texto_voltar="← Voltar",
         pode_configurar_checklists=pode_configurar_checklists,
+        pode_programar_vistorias=pode_programar_vistorias,
         pode_executar_vistorias=pode_executar_vistorias,
         pode_consultar_vistorias=pode_consultar_vistorias,        
     )
@@ -361,9 +364,38 @@ def salvar_itens_checklist(id_checklist):
 # ---------------------------------------
 # EXECUTAR VISTORIAS - INÍCIO
 # ---------------------------------------
-@vistorias_bp.route("/executar", methods=["GET", "POST"])
-@permissao_obrigatoria("VISTORIAS", "EXECUTAR_VISTORIAS", redirecionar_para="vistorias.menu_vistorias")
-def executar_vistorias():
+def cod_filiais_vistorias_usuario(cur, cod_empresa):
+    """Filiais que o usuário enxerga em Executar Vistorias.
+
+    Superusuário vê todas; os demais só as filiais em `usuarios_filiais`.
+    Programar Vistorias não usa esta trava — quem programa enxerga a empresa
+    inteira.
+    """
+    if str(session.get("tipo_global") or "").strip().lower() == "superusuario":
+        cur.execute("""
+            SELECT cod_filial
+            FROM filiais
+            WHERE cod_empresa = %s
+              AND ativo = TRUE
+        """, (cod_empresa,))
+        return {int(r["cod_filial"]) for r in cur.fetchall() or []}
+
+    cur.execute("""
+        SELECT cod_filial
+        FROM usuarios_filiais
+        WHERE id_usuario = %s
+          AND cod_empresa = %s
+          AND ativo = TRUE
+    """, (session.get("id_usuario"), cod_empresa))
+    return {int(r["cod_filial"]) for r in cur.fetchall() or []}
+
+
+# ---------------------------------------
+# PROGRAMAR VISTORIAS - criar e acompanhar
+# ---------------------------------------
+@vistorias_bp.route("/programar", methods=["GET", "POST"])
+@permissao_obrigatoria("VISTORIAS", "PROGRAMAR_VISTORIAS", redirecionar_para="vistorias.menu_vistorias")
+def programar_vistorias():
     if "id_usuario" not in session:
         return redirect(url_for("auth.index"))
 
@@ -407,78 +439,108 @@ def executar_vistorias():
         checklists = cur.fetchall() or []
 
         if request.method == "POST":
-            cod_filial = int(request.form.get("cod_filial") or 0)
+            # A filial é escolha múltipla: "TODAS" programa a mesma vistoria
+            # para todas as filiais ativas de uma vez.
+            escolhidas = request.form.getlist("cod_filial")
             id_checklist = int(request.form.get("id_checklist") or 0)
             data_vistoria = request.form.get("data_vistoria")
 
-            if not cod_filial or not id_checklist or not data_vistoria:
+            if "TODAS" in escolhidas:
+                cod_filiais = [int(f["cod_filial"]) for f in filiais]
+            else:
+                cod_filiais = [int(f) for f in escolhidas if str(f).strip()]
+
+            if not cod_filiais or not id_checklist or not data_vistoria:
                 flash("Informe filial, checklist e data.", "error")
-                return redirect(url_for("vistorias.executar_vistorias"))
+                return redirect(url_for("vistorias.programar_vistorias", ano=ano_sel, mes=mes_sel))
 
-            nome_executor = (
-                session.get("nome_usuario")
-                or session.get("usuario")
-                or f"Usuário {session.get('id_usuario')}"
-            )
+            criadas = 0
+            repetidas = 0
 
-            cur.execute("""
-                INSERT INTO vistorias_execucoes (
-                    cod_empresa,
-                    id_checklist,
-                    cod_filial,
-                    data_vistoria,
-                    status,
-                    id_usuario_executor,
-                    nome_executor,
-                    criado_em,
-                    atualizado_em
-                )
-                VALUES (%s, %s, %s, %s, 'ABERTA', %s, %s, NOW(), NOW())
-                RETURNING id_execucao
-            """, (
-                cod_empresa,
-                id_checklist,
-                cod_filial,
-                data_vistoria,
-                session.get("id_usuario"),
-                nome_executor
-            ))
+            for cod_filial in cod_filiais:
+                # Não duplica: mesma filial, mesmo checklist, mesma data.
+                cur.execute("""
+                    SELECT 1
+                    FROM vistorias_execucoes
+                    WHERE cod_empresa = %s
+                      AND cod_filial = %s
+                      AND id_checklist = %s
+                      AND data_vistoria = %s
+                    LIMIT 1
+                """, (cod_empresa, cod_filial, id_checklist, data_vistoria))
 
-            id_execucao = cur.fetchone()["id_execucao"]
+                if cur.fetchone():
+                    repetidas += 1
+                    continue
 
-            cur.execute("""
-                INSERT INTO vistorias_execucao_itens (
-                    id_execucao,
-                    id_item,
-                    sequencia,
-                    tipo_linha,
-                    codigo_item,
-                    descricao,
-                    pontos_possiveis,
-                    pontuacao,
-                    criado_em,
-                    atualizado_em
-                )
-                SELECT
-                    %s,
-                    id_item,
-                    sequencia,
-                    tipo_linha,
-                    codigo_item,
-                    descricao,
-                    pontos_possiveis,
-                    0,
-                    NOW(),
-                    NOW()
-                FROM vistorias_checklist_itens
-                WHERE id_checklist = %s
-                  AND ativo = TRUE
-                ORDER BY sequencia
-            """, (id_execucao, id_checklist))
+                # Quem programa não é quem executa: o executor só é conhecido
+                # quando alguém da filial abre a vistoria.
+                cur.execute("""
+                    INSERT INTO vistorias_execucoes (
+                        cod_empresa,
+                        id_checklist,
+                        cod_filial,
+                        data_vistoria,
+                        status,
+                        id_usuario_executor,
+                        nome_executor,
+                        criado_em,
+                        atualizado_em
+                    )
+                    VALUES (%s, %s, %s, %s, 'ABERTA', NULL, NULL, NOW(), NOW())
+                    RETURNING id_execucao
+                """, (cod_empresa, id_checklist, cod_filial, data_vistoria))
+
+                id_execucao = cur.fetchone()["id_execucao"]
+
+                cur.execute("""
+                    INSERT INTO vistorias_execucao_itens (
+                        id_execucao,
+                        id_item,
+                        sequencia,
+                        tipo_linha,
+                        codigo_item,
+                        descricao,
+                        pontos_possiveis,
+                        pontuacao,
+                        criado_em,
+                        atualizado_em
+                    )
+                    SELECT
+                        %s,
+                        id_item,
+                        sequencia,
+                        tipo_linha,
+                        codigo_item,
+                        descricao,
+                        pontos_possiveis,
+                        0,
+                        NOW(),
+                        NOW()
+                    FROM vistorias_checklist_itens
+                    WHERE id_checklist = %s
+                      AND ativo = TRUE
+                    ORDER BY sequencia
+                """, (id_execucao, id_checklist))
+
+                criadas += 1
 
             conn.commit()
 
-            return redirect(url_for("vistorias.preencher_vistoria", id_execucao=id_execucao))
+            if criadas:
+                flash(
+                    f"{criadas} vistoria(s) programada(s)."
+                    + (f" {repetidas} já existia(m) e foram ignoradas." if repetidas else ""),
+                    "success",
+                )
+            else:
+                flash("Nenhuma vistoria criada: já existiam para essa data e checklist.", "error")
+
+            return redirect(url_for(
+                "vistorias.programar_vistorias",
+                ano=data_vistoria[:4],
+                mes=data_vistoria[5:7],
+            ))
 
         cur.execute("""
             SELECT
@@ -507,16 +569,11 @@ def executar_vistorias():
         vistorias_mes = cur.fetchall() or []
 
         for v in vistorias_mes:
-            v["pode_editar"] = (
-                pode_editar_vistoria_data(v["data_vistoria"])
-                and v["status"] != "FINALIZADA"
-            )
-            v["pode_alterar_status"] = pode_editar_vistoria_data(v["data_vistoria"])
             v["pode_excluir"] = float(v["nota"] or 0) == 0
 
     except Exception as e:
         conn.rollback()
-        flash(f"Erro ao iniciar vistoria: {e}", "error")
+        flash(f"Erro ao programar vistoria: {e}", "error")
         filiais = []
         checklists = []
         vistorias_mes = []
@@ -526,13 +583,99 @@ def executar_vistorias():
         conn.close()
 
     return render_template(
-        "executar_vistorias.html",
+        "programar_vistorias.html",
         nome_empresa=nome_empresa,
         filiais=filiais,
         checklists=checklists,
         vistorias_mes=vistorias_mes,
         ano_sel=ano_sel,
         mes_sel=mes_sel,
+        hoje=hoje.isoformat(),
+        url_voltar=url_for("vistorias.menu_vistorias"),
+        texto_voltar="← Voltar",
+    )
+
+
+# ---------------------------------------
+# EXECUTAR VISTORIAS - só as filiais do usuário
+# ---------------------------------------
+@vistorias_bp.route("/executar")
+@permissao_obrigatoria("VISTORIAS", "EXECUTAR_VISTORIAS", redirecionar_para="vistorias.menu_vistorias")
+def executar_vistorias():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa")
+
+    hoje = date.today()
+    ano_sel = (request.args.get("ano") or str(hoje.year)).strip()
+    mes_sel = (request.args.get("mes") or str(hoje.month)).strip().zfill(2)
+
+    data_ini = f"{ano_sel}-{mes_sel}-01"
+
+    if mes_sel == "12":
+        data_fim = f"{int(ano_sel) + 1}-01-01"
+    else:
+        data_fim = f"{ano_sel}-{str(int(mes_sel) + 1).zfill(2)}-01"
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cod_filiais = cod_filiais_vistorias_usuario(cur, cod_empresa)
+
+        if not cod_filiais:
+            vistorias_mes = []
+        else:
+            cur.execute("""
+                SELECT
+                    e.id_execucao,
+                    e.data_vistoria,
+                    e.status,
+                    COALESCE(e.nota, 0) AS nota,
+                    e.nome_executor,
+                    f.cod_filial,
+                    f.nome_filial,
+                    c.codigo_checklist,
+                    c.descricao AS checklist_descricao,
+                    c.versao
+                FROM vistorias_execucoes e
+                LEFT JOIN filiais f
+                  ON f.cod_empresa = e.cod_empresa
+                 AND f.cod_filial = e.cod_filial
+                LEFT JOIN vistorias_checklists c
+                  ON c.id_checklist = e.id_checklist
+                WHERE e.cod_empresa = %s
+                  AND e.data_vistoria >= %s
+                  AND e.data_vistoria < %s
+                  AND e.cod_filial = ANY(%s)
+                ORDER BY e.data_vistoria DESC, e.id_execucao DESC
+            """, (cod_empresa, data_ini, data_fim, list(cod_filiais)))
+
+            vistorias_mes = cur.fetchall() or []
+
+        for v in vistorias_mes:
+            v["pode_editar"] = (
+                pode_editar_vistoria_data(v["data_vistoria"])
+                and v["status"] != "FINALIZADA"
+            )
+            v["pode_alterar_status"] = pode_editar_vistoria_data(v["data_vistoria"])
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "executar_vistorias.html",
+        nome_empresa=nome_empresa,
+        vistorias_mes=vistorias_mes,
+        ano_sel=ano_sel,
+        mes_sel=mes_sel,
+        sem_filial=not cod_filiais,
         url_voltar=url_for("vistorias.menu_vistorias"),
         texto_voltar="← Voltar",
     )
@@ -543,7 +686,7 @@ def executar_vistorias():
 @vistorias_bp.route("/execucao/<int:id_execucao>/excluir", methods=["POST"])
 @permissao_obrigatoria(
     "VISTORIAS",
-    "EXECUTAR_VISTORIAS",
+    "PROGRAMAR_VISTORIAS",
     redirecionar_para="vistorias.menu_vistorias",
 )
 def excluir_vistoria(id_execucao):
@@ -580,12 +723,12 @@ def excluir_vistoria(id_execucao):
 
         if not row:
             flash("Vistoria não encontrada.", "error")
-            return redirect(url_for("vistorias.executar_vistorias"))
+            return redirect(url_for("vistorias.programar_vistorias"))
 
         if tipo_global != "superusuario":
             if int(row["qtde_marcados"] or 0) > 0 or float(row["nota"] or 0) != 0:
                 flash("Só é possível excluir vistoria sem itens atendidos e com nota zero.", "error")
-                return redirect(url_for("vistorias.executar_vistorias"))
+                return redirect(url_for("vistorias.programar_vistorias"))
 
         cur.execute("""
             DELETE FROM vistorias_execucoes
@@ -604,7 +747,7 @@ def excluir_vistoria(id_execucao):
         cur.close()
         conn.close()
 
-    return redirect(url_for("vistorias.executar_vistorias"))
+    return redirect(url_for("vistorias.programar_vistorias"))
 
 # ---------------------------------------
 # PREENCHER VISTORIA
@@ -618,6 +761,19 @@ def preencher_vistoria(id_execucao):
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
+        # O executor só abre vistoria de filial dele.
+        cur.execute("""
+            SELECT cod_filial
+            FROM vistorias_execucoes
+            WHERE id_execucao = %s
+              AND cod_empresa = %s
+        """, (id_execucao, cod_empresa))
+        dono = cur.fetchone()
+
+        if not dono or int(dono["cod_filial"]) not in cod_filiais_vistorias_usuario(cur, cod_empresa):
+            flash("Esta vistoria não é de uma filial sua.", "error")
+            return redirect(url_for("vistorias.executar_vistorias"))
+
         if request.method == "POST":
             cur.execute("""
                 SELECT id_execucao_item, tipo_linha, pontos_possiveis
@@ -661,15 +817,26 @@ def preencher_vistoria(id_execucao):
             if total_possivel > 0:
                 nota = (total_obtido / total_possivel) * 10
 
+            # Executor é quem preenche — fica gravado no primeiro save.
+            nome_executor = (
+                session.get("nome_usuario")
+                or session.get("usuario")
+                or f"Usuário {session.get('id_usuario')}"
+            )
+
             cur.execute("""
                 UPDATE vistorias_execucoes
                 SET pontuacao_possivel = %s,
                     pontuacao_obtida = %s,
                     nota = %s,
+                    id_usuario_executor = COALESCE(id_usuario_executor, %s),
+                    nome_executor = COALESCE(nome_executor, %s),
                     atualizado_em = NOW()
                 WHERE id_execucao = %s
                   AND cod_empresa = %s
-            """, (total_possivel, total_obtido, nota, id_execucao, cod_empresa))
+            """, (total_possivel, total_obtido, nota,
+                  session.get("id_usuario"), nome_executor,
+                  id_execucao, cod_empresa))
 
             conn.commit()
             flash("Vistoria salva com sucesso.", "success")
@@ -773,7 +940,7 @@ def alterar_status_vistoria(id_execucao):
 
     try:
         cur.execute("""
-            SELECT data_vistoria, status
+            SELECT data_vistoria, status, cod_filial
             FROM vistorias_execucoes
             WHERE id_execucao = %s
               AND cod_empresa = %s
@@ -783,6 +950,10 @@ def alterar_status_vistoria(id_execucao):
 
         if not row:
             flash("Vistoria não encontrada.", "error")
+            return redirect(url_for("vistorias.executar_vistorias"))
+
+        if int(row["cod_filial"]) not in cod_filiais_vistorias_usuario(cur, cod_empresa):
+            flash("Esta vistoria não é de uma filial sua.", "error")
             return redirect(url_for("vistorias.executar_vistorias"))
 
         if tipo_global != "superusuario":
@@ -846,30 +1017,37 @@ def consultar_vistorias():
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
-        cur.execute("""
-            SELECT
-                e.id_execucao,
-                e.data_vistoria,
-                e.status,
-                COALESCE(e.nota, 0) AS nota,
-                e.nome_executor,
-                f.cod_filial,
-                f.nome_filial,
-                c.codigo_checklist,
-                c.descricao AS checklist_descricao
-            FROM vistorias_execucoes e
-            LEFT JOIN filiais f
-              ON f.cod_empresa = e.cod_empresa
-             AND f.cod_filial = e.cod_filial
-            LEFT JOIN vistorias_checklists c
-              ON c.id_checklist = e.id_checklist
-            WHERE e.cod_empresa = %s
-              AND e.data_vistoria >= %s
-              AND e.data_vistoria < %s
-            ORDER BY e.data_vistoria DESC, e.id_execucao DESC
-        """, (cod_empresa, data_ini, data_fim))
+        # Consulta enxerga só as filiais do usuário, igual a Executar.
+        cod_filiais = cod_filiais_vistorias_usuario(cur, cod_empresa)
 
-        vistorias = cur.fetchall() or []
+        if not cod_filiais:
+            vistorias = []
+        else:
+            cur.execute("""
+                SELECT
+                    e.id_execucao,
+                    e.data_vistoria,
+                    e.status,
+                    COALESCE(e.nota, 0) AS nota,
+                    e.nome_executor,
+                    f.cod_filial,
+                    f.nome_filial,
+                    c.codigo_checklist,
+                    c.descricao AS checklist_descricao
+                FROM vistorias_execucoes e
+                LEFT JOIN filiais f
+                  ON f.cod_empresa = e.cod_empresa
+                 AND f.cod_filial = e.cod_filial
+                LEFT JOIN vistorias_checklists c
+                  ON c.id_checklist = e.id_checklist
+                WHERE e.cod_empresa = %s
+                  AND e.data_vistoria >= %s
+                  AND e.data_vistoria < %s
+                  AND e.cod_filial = ANY(%s)
+                ORDER BY e.data_vistoria DESC, e.id_execucao DESC
+            """, (cod_empresa, data_ini, data_fim, list(cod_filiais)))
+
+            vistorias = cur.fetchall() or []
 
     finally:
         cur.close()
@@ -879,6 +1057,7 @@ def consultar_vistorias():
         "consultar_vistorias.html",
         nome_empresa=nome_empresa,
         vistorias=vistorias,
+        sem_filial=not cod_filiais,
         ano_sel=ano_sel,
         mes_sel=mes_sel,
         url_voltar=url_for("vistorias.menu_vistorias"),
@@ -928,6 +1107,10 @@ def visualizar_vistoria(id_execucao):
 
         if not execucao:
             flash("Vistoria não encontrada.", "error")
+            return redirect(url_for("vistorias.consultar_vistorias"))
+
+        if int(execucao["cod_filial"]) not in cod_filiais_vistorias_usuario(cur, cod_empresa):
+            flash("Esta vistoria não é de uma filial sua.", "error")
             return redirect(url_for("vistorias.consultar_vistorias"))
 
         cur.execute("""
@@ -987,7 +1170,8 @@ def salvar_item_vistoria_ajax():
                 i.tipo_linha,
                 i.pontos_possiveis,
                 e.data_vistoria,
-                e.status
+                e.status,
+                e.cod_filial
             FROM vistorias_execucao_itens i
             JOIN vistorias_execucoes e
               ON e.id_execucao = i.id_execucao
@@ -1002,6 +1186,9 @@ def salvar_item_vistoria_ajax():
 
         if item["status"] == "FINALIZADA":
             return jsonify({"ok": False, "erro": "Vistoria finalizada"}), 403
+
+        if int(item["cod_filial"]) not in cod_filiais_vistorias_usuario(cur, cod_empresa):
+            return jsonify({"ok": False, "erro": "Vistoria de outra filial"}), 403
 
         id_execucao = item["id_execucao"]
         pontos = float(item["pontos_possiveis"] or 0)

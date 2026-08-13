@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:10px; }
+  .origem { font-size:14px; color:#666; margin-bottom:22px; }
+
+  .abas { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px; }
+
+  .abas a {
+    padding: 10px 18px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 15px;
+    background: #eef2f7;
+    color: #334155;
+    border: 1px solid #d9d9d9;
+  }
+
+  .abas a.ativa { background:#0369a1; color:#fff; border-color:#0369a1; }
+
+  .painel-filtros {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 16px 20px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 22px;
+    display: flex;
+    gap: 16px;
+    align-items: end;
+    flex-wrap: wrap;
+  }
+
+  .painel-filtros label { font-weight:700; display:block; margin-bottom:6px; }
+
+  .painel-filtros select {
+    padding: 9px 12px;
+    border: 1px solid #cfcfcf;
+    border-radius: 10px;
+    font-size: 15px;
+    min-width: 200px;
+  }
+
+  .btn {
+    height: 40px;
+    padding: 0 20px;
+    border-radius: 10px;
+    border: none;
+    background: #0f766e;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn-limpar { background:#6b7280; text-decoration:none; display:inline-flex;
+                align-items:center; }
+
+  .btn:hover, .btn-limpar:hover { filter: brightness(0.92); }
+
+  .total-geral { font-size:18px; font-weight:700; margin-bottom:14px; }
+
+  td.num, th.num { text-align:right; }
+
+  .vazio { font-size:16px; color:#555; }
+
+  .flash-msg { padding:10px 14px; border-radius:8px; margin-bottom:15px;
+               font-weight:600; max-width:900px; }
+  .flash-success { background:#e6f4ea; color:#1e6b34; border:1px solid #b7dfc2; }
+  .flash-error   { background:#fdeaea; color:#9f2f2f; border:1px solid #efc2c2; }
+  .flash-warning { background:#fff7e6; color:#8a5a00; border:1px solid #f0d58a; }
+</style>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="flash-msg
+        {% if category == 'success' %}flash-success
+        {% elif category == 'warning' %}flash-warning
+        {% else %}flash-error{% endif %}">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<div class="pagina-titulo">Consultar ANP</div>
+
+{% if ultima %}
+  <div class="origem">
+    Base de {{ ultima.data_arquivo.strftime('%d/%m/%Y') if ultima.data_arquivo else 'data não informada' }}
+    — {{ ultima.qtd_postos }} postos importados em
+    {{ ultima.criado_em.strftime('%d/%m/%Y %H:%M') if ultima.criado_em else '—' }}
+  </div>
+{% endif %}
+
+{% if total_geral %}
+
+<div class="abas">
+  <a href="{{ url_for('mercado.consultar_anp', agrupar='uf', uf=filtro_uf, bandeira=filtro_bandeira) }}"
+     class="{{ 'ativa' if agrupar == 'uf' }}">Postos por Estado</a>
+  <a href="{{ url_for('mercado.consultar_anp', agrupar='municipio', uf=filtro_uf, bandeira=filtro_bandeira) }}"
+     class="{{ 'ativa' if agrupar == 'municipio' }}">Postos por Cidade</a>
+  <a href="{{ url_for('mercado.consultar_anp', agrupar='bandeira', uf=filtro_uf, bandeira=filtro_bandeira) }}"
+     class="{{ 'ativa' if agrupar == 'bandeira' }}">Postos por Bandeira</a>
+</div>
+
+<form method="get" class="painel-filtros">
+  <input type="hidden" name="agrupar" value="{{ agrupar }}">
+
+  <div>
+    <label for="uf">Estado</label>
+    <select id="uf" name="uf">
+      <option value="">Todos</option>
+      {% for u in ufs %}
+        <option value="{{ u }}" {{ 'selected' if u == filtro_uf }}>{{ u }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div>
+    <label for="bandeira">Bandeira</label>
+    <select id="bandeira" name="bandeira">
+      <option value="">Todas</option>
+      {% for b in bandeiras %}
+        <option value="{{ b }}" {{ 'selected' if b == filtro_bandeira }}>{{ b }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div><button type="submit" class="btn">Filtrar</button></div>
+  <div>
+    <a class="btn btn-limpar"
+       href="{{ url_for('mercado.consultar_anp', agrupar=agrupar) }}">Limpar</a>
+  </div>
+</form>
+
+<div class="total-geral">{{ config.titulo }} — {{ total_geral }} postos</div>
+
+<div class="table-wrapper">
+  <table id="tabela-anp">
+    <thead>
+      <tr>
+        {% if agrupar == 'municipio' %}<th>UF</th>{% endif %}
+        <th>{{ config.rotulo }}</th>
+        <th class="num">Postos</th>
+        <th class="num">%</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in totais %}
+        <tr>
+          {% if agrupar == 'municipio' %}<td>{{ t.uf or '—' }}</td>{% endif %}
+          <td>{{ t[agrupar] or '—' }}</td>
+          <td class="num heat-qtd">{{ t.qtd }}</td>
+          <td class="num">{{ t.percentual }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+  // Mapa de calor da coluna Postos, no mesmo esquema do matricial.html:
+  // escala de 3 cores do Excel (vermelho → amarelo → verde) em 51 faixas
+  // discretas. Aqui a escala corre pela COLUNA (cada linha é um estado,
+  // cidade ou bandeira), não pela linha como lá.
+  //
+  // O total geral fica fora da tabela de propósito — ele é a soma de todas as
+  // linhas e, se entrasse na escala, seria sempre o máximo e achataria todo o
+  // resto no vermelho.
+  document.addEventListener("DOMContentLoaded", function () {
+    const celulas = Array.from(
+      document.querySelectorAll("#tabela-anp tbody td.heat-qtd")
+    );
+
+    if (celulas.length < 2) {
+      return;
+    }
+
+    function getColorExcel(ratio) {
+      let r, g, b;
+
+      if (ratio <= 0.5) {
+        const t = ratio / 0.5;
+        r = 248 + (255 - 248) * t;
+        g = 105 + (235 - 105) * t;
+        b = 107 + (132 - 107) * t;
+      } else {
+        const t = (ratio - 0.5) / 0.5;
+        r = 255 + (99 - 255) * t;
+        g = 235 + (190 - 235) * t;
+        b = 132 + (123 - 132) * t;
+      }
+
+      return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+    }
+
+    function valorDe(celula) {
+      const texto = celula.innerText.replace(/\./g, "").replace(",", ".").trim();
+      const numero = parseFloat(texto);
+      return isNaN(numero) ? null : numero;
+    }
+
+    const valores = celulas.map(valorDe).filter((v) => v !== null);
+
+    if (!valores.length) {
+      return;
+    }
+
+    const min = Math.min(...valores);
+    const max = Math.max(...valores);
+
+    celulas.forEach((celula) => {
+      const valor = valorDe(celula);
+
+      if (valor === null) {
+        return;
+      }
+
+      let ratio = (valor - min) / ((max - min) || 1);
+
+      // 51 faixas discretas, como no Excel
+      ratio = Math.round(ratio * 50) / 50;
+
+      celula.style.background = getColorExcel(ratio);
+    });
+  });
+</script>
+
+{% else %}
+
+<div class="vazio">
+  Nenhum posto importado ainda.
+  <a href="{{ url_for('mercado.importar_csv_anp') }}">Importar CSV ANP</a>.
+</div>
+
+{% endif %}
+
+{% endblock %}

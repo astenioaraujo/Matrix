@@ -32,6 +32,7 @@ def selecionar_sistema():
         pode_usuarios = True
         pode_canivete = True
         pode_projetos = True
+        pode_mercado = True
     else:
         pode_operacoes = usuario_tem_permissao(id_usuario, cod_empresa, "OPERACOES", "MENU")
         pode_financeiro = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "MENU")
@@ -45,6 +46,7 @@ def selecionar_sistema():
         pode_usuarios = usuario_tem_permissao(id_usuario, cod_empresa, "USUARIOS", "MENU")
         pode_canivete = usuario_tem_permissao(id_usuario, cod_empresa, "CANIVETE", "MENU")
         pode_projetos = usuario_tem_permissao(id_usuario, cod_empresa, "PROJETOS", "MENU")
+        pode_mercado = usuario_tem_permissao(id_usuario, cod_empresa, "MERCADO", "MENU")
 
     return render_template(
         "selecionar_sistema.html",
@@ -61,6 +63,7 @@ def selecionar_sistema():
         pode_usuarios=pode_usuarios,
         pode_canivete=pode_canivete,
         pode_projetos=pode_projetos,
+        pode_mercado=pode_mercado,
     )
 
 

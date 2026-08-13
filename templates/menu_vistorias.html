@@ -49,6 +49,16 @@
     border-color: #755840;
   }
 
+  .btn-programar {
+    background: #A08464;
+    border: 1px solid #A08464;
+  }
+
+  .btn-programar:hover {
+    background: #8b7255;
+    border-color: #8b7255;
+  }
+
   .btn-consultar {
     background: #7D4820;
     border: 1px solid #7D4820;
@@ -79,6 +89,12 @@
 <div class="menu-botoes">
 
 
+
+  {% if pode_programar_vistorias %}
+    <a href="{{ url_for('vistorias.programar_vistorias') }}" class="btn-programar">
+      Programar Vistorias
+    </a>
+  {% endif %}
 
   {% if pode_executar_vistorias %}
     <a href="{{ url_for('vistorias.executar_vistorias') }}" class="btn-informar">

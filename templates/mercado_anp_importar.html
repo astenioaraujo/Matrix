@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:10px; }
+  .aviso-base { font-size:16px; color:#8a5a00; background:#fff7e6;
+                border:1px solid #f0d58a; border-radius:10px;
+                padding:12px 16px; max-width:900px; margin-bottom:24px; }
+
+  .painel {
+    max-width: 900px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 20px 22px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 24px;
+  }
+
+  .painel label { font-weight:700; display:block; margin-bottom:6px; }
+
+  .linha-form { display:flex; gap:18px; align-items:end; flex-wrap:wrap; }
+
+  .painel input[type="file"],
+  .painel input[type="date"] {
+    padding: 10px 12px;
+    border: 1px solid #cfcfcf;
+    border-radius: 10px;
+    font-size: 15px;
+  }
+
+  .btn {
+    height: 42px;
+    padding: 0 22px;
+    border-radius: 10px;
+    border: none;
+    background: #1d4ed8;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn:hover { filter: brightness(0.92); }
+
+  .ajuda { font-size:14px; color:#555; margin-top:14px; line-height:1.5; }
+  .ajuda code { background:#f1f1f1; padding:1px 5px; border-radius:4px; }
+
+  .subtitulo { font-size:20px; font-weight:700; margin-bottom:12px; }
+
+  .flash-msg { padding:10px 14px; border-radius:8px; margin-bottom:15px;
+               font-weight:600; max-width:900px; }
+  .flash-success { background:#e6f4ea; color:#1e6b34; border:1px solid #b7dfc2; }
+  .flash-error   { background:#fdeaea; color:#9f2f2f; border:1px solid #efc2c2; }
+  .flash-warning { background:#fff7e6; color:#8a5a00; border:1px solid #f0d58a; }
+</style>
+
+<div class="pagina-titulo">Importar CSV ANP</div>
+<div class="aviso-base">
+  Base nacional da ANP, compartilhada por todas as empresas — a importação
+  substitui a base inteira, não só a da empresa em que você está.
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="flash-msg
+        {% if category == 'success' %}flash-success
+        {% elif category == 'warning' %}flash-warning
+        {% else %}flash-error{% endif %}">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<div class="painel">
+  <form method="post" enctype="multipart/form-data">
+    <div class="linha-form">
+      <div>
+        <label for="arquivo">Arquivo CSV da ANP</label>
+        <input type="file" id="arquivo" name="arquivo" accept=".csv" required>
+      </div>
+      <div>
+        <label for="data_arquivo">Data do arquivo</label>
+        <input type="date" id="data_arquivo" name="data_arquivo">
+      </div>
+      <div>
+        <button type="submit" class="btn">Importar</button>
+      </div>
+    </div>
+  </form>
+
+  <div class="ajuda">
+    Separador <code>;</code>, com as colunas
+    <code>CODIGOISIMP;AUTORIZACAO;DATAPUBLICACAO;RAZAOSOCIAL;CNPJ;ENDERECO;COMPLEMENTO;BAIRRO;CEP;UF;MUNICIPIO;BANDEIRA;DATAVINCULACAO</code>.
+    O arquivo é a base completa do país: <strong>a importação substitui todos os
+    postos já gravados</strong>. Deixando a data em branco, ela é lida do nome do
+    arquivo (<code>postos_combustiveis_ANP_2026-08-12.csv</code>).
+  </div>
+</div>
+
+{% if historico %}
+<div class="painel">
+  <div class="subtitulo">Últimas importações</div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Arquivo</th>
+          <th>Data do arquivo</th>
+          <th>Postos</th>
+          <th>Importado em</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in historico %}
+          <tr>
+            <td>{{ h.nome_arquivo or '—' }}</td>
+            <td>{{ h.data_arquivo.strftime('%d/%m/%Y') if h.data_arquivo else '—' }}</td>
+            <td>{{ h.qtd_postos }}</td>
+            <td>{{ h.criado_em.strftime('%d/%m/%Y %H:%M') if h.criado_em else '—' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

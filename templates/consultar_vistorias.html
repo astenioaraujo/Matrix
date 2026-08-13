@@ -15,36 +15,51 @@
     margin-bottom: 22px;
   }
 
-  .grid-filtro {
+  .linha-filtros {
     display: grid;
-    grid-template-columns: 140px 140px auto;
+    grid-template-columns: 110px 110px auto;
     gap: 14px;
     align-items: end;
-    max-width: 520px;
+    margin-bottom: 22px;
   }
+
+  .acoes { display: flex; align-items: end; }
 
   label {
     font-weight: 700;
     display: block;
     margin-bottom: 6px;
+    font-size: 13px;
   }
 
   input {
     width: 100%;
-    padding: 10px 12px;
-    border-radius: 10px;
-    border: 1px solid #cfcfcf;
-    font-size: 15px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid #bbb;
+    font-size: 14px;
+    box-sizing: border-box;
   }
 
   .btn {
-    background: #2f66e0;
+    padding: 9px 18px;
+    border-radius: 8px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
     color: #fff;
-    border: none;
-    padding: 11px 18px;
-    border-radius: 11px;
-    font-weight: 800;
+    font-weight: 700;
     cursor: pointer;
+  }
+
+  .btn:hover { filter: brightness(0.92); }
+
+  .aviso {
+    background: #fff3cd;
+    border: 1px solid #ffe69c;
+    color: #7a5b00;
+    padding: 12px 14px;
+    border-radius: 8px;
+    margin-bottom: 20px;
   }
 
   table {
@@ -99,27 +114,30 @@
   Empresa: <strong>{{ nome_empresa }}</strong>
 </div>
 
+{% if sem_filial %}
+  <div class="aviso">
+    Você não está vinculado a nenhuma filial. Só aparecem aqui as vistorias das
+    filiais do seu cadastro — peça o vínculo em Usuários → Filiais.
+  </div>
+{% endif %}
+
+<form method="get" class="linha-filtros">
+  <div>
+    <label for="ano">Ano</label>
+    <input type="number" id="ano" name="ano" value="{{ ano_sel }}">
+  </div>
+
+  <div>
+    <label for="mes">Mês</label>
+    <input type="number" id="mes" name="mes" value="{{ mes_sel }}" min="1" max="12" placeholder="Todos">
+  </div>
+
+  <div class="acoes">
+    <button type="submit" class="btn">Filtrar</button>
+  </div>
+</form>
+
 <div class="card">
-  <form method="get" class="grid-filtro">
-    <div>
-      <label>Ano</label>
-      <input type="number" name="ano" value="{{ ano_sel }}">
-    </div>
-
-    <div>
-      <label>Mês</label>
-      <input type="number" name="mes" value="{{ mes_sel }}" min="1" max="12" placeholder="Todos">
-    </div>
-
-    <div>
-      <button type="submit" class="btn">Filtrar</button>
-    </div>
-  </form>
-</div>
-
-<div class="card">
-  <h2>Vistorias do período</h2>
-
   <table>
     <thead>
       <tr>

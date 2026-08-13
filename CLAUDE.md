@@ -6,7 +6,7 @@ Resumo operacional para o Claude Code. A especificação funcional completa do m
 
 Matrix é um sistema de análise de dados para uma rede de postos de combustível, multi-tenant (`cod_empresa`). Módulos: Financeiro, Operações, Vendas, RH, Vistorias, Performances, Treinamentos, Compliance, Configurações, Usuários, Canivete Suíço e Projetos.
 
-- Empresas: `EMP010` (Lucena), `EMP011` (Vilela), `EMP011ADM`, `EMP012` (30 Set CZ)
+- Empresas: `EMP010` (Lucena), `EMP011` (Vilela), `EMP011ADM`, `EMP011CONV` (Vilela Conveniência), `EMP012` (30 Set CZ)
 - Banco: PostgreSQL via Supabase
 - Autenticação: **custom**, não é Supabase Auth — tabela própria `usuarios` com `senha_hash`. Não existe `auth.uid()`.
 - Controle de acesso: `usuarios_empresas` (empresa) + `usuarios_filiais` (filial) + `usuarios_permissoes` (ação/tela, ligada a `permissoes_catalogo`) — checado na API, não em RLS por linha. Superusuário faz bypass em tudo.
@@ -22,6 +22,8 @@ Matrix é um sistema de análise de dados para uma rede de postos de combustíve
 - Auditoria: `criado_em` / `atualizado_em` (`timestamp without time zone`, default `now()`)
 - `ordem integer default 10`
 - Nada de subtotal/total/diferença/variação como coluna — sempre calculado na consulta, nunca persistido
+- **Toda tabela nova nasce com `ALTER TABLE public.<tabela> ENABLE ROW LEVEL SECURITY;` na própria migration** — sem policy nenhuma. A aplicação usa a service role key, que faz bypass; a chave anônima é pública (vai no front) e sem RLS qualquer um lê/edita/apaga a tabela pela API REST do Supabase. Esquecer isso dispara o alerta `rls_disabled_in_public` do Security Advisor — foi o que aconteceu com as 6 tabelas da Agenda/Projetos, corrigido em `migrations/habilitar_rls_agenda_projetos.sql` (12/08/2026). Para conferir o estado: `select relname, relrowsecurity from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity;`
+- Views em `public` sempre com `security_invoker = true` (é o caso da única existente, `totais_por_dia`) — view `SECURITY DEFINER` fura o RLS das tabelas de baixo
 
 ## Infra
 
@@ -132,6 +134,17 @@ O arquivo é o CSV "vendas item por pagamento" (`;`, uma linha por item). Lido p
 - **dias** = datas distintas no arquivo (não o intervalo do calendário)
 
 Sem filtro de Status — todas as linhas entram. A projeção do mês é a média diária × dias do mês informado; `dia_base` gravado em `vendas_painel_importacoes` é a quantidade de dias lidos. EMP013 tem uma filial só (cod_filial 1); com mais de uma, tudo vai para a primeira e a tela avisa.
+
+---
+
+# Módulo Vistorias
+
+Menu com quatro opções: **Programar Vistorias**, **Executar Vistorias**, **Consultar Vistorias** e **Configurar Checklists**. Programar e executar eram a **mesma** tela (`/vistorias/executar` fazia as duas coisas); foram separadas em 13/08/2026.
+
+- **Programar Vistorias** (`GET/POST /vistorias/programar`, permissão `VISTORIAS/PROGRAMAR_VISTORIAS` 940 — `migrations/permissao_programar_vistorias.sql`, sem conceder a ninguém, só bypass de superusuário). Enxerga a **empresa inteira**. Filtro de ano/mês/filial/checklist/status + grid; a inclusão é uma **linha nova dentro do próprio bloco** (botão "+ Nova Vistoria" revela a linha), no padrão de `saldos_contas_bancarias.html`. Criar a vistoria copia os itens do checklist para `vistorias_execucao_itens` e volta para a lista — não abre mais o questionário. Excluir vistoria (nota zero) também mora aqui.
+- **Executar Vistorias** (`GET /vistorias/executar`, `EXECUTAR_VISTORIAS`) é só lista: as vistorias já programadas **das filiais do usuário** (`usuarios_filiais`, via `cod_filiais_vistorias_usuario`; superusuário vê todas), com botão ▶ Executar que abre `preencher_vistoria`. Sem vínculo de filial a tela avisa e não lista nada.
+- A trava de filial não é só visual: vale em `preencher_vistoria`, `alterar_status_vistoria` e no ajax `salvar-ajax` (403).
+- **Executor** deixou de ser quem cria: `vistorias_execucoes.id_usuario_executor` / `nome_executor` nascem nulos e são gravados (`COALESCE`) no primeiro save de quem preenche.
 
 ---
 
