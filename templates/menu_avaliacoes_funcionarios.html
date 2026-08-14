@@ -18,7 +18,7 @@
 
   .menu-botoes {
     display: grid;
-    grid-template-columns: repeat(auto-fill, 260px);
+    grid-template-columns: repeat(auto-fill, 220px);
     gap: 14px;
     margin-bottom: 50px;
   }
@@ -27,7 +27,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 64px;
+    height: 60px;
     border-radius: 12px;
     text-decoration: none;
     font-weight: 600;
@@ -39,28 +39,38 @@
     padding: 0 10px;
   }
 
-  .btn-avaliacoes {
+  .btn-executar {
     background: #0F766E;
     border: 1px solid #0F766E;
   }
 
-  .btn-avaliacoes:hover {
+  .btn-executar:hover {
     background: #0c615a;
     border-color: #0c615a;
   }
 
-  .btn-gerentes {
+  .btn-consultar {
     background: #155E75;
     border: 1px solid #155E75;
   }
 
-  .btn-gerentes:hover {
+  .btn-consultar:hover {
     background: #124d60;
     border-color: #124d60;
   }
+
+  .btn-config {
+    background: #334155;
+    border: 1px solid #334155;
+  }
+
+  .btn-config:hover {
+    background: #293443;
+    border-color: #293443;
+  }
 </style>
 
-<div class="pagina-titulo">Menu de Performances</div>
+<div class="pagina-titulo">Avaliações de Funcionários</div>
 
 <div class="empresa">
   <strong>Empresa:</strong> {{ nome_empresa }}
@@ -68,15 +78,21 @@
 
 <div class="menu-botoes">
 
-  {% if pode_avaliacoes %}
-    <a href="{{ url_for('performances.menu_avaliacoes_funcionarios') }}" class="btn-avaliacoes">
-      Avaliações de Funcionários
+  {% if pode_executar_avaliacoes %}
+    <a href="{{ url_for('performances.executar_avaliacoes') }}" class="btn-executar">
+      Executar Avaliações
     </a>
   {% endif %}
 
-  {% if pode_performance_gerentes %}
-    <a href="{{ url_for('performances.menu_performance_gerentes') }}" class="btn-gerentes">
-      Performance de Gerentes
+  {% if pode_consultar_avaliacoes %}
+    <a href="{{ url_for('performances.consultar_avaliacoes') }}" class="btn-consultar">
+      Consultar Avaliações
+    </a>
+  {% endif %}
+
+  {% if pode_configurar_avaliacoes %}
+    <a href="{{ url_for('performances.configurar_avaliacoes') }}" class="btn-config">
+      Configurar Avaliações
     </a>
   {% endif %}
 

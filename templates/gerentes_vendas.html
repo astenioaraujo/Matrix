@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  body {
+    overflow-x: auto;
+  }
+
+  .card {
+    overflow-x: visible;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .aviso {
+    background: #fff6e0;
+    border: 1px solid #e6cf8a;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 20px;
+    max-width: 720px;
+  }
+
+  .tabela-wrap {
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    background: #fff;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: max-content;
+    min-width: max-content;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #dddddd;
+    padding: 7px 10px;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  th {
+    background: #dbe8f4;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  th.grupo {
+    background: #c7dcf0;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    position: static;
+  }
+
+  .col-mes {
+    width: 110px;
+    min-width: 110px;
+    max-width: 110px;
+  }
+
+  .col-filial,
+  .col-comb {
+    width: 140px;
+    min-width: 140px;
+    max-width: 140px;
+  }
+
+  .col-comb {
+    border-left: 1px solid #cfcfcf;
+  }
+
+  /* Barra grossa separando o último posto do primeiro combustível — sem ela
+     os dois grupos se misturam quando há vários postos. */
+  .inicio-comb {
+    border-left: 3px solid #2c2c2c;
+  }
+
+  .filtro {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    font-size: 15px;
+  }
+
+  .filtro label {
+    font-weight: 700;
+  }
+
+  .filtro select {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #c7c7c7;
+    background: #fff;
+    font-size: 15px;
+    max-width: 280px;
+  }
+
+  /* Nome longo ("GASOLINA COMUM FROTA") quebra dentro da coluna em vez de
+     estourar a largura; centralizado nas duas direções. */
+  th.col-comb {
+    white-space: normal;
+    line-height: 1.2;
+    vertical-align: middle;
+    text-align: center;
+  }
+
+  .col-total {
+    width: 150px;
+    min-width: 150px;
+    max-width: 150px;
+    font-weight: 700;
+    background: #faf7dd;
+    border-left: 3px solid #2c2c2c;
+  }
+
+  th:first-child,
+  td:first-child {
+    text-align: left;
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: #fff;
+    min-width: 110px;
+  }
+
+  thead th:first-child {
+    background: #dbe8f4;
+    z-index: 3;
+  }
+
+  tbody tr:nth-child(even) {
+    background: #fafafa;
+  }
+
+  .linha-novo-ano td {
+    border-top: 2px solid #7f7f7f;
+  }
+
+  .linha-total td {
+    background: #eef3f8;
+    font-weight: 700;
+    border-top: 4px solid #2c2c2c;
+  }
+
+  .linha-med td {
+    background: #f8f3ea;
+    font-weight: 700;
+  }
+
+  .numero-filial {
+    font-size: 11px;
+    color: #1f6fb2;
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  .nome-filial {
+    font-size: 12px;
+    color: #333;
+    display: block;
+    max-width: 150px;
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  @media (max-width: 700px) {
+    .pagina-titulo { font-size: 24px; }
+    .pagina-subtitulo { font-size: 16px; }
+    table { font-size: 13px; }
+    th, td { padding: 6px 8px; }
+    .col-filial, .col-comb { width: 120px; min-width: 120px; max-width: 120px; }
+    .col-total { width: 130px; min-width: 130px; max-width: 130px; }
+  }
+</style>
+
+<div class="pagina-titulo">Performance de Gerentes — Vendas</div>
+
+{# Com um posto só, a coluna do posto repetiria o TOTAL — fica só o TOTAL,
+   e o posto vai para o subtítulo. #}
+{% set mostrar_colunas_posto = filiais|length > 1 %}
+
+<div class="pagina-subtitulo">
+  <strong>Empresa:</strong> {{ nome_empresa }}
+  {% if filiais|length == 1 %}
+    &nbsp;|&nbsp; <strong>Posto:</strong>
+    {{ filiais[0].cod_filial }} — {{ filiais[0].nome_filial }}
+  {% endif %}
+</div>
+
+{% if filiais_disponiveis|length > 1 %}
+  <form class="filtro" method="get">
+    <label for="cod_filial">Posto:</label>
+    <select id="cod_filial" name="cod_filial" onchange="this.form.submit()">
+      <option value="" {% if not cod_filial_sel %}selected{% endif %}>Todos</option>
+      {% for filial in filiais_disponiveis %}
+        <option value="{{ filial.cod_filial }}"
+                {% if cod_filial_sel == filial.cod_filial|string %}selected{% endif %}>
+          {{ filial.cod_filial }} — {{ filial.nome_filial }}
+        </option>
+      {% endfor %}
+    </select>
+    <noscript><button type="submit">Aplicar</button></noscript>
+  </form>
+{% endif %}
+
+{% if not filiais %}
+  <div class="aviso">
+    Você não está vinculado a nenhum posto. Peça ao administrador para liberar
+    seu posto em <strong>Usuários → Filiais</strong>.
+  </div>
+{% elif not grade.linhas %}
+  <div class="aviso">
+    Ainda não há vendas importadas para o seu posto.
+  </div>
+{% else %}
+
+<div class="tabela-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th class="col-mes" rowspan="2">MÊS</th>
+        {% if mostrar_colunas_posto %}
+          <th class="grupo" colspan="{{ filiais|length }}">QUANTIDADE POR POSTO</th>
+        {% endif %}
+        {% if grade.combustiveis %}
+          <th class="grupo {% if mostrar_colunas_posto %}inicio-comb{% endif %}" colspan="{{ grade.combustiveis|length }}">QUANTIDADE POR COMBUSTÍVEL</th>
+        {% endif %}
+        <th class="col-total" rowspan="2">TOTAL</th>
+      </tr>
+      <tr>
+        {% if mostrar_colunas_posto %}
+          {% for filial in filiais %}
+            <th class="col-filial">
+              <span class="numero-filial">{{ filial.cod_filial }}</span>
+              <span class="nome-filial">{{ filial.nome_filial }}</span>
+            </th>
+          {% endfor %}
+        {% endif %}
+        {% for produto in grade.combustiveis %}
+          <th class="col-comb {% if loop.first and mostrar_colunas_posto %}inicio-comb{% endif %}">{{ produto }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for linha in grade.linhas %}
+        {% set mudou_ano = loop.index0 > 0 and grade.linhas[loop.index0 - 1].ano != linha.ano %}
+        <tr class="{% if mudou_ano %}linha-novo-ano{% endif %}">
+          <td class="col-mes">{{ linha.periodo }}</td>
+
+          {% if mostrar_colunas_posto %}
+            {% for valor in linha.valores_filiais %}
+              <td class="col-filial" style="background: {{ linha.valores_filiais_cores[loop.index0] }};">
+                {% if valor %}{{ formatar_numero_br(valor) }}{% endif %}
+              </td>
+            {% endfor %}
+          {% endif %}
+
+          {% for valor in linha.valores_comb %}
+            <td class="col-comb {% if loop.first and mostrar_colunas_posto %}inicio-comb{% endif %}" style="background: {{ linha.valores_comb_cores[loop.index0] }};">
+              {% if valor %}{{ formatar_numero_br(valor) }}{% endif %}
+            </td>
+          {% endfor %}
+
+          <td class="col-total" style="background: {{ linha.total_cor }};">
+            {% if linha.total %}{{ formatar_numero_br(linha.total) }}{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+
+    <tfoot>
+      <tr class="linha-total">
+        <td class="col-mes">{{ grade.linha_total.rotulo }}</td>
+        {% if mostrar_colunas_posto %}
+          {% for valor in grade.linha_total.valores_filiais %}
+            <td class="col-filial">{% if valor %}{{ formatar_numero_br(valor) }}{% endif %}</td>
+          {% endfor %}
+        {% endif %}
+        {% for valor in grade.linha_total.valores_comb %}
+          <td class="col-comb {% if loop.first and mostrar_colunas_posto %}inicio-comb{% endif %}">{% if valor %}{{ formatar_numero_br(valor) }}{% endif %}</td>
+        {% endfor %}
+        <td class="col-total">
+          {% if grade.linha_total.total %}{{ formatar_numero_br(grade.linha_total.total) }}{% endif %}
+        </td>
+      </tr>
+
+      <tr class="linha-med">
+        <td class="col-mes">{{ grade.linha_med_12m.rotulo }}</td>
+        {% if mostrar_colunas_posto %}
+          {% for valor in grade.linha_med_12m.valores_filiais %}
+            <td class="col-filial">{% if valor %}{{ formatar_numero_br(valor) }}{% endif %}</td>
+          {% endfor %}
+        {% endif %}
+        {% for valor in grade.linha_med_12m.valores_comb %}
+          <td class="col-comb {% if loop.first and mostrar_colunas_posto %}inicio-comb{% endif %}">{% if valor %}{{ formatar_numero_br(valor) }}{% endif %}</td>
+        {% endfor %}
+        <td class="col-total">
+          {% if grade.linha_med_12m.total %}{{ formatar_numero_br(grade.linha_med_12m.total) }}{% endif %}
+        </td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+
+{% endif %}
+
+{% endblock %}

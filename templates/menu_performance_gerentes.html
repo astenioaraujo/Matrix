@@ -18,7 +18,7 @@
 
   .menu-botoes {
     display: grid;
-    grid-template-columns: repeat(auto-fill, 260px);
+    grid-template-columns: repeat(auto-fill, 220px);
     gap: 14px;
     margin-bottom: 50px;
   }
@@ -27,7 +27,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 64px;
+    height: 60px;
     border-radius: 12px;
     text-decoration: none;
     font-weight: 600;
@@ -39,28 +39,18 @@
     padding: 0 10px;
   }
 
-  .btn-avaliacoes {
-    background: #0F766E;
-    border: 1px solid #0F766E;
+  .btn-vendas {
+    background: #1e5aa8;
+    border: 1px solid #1e5aa8;
   }
 
-  .btn-avaliacoes:hover {
-    background: #0c615a;
-    border-color: #0c615a;
-  }
-
-  .btn-gerentes {
-    background: #155E75;
-    border: 1px solid #155E75;
-  }
-
-  .btn-gerentes:hover {
-    background: #124d60;
-    border-color: #124d60;
+  .btn-vendas:hover {
+    background: #184a8c;
+    border-color: #184a8c;
   }
 </style>
 
-<div class="pagina-titulo">Menu de Performances</div>
+<div class="pagina-titulo">Performance de Gerentes</div>
 
 <div class="empresa">
   <strong>Empresa:</strong> {{ nome_empresa }}
@@ -68,15 +58,9 @@
 
 <div class="menu-botoes">
 
-  {% if pode_avaliacoes %}
-    <a href="{{ url_for('performances.menu_avaliacoes_funcionarios') }}" class="btn-avaliacoes">
-      Avaliações de Funcionários
-    </a>
-  {% endif %}
-
-  {% if pode_performance_gerentes %}
-    <a href="{{ url_for('performances.menu_performance_gerentes') }}" class="btn-gerentes">
-      Performance de Gerentes
+  {% if pode_vendas %}
+    <a href="{{ url_for('performances.gerentes_vendas') }}" class="btn-vendas">
+      Vendas
     </a>
   {% endif %}
 

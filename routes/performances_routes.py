@@ -3,6 +3,15 @@ from psycopg2.extras import RealDictCursor
 from db import get_connection
 from security_helpers import permissao_obrigatoria, usuario_tem_permissao
 from datetime import date
+from collections import defaultdict
+
+# Os mesmos formatadores/heatmap do painel de Vendas — a tela de gerentes é o
+# mesmo grid, só que recortado por filial.
+from routes.vendas_routes import (
+    cor_excel_51,
+    formatar_numero_br,
+    obter_nome_mes_abrev,
+)
 
 performances_bp = Blueprint("performances", __name__)
 
@@ -31,6 +40,7 @@ def menu_performances():
         pode_executar_avaliacoes = True
         pode_consultar_avaliacoes = True
         pode_configurar_avaliacoes = True
+        pode_performance_gerentes = True
     else:
         pode_executar_avaliacoes = usuario_tem_permissao(
             id_usuario,
@@ -53,15 +63,369 @@ def menu_performances():
             "CONFIGURAR_AVALIACOES",
         )
 
+        pode_performance_gerentes = usuario_tem_permissao(
+            id_usuario,
+            cod_empresa,
+            "PERFORMANCES",
+            "PERFORMANCE_GERENTES",
+        )
+
+    pode_avaliacoes = (
+        pode_executar_avaliacoes
+        or pode_consultar_avaliacoes
+        or pode_configurar_avaliacoes
+    )
+
     return render_template(
         "menu_performances.html",
         nome_empresa=session.get("nome_empresa"),
         url_voltar=url_for("sistema.selecionar_sistema"),
         texto_voltar="← Voltar",
+        pode_avaliacoes=pode_avaliacoes,
+        pode_performance_gerentes=pode_performance_gerentes,
+    )
+
+
+# ---------------------------------------
+# MENU AVALIAÇÕES DE FUNCIONÁRIOS
+# ---------------------------------------
+@performances_bp.route("/avaliacoes/menu")
+@permissao_obrigatoria(
+    "PERFORMANCES",
+    "MENU",
+    redirecionar_para="sistema.selecionar_sistema",
+)
+def menu_avaliacoes_funcionarios():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global == "superusuario":
+        pode_executar_avaliacoes = True
+        pode_consultar_avaliacoes = True
+        pode_configurar_avaliacoes = True
+    else:
+        pode_executar_avaliacoes = usuario_tem_permissao(
+            id_usuario, cod_empresa, "PERFORMANCES", "EXECUTAR_AVALIACOES"
+        )
+        pode_consultar_avaliacoes = usuario_tem_permissao(
+            id_usuario, cod_empresa, "PERFORMANCES", "CONSULTAR_AVALIACOES"
+        )
+        pode_configurar_avaliacoes = usuario_tem_permissao(
+            id_usuario, cod_empresa, "PERFORMANCES", "CONFIGURAR_AVALIACOES"
+        )
+
+    # O menu abre com qualquer uma das três; sem nenhuma, volta ao menu do módulo.
+    if not (pode_executar_avaliacoes or pode_consultar_avaliacoes or pode_configurar_avaliacoes):
+        flash("Você não tem acesso às avaliações de funcionários.", "erro")
+        return redirect(url_for("performances.menu_performances"))
+
+    return render_template(
+        "menu_avaliacoes_funcionarios.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("performances.menu_performances"),
+        texto_voltar="← Voltar",
         pode_executar_avaliacoes=pode_executar_avaliacoes,
         pode_consultar_avaliacoes=pode_consultar_avaliacoes,
         pode_configurar_avaliacoes=pode_configurar_avaliacoes,
     )
+
+
+# ---------------------------------------
+# MENU PERFORMANCE DE GERENTES
+# ---------------------------------------
+@performances_bp.route("/gerentes/menu")
+@permissao_obrigatoria(
+    "PERFORMANCES",
+    "PERFORMANCE_GERENTES",
+    redirecionar_para="performances.menu_performances",
+)
+def menu_performance_gerentes():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global == "superusuario":
+        pode_vendas = True
+    else:
+        pode_vendas = usuario_tem_permissao(
+            session["id_usuario"],
+            str(session["cod_empresa"]).strip(),
+            "PERFORMANCES",
+            "GERENTES_VENDAS",
+        )
+
+    return render_template(
+        "menu_performance_gerentes.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("performances.menu_performances"),
+        texto_voltar="← Voltar",
+        pode_vendas=pode_vendas,
+    )
+
+
+# ---------------------------------------
+# PERFORMANCE DE GERENTES - VENDAS
+# ---------------------------------------
+def cod_filiais_gerente(cur, cod_empresa):
+    """Filiais que o gerente enxerga: as de `usuarios_filiais`.
+
+    Superusuário vê todas — é o único caso em que a tela mostra mais de um
+    posto.
+    """
+    if str(session.get("tipo_global") or "").strip().lower() == "superusuario":
+        cur.execute("""
+            SELECT cod_filial, nome_filial
+            FROM filiais
+            WHERE cod_empresa = %s
+              AND ativo = TRUE
+            ORDER BY cod_filial
+        """, (cod_empresa,))
+        return cur.fetchall() or []
+
+    cur.execute("""
+        SELECT f.cod_filial, f.nome_filial
+        FROM usuarios_filiais uf
+        JOIN filiais f
+          ON f.cod_empresa = uf.cod_empresa
+         AND f.cod_filial = uf.cod_filial
+        WHERE uf.id_usuario = %s
+          AND uf.cod_empresa = %s
+          AND uf.ativo = TRUE
+          AND f.ativo = TRUE
+        ORDER BY f.cod_filial
+    """, (session.get("id_usuario"), cod_empresa))
+    return cur.fetchall() or []
+
+
+def normalizar_combustivel(descricao):
+    """Junta as variações do mesmo produto que vêm da importação.
+
+    Em EMP010 convivem "GASOLINA COMUM FROTA" e "GASOLINA COMUM FROTA." — o
+    ponto final é ruído do arquivo, não outro combustível.
+    """
+    texto = str(descricao or "").strip().upper()
+    while texto.endswith("."):
+        texto = texto[:-1].strip()
+    return texto
+
+
+def _heatmap_colunas(linhas, chave_valores):
+    """Escala de cor por grupo de colunas (postos e combustíveis têm ordens de
+    grandeza diferentes; uma escala só apagaria o grupo menor)."""
+    valores = [
+        float(v)
+        for linha in linhas
+        for v in linha[chave_valores]
+        if v not in (None, 0, 0.0, "")
+    ]
+
+    if not valores:
+        for linha in linhas:
+            linha[chave_valores + "_cores"] = ["" for _ in linha[chave_valores]]
+        return
+
+    minimo = min(valores)
+    maximo = max(valores)
+
+    for linha in linhas:
+        linha[chave_valores + "_cores"] = [
+            "" if v in (None, 0, 0.0, "") else cor_excel_51(float(v), minimo, maximo)
+            for v in linha[chave_valores]
+        ]
+
+
+@performances_bp.route("/gerentes/vendas")
+@permissao_obrigatoria(
+    "PERFORMANCES",
+    "GERENTES_VENDAS",
+    redirecionar_para="performances.menu_performance_gerentes",
+)
+def gerentes_vendas():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        filiais_disponiveis = cod_filiais_gerente(cur, cod_empresa)
+
+        # Quem tem mais de um posto pode ver todos ou escolher um. O filtro só
+        # aceita posto que já esteja na lista de acesso do usuário.
+        cod_filial_sel = (request.args.get("cod_filial") or "").strip()
+        filiais = filiais_disponiveis
+
+        if cod_filial_sel:
+            filiais = [
+                f for f in filiais_disponiveis
+                if str(f["cod_filial"]) == cod_filial_sel
+            ]
+            if not filiais:
+                cod_filial_sel = ""
+                filiais = filiais_disponiveis
+
+        cods = [int(f["cod_filial"]) for f in filiais]
+
+        registros_qtd = []
+        registros_comb = []
+
+        if cods:
+            # Quantidades mensais por posto — mesma fonte do painel de Vendas.
+            cur.execute("""
+                SELECT cod_filial, ano, mes, quantidade_vendida
+                FROM vendas_unidades_sintetico
+                WHERE cod_empresa = %s
+                  AND cod_filial = ANY(%s)
+                ORDER BY ano, mes, cod_filial
+            """, (cod_empresa, cods))
+            registros_qtd = cur.fetchall() or []
+
+            # Quantidades por combustível — vêm das vendas diárias importadas.
+            cur.execute("""
+                SELECT
+                    EXTRACT(YEAR FROM data)::int  AS ano,
+                    EXTRACT(MONTH FROM data)::int AS mes,
+                    descricao,
+                    SUM(quantidade) AS quantidade
+                FROM vendas_diarias
+                WHERE cod_empresa = %s
+                  AND cod_filial = ANY(%s)
+                  AND COALESCE(TRIM(descricao), '') <> ''
+                GROUP BY 1, 2, 3
+            """, (cod_empresa, cods))
+            registros_comb = cur.fetchall() or []
+    finally:
+        cur.close()
+        conn.close()
+
+    grade = montar_grade_gerente(filiais, registros_qtd, registros_comb)
+
+    return render_template(
+        "gerentes_vendas.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("performances.menu_performance_gerentes"),
+        texto_voltar="← Voltar",
+        filiais=filiais,
+        filiais_disponiveis=filiais_disponiveis,
+        cod_filial_sel=cod_filial_sel,
+        grade=grade,
+        formatar_numero_br=formatar_numero_br,
+    )
+
+
+def montar_grade_gerente(filiais, registros_qtd, registros_comb):
+    """Grid mensal: colunas dos postos do gerente, colunas por combustível e
+    TOTAL no fim. O TOTAL é a soma dos postos — é a venda do mês; as colunas de
+    combustível abrem essa mesma venda por produto (só existem a partir do
+    período em que as vendas diárias começaram a ser importadas)."""
+    mapa_qtd = {}
+    for r in registros_qtd:
+        mapa_qtd[(int(r["ano"]), int(r["mes"]), int(r["cod_filial"]))] = float(
+            r["quantidade_vendida"] or 0
+        )
+
+    mapa_comb = defaultdict(float)
+    for r in registros_comb:
+        produto = normalizar_combustivel(r["descricao"])
+        mapa_comb[(int(r["ano"]), int(r["mes"]), produto)] += float(r["quantidade"] or 0)
+
+    combustiveis = sorted({chave[2] for chave in mapa_comb})
+
+    meses = sorted(
+        {(int(r["ano"]), int(r["mes"])) for r in registros_qtd}
+        | {(chave[0], chave[1]) for chave in mapa_comb}
+    )[-24:]
+
+    linhas = []
+    totais_filial = defaultdict(float)
+    totais_comb = defaultdict(float)
+    serie_filial = defaultdict(list)
+    serie_comb = defaultdict(list)
+
+    for ano, mes in meses:
+        valores_filiais = []
+        total_mes = 0.0
+
+        for filial in filiais:
+            cod_filial = int(filial["cod_filial"])
+            valor = mapa_qtd.get((ano, mes, cod_filial))
+            valores_filiais.append(valor)
+
+            if valor not in (None, 0, 0.0, ""):
+                total_mes += valor
+                totais_filial[cod_filial] += valor
+                serie_filial[cod_filial].append(valor)
+
+        valores_comb = []
+        for produto in combustiveis:
+            valor = mapa_comb.get((ano, mes, produto))
+            valores_comb.append(valor)
+
+            if valor not in (None, 0, 0.0, ""):
+                totais_comb[produto] += valor
+                serie_comb[produto].append(valor)
+
+        linhas.append({
+            "periodo": f"{obter_nome_mes_abrev(mes)}/{str(ano)[-2:]}",
+            "ano": ano,
+            "mes": mes,
+            "valores_filiais": valores_filiais,
+            "valores_comb": valores_comb,
+            "total": total_mes,
+        })
+
+    _heatmap_colunas(linhas, "valores_filiais")
+    _heatmap_colunas(linhas, "valores_comb")
+
+    # A coluna TOTAL tem escala própria: é a soma dos postos, uma ordem de
+    # grandeza acima das colunas de combustível.
+    for linha in linhas:
+        linha["totais"] = [linha["total"]]
+    _heatmap_colunas(linhas, "totais")
+    for linha in linhas:
+        linha["total_cor"] = linha.pop("totais_cores")[0]
+        linha.pop("totais")
+
+    def media(serie):
+        serie = serie[-12:]
+        return sum(serie) / len(serie) if serie else 0.0
+
+    linha_total = {
+        "rotulo": "TOTAL",
+        "valores_filiais": [totais_filial[int(f["cod_filial"])] for f in filiais],
+        "valores_comb": [totais_comb[p] for p in combustiveis],
+        "total": sum(totais_filial.values()),
+    }
+
+    linha_med_12m = {
+        "rotulo": "MED 12 M",
+        "valores_filiais": [media(serie_filial[int(f["cod_filial"])]) for f in filiais],
+        "valores_comb": [media(serie_comb[p]) for p in combustiveis],
+    }
+    linha_med_12m["total"] = sum(linha_med_12m["valores_filiais"])
+
+    return {
+        "combustiveis": combustiveis,
+        "linhas": linhas,
+        "linha_total": linha_total,
+        "linha_med_12m": linha_med_12m,
+    }
 
 # ---------------------------------------
 # NOVA AVALIAÇÃO
