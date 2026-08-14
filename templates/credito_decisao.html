@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+{% set decidida = analise.status != 'PENDENTE' %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .empresa       { font-size:16px; color:#555; margin-bottom:6px; }
+
+  .bloco { border:1px solid #e2e2e2; border-radius:10px; margin-bottom:18px; overflow:hidden; background:#fff; }
+  .bloco-titulo { background:#0F766E; color:#fff; font-weight:700; font-size:14px; padding:7px 12px; }
+  .bloco-titulo.vinho { background:#7B1E3A; }
+
+  .grid {
+    display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap:10px 18px; padding:14px; font-size:14px;
+  }
+  .item.largo { grid-column:1 / -1; }
+  .item span { display:block; font-size:12px; font-weight:700; color:#777; }
+  .item div  { padding-top:2px; }
+
+  .campo { display:flex; flex-direction:column; }
+  .campo.largo { grid-column:1 / -1; }
+  .campo label { font-size:12px; font-weight:700; color:#555; margin-bottom:4px; }
+  .campo input, .campo textarea {
+    height:34px; padding:0 8px; border:1px solid #ccc; border-radius:6px;
+    font-size:14px; font-family:inherit;
+  }
+  .campo textarea { height:80px; padding:6px 8px; resize:vertical; }
+
+  .opcoes { display:flex; gap:18px; flex-wrap:wrap; padding:0 14px 4px; font-size:14px; }
+  .opcoes label { display:flex; align-items:center; gap:6px; font-weight:600; }
+
+  .acoes { display:flex; gap:10px; align-items:center; margin:10px 0 40px; }
+  .btn {
+    height:36px; padding:0 16px; border-radius:6px; border:1px solid #0F766E;
+    background:#0F766E; color:#fff; font-weight:600; font-size:14px;
+    cursor:pointer; text-decoration:none; display:inline-flex; align-items:center;
+  }
+  .btn:hover { background:#0c615a; }
+  .btn-secundario { background:#fff; color:#333; border-color:#ccc; }
+  .btn-secundario:hover { background:#f2f2f2; }
+
+  .selo { display:inline-block; padding:2px 10px; border-radius:10px; font-size:12px; font-weight:700; color:#fff; margin-bottom:16px; }
+  .selo-PENDENTE { background:#B45309; }
+  .selo-APROVADO { background:#0F766E; }
+  .selo-APROVADO_COM_CONDICAO { background:#1D4ED8; }
+  .selo-REPROVADO { background:#B91C1C; }
+
+  .flash-msg {
+    padding:8px 12px; border-radius:6px; font-size:14px;
+    font-weight:600; margin-bottom:14px; max-width:900px;
+  }
+  .flash-success { background:#dcfce7; color:#14532d; border:1px solid #86efac; }
+  .flash-error   { background:#fee2e2; color:#7f1d1d; border:1px solid #fca5a5; }
+</style>
+
+{% macro rotulo(campo, valor) %}
+  {%- if valor -%}
+    {%- for v, t in opcoes[campo] -%}{%- if v == valor -%}{{ t }}{%- endif -%}{%- endfor -%}
+  {%- else -%}—{%- endif -%}
+{% endmacro %}
+
+{% macro item(titulo, valor, largo=false) %}
+  <div class="item {% if largo %}largo{% endif %}">
+    <span>{{ titulo }}</span>
+    <div>{{ valor if valor not in (None, '') else '—' }}</div>
+  </div>
+{% endmacro %}
+
+{% macro dinheiro(titulo, valor) %}
+  {{ item(titulo, 'R$ ' ~ formatar_numero_br(valor) if valor is not none else None) }}
+{% endmacro %}
+
+<div class="pagina-titulo">Análise de Crédito nº {{ analise.id_analise }}</div>
+<div class="empresa"><strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<span class="selo selo-{{ analise.status }}">{{ status_rotulo.get(analise.status, analise.status) }}</span>
+
+<div class="bloco">
+  <div class="bloco-titulo vinho">1. IDENTIFICAÇÃO DO CLIENTE</div>
+  <div class="grid">
+    {{ item('Tipo de cliente', rotulo('tipo_cliente', analise.tipo_cliente)) }}
+    {{ item('Nome / Razão Social', analise.nome_razao_social) }}
+    {{ item('CPF / CNPJ', analise.cpf_cnpj) }}
+    {{ item('Telefone / WhatsApp', analise.telefone) }}
+    {{ item('Cidade / UF', analise.cidade_uf) }}
+    {{ item('Profissão / Atividade', analise.profissao_atividade) }}
+    {{ item('Tempo na atividade', analise.tempo_atividade) }}
+    {{ item('Responsável (PJ)', analise.responsavel_nome) }}
+    {{ item('CPF do responsável', analise.responsavel_cpf) }}
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo vinho">2. CRÉDITO SOLICITADO</div>
+  <div class="grid">
+    {{ item('Finalidade', rotulo('finalidade', analise.finalidade)) }}
+    {{ item('Finalidade - outros', analise.finalidade_outros) }}
+    {{ dinheiro('Consumo mensal estimado', analise.consumo_mensal_estimado) }}
+    {{ dinheiro('Limite solicitado', analise.limite_solicitado) }}
+    {{ item('Prazo solicitado', (analise.prazo_solicitado_dias ~ ' dias') if analise.prazo_solicitado_dias else None) }}
+    {{ item('Forma de cobrança / pagamento', analise.forma_cobranca) }}
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo vinho">3. CAPACIDADE FINANCEIRA</div>
+  <div class="grid">
+    {{ dinheiro('Renda / Faturamento mensal', analise.renda_faturamento) }}
+    {{ dinheiro('Endividamento mensal', analise.endividamento) }}
+    {{ item('Documentação financeira', rotulo('documentacao_financeira', analise.documentacao_financeira)) }}
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo vinho">4. CONSULTA E RISCO DE CRÉDITO</div>
+  <div class="grid">
+    {{ item('Serasa / birô de crédito', rotulo('biro_situacao', analise.biro_situacao)) }}
+    {{ item('Score', analise.biro_score) }}
+    {{ item('Protestos / pendências', rotulo('protestos', analise.protestos)) }}
+    {{ dinheiro('Valor dos protestos', analise.protestos_valor) }}
+    {{ item('Situação CPF / CNPJ', rotulo('situacao_documento', analise.situacao_documento)) }}
+    {{ item('Referência comercial', rotulo('referencia_comercial', analise.referencia_comercial)) }}
+    {{ item('Observação relevante', analise.observacao_relevante, true) }}
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo vinho">5. PARECER DO SETOR DE CRÉDITO</div>
+  <div class="grid">
+    {{ item('Classificação interna', rotulo('classificacao_risco', analise.classificacao_risco)) }}
+    {{ item('Parecer', rotulo('parecer_credito', analise.parecer_credito)) }}
+    {{ dinheiro('Limite recomendado', analise.limite_recomendado) }}
+    {{ item('Prazo recomendado', (analise.prazo_recomendado_dias ~ ' dias') if analise.prazo_recomendado_dias else None) }}
+    {{ item('Justificativa', analise.justificativa, true) }}
+    {{ item('Analista', analise.nome_analista) }}
+    {{ item('Data da análise', analise.data_analise.strftime('%d/%m/%Y') if analise.data_analise else None) }}
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">DECISÃO FINAL</div>
+
+  {% if decidida %}
+    <div class="grid">
+      {{ item('Decisão', status_rotulo.get(analise.status, analise.status)) }}
+      {{ dinheiro('Limite aprovado', analise.limite_aprovado) }}
+      {{ item('Prazo aprovado', (analise.prazo_aprovado_dias ~ ' dias') if analise.prazo_aprovado_dias else None) }}
+      {{ item('Observação', analise.observacao_decisao, true) }}
+      {{ item('Aprovador', analise.nome_aprovador) }}
+      {{ item('Data da decisão', analise.data_decisao.strftime('%d/%m/%Y') if analise.data_decisao else None) }}
+    </div>
+  {% else %}
+    <form method="post">
+      <div class="opcoes">
+        {% for valor, texto_opcao in opcoes['decisao'] %}
+          <label>
+            <input type="radio" name="decisao" value="{{ valor }}" required
+                   onchange="ajustarCampos(this.value)">
+            {{ texto_opcao }}
+          </label>
+        {% endfor %}
+      </div>
+
+      <div class="grid">
+        <div class="campo">
+          <label>Limite aprovado (R$)</label>
+          <input type="text" name="limite_aprovado" id="limite_aprovado"
+                 value="{{ analise.limite_recomendado if analise.limite_recomendado is not none else '' }}">
+        </div>
+        <div class="campo">
+          <label>Prazo aprovado (dias)</label>
+          <input type="text" name="prazo_aprovado_dias" id="prazo_aprovado_dias"
+                 value="{{ analise.prazo_recomendado_dias or '' }}">
+        </div>
+        <div class="campo largo">
+          <label>Observação (obrigatória — por que aprovou ou reprovou)</label>
+          <textarea name="observacao_decisao" required></textarea>
+        </div>
+      </div>
+
+      <div class="acoes" style="padding:0 14px 14px;">
+        <button type="submit" class="btn">Registrar decisão</button>
+        <a class="btn btn-secundario" href="{{ url_for('financeiro.credito_aprovacoes') }}">Voltar</a>
+      </div>
+    </form>
+
+    <script>
+      // Reprovado não tem limite nem prazo — o backend zera os dois de todo
+      // jeito; aqui é só para não induzir a digitar o que não vale.
+      function ajustarCampos(decisao) {
+        var reprovado = decisao === 'REPROVADO';
+        ['limite_aprovado', 'prazo_aprovado_dias'].forEach(function (id) {
+          var campo = document.getElementById(id);
+          campo.disabled = reprovado;
+          if (reprovado) { campo.value = ''; }
+        });
+      }
+    </script>
+  {% endif %}
+</div>
+
+{% if decidida %}
+<div class="acoes">
+  <a class="btn btn-secundario" href="{{ url_for('financeiro.credito_aprovacoes') }}">Voltar</a>
+</div>
+{% endif %}
+
+{% endblock %}

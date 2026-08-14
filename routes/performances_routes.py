@@ -41,6 +41,8 @@ def menu_performances():
         pode_consultar_avaliacoes = True
         pode_configurar_avaliacoes = True
         pode_performance_gerentes = True
+        pode_importar_abastecimentos = True
+        pode_consultar_abastecimentos = True
     else:
         pode_executar_avaliacoes = usuario_tem_permissao(
             id_usuario,
@@ -70,6 +72,15 @@ def menu_performances():
             "PERFORMANCE_GERENTES",
         )
 
+        # Abastecimentos veio do módulo de RH e continua com as permissões de
+        # lá — só o lugar no menu mudou.
+        pode_importar_abastecimentos = usuario_tem_permissao(
+            id_usuario, cod_empresa, "RH", "IMPORTAR_ABASTECIMENTOS"
+        )
+        pode_consultar_abastecimentos = usuario_tem_permissao(
+            id_usuario, cod_empresa, "RH", "CONSULTAR_ABASTECIMENTOS"
+        )
+
     pode_avaliacoes = (
         pode_executar_avaliacoes
         or pode_consultar_avaliacoes
@@ -83,6 +94,55 @@ def menu_performances():
         texto_voltar="← Voltar",
         pode_avaliacoes=pode_avaliacoes,
         pode_performance_gerentes=pode_performance_gerentes,
+        pode_abastecimentos=(
+            pode_importar_abastecimentos or pode_consultar_abastecimentos
+        ),
+    )
+
+
+# ---------------------------------------
+# MENU PERFORMANCE EM ABASTECIMENTOS
+# ---------------------------------------
+@performances_bp.route("/abastecimentos/menu")
+@permissao_obrigatoria(
+    "PERFORMANCES",
+    "MENU",
+    redirecionar_para="sistema.selecionar_sistema",
+)
+def menu_performance_abastecimentos():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global == "superusuario":
+        pode_importar_abastecimentos = True
+        pode_consultar_abastecimentos = True
+    else:
+        pode_importar_abastecimentos = usuario_tem_permissao(
+            id_usuario, cod_empresa, "RH", "IMPORTAR_ABASTECIMENTOS"
+        )
+        pode_consultar_abastecimentos = usuario_tem_permissao(
+            id_usuario, cod_empresa, "RH", "CONSULTAR_ABASTECIMENTOS"
+        )
+
+    # O menu abre com qualquer uma das duas.
+    if not (pode_importar_abastecimentos or pode_consultar_abastecimentos):
+        flash("Você não tem acesso à performance em abastecimentos.", "erro")
+        return redirect(url_for("performances.menu_performances"))
+
+    return render_template(
+        "menu_performance_abastecimentos.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("performances.menu_performances"),
+        texto_voltar="← Voltar",
+        pode_importar_abastecimentos=pode_importar_abastecimentos,
+        pode_consultar_abastecimentos=pode_consultar_abastecimentos,
     )
 
 

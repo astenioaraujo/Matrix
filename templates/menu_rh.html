@@ -102,18 +102,6 @@
     </a>
   {% endif %}
 
-  {% if pode_importar_abastecimentos %}
-    <a href="{{ url_for('rh.importar_abastecimentos') }}" class="btn-informar">
-        Importar Abastecimentos
-    </a>
-   {% endif %}
-
-  {% if pode_consultar_abastecimentos %}
-    <a href="{{ url_for('rh.consultar_abastecimentos') }}" class="btn-consultar">
-        Consultar Abastecimentos
-    </a>
-  {% endif %}
-
   {% if pode_configuracoes_rh %}
     <a href="#" class="btn-config">
       Configuração de RH

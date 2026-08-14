@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+{% set a = analise or {} %}
+{% set travado = analise and analise.status != 'PENDENTE' %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .empresa       { font-size:16px; color:#555; margin-bottom:6px; }
+
+  .bloco {
+    border:1px solid #e2e2e2; border-radius:10px;
+    margin-bottom:18px; overflow:hidden; background:#fff;
+  }
+  .bloco-titulo {
+    background:#7B1E3A; color:#fff; font-weight:700; font-size:14px;
+    padding:7px 12px; letter-spacing:.3px;
+  }
+  .grid {
+    display:grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap:12px; padding:14px;
+  }
+  .campo { display:flex; flex-direction:column; }
+  .campo.largo { grid-column:1 / -1; }
+  .campo label { font-size:12px; font-weight:700; color:#555; margin-bottom:4px; }
+  .campo input, .campo select, .campo textarea {
+    height:34px; padding:0 8px; border:1px solid #ccc; border-radius:6px;
+    font-size:14px; background:#fff; font-family:inherit;
+  }
+  .campo textarea { height:70px; padding:6px 8px; resize:vertical; }
+  .campo input:disabled, .campo select:disabled, .campo textarea:disabled {
+    background:#f4f4f4; color:#555;
+  }
+
+  .acoes { display:flex; gap:10px; align-items:center; margin:10px 0 40px; }
+  .btn {
+    height:36px; padding:0 16px; border-radius:6px; border:1px solid #7B1E3A;
+    background:#7B1E3A; color:#fff; font-weight:600; font-size:14px;
+    cursor:pointer; text-decoration:none; display:inline-flex; align-items:center;
+  }
+  .btn:hover { background:#64152e; }
+  .btn-secundario { background:#fff; color:#333; border-color:#ccc; }
+  .btn-secundario:hover { background:#f2f2f2; }
+
+  .selo {
+    display:inline-block; padding:2px 10px; border-radius:10px;
+    font-size:12px; font-weight:700; color:#fff; margin-bottom:16px;
+  }
+  .selo-PENDENTE { background:#B45309; }
+  .selo-APROVADO { background:#0F766E; }
+  .selo-APROVADO_COM_CONDICAO { background:#1D4ED8; }
+  .selo-REPROVADO { background:#B91C1C; }
+
+  .decisao {
+    border:1px solid #e2e2e2; border-radius:10px; padding:14px;
+    background:#fbfbfb; margin-bottom:18px; font-size:14px;
+  }
+  .decisao b { display:inline-block; min-width:170px; color:#555; }
+
+  .flash-msg {
+    padding:8px 12px; border-radius:6px; font-size:14px;
+    font-weight:600; margin-bottom:14px; max-width:900px;
+  }
+  .flash-success { background:#dcfce7; color:#14532d; border:1px solid #86efac; }
+  .flash-error   { background:#fee2e2; color:#7f1d1d; border:1px solid #fca5a5; }
+</style>
+
+{% macro texto(nome, rotulo, largo=false, tipo='text') %}
+  <div class="campo {% if largo %}largo{% endif %}">
+    <label>{{ rotulo }}</label>
+    <input type="{{ tipo }}" name="{{ nome }}"
+           value="{{ a.get(nome) if a.get(nome) is not none else '' }}"
+           {% if travado %}disabled{% endif %}>
+  </div>
+{% endmacro %}
+
+{% macro escolha(nome, rotulo) %}
+  <div class="campo">
+    <label>{{ rotulo }}</label>
+    <select name="{{ nome }}" {% if travado %}disabled{% endif %}>
+      <option value="">—</option>
+      {% for valor, texto_opcao in opcoes[nome] %}
+        <option value="{{ valor }}" {% if a.get(nome) == valor %}selected{% endif %}>{{ texto_opcao }}</option>
+      {% endfor %}
+    </select>
+  </div>
+{% endmacro %}
+
+{% macro area(nome, rotulo) %}
+  <div class="campo largo">
+    <label>{{ rotulo }}</label>
+    <textarea name="{{ nome }}" {% if travado %}disabled{% endif %}>{{ a.get(nome) or '' }}</textarea>
+  </div>
+{% endmacro %}
+
+<div class="pagina-titulo">
+  {% if analise %}Análise de Crédito nº {{ analise.id_analise }}{% else %}Nova Análise de Crédito{% endif %}
+</div>
+<div class="empresa"><strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+{% if analise %}
+  <span class="selo selo-{{ analise.status }}">{{ status_rotulo.get(analise.status, analise.status) }}</span>
+{% endif %}
+
+{% if travado %}
+<div class="decisao">
+  <div><b>Decisão</b> {{ status_rotulo.get(analise.status, analise.status) }}</div>
+  <div><b>Limite aprovado</b> {% if analise.limite_aprovado is not none %}R$ {{ analise.limite_aprovado }}{% else %}—{% endif %}</div>
+  <div><b>Prazo aprovado</b> {% if analise.prazo_aprovado_dias %}{{ analise.prazo_aprovado_dias }} dias{% else %}—{% endif %}</div>
+  <div><b>Observação</b> {{ analise.observacao_decisao or '—' }}</div>
+  <div><b>Aprovador / Data</b>
+    {{ analise.nome_aprovador or '—' }}
+    {% if analise.data_decisao %} — {{ analise.data_decisao.strftime('%d/%m/%Y') }}{% endif %}
+  </div>
+</div>
+{% endif %}
+
+<form method="post">
+
+  <div class="bloco">
+    <div class="bloco-titulo">1. IDENTIFICAÇÃO DO CLIENTE</div>
+    <div class="grid">
+      {{ escolha('tipo_cliente', 'Tipo de cliente') }}
+      {{ texto('nome_razao_social', 'Nome / Razão Social') }}
+      {{ texto('cpf_cnpj', 'CPF / CNPJ') }}
+      {{ texto('telefone', 'Telefone / WhatsApp') }}
+      {{ texto('cidade_uf', 'Cidade / UF') }}
+      {{ texto('profissao_atividade', 'Profissão / Atividade da empresa') }}
+      {{ texto('tempo_atividade', 'Tempo na atividade') }}
+      {{ texto('responsavel_nome', 'Responsável pela empresa (PJ) - Nome') }}
+      {{ texto('responsavel_cpf', 'Responsável pela empresa (PJ) - CPF') }}
+    </div>
+  </div>
+
+  <div class="bloco">
+    <div class="bloco-titulo">2. CRÉDITO SOLICITADO</div>
+    <div class="grid">
+      {{ escolha('finalidade', 'Finalidade') }}
+      {{ texto('finalidade_outros', 'Finalidade - Outros (qual)') }}
+      {{ texto('consumo_mensal_estimado', 'Consumo mensal estimado (R$)') }}
+      {{ texto('limite_solicitado', 'Limite de crédito solicitado (R$)') }}
+      {{ texto('prazo_solicitado_dias', 'Prazo solicitado (dias)') }}
+      {{ texto('forma_cobranca', 'Forma de cobrança / pagamento') }}
+    </div>
+  </div>
+
+  <div class="bloco">
+    <div class="bloco-titulo">3. CAPACIDADE FINANCEIRA</div>
+    <div class="grid">
+      {{ texto('renda_faturamento', 'Renda mensal (PF) / Faturamento médio mensal (PJ) (R$)') }}
+      {{ texto('endividamento', 'Endividamento / compromissos mensais (R$)') }}
+      {{ escolha('documentacao_financeira', 'Documentação financeira apresentada') }}
+    </div>
+  </div>
+
+  <div class="bloco">
+    <div class="bloco-titulo">4. CONSULTA E RISCO DE CRÉDITO</div>
+    <div class="grid">
+      {{ escolha('biro_situacao', 'Serasa / birô de crédito') }}
+      {{ texto('biro_score', 'Score') }}
+      {{ escolha('protestos', 'Protestos / pendências') }}
+      {{ texto('protestos_valor', 'Valor dos protestos (R$)') }}
+      {{ escolha('situacao_documento', 'Situação CPF / CNPJ') }}
+      {{ escolha('referencia_comercial', 'Referência comercial') }}
+      {{ area('observacao_relevante', 'Observação relevante') }}
+    </div>
+  </div>
+
+  <div class="bloco">
+    <div class="bloco-titulo">5. PARECER DO SETOR DE CRÉDITO</div>
+    <div class="grid">
+      {{ escolha('classificacao_risco', 'Classificação interna') }}
+      {{ escolha('parecer_credito', 'Parecer do setor de crédito') }}
+      {{ texto('limite_recomendado', 'Limite recomendado (R$)') }}
+      {{ texto('prazo_recomendado_dias', 'Prazo recomendado (dias)') }}
+      {{ area('justificativa', 'Justificativa objetiva') }}
+    </div>
+  </div>
+
+  <div class="acoes">
+    {% if not travado %}
+      <button type="submit" class="btn">
+        {% if analise %}Salvar alterações{% else %}Cadastrar e enviar para aprovação{% endif %}
+      </button>
+    {% endif %}
+    <a class="btn btn-secundario" href="{{ url_for('financeiro.credito_analises') }}">Voltar</a>
+  </div>
+
+</form>
+
+{% endblock %}

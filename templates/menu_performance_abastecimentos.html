@@ -39,38 +39,28 @@
     padding: 0 10px;
   }
 
-  .btn-avaliacoes {
-    background: #0F766E;
-    border: 1px solid #0F766E;
-  }
-
-  .btn-avaliacoes:hover {
-    background: #0c615a;
-    border-color: #0c615a;
-  }
-
-  .btn-gerentes {
-    background: #155E75;
-    border: 1px solid #155E75;
-  }
-
-  .btn-gerentes:hover {
-    background: #124d60;
-    border-color: #124d60;
-  }
-
-  .btn-abastecimentos {
+  .btn-importar {
     background: #B45309;
     border: 1px solid #B45309;
   }
 
-  .btn-abastecimentos:hover {
+  .btn-importar:hover {
     background: #96450a;
     border-color: #96450a;
   }
+
+  .btn-consultar {
+    background: #1D4ED8;
+    border: 1px solid #1D4ED8;
+  }
+
+  .btn-consultar:hover {
+    background: #1a44bb;
+    border-color: #1a44bb;
+  }
 </style>
 
-<div class="pagina-titulo">Menu de Performances</div>
+<div class="pagina-titulo">Performance em Abastecimentos</div>
 
 <div class="empresa">
   <strong>Empresa:</strong> {{ nome_empresa }}
@@ -78,21 +68,15 @@
 
 <div class="menu-botoes">
 
-  {% if pode_avaliacoes %}
-    <a href="{{ url_for('performances.menu_avaliacoes_funcionarios') }}" class="btn-avaliacoes">
-      Avaliações de Funcionários
+  {% if pode_importar_abastecimentos %}
+    <a href="{{ url_for('rh.importar_abastecimentos') }}" class="btn-importar">
+      Importar Abastecimentos
     </a>
   {% endif %}
 
-  {% if pode_performance_gerentes %}
-    <a href="{{ url_for('performances.menu_performance_gerentes') }}" class="btn-gerentes">
-      Performance de Gerentes
-    </a>
-  {% endif %}
-
-  {% if pode_abastecimentos %}
-    <a href="{{ url_for('performances.menu_performance_abastecimentos') }}" class="btn-abastecimentos">
-      Performance em Abastecimentos
+  {% if pode_consultar_abastecimentos %}
+    <a href="{{ url_for('rh.consultar_abastecimentos') }}" class="btn-consultar">
+      Consultar Abastecimentos
     </a>
   {% endif %}
 

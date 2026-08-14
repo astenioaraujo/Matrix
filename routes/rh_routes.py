@@ -28,8 +28,6 @@ def menu_rh():
     if tipo_global == "superusuario":
         permissoes = {
             "pode_avaliacoes": True,
-            "pode_importar_abastecimentos": True,
-            "pode_consultar_abastecimentos": True,
             "pode_configuracoes_rh": True,
             "pode_funcionarios": True,
             "pode_consultar_funcionarios": True,
@@ -41,12 +39,6 @@ def menu_rh():
         permissoes = {
             "pode_avaliacoes": usuario_tem_permissao(
                 id_usuario, cod_empresa, "RH", "AVALIACOES"
-            ),
-            "pode_importar_abastecimentos": usuario_tem_permissao(
-                id_usuario, cod_empresa, "RH", "IMPORTAR_ABASTECIMENTOS"
-            ),
-            "pode_consultar_abastecimentos": usuario_tem_permissao(
-                id_usuario, cod_empresa, "RH", "CONSULTAR_ABASTECIMENTOS"
             ),
             "pode_configuracoes_rh": usuario_tem_permissao(
                 id_usuario, cod_empresa, "RH", "CONFIGURACOES_RH"
@@ -107,7 +99,7 @@ def avaliacoes():
 @permissao_obrigatoria(
     "RH",
     "IMPORTAR_ABASTECIMENTOS",
-    redirecionar_para="rh.menu_rh",
+    redirecionar_para="performances.menu_performance_abastecimentos",
 )
 def importar_abastecimentos():
     from openpyxl import load_workbook
@@ -432,7 +424,7 @@ def importar_abastecimentos():
         cod_empresa=cod_empresa,
         nome_empresa=nome_empresa,
         resumo=resumo,
-        url_voltar=url_for("rh.menu_rh"),
+        url_voltar=url_for("performances.menu_performance_abastecimentos"),
         texto_voltar="← Voltar",
     )
 # ------------------------------------------
@@ -442,7 +434,7 @@ def importar_abastecimentos():
 @permissao_obrigatoria(
     "RH",
     "CONSULTAR_ABASTECIMENTOS",
-    redirecionar_para="rh.menu_rh",
+    redirecionar_para="performances.menu_performance_abastecimentos",
 )
 def consultar_abastecimentos():
     from psycopg2.extras import RealDictCursor
@@ -642,7 +634,7 @@ def consultar_abastecimentos():
         totais=totais,
         heatmap=heatmap,
         totais_filiais=totais_filiais,
-        url_voltar=url_for("rh.menu_rh"),
+        url_voltar=url_for("performances.menu_performance_abastecimentos"),
         texto_voltar="← Voltar",
     )
 

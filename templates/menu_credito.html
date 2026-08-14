@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .empresa       { font-size:16px; color:#555; margin-bottom:30px; }
+
+  .menu-botoes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 260px);
+    gap: 14px;
+    margin-bottom: 50px;
+  }
+  .menu-botoes a {
+    display: flex; align-items: center; justify-content: center;
+    height: 60px; border-radius: 12px; text-decoration: none;
+    font-weight: 600; font-size: 16px; color: #fff;
+    background: #7B1E3A; border: 1px solid #7B1E3A;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+    transition: all 0.2s ease; text-align: center; padding: 0 10px;
+  }
+  .menu-botoes a:hover { transform: translateY(-2px); background:#64152e; border-color:#64152e; }
+  .menu-botoes a.btn-aprovar { background:#0F766E; border-color:#0F766E; }
+  .menu-botoes a.btn-aprovar:hover { background:#0c615a; border-color:#0c615a; }
+</style>
+
+<div class="pagina-titulo">Crédito</div>
+<div class="empresa"><strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}</div>
+
+<div class="menu-botoes">
+  {% if pode_cadastrar %}
+  <a href="{{ url_for('financeiro.credito_analises') }}">Cadastrar Análise de Crédito</a>
+  {% endif %}
+  {% if pode_aprovar %}
+  <a class="btn-aprovar" href="{{ url_for('financeiro.credito_aprovacoes') }}">Aprovar Análise de Crédito</a>
+  {% endif %}
+</div>
+
+{% endblock %}

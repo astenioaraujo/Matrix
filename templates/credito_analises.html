@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .empresa       { font-size:16px; color:#555; margin-bottom:20px; }
+
+  .barra {
+    display:flex; align-items:flex-end; gap:12px;
+    flex-wrap:wrap; margin-bottom:18px;
+  }
+  .barra label { display:block; font-size:12px; font-weight:700; color:#555; margin-bottom:4px; }
+  .barra select, .barra input[type=text] {
+    height:34px; padding:0 8px; border:1px solid #ccc; border-radius:6px; font-size:14px;
+  }
+  .btn {
+    height:34px; padding:0 14px; border-radius:6px; border:1px solid #7B1E3A;
+    background:#7B1E3A; color:#fff; font-weight:600; font-size:14px;
+    cursor:pointer; text-decoration:none; display:inline-flex; align-items:center;
+  }
+  .btn:hover { background:#64152e; }
+  .btn-secundario { background:#fff; color:#333; border-color:#ccc; }
+  .btn-secundario:hover { background:#f2f2f2; }
+  .btn-nova { margin-left:auto; }
+
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  thead th {
+    background:#7B1E3A; color:#fff; font-weight:700;
+    padding:6px 8px; text-align:left; white-space:nowrap;
+  }
+  td { border:1px solid #e2e2e2; padding:5px 8px; white-space:nowrap; }
+  tbody tr:nth-child(even) { background:#fafafa; }
+  .num { text-align:right; }
+
+  .selo {
+    display:inline-block; padding:1px 8px; border-radius:10px;
+    font-size:11px; font-weight:700; color:#fff;
+  }
+  .selo-PENDENTE { background:#B45309; }
+  .selo-APROVADO { background:#0F766E; }
+  .selo-APROVADO_COM_CONDICAO { background:#1D4ED8; }
+  .selo-REPROVADO { background:#B91C1C; }
+
+  .vazio { padding:20px 0; color:#777; }
+
+  .flash-msg {
+    padding:8px 12px; border-radius:6px; font-size:14px;
+    font-weight:600; margin-bottom:14px; max-width:900px;
+  }
+  .flash-success { background:#dcfce7; color:#14532d; border:1px solid #86efac; }
+  .flash-error   { background:#fee2e2; color:#7f1d1d; border:1px solid #fca5a5; }
+</style>
+
+<div class="pagina-titulo">Cadastrar Análise de Crédito</div>
+<div class="empresa"><strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<form method="get" class="barra">
+  <div>
+    <label>Status</label>
+    <select name="status">
+      <option value="">Todos</option>
+      {% for valor, rotulo in status_rotulo.items() %}
+        <option value="{{ valor }}" {% if status_sel == valor %}selected{% endif %}>{{ rotulo }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label>Cliente / CPF / CNPJ</label>
+    <input type="text" name="busca" value="{{ busca }}" placeholder="parte do nome ou documento">
+  </div>
+  <button type="submit" class="btn btn-secundario">Filtrar</button>
+  <a class="btn btn-nova" href="{{ url_for('financeiro.credito_analise_form') }}">+ Nova Análise</a>
+</form>
+
+{% if analises %}
+<table>
+  <thead>
+    <tr>
+      <th>Nº</th>
+      <th>Cliente</th>
+      <th>Tipo</th>
+      <th>CPF / CNPJ</th>
+      <th>Cidade / UF</th>
+      <th class="num">Limite solicitado</th>
+      <th class="num">Prazo</th>
+      <th class="num">Limite aprovado</th>
+      <th>Status</th>
+      <th>Analista</th>
+      <th>Cadastro</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in analises %}
+    <tr>
+      <td>{{ a.id_analise }}</td>
+      <td>{{ a.nome_razao_social or '' }}</td>
+      <td>{{ a.tipo_cliente or '' }}</td>
+      <td>{{ a.cpf_cnpj or '' }}</td>
+      <td>{{ a.cidade_uf or '' }}</td>
+      <td class="num">{% if a.limite_solicitado is not none %}{{ formatar_numero_br(a.limite_solicitado) }}{% endif %}</td>
+      <td class="num">{% if a.prazo_solicitado_dias %}{{ a.prazo_solicitado_dias }} d{% endif %}</td>
+      <td class="num">{% if a.limite_aprovado is not none %}{{ formatar_numero_br(a.limite_aprovado) }}{% endif %}</td>
+      <td><span class="selo selo-{{ a.status }}">{{ status_rotulo.get(a.status, a.status) }}</span></td>
+      <td>{{ a.nome_analista or '' }}</td>
+      <td>{% if a.data_analise %}{{ a.data_analise.strftime('%d/%m/%Y') }}{% endif %}</td>
+      <td>
+        <a class="btn btn-secundario"
+           href="{{ url_for('financeiro.credito_analise_form', id_analise=a.id_analise) }}">
+          {% if a.status == 'PENDENTE' %}Editar{% else %}Ver{% endif %}
+        </a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="vazio">Nenhuma análise encontrada com esse filtro.</div>
+{% endif %}
+
+{% endblock %}

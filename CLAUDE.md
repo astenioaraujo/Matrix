@@ -91,6 +91,17 @@ Primeiro item do menu do Financeiro. Tabelas em `migrations/criar_tabelas_saldos
 
 > **Armadilha**: `contas_gerenciais` tem **triggers** que bloqueiam `INSERT` e `DELETE`, e um terceiro que impede alterar as colunas-chave no `UPDATE`. A tabela é alimentada pela importação. Portanto **nada de upsert** nela — só `UPDATE`, e tratar `rowcount == 0` como "conta não existe no cadastro".
 
+## Crédito (workflow de análise de crédito de novo cliente)
+
+Botão vinho no menu do Financeiro, ao lado do CR (`GET /credito/menu`). Duas opções: **Cadastrar Análise de Crédito** e **Aprovar Análise de Crédito**.
+
+- Uma tabela só, `credito_analises` (`migrations/criar_tabelas_credito.sql`), transcrevendo o formulário em papel "Cadastro e Análise de Crédito | Novo Cliente" da Rede Lucena: identificação, crédito solicitado, capacidade financeira, risco/birô, parecer do analista e decisão final. Nada de limite "efetivo" derivado — o recomendado (analista) e o aprovado (decisão) ficam lado a lado.
+- Permissões (`FINANCEIRO`): `CREDITO_MENU` 1500, `CREDITO_CADASTRAR` 1510, `CREDITO_APROVAR` 1520. O menu abre com **qualquer uma** das duas últimas. Nenhuma foi concedida — só bypass de superusuário.
+- Fluxo: cadastrar grava `status = 'PENDENTE'` + analista/data. Quem tem `CREDITO_APROVAR` decide em `APROVADO` / `APROVADO_COM_CONDICAO` / `REPROVADO`, e a **observação é obrigatória nos dois sentidos** (é ela que explica a decisão depois). `REPROVADO` zera limite e prazo no backend, não só na tela.
+- **Análise decidida não volta a ser editada** — a trava está no POST de `credito_analise_form` (não só no `disabled` dos campos), para que o que valeu na decisão fique como estava.
+- Rotas em `routes/financeiro_routes.py`, seção "CRÉDITO"; as listas de opção ficam em `CREDITO_OPCOES` (tela e gravação leem a mesma lista; no banco são `character varying` livres). Templates: `menu_credito.html`, `credito_analises.html`, `credito_analise_form.html`, `credito_aprovacoes.html`, `credito_decisao.html`.
+- `base.html` **não** renderiza flash — cada tela renderiza o seu bloco `get_flashed_messages`. Sem isso, `flash()` some sem aviso.
+
 ## Exclusões de lançamentos
 
 `GET/POST /exclusoes`. No primeiro acesso, sugere o **último** período com dados (`ORDER BY ano DESC, mes DESC LIMIT 1`) — mesmo critério da consulta matricial. Antes não marcava nada e o navegador exibia a primeira `<option>`, que no combo de meses (crescente) era o mês **mais antigo**; além disso a grade não vinha filtrada. A sugestão só entra quando ano e mês vêm ambos vazios.
@@ -149,6 +160,12 @@ Menu com quatro opções: **Programar Vistorias**, **Executar Vistorias**, **Con
 ---
 
 # Módulo RH
+
+## Abastecimentos → foi para Performances (13/08/2026)
+
+Importar e Consultar Abastecimentos saíram do menu de RH e viraram o submenu **Performance em Abastecimentos** (`GET /performances/abastecimentos/menu`, `templates/menu_performance_abastecimentos.html`), ao lado de Avaliações de Funcionários e Performance de Gerentes.
+
+As telas continuam nas mesmas URLs (`/rh/abastecimentos/importar` e `/consultar`, em `routes/rh_routes.py`) e nas **mesmas permissões** `RH/IMPORTAR_ABASTECIMENTOS` e `RH/CONSULTAR_ABASTECIMENTOS` — só o lugar no menu mudou, ninguém precisou receber acesso de novo. O "← Voltar" e o redirect por falta de permissão apontam para o menu novo.
 
 ## Funções (descrição livre)
 

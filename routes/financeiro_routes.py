@@ -296,6 +296,7 @@ def menu_empresa():
         pode_cadastros = True
         pode_emprestimos_financiamentos = True
         pode_cr_fiado = True
+        pode_credito = True
 
     else:
 
@@ -356,6 +357,12 @@ def menu_empresa():
             usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CR_CARTOES_MENU")
         )
 
+        # Crédito abre com qualquer uma das duas pontas do workflow.
+        pode_credito = (
+            usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CREDITO_CADASTRAR") or
+            usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CREDITO_APROVAR")
+        )
+
     linhas, totais = montar_dashboard(cod_empresa)
 
     return render_template(
@@ -375,6 +382,7 @@ def menu_empresa():
         pode_cadastros=pode_cadastros,
         pode_emprestimos_financiamentos=pode_emprestimos_financiamentos,
         pode_cr_fiado=pode_cr_fiado,
+        pode_credito=pode_credito,
     )
 # =========================
 # CADASTROS
@@ -8686,3 +8694,450 @@ def cartoes_variacoes():
         datas=datas, areas=areas, ids_area=ids_area,
         pivot=pivot, filtro_area=filtro_area,
         data_ini=data_ini, data_fin=data_fin, hoje=hoje.isoformat())
+
+
+# =========================================================
+# CRÉDITO — CADASTRO E ANÁLISE DE CRÉDITO DE NOVO CLIENTE
+# =========================================================
+#
+# Workflow em duas mãos: o analista cadastra a solicitação e dá o parecer
+# (status PENDENTE); quem tem alçada aprova ou reprova com observação. As duas
+# telas leem a mesma tabela `credito_analises` — não existe cópia do cadastro
+# em lugar nenhum.
+
+# Listas de opções do formulário. Ficam aqui porque tela e gravação precisam da
+# mesma lista — no banco são `character varying` livres, seguindo a convenção do
+# projeto (nada de enum do Postgres).
+CREDITO_OPCOES = {
+    "tipo_cliente": [("PF", "Pessoa Física"), ("PJ", "Pessoa Jurídica")],
+    "finalidade": [
+        ("COMBUSTIVEL", "Combustível"),
+        ("LUBRIFICANTES", "Lubrificantes"),
+        ("OUTROS", "Outros"),
+    ],
+    "documentacao_financeira": [
+        ("SIM", "Sim"),
+        ("NAO", "Não"),
+        ("DISPENSADA", "Dispensada conforme alçada"),
+    ],
+    "biro_situacao": [
+        ("SEM_RESTRICAO", "Sem restrição"),
+        ("COM_RESTRICAO", "Com restrição"),
+    ],
+    "protestos": [("NAO", "Não"), ("SIM", "Sim")],
+    "situacao_documento": [("REGULAR", "Regular"), ("IRREGULAR", "Irregular")],
+    "referencia_comercial": [
+        ("FAVORAVEL", "Favorável"),
+        ("ATENCAO", "Atenção"),
+        ("NAO_NECESSARIA", "Não necessária"),
+    ],
+    "classificacao_risco": [
+        ("BAIXO", "Baixo risco"),
+        ("MEDIO", "Médio risco"),
+        ("ALTO", "Alto risco"),
+    ],
+    "parecer_credito": [
+        ("APROVAR", "Aprovar"),
+        ("APROVAR_LIMITE_MENOR", "Aprovar com limite menor"),
+        ("APROVAR_CONDICAO", "Aprovar com condição"),
+        ("REPROVAR", "Reprovar"),
+    ],
+    "decisao": [
+        ("APROVADO", "Aprovado"),
+        ("APROVADO_COM_CONDICAO", "Aprovado com condição"),
+        ("REPROVADO", "Reprovado"),
+    ],
+}
+
+CREDITO_STATUS_ROTULO = {
+    "PENDENTE": "Pendente",
+    "APROVADO": "Aprovado",
+    "APROVADO_COM_CONDICAO": "Aprovado com condição",
+    "REPROVADO": "Reprovado",
+}
+
+# Campos que a tela de cadastro grava, na ordem do formulário em papel.
+CREDITO_CAMPOS_TEXTO = [
+    "tipo_cliente", "nome_razao_social", "cpf_cnpj", "telefone", "cidade_uf",
+    "profissao_atividade", "tempo_atividade", "responsavel_nome",
+    "responsavel_cpf", "finalidade", "finalidade_outros", "forma_cobranca",
+    "documentacao_financeira", "biro_situacao", "protestos",
+    "situacao_documento", "referencia_comercial", "observacao_relevante",
+    "classificacao_risco", "parecer_credito", "justificativa",
+]
+
+CREDITO_CAMPOS_NUMERICOS = [
+    "consumo_mensal_estimado", "limite_solicitado", "renda_faturamento",
+    "endividamento", "protestos_valor", "limite_recomendado",
+]
+
+CREDITO_CAMPOS_INTEIROS = [
+    "prazo_solicitado_dias", "biro_score", "prazo_recomendado_dias",
+]
+
+
+def _credito_numero(valor):
+    """Aceita o que o usuário digitar: '1.500,00', '1500.00', vazio."""
+    texto = str(valor or "").strip()
+    if not texto:
+        return None
+    texto = texto.replace("R$", "").replace(" ", "")
+    if "," in texto:
+        texto = texto.replace(".", "").replace(",", ".")
+    try:
+        return float(texto)
+    except ValueError:
+        return None
+
+
+def _credito_inteiro(valor):
+    numero = _credito_numero(valor)
+    return int(numero) if numero is not None else None
+
+
+def _credito_dados_do_form(form):
+    dados = {c: (form.get(c) or "").strip() or None for c in CREDITO_CAMPOS_TEXTO}
+    dados.update({c: _credito_numero(form.get(c)) for c in CREDITO_CAMPOS_NUMERICOS})
+    dados.update({c: _credito_inteiro(form.get(c)) for c in CREDITO_CAMPOS_INTEIROS})
+    return dados
+
+
+def _credito_pode(acao):
+    if str(session.get("tipo_global") or "").strip().lower() == "superusuario":
+        return True
+    return usuario_tem_permissao(
+        session.get("id_usuario"),
+        str(session.get("cod_empresa") or "").strip(),
+        "FINANCEIRO",
+        acao,
+    )
+
+
+# ---------------------------------------
+# MENU CRÉDITO
+# ---------------------------------------
+@financeiro_bp.route("/credito/menu")
+def menu_credito():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    pode_cadastrar = _credito_pode("CREDITO_CADASTRAR")
+    pode_aprovar = _credito_pode("CREDITO_APROVAR")
+
+    # O menu abre com qualquer uma das duas.
+    if not (pode_cadastrar or pode_aprovar):
+        flash("Você não tem acesso ao módulo de Crédito.", "error")
+        return redirect(url_for("financeiro.menu_empresa"))
+
+    return render_template(
+        "menu_credito.html",
+        empresa_ativa=session["cod_empresa"],
+        nome_empresa_ativa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_empresa"),
+        texto_voltar="← Voltar",
+        pode_cadastrar=pode_cadastrar,
+        pode_aprovar=pode_aprovar,
+    )
+
+
+# ---------------------------------------
+# CADASTRAR ANÁLISE DE CRÉDITO — LISTA
+# ---------------------------------------
+@financeiro_bp.route("/credito/analises")
+@permissao_obrigatoria(
+    "FINANCEIRO", "CREDITO_CADASTRAR", redirecionar_para="financeiro.menu_credito"
+)
+def credito_analises():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    status_sel = (request.args.get("status") or "").strip()
+    busca = (request.args.get("busca") or "").strip()
+
+    filtros = ["cod_empresa = %s"]
+    params = [cod_empresa]
+
+    if status_sel:
+        filtros.append("status = %s")
+        params.append(status_sel)
+
+    if busca:
+        filtros.append("(nome_razao_social ILIKE %s OR cpf_cnpj ILIKE %s)")
+        params += [f"%{busca}%", f"%{busca}%"]
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute(f"""
+            SELECT *
+            FROM credito_analises
+            WHERE {' AND '.join(filtros)}
+            ORDER BY id_analise DESC
+        """, params)
+        analises = cur.fetchall() or []
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "credito_analises.html",
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_credito"),
+        texto_voltar="← Voltar",
+        analises=analises,
+        status_sel=status_sel,
+        busca=busca,
+        status_rotulo=CREDITO_STATUS_ROTULO,
+        formatar_numero_br=formatar_numero_br,
+    )
+
+
+# ---------------------------------------
+# CADASTRAR ANÁLISE DE CRÉDITO — FORMULÁRIO
+# ---------------------------------------
+@financeiro_bp.route("/credito/analises/nova", methods=["GET", "POST"])
+@financeiro_bp.route("/credito/analises/<int:id_analise>", methods=["GET", "POST"])
+@permissao_obrigatoria(
+    "FINANCEIRO", "CREDITO_CADASTRAR", redirecionar_para="financeiro.menu_credito"
+)
+def credito_analise_form(id_analise=None):
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        analise = None
+
+        if id_analise:
+            cur.execute("""
+                SELECT * FROM credito_analises
+                WHERE id_analise = %s AND cod_empresa = %s
+            """, (id_analise, cod_empresa))
+            analise = cur.fetchone()
+
+            if not analise:
+                flash("Análise não encontrada.", "error")
+                return redirect(url_for("financeiro.credito_analises"))
+
+        if request.method == "POST":
+            # Depois de decidida, a análise não volta a ser editada — o que
+            # valeu para a decisão fica registrado como estava.
+            if analise and analise["status"] != "PENDENTE":
+                flash("Análise já decidida não pode ser alterada.", "error")
+                return redirect(url_for(
+                    "financeiro.credito_analise_form", id_analise=id_analise
+                ))
+
+            dados = _credito_dados_do_form(request.form)
+
+            if not dados["nome_razao_social"]:
+                flash("Informe o nome / razão social.", "error")
+            else:
+                colunas = list(dados.keys())
+                valores = [dados[c] for c in colunas]
+
+                if analise:
+                    sets = ", ".join(f"{c} = %s" for c in colunas)
+                    cur.execute(f"""
+                        UPDATE credito_analises
+                        SET {sets}, atualizado_em = NOW()
+                        WHERE id_analise = %s AND cod_empresa = %s
+                    """, valores + [id_analise, cod_empresa])
+                    conn.commit()
+                    flash("Análise atualizada com sucesso.", "success")
+                else:
+                    nomes = ", ".join(colunas)
+                    marcadores = ", ".join(["%s"] * len(colunas))
+                    cur.execute(f"""
+                        INSERT INTO credito_analises (
+                            cod_empresa, {nomes},
+                            id_usuario_analista, nome_analista, data_analise,
+                            status, criado_em, atualizado_em
+                        )
+                        VALUES (%s, {marcadores}, %s, %s, %s, 'PENDENTE', NOW(), NOW())
+                        RETURNING id_analise
+                    """, [cod_empresa] + valores + [
+                        session.get("id_usuario"),
+                        session.get("nome_usuario") or session.get("usuario"),
+                        date.today(),
+                    ])
+                    id_analise = cur.fetchone()["id_analise"]
+                    conn.commit()
+                    flash("Análise cadastrada e enviada para aprovação.", "success")
+
+                return redirect(url_for(
+                    "financeiro.credito_analise_form", id_analise=id_analise
+                ))
+
+            cur.execute("""
+                SELECT * FROM credito_analises
+                WHERE id_analise = %s AND cod_empresa = %s
+            """, (id_analise or 0, cod_empresa))
+            analise = cur.fetchone()
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "credito_analise_form.html",
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.credito_analises"),
+        texto_voltar="← Voltar",
+        analise=analise,
+        opcoes=CREDITO_OPCOES,
+        status_rotulo=CREDITO_STATUS_ROTULO,
+    )
+
+
+# ---------------------------------------
+# APROVAR ANÁLISE DE CRÉDITO — LISTA
+# ---------------------------------------
+@financeiro_bp.route("/credito/aprovacoes")
+@permissao_obrigatoria(
+    "FINANCEIRO", "CREDITO_APROVAR", redirecionar_para="financeiro.menu_credito"
+)
+def credito_aprovacoes():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    # A fila abre nas pendentes; as decididas ficam a um clique de distância.
+    status_sel = (request.args.get("status") or "PENDENTE").strip()
+
+    filtros = ["cod_empresa = %s"]
+    params = [cod_empresa]
+
+    if status_sel != "TODAS":
+        filtros.append("status = %s")
+        params.append(status_sel)
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute(f"""
+            SELECT *
+            FROM credito_analises
+            WHERE {' AND '.join(filtros)}
+            ORDER BY id_analise DESC
+        """, params)
+        analises = cur.fetchall() or []
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "credito_aprovacoes.html",
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_credito"),
+        texto_voltar="← Voltar",
+        analises=analises,
+        status_sel=status_sel,
+        status_rotulo=CREDITO_STATUS_ROTULO,
+        formatar_numero_br=formatar_numero_br,
+    )
+
+
+# ---------------------------------------
+# APROVAR ANÁLISE DE CRÉDITO — DECISÃO
+# ---------------------------------------
+@financeiro_bp.route("/credito/aprovacoes/<int:id_analise>", methods=["GET", "POST"])
+@permissao_obrigatoria(
+    "FINANCEIRO", "CREDITO_APROVAR", redirecionar_para="financeiro.menu_credito"
+)
+def credito_decisao(id_analise):
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT * FROM credito_analises
+            WHERE id_analise = %s AND cod_empresa = %s
+        """, (id_analise, cod_empresa))
+        analise = cur.fetchone()
+
+        if not analise:
+            flash("Análise não encontrada.", "error")
+            return redirect(url_for("financeiro.credito_aprovacoes"))
+
+        if request.method == "POST":
+            decisao = (request.form.get("decisao") or "").strip()
+            observacao = (request.form.get("observacao_decisao") or "").strip()
+
+            validas = [v for v, _ in CREDITO_OPCOES["decisao"]]
+
+            if decisao not in validas:
+                flash("Escolha aprovar ou reprovar.", "error")
+            elif not observacao:
+                # O motivo é obrigatório nos dois sentidos: é ele que explica a
+                # decisão depois, quando ninguém mais lembra do caso.
+                flash("Informe a observação justificando a decisão.", "error")
+            else:
+                limite = _credito_numero(request.form.get("limite_aprovado"))
+                prazo = _credito_inteiro(request.form.get("prazo_aprovado_dias"))
+
+                if decisao == "REPROVADO":
+                    limite = None
+                    prazo = None
+
+                cur.execute("""
+                    UPDATE credito_analises
+                    SET status = %s,
+                        limite_aprovado = %s,
+                        prazo_aprovado_dias = %s,
+                        observacao_decisao = %s,
+                        id_usuario_aprovador = %s,
+                        nome_aprovador = %s,
+                        data_decisao = %s,
+                        atualizado_em = NOW()
+                    WHERE id_analise = %s AND cod_empresa = %s
+                """, (
+                    decisao,
+                    limite,
+                    prazo,
+                    observacao,
+                    session.get("id_usuario"),
+                    session.get("nome_usuario") or session.get("usuario"),
+                    date.today(),
+                    id_analise,
+                    cod_empresa,
+                ))
+                conn.commit()
+                flash("Decisão registrada com sucesso.", "success")
+                return redirect(url_for("financeiro.credito_aprovacoes"))
+
+            cur.execute("""
+                SELECT * FROM credito_analises
+                WHERE id_analise = %s AND cod_empresa = %s
+            """, (id_analise, cod_empresa))
+            analise = cur.fetchone()
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "credito_decisao.html",
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.credito_aprovacoes"),
+        texto_voltar="← Voltar",
+        analise=analise,
+        opcoes=CREDITO_OPCOES,
+        status_rotulo=CREDITO_STATUS_ROTULO,
+        formatar_numero_br=formatar_numero_br,
+    )

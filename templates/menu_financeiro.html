@@ -70,6 +70,16 @@
     border-color: #2b1a58;
 }
 
+  .menu-botoes a.btn-credito {
+    background: #7B1E3A;
+    border-color: #7B1E3A;
+  }
+
+  .menu-botoes a.btn-credito:hover {
+    background: #64152e;
+    border-color: #64152e;
+  }
+
   .painel {
     margin-top: 20px;
   }
@@ -181,6 +191,12 @@ td:nth-child(3) {
   {% if pode_cr_fiado %}
     <a href="{{ url_for('financeiro.menu_cr') }}">
       CR
+    </a>
+  {% endif %}
+
+  {% if pode_credito %}
+    <a class="btn-credito" href="{{ url_for('financeiro.menu_credito') }}">
+      Crédito
     </a>
   {% endif %}
 
