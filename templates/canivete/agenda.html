@@ -320,11 +320,12 @@
   position: relative;
 }
 .ag-cell.vazio { background: #eee9b8; }
-.ag-cell.primeiro-dia { background: #d4cc72; }
 .ag-cell.feriado { background: #fee2e2; }
 .ag-cell.feriado .ag-num { color: #dc2626; }
 /* linha grossa entre sexta (col 5) e sábado (col 6) */
-.ag-grade tbody td:nth-child(5) { border-right: 4px solid #94a3b8; }
+.ag-grade tbody tr:not(.sep-mes-spacer) td:nth-child(5) { border-right: 4px solid #94a3b8; }
+/* barra vermelha separando o último dia do mês do dia 1º do mês seguinte */
+.ag-grade tbody td.ag-cell.inicio-mes { border-left: 5px solid #dc2626; }
 /* ── COLUNA RECORRENTES ── */
 .col-gap { width: 24px; background: #f4f4f4 !important; border: none !important; padding: 0 !important; }
 .ag-grade thead th { width: 8.72%; }
@@ -770,8 +771,7 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
         {% set ambos_conc = manha.concluido and tarde.concluido %}
         {% set nome_feriado = feriados.get(d, '') %}
         {% set e_feriado = (nome_feriado != '') and not e_hoje and not ambos_conc %}
-        {% set e_primeiro = (dia.day == 1) and not e_hoje and not ambos_conc and not e_feriado %}
-        <td class="ag-cell {{ 'hoje-cell' if e_hoje else '' }} {{ 'fim-semana-cell' if fim_sem else '' }} {{ 'dia-concluido' if ambos_conc else '' }} {{ 'manha-concluida' if manha.concluido and not ambos_conc else '' }} {{ 'feriado' if e_feriado else '' }} {{ 'primeiro-dia' if e_primeiro else '' }}"
+        <td class="ag-cell {{ 'hoje-cell' if e_hoje else '' }} {{ 'fim-semana-cell' if fim_sem else '' }} {{ 'dia-concluido' if ambos_conc else '' }} {{ 'manha-concluida' if manha.concluido and not ambos_conc else '' }} {{ 'feriado' if e_feriado else '' }} {{ 'inicio-mes' if dia.day == 1 else '' }}"
             id="dia-{{ d }}">
 
           {% if nome_feriado %}
