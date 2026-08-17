@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .filtros { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  input { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+  .btn { padding:9px 18px; border-radius:8px; border:1px solid #1a73e8; background:#1a73e8;
+         color:#fff; font-weight:700; cursor:pointer; text-decoration:none; display:inline-block; }
+  .tabela-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.col-centro { text-align:center; white-space:nowrap; }
+  .total-geral { margin-top:14px; font-size:20px; font-weight:800; text-align:right; }
+  .vazio { color:#777; padding:12px 0; }
+  a.link { color:#1a73e8; font-weight:700; text-decoration:none; }
+  a.link:hover { text-decoration:underline; }
+</style>
+
+<div class="pagina-titulo">📥 Entradas de Mercadoria</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <form method="get" class="filtros">
+    <div class="campo">
+      <label for="data_de">De</label>
+      <input type="date" id="data_de" name="data_de" value="{{ data_de }}">
+    </div>
+    <div class="campo">
+      <label for="data_ate">Até</label>
+      <input type="date" id="data_ate" name="data_ate" value="{{ data_ate }}">
+    </div>
+    <button type="submit" class="btn">Consultar</button>
+    <a class="btn" style="background:#16a34a; border-color:#16a34a"
+       href="{{ url_for('pdv.nova_entrada') }}">+ Nova Entrada</a>
+  </form>
+</div>
+
+<div class="bloco">
+  {% if notas %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:110px">Nota</th>
+            <th style="width:110px">Entrada</th>
+            <th>Fornecedor</th>
+            <th style="width:130px">Produtos</th>
+            <th style="width:120px">Frete</th>
+            <th style="width:130px">Total</th>
+            <th style="width:100px">Parcelas</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for n in notas %}
+            <tr>
+              <td>
+                <a class="link" href="{{ url_for('pdv.detalhe_entrada', id_nota=n.id_pdv_nota_entrada) }}">
+                  {{ n.numero }}{{ '/' ~ n.serie if n.serie }}
+                </a>
+              </td>
+              <td>{{ n.data_entrada.strftime('%d/%m/%Y') }}</td>
+              <td>{{ n.nome_fornecedor or '—' }}</td>
+              <td class="col-dir">{{ n.valor_produtos|br }}</td>
+              <td class="col-dir">{{ n.valor_frete|br }}</td>
+              <td class="col-dir">{{ n.valor_total|br }}</td>
+              <td class="col-centro">{{ n.parcelas }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="total-geral">Total do período: R$ {{ total|br }}</div>
+  {% else %}
+    <div class="vazio">Nenhuma entrada no período.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

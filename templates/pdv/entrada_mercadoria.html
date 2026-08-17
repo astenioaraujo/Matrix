@@ -1,0 +1,492 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+{#
+  CT-e → Nota Fiscal de Entrada → Itens → custo (com frete) → estoque →
+  títulos a pagar. O frete do CT-e vinculado é rateado entre os itens
+  proporcionalmente ao valor de cada um, e o custo mostrado na coluna
+  "Custo Final" é exatamente o que vai para o estoque.
+#}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .bloco-titulo { font-size:17px; font-weight:800; margin-bottom:12px; color:#1a3a63; }
+
+  .linha-campos { display:flex; flex-wrap:wrap; gap:14px; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+
+  input, select { padding:8px 10px; border-radius:6px; border:1px solid #bbb;
+                  box-sizing:border-box; font-size:14px; }
+
+  .tabela-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:6px 8px; text-align:left; }
+  th { background:#dbe8f4; white-space:nowrap; font-size:13px; }
+  td input, td select { width:100%; }
+  td.col-dir { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  td.col-centro { text-align:center; white-space:nowrap; }
+
+  .btn { padding:8px 16px; border-radius:8px; border:1px solid #1a73e8;
+         background:#1a73e8; color:#fff; font-weight:700; cursor:pointer; }
+  .btn:hover { filter:brightness(0.93); }
+  .btn.secundario { background:#fff; color:#1a73e8; }
+  .btn.remover { background:#c0392b; border-color:#c0392b; padding:4px 10px; font-size:13px; }
+
+  .btn-concluir { padding:14px 34px; font-size:18px; border-radius:10px; border:none;
+                  background:#16a34a; color:#fff; font-weight:800; cursor:pointer; }
+  .btn-concluir:disabled { background:#9ca3af; cursor:not-allowed; }
+
+  .totais { display:flex; flex-wrap:wrap; gap:26px; }
+  .total-item { display:flex; flex-direction:column; }
+  .total-rotulo { font-size:12px; font-weight:700; color:#666; }
+  .total-valor { font-size:24px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .total-valor.ok { color:#16a34a; }
+  .total-valor.falta { color:#c0392b; }
+
+  .resumo { display:flex; flex-wrap:wrap; gap:26px; align-items:center; justify-content:space-between; }
+
+  .aviso { margin-top:12px; font-size:14px; min-height:20px; color:#9f2f2f; font-weight:600; }
+  .aviso.sucesso { color:#16a34a; }
+
+  .faltando { background:#fff7e6; border:1px solid #f0c674; border-radius:8px;
+              padding:14px 16px; margin-bottom:16px; font-size:14px; }
+
+  .dica { font-size:12px; color:#666; margin-top:8px; }
+</style>
+
+<div class="pagina-titulo">📥 Entrada de Mercadorias</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+{% if not fornecedores or not produtos %}
+  <div class="faltando">
+    <strong>Antes de lançar a nota, complete os cadastros:</strong>
+    {% if not fornecedores %} nenhum <em>fornecedor</em> cadastrado;{% endif %}
+    {% if not produtos %} nenhum <em>produto</em> cadastrado;{% endif %}
+    <a href="{{ url_for('pdv.menu_cadastros') }}">ir para os Cadastros</a>.
+  </div>
+{% endif %}
+
+<div class="bloco">
+  <div class="bloco-titulo">Nota Fiscal</div>
+  <div class="linha-campos">
+    <div class="campo">
+      <label for="selFornecedor">Fornecedor</label>
+      <select id="selFornecedor" style="min-width:260px">
+        <option value="">Selecione…</option>
+        {% for f in fornecedores %}
+          <option value="{{ f.id_pdv_fornecedor }}">{{ f.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="inpNumero">Número</label>
+      <input type="text" id="inpNumero" style="width:130px">
+    </div>
+    <div class="campo">
+      <label for="inpSerie">Série</label>
+      <input type="text" id="inpSerie" style="width:90px">
+    </div>
+    <div class="campo">
+      <label for="inpEmissao">Emissão</label>
+      <input type="date" id="inpEmissao">
+    </div>
+    <div class="campo">
+      <label for="inpEntrada">Entrada</label>
+      <input type="date" id="inpEntrada" value="{{ hoje }}">
+    </div>
+    <div class="campo" style="flex:1; min-width:240px">
+      <label for="inpChave">Chave da NF-e</label>
+      <input type="text" id="inpChave" placeholder="Opcional">
+    </div>
+  </div>
+
+  <div class="linha-campos" style="margin-top:14px">
+    <div class="campo">
+      <label for="selCte">CT-e / Frete vinculado</label>
+      <select id="selCte" style="min-width:340px">
+        <option value="">Sem frete</option>
+        {% for c in ctes %}
+          <option value="{{ c.id_pdv_cte }}" data-valor="{{ c.valor_total }}">
+            {{ c.transportadora }}{{ ' — nº ' ~ c.numero if c.numero }} — R$ {{ c.valor_total|br }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="inpDescontoNota">Desconto da nota</label>
+      <input type="number" step="0.01" id="inpDescontoNota" value="0" style="width:130px">
+    </div>
+    <div class="campo" style="flex:1; min-width:200px">
+      <label for="inpObservacao">Observação</label>
+      <input type="text" id="inpObservacao" placeholder="Opcional">
+    </div>
+  </div>
+  <div class="dica">
+    O valor do CT-e é rateado entre os itens proporcionalmente ao valor de cada um e passa a
+    fazer parte do custo da mercadoria.
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Itens da Nota</div>
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:28%">Produto</th>
+          <th style="width:100px">Qtde</th>
+          <th style="width:120px">Preço Unit.</th>
+          <th style="width:110px">Desconto</th>
+          <th style="width:120px">Total</th>
+          <th style="width:110px">Frete rateado</th>
+          <th style="width:120px">Custo Final</th>
+          <th style="width:60px"></th>
+        </tr>
+      </thead>
+      <tbody id="corpoItens"></tbody>
+    </table>
+  </div>
+  <div style="margin-top:12px">
+    <button type="button" class="btn secundario" id="btnNovoItem">+ Item</button>
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Títulos a Pagar</div>
+  <div class="linha-campos" style="align-items:flex-end">
+    <div class="campo">
+      <label for="inpQtdParcelas">Parcelas</label>
+      <input type="number" min="1" id="inpQtdParcelas" value="1" style="width:100px">
+    </div>
+    <div class="campo">
+      <label for="inpPrimeiroVenc">1º vencimento</label>
+      <input type="date" id="inpPrimeiroVenc" value="{{ hoje }}">
+    </div>
+    <div class="campo">
+      <label for="inpIntervalo">Intervalo (dias)</label>
+      <input type="number" min="1" id="inpIntervalo" value="30" style="width:120px">
+    </div>
+    <button type="button" class="btn secundario" id="btnGerarParcelas">Gerar parcelas</button>
+  </div>
+
+  <div class="tabela-wrap" style="margin-top:14px">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:90px">Parcela</th>
+          <th style="width:160px">Valor</th>
+          <th style="width:180px">Vencimento</th>
+          <th style="width:60px"></th>
+        </tr>
+      </thead>
+      <tbody id="corpoParcelas"></tbody>
+    </table>
+  </div>
+  <div class="dica">
+    A soma das parcelas tem que fechar com o total da nota. Sem parcelas, a nota entra no
+    estoque mas não gera obrigação em Contas a Pagar.
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="resumo">
+    <div class="totais">
+      <div class="total-item">
+        <div class="total-rotulo">Produtos</div>
+        <div class="total-valor" id="totalProdutos">0,00</div>
+      </div>
+      <div class="total-item">
+        <div class="total-rotulo">Frete</div>
+        <div class="total-valor" id="totalFrete">0,00</div>
+      </div>
+      <div class="total-item">
+        <div class="total-rotulo">TOTAL DA NOTA</div>
+        <div class="total-valor" id="totalNota">0,00</div>
+      </div>
+      <div class="total-item">
+        <div class="total-rotulo">Parcelado</div>
+        <div class="total-valor" id="totalParcelas">0,00</div>
+      </div>
+    </div>
+    <button type="button" class="btn-concluir" id="btnConcluir">Concluir Entrada</button>
+  </div>
+  <div class="aviso" id="aviso"></div>
+</div>
+
+<script>
+  const PRODUTOS = {{ produtos | tojson }};
+
+  function escapeHtml(texto) {
+    const div = document.createElement("div");
+    div.textContent = (texto === null || texto === undefined) ? "" : texto;
+    return div.innerHTML;
+  }
+
+  function paraNumero(texto) {
+    if (texto === null || texto === undefined || texto === "") return 0;
+    if (typeof texto === "number") return texto;
+    const limpo = String(texto).trim().replace(/\s/g, "").replace(",", ".");
+    const n = parseFloat(limpo);
+    return isNaN(n) ? 0 : n;
+  }
+
+  function formatarBR(valor) {
+    return valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function centavos(valor) { return Math.round(paraNumero(valor) * 100); }
+
+  function mostrarAviso(mensagem, sucesso) {
+    const el = document.getElementById("aviso");
+    el.textContent = mensagem || "";
+    el.classList.toggle("sucesso", !!sucesso);
+  }
+
+  function valorDoFrete() {
+    const opcao = document.getElementById("selCte").selectedOptions[0];
+    return opcao ? paraNumero(opcao.dataset.valor) : 0;
+  }
+
+  // ─── ITENS ────────────────────────────────────────────────────────────────
+
+  function linhaItem() {
+    const tr = document.createElement("tr");
+    const opcoes = PRODUTOS.map(p =>
+      `<option value="${p.id_pdv_produto}">${escapeHtml((p.codigo ? p.codigo + " — " : "") + p.descricao)}</option>`
+    ).join("");
+
+    tr.innerHTML = `
+      <td><select class="item-produto"><option value="">Selecione…</option>${opcoes}</select></td>
+      <td><input type="number" step="any" class="item-qtd" value="1"></td>
+      <td><input type="number" step="0.01" class="item-preco" value="0"></td>
+      <td><input type="number" step="0.01" class="item-desconto" value="0"></td>
+      <td class="col-dir item-total">0,00</td>
+      <td class="col-dir item-frete">0,00</td>
+      <td class="col-dir item-custo">0,0000</td>
+      <td class="col-centro"><button type="button" class="btn remover">×</button></td>
+    `;
+
+    tr.querySelector(".item-produto").addEventListener("change", (ev) => {
+      const produto = PRODUTOS.find(p => String(p.id_pdv_produto) === ev.target.value);
+      if (produto && !paraNumero(tr.querySelector(".item-preco").value)) {
+        tr.querySelector(".item-preco").value = produto.custo_atual;
+      }
+      recalcular();
+    });
+    tr.querySelectorAll("input").forEach(el => el.addEventListener("input", recalcular));
+    tr.querySelector(".remover").addEventListener("click", () => { tr.remove(); recalcular(); });
+    return tr;
+  }
+
+  // ─── PARCELAS ─────────────────────────────────────────────────────────────
+
+  function linhaParcela(numero, valor, vencimento) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="col-centro parcela-numero">${numero}</td>
+      <td><input type="number" step="0.01" class="parcela-valor" value="${valor.toFixed(2)}"></td>
+      <td><input type="date" class="parcela-venc" value="${vencimento}"></td>
+      <td class="col-centro"><button type="button" class="btn remover">×</button></td>
+    `;
+    tr.querySelector(".parcela-valor").addEventListener("input", recalcular);
+    tr.querySelector(".remover").addEventListener("click", () => { tr.remove(); renumerar(); recalcular(); });
+    return tr;
+  }
+
+  function renumerar() {
+    document.querySelectorAll("#corpoParcelas tr").forEach((tr, i) => {
+      tr.querySelector(".parcela-numero").textContent = i + 1;
+    });
+  }
+
+  // ─── TOTAIS ───────────────────────────────────────────────────────────────
+  // O rateio do frete é repetido aqui só para a tela mostrar o custo antes de
+  // gravar; quem vale é o do servidor (services/pdv_entrada_service.py).
+
+  function recalcular() {
+    const linhas = Array.from(document.querySelectorAll("#corpoItens tr"));
+    let totalProdutos = 0;
+    const totais = linhas.map(tr => {
+      const qtd = paraNumero(tr.querySelector(".item-qtd").value);
+      const preco = paraNumero(tr.querySelector(".item-preco").value);
+      const desc = paraNumero(tr.querySelector(".item-desconto").value);
+      const total = Math.round((qtd * preco - desc) * 100) / 100;
+      totalProdutos += total;
+      return { tr, qtd, total };
+    });
+    totalProdutos = Math.round(totalProdutos * 100) / 100;
+
+    const frete = valorDoFrete();
+    const freteCent = Math.round(frete * 100);
+    const baseCent = Math.round(totalProdutos * 100);
+
+    let acumulado = 0;
+    totais.forEach((item, indice) => {
+      let parcela = 0;
+      if (freteCent > 0 && baseCent > 0) {
+        if (indice === totais.length - 1) {
+          parcela = freteCent - acumulado;
+        } else {
+          parcela = Math.floor(freteCent * Math.round(item.total * 100) / baseCent);
+          acumulado += parcela;
+        }
+      }
+      const rateio = parcela / 100;
+      item.tr.querySelector(".item-total").textContent = formatarBR(item.total);
+      item.tr.querySelector(".item-frete").textContent = formatarBR(rateio);
+      item.tr.querySelector(".item-custo").textContent =
+        item.qtd > 0 ? ((item.total + rateio) / item.qtd).toFixed(4) : "0,0000";
+    });
+
+    const desconto = paraNumero(document.getElementById("inpDescontoNota").value);
+    const totalNota = Math.round((totalProdutos - desconto + frete) * 100) / 100;
+
+    let totalParcelas = 0;
+    document.querySelectorAll("#corpoParcelas tr").forEach(tr => {
+      totalParcelas += paraNumero(tr.querySelector(".parcela-valor").value);
+    });
+    totalParcelas = Math.round(totalParcelas * 100) / 100;
+
+    document.getElementById("totalProdutos").textContent = formatarBR(totalProdutos);
+    document.getElementById("totalFrete").textContent = formatarBR(frete);
+    document.getElementById("totalNota").textContent = formatarBR(totalNota);
+
+    const elParc = document.getElementById("totalParcelas");
+    elParc.textContent = formatarBR(totalParcelas);
+    const temParcelas = document.querySelectorAll("#corpoParcelas tr").length > 0;
+    elParc.classList.toggle("ok", temParcelas && centavos(totalParcelas) === centavos(totalNota));
+    elParc.classList.toggle("falta", temParcelas && centavos(totalParcelas) !== centavos(totalNota));
+
+    return { totalNota, totalParcelas, temParcelas };
+  }
+
+  // ─── CONCLUSÃO ────────────────────────────────────────────────────────────
+
+  function coletarItens() {
+    const itens = [];
+    document.querySelectorAll("#corpoItens tr").forEach(tr => {
+      const idProduto = tr.querySelector(".item-produto").value;
+      if (!idProduto) return;
+      const produto = PRODUTOS.find(p => String(p.id_pdv_produto) === idProduto);
+      itens.push({
+        id_pdv_produto: Number(idProduto),
+        descricao_produto: produto ? produto.descricao : "",
+        unidade: produto ? produto.unidade : "UN",
+        quantidade: paraNumero(tr.querySelector(".item-qtd").value),
+        preco_unitario: paraNumero(tr.querySelector(".item-preco").value),
+        valor_desconto: paraNumero(tr.querySelector(".item-desconto").value),
+      });
+    });
+    return itens;
+  }
+
+  function coletarParcelas() {
+    const parcelas = [];
+    document.querySelectorAll("#corpoParcelas tr").forEach(tr => {
+      const valor = paraNumero(tr.querySelector(".parcela-valor").value);
+      const venc = tr.querySelector(".parcela-venc").value;
+      if (valor > 0 && venc) parcelas.push({ valor: valor, data_vencimento: venc });
+    });
+    return parcelas;
+  }
+
+  async function concluir() {
+    const btn = document.getElementById("btnConcluir");
+    const { totalNota, totalParcelas, temParcelas } = recalcular();
+
+    const itens = coletarItens();
+    if (!itens.length) { mostrarAviso("A nota não tem itens."); return; }
+    if (!document.getElementById("selFornecedor").value) { mostrarAviso("Informe o fornecedor."); return; }
+    if (!document.getElementById("inpNumero").value.trim()) { mostrarAviso("Informe o número da nota."); return; }
+    if (temParcelas && centavos(totalParcelas) !== centavos(totalNota)) {
+      mostrarAviso("A soma das parcelas não fecha com o total da nota.");
+      return;
+    }
+
+    const payload = {
+      id_pdv_fornecedor: Number(document.getElementById("selFornecedor").value),
+      numero: document.getElementById("inpNumero").value,
+      serie: document.getElementById("inpSerie").value,
+      chave_nfe: document.getElementById("inpChave").value,
+      data_emissao: document.getElementById("inpEmissao").value,
+      data_entrada: document.getElementById("inpEntrada").value,
+      id_pdv_cte: document.getElementById("selCte").value || null,
+      valor_desconto: paraNumero(document.getElementById("inpDescontoNota").value),
+      observacao: document.getElementById("inpObservacao").value,
+      itens: itens,
+      parcelas: coletarParcelas(),
+    };
+
+    btn.disabled = true;
+    mostrarAviso("Concluindo…");
+    try {
+      const resp = await fetch("/pdv/api/entradas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const contentType = resp.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+      }
+      const data = await resp.json();
+      if (data.ok) {
+        mostrarAviso(`Entrada concluída — R$ ${formatarBR(data.valor_total)}, ${data.parcelas} parcela(s). Redirecionando…`, true);
+        setTimeout(() => { location.href = `/pdv/entradas/${data.id_pdv_nota_entrada}`; }, 900);
+      } else {
+        mostrarAviso(data.erro || "Erro ao concluir a entrada.");
+      }
+    } catch (e) {
+      mostrarAviso(e.message || "Erro ao concluir a entrada.");
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // ─── LIGAÇÕES ─────────────────────────────────────────────────────────────
+
+  document.getElementById("btnNovoItem").addEventListener("click", () => {
+    document.getElementById("corpoItens").appendChild(linhaItem());
+  });
+
+  document.getElementById("selCte").addEventListener("change", recalcular);
+  document.getElementById("inpDescontoNota").addEventListener("input", recalcular);
+  document.getElementById("btnConcluir").addEventListener("click", concluir);
+
+  document.getElementById("btnGerarParcelas").addEventListener("click", async () => {
+    const { totalNota } = recalcular();
+    if (centavos(totalNota) <= 0) { mostrarAviso("Lance os itens antes de gerar as parcelas."); return; }
+    try {
+      const resp = await fetch("/pdv/api/entradas/parcelar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          valor_total: totalNota,
+          quantidade: document.getElementById("inpQtdParcelas").value,
+          primeiro_vencimento: document.getElementById("inpPrimeiroVenc").value,
+          intervalo_dias: document.getElementById("inpIntervalo").value,
+        }),
+      });
+      const data = await resp.json();
+      if (!data.ok) { mostrarAviso(data.erro || "Erro ao gerar parcelas."); return; }
+      const corpo = document.getElementById("corpoParcelas");
+      corpo.innerHTML = "";
+      data.parcelas.forEach(p => corpo.appendChild(linhaParcela(p.numero, p.valor, p.data_vencimento)));
+      mostrarAviso("");
+      recalcular();
+    } catch (e) {
+      mostrarAviso(e.message || "Erro ao gerar parcelas.");
+    }
+  });
+
+  document.getElementById("corpoItens").appendChild(linhaItem());
+  recalcular();
+</script>
+
+{% endblock %}

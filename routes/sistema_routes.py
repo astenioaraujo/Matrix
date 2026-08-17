@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, redirect, url_for, session, flash
 from security_helpers import usuario_tem_permissao
+from services.pdv_service import empresa_opera_pdv
 
 sistema_bp = Blueprint("sistema", __name__)
 
@@ -33,6 +34,8 @@ def selecionar_sistema():
         pode_canivete = True
         pode_projetos = True
         pode_mercado = True
+        # a trava da empresa vale inclusive para o superusuário
+        pode_pdv = empresa_opera_pdv(cod_empresa)
     else:
         pode_operacoes = usuario_tem_permissao(id_usuario, cod_empresa, "OPERACOES", "MENU")
         pode_financeiro = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "MENU")
@@ -47,6 +50,8 @@ def selecionar_sistema():
         pode_canivete = usuario_tem_permissao(id_usuario, cod_empresa, "CANIVETE", "MENU")
         pode_projetos = usuario_tem_permissao(id_usuario, cod_empresa, "PROJETOS", "MENU")
         pode_mercado = usuario_tem_permissao(id_usuario, cod_empresa, "MERCADO", "MENU")
+        pode_pdv = (empresa_opera_pdv(cod_empresa)
+                    and usuario_tem_permissao(id_usuario, cod_empresa, "PDV", "MENU"))
 
     return render_template(
         "selecionar_sistema.html",
@@ -64,6 +69,7 @@ def selecionar_sistema():
         pode_canivete=pode_canivete,
         pode_projetos=pode_projetos,
         pode_mercado=pode_mercado,
+        pode_pdv=pode_pdv,
     )
 
 

@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+{#
+  Mesma ideia do detalhe da venda: o documento original e, abaixo, o que ele
+  produziu no estoque e no contas a pagar. Repare que não há nada de fluxo de
+  caixa aqui — comprar não é pagar.
+#}
+
+<style>
+  .pagina-titulo { font-size:30px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:17px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .bloco-titulo { font-size:16px; font-weight:800; margin-bottom:12px; color:#1a3a63; }
+  .cabecalho { display:flex; flex-wrap:wrap; gap:30px; }
+  .info-rotulo { font-size:12px; font-weight:700; color:#666; }
+  .info-valor { font-size:17px; font-weight:700; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.col-centro { text-align:center; white-space:nowrap; }
+  .tabela-wrap { overflow-x:auto; }
+  tfoot td { font-weight:800; background:#f5f7fa; }
+  .vazio { color:#777; font-size:14px; }
+  .nota-rodape { font-size:13px; color:#666; margin-top:10px; }
+</style>
+
+<div class="pagina-titulo">Nota de Entrada {{ nota.numero }}{{ '/' ~ nota.serie if nota.serie }}</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <div class="cabecalho">
+    <div>
+      <div class="info-rotulo">Fornecedor</div>
+      <div class="info-valor">{{ nota.nome_fornecedor or '—' }}</div>
+    </div>
+    <div>
+      <div class="info-rotulo">Emissão</div>
+      <div class="info-valor">{{ nota.data_emissao.strftime('%d/%m/%Y') if nota.data_emissao else '—' }}</div>
+    </div>
+    <div>
+      <div class="info-rotulo">Entrada</div>
+      <div class="info-valor">{{ nota.data_entrada.strftime('%d/%m/%Y') }}</div>
+    </div>
+    <div>
+      <div class="info-rotulo">CT-e / Frete</div>
+      <div class="info-valor">
+        {% if nota.id_pdv_cte %}
+          {{ nota.transportadora }}{{ ' nº ' ~ nota.numero_cte if nota.numero_cte }} — R$ {{ nota.valor_frete|br }}
+        {% else %}Sem frete{% endif %}
+      </div>
+    </div>
+    <div>
+      <div class="info-rotulo">Total da Nota</div>
+      <div class="info-valor">R$ {{ nota.valor_total|br }}</div>
+    </div>
+  </div>
+  {% if nota.observacao %}
+    <div style="margin-top:14px"><span class="info-rotulo">Observação:</span> {{ nota.observacao }}</div>
+  {% endif %}
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Itens</div>
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:50px">#</th>
+          <th>Produto</th>
+          <th style="width:70px">Un.</th>
+          <th style="width:100px">Qtde</th>
+          <th style="width:120px">Preço Unit.</th>
+          <th style="width:110px">Desconto</th>
+          <th style="width:120px">Total</th>
+          <th style="width:120px">Frete rateado</th>
+          <th style="width:120px">Custo Final</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in itens %}
+          <tr>
+            <td>{{ item.sequencia }}</td>
+            <td>{{ item.descricao_produto }}</td>
+            <td>{{ item.unidade }}</td>
+            <td class="col-dir">{{ item.quantidade|br }}</td>
+            <td class="col-dir">{{ item.preco_unitario|br }}</td>
+            <td class="col-dir">{{ item.valor_desconto|br }}</td>
+            <td class="col-dir">{{ item.valor_total|br }}</td>
+            <td class="col-dir">{{ item.valor_frete_rateado|br }}</td>
+            <td class="col-dir">{{ item.custo_unitario|br }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="6">Produtos {{ nota.valor_produtos|br }} − desconto {{ nota.valor_desconto|br }} + frete {{ nota.valor_frete|br }}</td>
+          <td class="col-dir" colspan="3">{{ nota.valor_total|br }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  <div class="nota-rodape">
+    O <strong>Custo Final</strong> é (valor do item + frete rateado) ÷ quantidade — é ele que foi
+    para o estoque e virou o último preço de compra do produto.
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">O que esta nota produziu</div>
+
+  <div style="margin-bottom:18px">
+    <div style="font-weight:700; margin-bottom:6px">Estoque</div>
+    {% if movimentos %}
+      <div class="tabela-wrap">
+        <table>
+          <thead>
+            <tr><th style="width:120px">Data</th><th>Produto</th>
+                <th style="width:130px">Quantidade</th><th style="width:130px">Custo Unit.</th></tr>
+          </thead>
+          <tbody>
+            {% for m in movimentos %}
+              <tr>
+                <td>{{ m.data_movimento.strftime('%d/%m/%Y') }}</td>
+                <td>{{ m.descricao }}</td>
+                <td class="col-dir">+{{ m.quantidade|br }}</td>
+                <td class="col-dir">{{ m.custo_unitario|br }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="vazio">Nenhuma entrada de estoque nesta nota.</div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div style="font-weight:700; margin-bottom:6px">Contas a Pagar</div>
+    {% if titulos %}
+      <div class="tabela-wrap">
+        <table>
+          <thead>
+            <tr><th style="width:100px">Parcela</th><th style="width:150px">Valor</th>
+                <th style="width:150px">Vencimento</th><th style="width:130px">Situação</th>
+                <th>Documento</th></tr>
+          </thead>
+          <tbody>
+            {% for t in titulos %}
+              <tr>
+                <td class="col-centro">{{ t.numero_parcela }}/{{ t.total_parcelas }}</td>
+                <td class="col-dir">{{ t.valor|br }}</td>
+                <td>{{ t.data_vencimento.strftime('%d/%m/%Y') }}</td>
+                <td>{{ t.situacao|capitalize }}</td>
+                <td>{{ t.documento or '—' }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="nota-rodape">
+        A obrigação existe, mas ainda não houve saída de dinheiro: o lançamento no fluxo de caixa
+        só nasce quando o título for efetivamente pago.
+      </div>
+    {% else %}
+      <div class="vazio">Nenhum título a pagar gerado por esta nota.</div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

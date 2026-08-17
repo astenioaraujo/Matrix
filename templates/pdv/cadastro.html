@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+{#
+  Tela única dos cadastros do PDV. As colunas, os tipos e as validações vêm da
+  especificação em CADASTROS (routes/pdv_routes.py) — nenhuma delas está escrita
+  aqui. Cadastro novo não precisa de template novo.
+#}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 8px; color: #111; }
+  .pagina-subtitulo { font-size: 20px; margin-bottom: 24px; color: #222; }
+
+  .bloco {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 20px;
+  }
+
+  .topo-bloco {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 14px;
+  }
+
+  .btn-mini {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .btn-mini.excluir { border-color: #c0392b; background: #c0392b; }
+  .btn-mini:hover { filter: brightness(0.92); }
+
+  .btn-novo {
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .tabela-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+  th { background: #dbe8f4; white-space: nowrap; }
+
+  td input[type="text"], td input[type="number"], td input[type="date"], td select {
+    width: 100%;
+    padding: 6px 8px;
+    box-sizing: border-box;
+    border-radius: 6px;
+    border: 1px solid #bbb;
+  }
+
+  td.col-centro { text-align: center; white-space: nowrap; }
+
+  .status-msg { font-size: 13px; margin-top: 10px; color: #1e6b34; min-height: 18px; }
+  .status-msg.erro { color: #9f2f2f; }
+</style>
+
+<div class="pagina-titulo">{{ spec.titulo }}</div>
+
+<div class="pagina-subtitulo">
+  <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa }}
+</div>
+
+<div class="bloco">
+  <div class="topo-bloco">
+    <div>{{ spec.descricao }}</div>
+    <button type="button" class="btn-novo" id="btnNovo">+ Novo</button>
+  </div>
+
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr id="cabecalho"></tr>
+      </thead>
+      <tbody id="corpo"></tbody>
+    </table>
+  </div>
+
+  <div class="status-msg" id="status"></div>
+</div>
+
+<script>
+  const CHAVE  = {{ chave | tojson }};
+  const CAMPOS = {{ spec.campos | tojson }};
+  const API    = `/pdv/api/cadastros/${CHAVE}`;
+
+  function escapeHtml(texto) {
+    const div = document.createElement("div");
+    div.textContent = (texto === null || texto === undefined) ? "" : texto;
+    return div.innerHTML;
+  }
+
+  async function fetchJson(url, opcoes) {
+    const resp = await fetch(url, opcoes);
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+    }
+    return resp.json();
+  }
+
+  function mostrarStatus(mensagem, erro) {
+    const el = document.getElementById("status");
+    el.textContent = mensagem;
+    el.classList.toggle("erro", !!erro);
+    if (!erro) setTimeout(() => { el.textContent = ""; }, 2500);
+  }
+
+  function montarCabecalho() {
+    const tr = document.getElementById("cabecalho");
+    CAMPOS.forEach(campo => {
+      const th = document.createElement("th");
+      th.textContent = campo.rotulo;
+      if (campo.largura) th.style.width = campo.largura;
+      tr.appendChild(th);
+    });
+    const th = document.createElement("th");
+    th.textContent = "Ações";
+    th.style.width = "150px";
+    tr.appendChild(th);
+  }
+
+  function celula(campo, registro) {
+    const valor = registro ? registro[campo.nome] : campo.padrao;
+    const td = document.createElement("td");
+
+    if (campo.tipo === "checkbox") {
+      td.className = "col-centro";
+      const marcado = registro ? !!valor : (campo.padrao !== false);
+      td.innerHTML = `<input type="checkbox" data-campo="${campo.nome}" ${marcado ? "checked" : ""}>`;
+      return td;
+    }
+
+    if (campo.tipo === "opcoes") {
+      const opcoes = (campo.opcoes || []).map(o =>
+        `<option value="${escapeHtml(o[0])}" ${String(valor || "") === o[0] ? "selected" : ""}>${escapeHtml(o[1])}</option>`
+      ).join("");
+      td.innerHTML = `<select data-campo="${campo.nome}">${opcoes}</select>`;
+      return td;
+    }
+
+    const tipoInput = campo.tipo === "data" ? "date"
+                    : (campo.tipo === "numero" || campo.tipo === "dinheiro") ? "number"
+                    : "text";
+    const passo = campo.tipo === "dinheiro" ? ' step="0.01"' : (campo.tipo === "numero" ? ' step="any"' : "");
+    const conteudo = (valor === null || valor === undefined) ? "" : valor;
+    td.innerHTML = `<input type="${tipoInput}"${passo} data-campo="${campo.nome}" value="${escapeHtml(conteudo)}">`;
+    return td;
+  }
+
+  function linha(registro) {
+    const tr = document.createElement("tr");
+    tr.dataset.id = registro ? registro[{{ spec.pk | tojson }}] : "";
+    CAMPOS.forEach(campo => tr.appendChild(celula(campo, registro)));
+
+    const acoes = document.createElement("td");
+    acoes.className = "col-centro";
+    acoes.innerHTML = `
+      <button type="button" class="btn-mini salvar">Salvar</button>
+      ${registro ? '<button type="button" class="btn-mini excluir">Excluir</button>' : ""}
+    `;
+    acoes.querySelector(".salvar").addEventListener("click", () => salvar(tr));
+    const btnExcluir = acoes.querySelector(".excluir");
+    if (btnExcluir) btnExcluir.addEventListener("click", () => excluir(tr));
+    tr.appendChild(acoes);
+    return tr;
+  }
+
+  async function carregar() {
+    try {
+      const data = await fetchJson(API);
+      const corpo = document.getElementById("corpo");
+      corpo.innerHTML = "";
+      (data.registros || []).forEach(r => corpo.appendChild(linha(r)));
+    } catch (e) {
+      mostrarStatus(e.message || "Erro ao carregar.", true);
+    }
+  }
+
+  async function salvar(tr) {
+    const id = tr.dataset.id;
+    const payload = {};
+    let faltando = null;
+
+    CAMPOS.forEach(campo => {
+      const el = tr.querySelector(`[data-campo="${campo.nome}"]`);
+      const valor = campo.tipo === "checkbox" ? el.checked : el.value.trim();
+      payload[campo.nome] = valor;
+      if (campo.obrigatorio && !valor) faltando = campo.rotulo;
+    });
+
+    if (faltando) {
+      mostrarStatus(`Informe ${faltando}.`, true);
+      return;
+    }
+
+    try {
+      const data = await fetchJson(id ? `${API}/${id}` : API, {
+        method: id ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (data.ok) {
+        mostrarStatus("Salvo com sucesso.", false);
+        carregar();
+      } else {
+        mostrarStatus(data.erro || "Erro ao salvar.", true);
+      }
+    } catch (e) {
+      mostrarStatus(e.message || "Erro ao salvar.", true);
+    }
+  }
+
+  async function excluir(tr) {
+    if (!confirm("Excluir este registro?")) return;
+    try {
+      const data = await fetchJson(`${API}/${tr.dataset.id}`, { method: "DELETE" });
+      if (data.ok) {
+        mostrarStatus("Excluído com sucesso.", false);
+        carregar();
+      } else {
+        mostrarStatus(data.erro || "Erro ao excluir.", true);
+      }
+    } catch (e) {
+      mostrarStatus(e.message || "Erro ao excluir.", true);
+    }
+  }
+
+  document.getElementById("btnNovo").addEventListener("click", () => {
+    document.getElementById("corpo").prepend(linha(null));
+  });
+
+  montarCabecalho();
+  carregar();
+</script>
+
+{% endblock %}

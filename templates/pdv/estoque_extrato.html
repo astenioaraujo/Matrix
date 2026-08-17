@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+{#
+  O extrato do produto, no mesmo espírito de um extrato bancário:
+  saldo inicial + entradas − saídas = saldo final. Cada linha diz de onde veio
+  o movimento, e o saldo corrente é calculado linha a linha (não existe coluna
+  de saldo gravada em lugar nenhum).
+#}
+
+<style>
+  .pagina-titulo { font-size:30px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:17px; margin-bottom:20px; color:#333; }
+
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+
+  .filtros { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  input { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+
+  .btn { padding:9px 18px; border-radius:8px; border:1px solid #1a73e8; background:#1a73e8;
+         color:#fff; font-weight:700; cursor:pointer; }
+
+  .resumo { display:flex; flex-wrap:wrap; gap:32px; }
+  .resumo-item { display:flex; flex-direction:column; }
+  .resumo-rotulo { font-size:12px; font-weight:700; color:#666; }
+  .resumo-valor { font-size:24px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .resumo-valor.entrada { color:#16a34a; }
+  .resumo-valor.saida { color:#c0392b; }
+
+  .tabela-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.entrada { color:#16a34a; font-weight:700; }
+  td.saida { color:#c0392b; font-weight:700; }
+  tfoot td { font-weight:800; background:#f5f7fa; }
+  .vazio { color:#777; }
+</style>
+
+<div class="pagina-titulo">{{ produto.descricao }}</div>
+<div class="pagina-subtitulo">
+  {{ ('Código ' ~ produto.codigo ~ ' — ') if produto.codigo }}
+  Saldo atual: <strong>{{ produto.quantidade_atual|br }} {{ produto.unidade }}</strong>
+</div>
+
+<div class="bloco">
+  <form method="get" class="filtros">
+    <div class="campo">
+      <label for="data_de">De</label>
+      <input type="date" id="data_de" name="data_de" value="{{ data_de }}">
+    </div>
+    <div class="campo">
+      <label for="data_ate">Até</label>
+      <input type="date" id="data_ate" name="data_ate" value="{{ data_ate }}">
+    </div>
+    <button type="submit" class="btn">Consultar</button>
+  </form>
+</div>
+
+<div class="bloco">
+  <div class="resumo">
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Saldo inicial</div>
+      <div class="resumo-valor">{{ extrato.saldo_inicial|br }}</div>
+    </div>
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Entradas</div>
+      <div class="resumo-valor entrada">+{{ extrato.entradas|br }}</div>
+    </div>
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Saídas</div>
+      <div class="resumo-valor saida">−{{ extrato.saidas|br }}</div>
+    </div>
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Saldo final</div>
+      <div class="resumo-valor">{{ extrato.saldo_final|br }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="bloco">
+  {% if extrato.movimentos %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:110px">Data</th>
+            <th style="width:170px">Tipo</th>
+            <th>Histórico</th>
+            <th style="width:150px">Origem</th>
+            <th style="width:120px">Quantidade</th>
+            <th style="width:120px">Saldo</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td colspan="5"><em>Saldo inicial</em></td>
+            <td class="col-dir">{{ extrato.saldo_inicial|br }}</td>
+          </tr>
+          {% for m in extrato.movimentos %}
+            <tr>
+              <td>{{ m.data_movimento.strftime('%d/%m/%Y') }}</td>
+              <td>{{ tipos.get(m.tipo, m.tipo) }}</td>
+              <td>{{ m.historico or '—' }}</td>
+              <td>
+                {% if m.tipo_origem == 'VENDA' %}
+                  <a href="{{ url_for('pdv.detalhe_venda', id_venda=m.id_origem) }}">Venda</a>
+                {% else %}
+                  {{ m.tipo_origem|capitalize }}
+                {% endif %}
+              </td>
+              <td class="col-dir {{ 'entrada' if m.quantidade >= 0 else 'saida' }}">
+                {{ '+' if m.quantidade >= 0 }}{{ m.quantidade|br }}
+              </td>
+              <td class="col-dir">{{ m.saldo|br }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="4">Saldo inicial {{ extrato.saldo_inicial|br }} + entradas {{ extrato.entradas|br }} − saídas {{ extrato.saidas|br }}</td>
+            <td></td>
+            <td class="col-dir">{{ extrato.saldo_final|br }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  {% else %}
+    <div class="vazio">Nenhum movimento no período. Saldo inicial e final: {{ extrato.saldo_inicial|br }}.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

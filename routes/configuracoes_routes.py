@@ -613,3 +613,39 @@ def config_areas_filiais_excluir():
         conn.close()
 
     return redirect(url_for("configuracoes.config_areas_filiais"))
+
+# =========================================
+# CONFIGURAÇÃO DE PDV
+# =========================================
+# Trava de proteção do módulo: empresa não marcada aqui não enxerga o PDV em
+# lugar nenhum — nem no menu, nem pela URL, nem para o superusuário.
+
+@configuracoes_bp.route("/pdv", methods=["GET", "POST"])
+def config_pdv():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    from security_helpers import usuario_tem_permissao
+    from services.pdv_service import empresa_opera_pdv, definir_opera_pdv
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+    if tipo_global != "superusuario":
+        if not usuario_tem_permissao(session["id_usuario"], cod_empresa,
+                                     "CONFIGURACOES", "CONFIGURACAO_PDV"):
+            flash("Você não tem permissão para configurar o PDV.", "error")
+            return redirect(url_for("configuracoes.menu_configuracoes"))
+
+    if request.method == "POST":
+        definir_opera_pdv(cod_empresa, request.form.get("opera_pdv") == "on")
+        flash("Configuração de PDV salva.", "sucesso")
+        return redirect(url_for("configuracoes.config_pdv"))
+
+    return render_template(
+        "config_pdv.html",
+        nome_empresa=session.get("nome_empresa", ""),
+        empresa_ativa=cod_empresa,
+        opera_pdv=empresa_opera_pdv(cod_empresa),
+        url_voltar=url_for("configuracoes.menu_configuracoes"),
+        texto_voltar="← Voltar",
+    )

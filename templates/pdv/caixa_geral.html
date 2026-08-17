@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+{#
+  Caixa Geral: uma linha por conta financeira e o total da empresa.
+  As transferências internas são destacadas à parte — numa transferência, o
+  que entrou numa conta saiu de outra, então elas não são receita nem despesa
+  para a empresa como um todo.
+#}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .filtros { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  input { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+  .btn { padding:9px 18px; border-radius:8px; border:1px solid #1a73e8; background:#1a73e8;
+         color:#fff; font-weight:700; cursor:pointer; }
+  .tabela-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:9px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.entrada { color:#16a34a; font-weight:700; }
+  td.saida { color:#c0392b; font-weight:700; }
+  td.saldo { font-weight:800; }
+  td.saldo.negativo { color:#c0392b; }
+  tfoot td { font-weight:800; background:#eef4fb; font-size:15px; }
+  a.link { color:#1a73e8; font-weight:700; text-decoration:none; }
+  a.link:hover { text-decoration:underline; }
+  .rodape-nota { font-size:13px; color:#666; margin-top:12px; }
+  .vazio { color:#777; }
+</style>
+
+<div class="pagina-titulo">🏦 Caixa Geral</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <form method="get" class="filtros">
+    <div class="campo"><label for="data_de">De</label>
+      <input type="date" id="data_de" name="data_de" value="{{ data_de }}"></div>
+    <div class="campo"><label for="data_ate">Até</label>
+      <input type="date" id="data_ate" name="data_ate" value="{{ data_ate }}"></div>
+    <button type="submit" class="btn">Consultar</button>
+  </form>
+</div>
+
+<div class="bloco">
+  {% if dados.contas %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Conta Financeira</th>
+            <th style="width:90px">Tipo</th>
+            <th style="width:150px">Saldo Inicial</th>
+            <th style="width:150px">Entradas</th>
+            <th style="width:150px">Saídas</th>
+            <th style="width:150px">Saldo Final</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in dados.contas %}
+            <tr>
+              <td>
+                <a class="link" href="{{ url_for('pdv.extrato_conta_pdv', id_conta=c.id_pdv_conta_financeira, data_de=data_de, data_ate=data_ate) }}">
+                  {{ c.nome }}
+                </a>
+              </td>
+              <td>{{ c.tipo|capitalize }}</td>
+              <td class="col-dir">{{ c.saldo_inicial|br }}</td>
+              <td class="col-dir entrada">{{ c.entradas|br }}</td>
+              <td class="col-dir saida">{{ c.saidas|br }}</td>
+              <td class="col-dir saldo {{ 'negativo' if c.saldo_final < 0 }}">{{ c.saldo_final|br }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="2">Total Geral</td>
+            <td class="col-dir">{{ dados.total.saldo_inicial|br }}</td>
+            <td class="col-dir">{{ dados.total.entradas|br }}</td>
+            <td class="col-dir">{{ dados.total.saidas|br }}</td>
+            <td class="col-dir">{{ dados.total.saldo_final|br }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    {% if dados.total.entradas_transferencia or dados.total.saidas_transferencia %}
+      <div class="rodape-nota">
+        Dos totais acima, <strong>R$ {{ dados.total.entradas_transferencia|br }}</strong> em entradas e
+        <strong>R$ {{ dados.total.saidas_transferencia|br }}</strong> em saídas são
+        <strong>transferências entre contas próprias</strong> — mudaram o saldo de cada conta, mas
+        não são receita nem despesa da empresa.
+      </div>
+    {% endif %}
+  {% else %}
+    <div class="vazio">Nenhuma conta financeira cadastrada.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

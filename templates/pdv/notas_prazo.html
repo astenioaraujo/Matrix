@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+{#
+  Recebimento e baixa de notas a prazo, e conversão em títulos.
+
+  Baixar → entrou dinheiro → gera lançamento no fluxo de caixa.
+  Converter em títulos → NÃO gera lançamento: só reorganiza a obrigação.
+#}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .filtros { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  input, select { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+  .btn { padding:9px 18px; border-radius:8px; border:1px solid #1a73e8; background:#1a73e8;
+         color:#fff; font-weight:700; cursor:pointer; }
+  .btn-mini { padding:5px 10px; border-radius:6px; border:none; color:#fff;
+              font-weight:700; font-size:13px; cursor:pointer; }
+  .btn-mini.baixar { background:#16a34a; }
+  .btn-mini.converter { background:#7c3aed; }
+  .tabela-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.col-centro { text-align:center; white-space:nowrap; }
+  tr.fechada td { color:#999; }
+  .resumo-valor { font-size:24px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .resumo-rotulo { font-size:12px; font-weight:700; color:#666; }
+  .vazio { color:#777; padding:12px 0; }
+  a.link { color:#1a73e8; font-weight:700; text-decoration:none; }
+
+  .modal-fundo { position:fixed; inset:0; background:rgba(0,0,0,0.45); display:none;
+                 align-items:center; justify-content:center; z-index:50; }
+  .modal-fundo.aberto { display:flex; }
+  .modal { background:#fff; border-radius:12px; padding:24px; width:min(560px, 92vw);
+           max-height:90vh; overflow:auto; }
+  .modal h3 { margin:0 0 14px; font-size:20px; }
+  .modal-acoes { display:flex; gap:10px; justify-content:flex-end; margin-top:18px; }
+  .status-msg { font-size:13px; margin-top:10px; min-height:18px; color:#9f2f2f; font-weight:600; }
+</style>
+
+<div class="pagina-titulo">🧾 Notas a Prazo</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <form method="get" class="filtros">
+    <div class="campo">
+      <label for="situacao">Situação</label>
+      <select id="situacao" name="situacao" onchange="this.form.submit()">
+        <option value="ABERTA" {{ 'selected' if situacao == 'ABERTA' }}>Em aberto</option>
+        <option value="BAIXADA" {{ 'selected' if situacao == 'BAIXADA' }}>Baixadas</option>
+        <option value="CONVERTIDA" {{ 'selected' if situacao == 'CONVERTIDA' }}>Convertidas em títulos</option>
+        <option value="TODAS" {{ 'selected' if situacao == 'TODAS' }}>Todas</option>
+      </select>
+    </div>
+    <button type="submit" class="btn">Consultar</button>
+    <div style="margin-left:auto">
+      <div class="resumo-rotulo">Total em aberto</div>
+      <div class="resumo-valor">R$ {{ total_aberto|br }}</div>
+    </div>
+  </form>
+</div>
+
+<div class="bloco">
+  {% if notas %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:110px">Emissão</th>
+            <th>Cliente</th>
+            <th style="width:100px">Venda</th>
+            <th>Vendedor</th>
+            <th style="width:130px">Valor</th>
+            <th style="width:130px">Em aberto</th>
+            <th style="width:120px">Situação</th>
+            <th style="width:190px">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for n in notas %}
+            {% set saldo = (n.valor or 0) - (n.valor_baixado or 0) %}
+            <tr class="{{ 'fechada' if n.situacao != 'ABERTA' }}">
+              <td>{{ n.data_emissao.strftime('%d/%m/%Y') }}</td>
+              <td>{{ n.nome_cliente or '—' }}</td>
+              <td>
+                {% if n.id_pdv_venda %}
+                  <a class="link" href="{{ url_for('pdv.detalhe_venda', id_venda=n.id_pdv_venda) }}">
+                    nº {{ n.numero_venda }}
+                  </a>
+                {% else %}—{% endif %}
+              </td>
+              <td>{{ n.nome_vendedor or '—' }}</td>
+              <td class="col-dir">{{ n.valor|br }}</td>
+              <td class="col-dir">{{ saldo|br }}</td>
+              <td>{{ n.situacao|capitalize }}</td>
+              <td class="col-centro">
+                {% if n.situacao == 'ABERTA' %}
+                  <button type="button" class="btn-mini baixar"
+                          onclick="abrirBaixa({{ n.id_pdv_nota_prazo }}, {{ saldo }}, '{{ (n.nome_cliente or '')|replace("'", "") }}')">
+                    Receber
+                  </button>
+                  <button type="button" class="btn-mini converter"
+                          onclick="abrirConversao({{ n.id_pdv_nota_prazo }}, {{ saldo }})">
+                    Em títulos
+                  </button>
+                {% else %}—{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="vazio">Nenhuma nota nesta situação.</div>
+  {% endif %}
+</div>
+
+<!-- BAIXA -->
+<div class="modal-fundo" id="modalBaixa">
+  <div class="modal">
+    <h3>Receber nota a prazo</h3>
+    <div id="baixaCliente" style="margin-bottom:14px; color:#555"></div>
+    <div class="campo" style="margin-bottom:12px">
+      <label for="baixaValor">Valor recebido</label>
+      <input type="number" step="0.01" id="baixaValor">
+    </div>
+    <div class="campo" style="margin-bottom:12px">
+      <label for="baixaConta">Entrou em qual conta</label>
+      <select id="baixaConta">
+        {% for c in contas %}<option value="{{ c.id_pdv_conta_financeira }}">{{ c.nome }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="baixaData">Data</label>
+      <input type="date" id="baixaData" value="{{ hoje }}">
+    </div>
+    <div style="font-size:12px; color:#666; margin-top:10px">
+      O recebimento gera um lançamento no fluxo de caixa. A venda original não muda: nela a
+      forma continua sendo "Nota a Prazo".
+    </div>
+    <div class="status-msg" id="statusBaixa"></div>
+    <div class="modal-acoes">
+      <button type="button" class="btn" style="background:#888; border-color:#888" onclick="fechar('modalBaixa')">Cancelar</button>
+      <button type="button" class="btn" style="background:#16a34a; border-color:#16a34a" id="btnConfirmarBaixa">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONVERSÃO -->
+<div class="modal-fundo" id="modalConversao">
+  <div class="modal">
+    <h3>Transformar em títulos a receber</h3>
+    <div style="margin-bottom:12px; color:#555">
+      Saldo da nota: <strong id="conversaoSaldo"></strong>
+    </div>
+    <div class="filtros" style="margin-bottom:12px">
+      <div class="campo">
+        <label for="convQtd">Parcelas</label>
+        <input type="number" min="1" id="convQtd" value="3" style="width:100px">
+      </div>
+      <div class="campo">
+        <label for="convPrimeiro">1º vencimento</label>
+        <input type="date" id="convPrimeiro" value="{{ hoje }}">
+      </div>
+      <div class="campo">
+        <label for="convIntervalo">Intervalo (dias)</label>
+        <input type="number" min="1" id="convIntervalo" value="30" style="width:110px">
+      </div>
+      <button type="button" class="btn" onclick="gerarParcelas()">Gerar</button>
+    </div>
+    <div class="tabela-wrap">
+      <table>
+        <thead><tr><th style="width:80px">Título</th><th>Valor</th><th>Vencimento</th></tr></thead>
+        <tbody id="corpoParcelas"></tbody>
+      </table>
+    </div>
+    <div style="font-size:12px; color:#666; margin-top:10px">
+      A conversão <strong>não</strong> movimenta dinheiro — nenhum lançamento é gerado. A soma dos
+      títulos tem que fechar com o saldo da nota.
+    </div>
+    <div class="status-msg" id="statusConversao"></div>
+    <div class="modal-acoes">
+      <button type="button" class="btn" style="background:#888; border-color:#888" onclick="fechar('modalConversao')">Cancelar</button>
+      <button type="button" class="btn" style="background:#7c3aed; border-color:#7c3aed" id="btnConfirmarConversao">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let notaAtual = null;
+  let saldoAtual = 0;
+
+  function fechar(id) { document.getElementById(id).classList.remove("aberto"); }
+
+  function paraNumero(texto) {
+    if (!texto) return 0;
+    const n = parseFloat(String(texto).trim().replace(",", "."));
+    return isNaN(n) ? 0 : n;
+  }
+
+  function abrirBaixa(id, saldo, cliente) {
+    notaAtual = id; saldoAtual = saldo;
+    document.getElementById("baixaValor").value = saldo.toFixed(2);
+    document.getElementById("baixaCliente").textContent =
+      `${cliente || "Cliente"} — saldo em aberto R$ ${saldo.toFixed(2)}`;
+    document.getElementById("statusBaixa").textContent = "";
+    document.getElementById("modalBaixa").classList.add("aberto");
+  }
+
+  function abrirConversao(id, saldo) {
+    notaAtual = id; saldoAtual = saldo;
+    document.getElementById("conversaoSaldo").textContent = `R$ ${saldo.toFixed(2)}`;
+    document.getElementById("corpoParcelas").innerHTML = "";
+    document.getElementById("statusConversao").textContent = "";
+    document.getElementById("modalConversao").classList.add("aberto");
+    gerarParcelas();
+  }
+
+  // divide em centavos e joga a sobra na última, para a soma fechar com o saldo
+  function gerarParcelas() {
+    const qtd = Math.max(parseInt(document.getElementById("convQtd").value || 1), 1);
+    const intervalo = Math.max(parseInt(document.getElementById("convIntervalo").value || 30), 1);
+    const primeiro = document.getElementById("convPrimeiro").value;
+    if (!primeiro) return;
+
+    const centavos = Math.round(saldoAtual * 100);
+    const base = Math.floor(centavos / qtd);
+    const corpo = document.getElementById("corpoParcelas");
+    corpo.innerHTML = "";
+
+    for (let i = 1; i <= qtd; i++) {
+      const valor = (i < qtd ? base : centavos - base * (qtd - 1)) / 100;
+      const data = new Date(primeiro + "T12:00:00");
+      data.setDate(data.getDate() + intervalo * (i - 1));
+      const iso = data.toISOString().slice(0, 10);
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td style="text-align:center">${i}</td>
+        <td><input type="number" step="0.01" class="parcela-valor" value="${valor.toFixed(2)}"></td>
+        <td><input type="date" class="parcela-venc" value="${iso}"></td>
+      `;
+      corpo.appendChild(tr);
+    }
+  }
+
+  async function enviar(url, payload, idStatus) {
+    const el = document.getElementById(idStatus);
+    try {
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const contentType = resp.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+      }
+      const data = await resp.json();
+      if (data.ok) { location.reload(); return; }
+      el.textContent = data.erro || "Erro.";
+    } catch (e) {
+      el.textContent = e.message || "Erro.";
+    }
+  }
+
+  document.getElementById("btnConfirmarBaixa").addEventListener("click", () => {
+    enviar("/pdv/api/financeiro/notas-prazo/baixar", {
+      id_pdv_nota_prazo: notaAtual,
+      id_pdv_conta_financeira: Number(document.getElementById("baixaConta").value),
+      valor: paraNumero(document.getElementById("baixaValor").value),
+      data_baixa: document.getElementById("baixaData").value,
+    }, "statusBaixa");
+  });
+
+  document.getElementById("btnConfirmarConversao").addEventListener("click", () => {
+    const parcelas = [];
+    document.querySelectorAll("#corpoParcelas tr").forEach(tr => {
+      parcelas.push({
+        valor: paraNumero(tr.querySelector(".parcela-valor").value),
+        data_vencimento: tr.querySelector(".parcela-venc").value,
+      });
+    });
+    enviar("/pdv/api/financeiro/notas-prazo/converter", {
+      id_pdv_nota_prazo: notaAtual, parcelas: parcelas,
+    }, "statusConversao");
+  });
+</script>
+
+{% endblock %}

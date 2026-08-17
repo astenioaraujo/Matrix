@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .filtros { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  input, select { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+  .btn { padding:9px 18px; border-radius:8px; border:1px solid #1a73e8; background:#1a73e8;
+         color:#fff; font-weight:700; cursor:pointer; }
+  .btn-mini { padding:5px 12px; border-radius:6px; border:none; background:#16a34a;
+              color:#fff; font-weight:700; font-size:13px; cursor:pointer; }
+  .tabela-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.col-centro { text-align:center; white-space:nowrap; }
+  tr.vencido td { background:#fdecea; }
+  tr.vencido td.venc { color:#c0392b; font-weight:800; }
+  tr.baixado td { color:#888; }
+  .resumo { display:flex; flex-wrap:wrap; gap:32px; }
+  .resumo-item { display:flex; flex-direction:column; }
+  .resumo-rotulo { font-size:12px; font-weight:700; color:#666; }
+  .resumo-valor { font-size:24px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .resumo-valor.alerta { color:#c0392b; }
+  .vazio { color:#777; padding:12px 0; }
+  a.link { color:#1a73e8; font-weight:700; text-decoration:none; }
+  .modal-fundo { position:fixed; inset:0; background:rgba(0,0,0,0.45); display:none;
+                 align-items:center; justify-content:center; z-index:50; }
+  .modal-fundo.aberto { display:flex; }
+  .modal { background:#fff; border-radius:12px; padding:24px; width:min(520px, 92vw); }
+  .modal h3 { margin:0 0 14px; font-size:20px; }
+  .modal-acoes { display:flex; gap:10px; justify-content:flex-end; margin-top:18px; }
+  .status-msg { font-size:13px; margin-top:10px; min-height:18px; color:#9f2f2f; font-weight:600; }
+  .nota-rodape { font-size:13px; color:#666; margin-top:12px; }
+</style>
+
+<div class="pagina-titulo">📑 Títulos a Receber</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <form method="get" class="filtros">
+    <div class="campo">
+      <label for="situacao">Situação</label>
+      <select id="situacao" name="situacao" onchange="this.form.submit()">
+        <option value="ABERTO" {{ 'selected' if situacao == 'ABERTO' }}>Em aberto</option>
+        <option value="BAIXADO" {{ 'selected' if situacao == 'BAIXADO' }}>Baixados</option>
+        <option value="TODOS" {{ 'selected' if situacao == 'TODOS' }}>Todos</option>
+      </select>
+    </div>
+    <button type="submit" class="btn">Consultar</button>
+  </form>
+</div>
+
+<div class="bloco">
+  <div class="resumo">
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Total em aberto</div>
+      <div class="resumo-valor">R$ {{ total_aberto|br }}</div>
+    </div>
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Títulos vencidos</div>
+      <div class="resumo-valor {{ 'alerta' if vencidos }}">{{ vencidos }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="bloco">
+  {% if titulos %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:120px">Vencimento</th>
+            <th>Cliente</th>
+            <th style="width:100px">Parcela</th>
+            <th style="width:100px">Origem</th>
+            <th style="width:130px">Valor</th>
+            <th style="width:130px">Em aberto</th>
+            <th style="width:110px">Situação</th>
+            <th style="width:110px">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in titulos %}
+            {% set saldo = (t.valor or 0) - (t.valor_baixado or 0) %}
+            <tr class="{{ 'baixado' if t.situacao == 'BAIXADO' }} {{ 'vencido' if t.situacao == 'ABERTO' and t.data_vencimento < hoje }}">
+              <td class="venc">{{ t.data_vencimento.strftime('%d/%m/%Y') }}</td>
+              <td>{{ t.nome_cliente or '—' }}</td>
+              <td class="col-centro">{{ t.numero_parcela }}/{{ t.total_parcelas }}</td>
+              <td>
+                {% if t.id_pdv_venda %}
+                  <a class="link" href="{{ url_for('pdv.detalhe_venda', id_venda=t.id_pdv_venda) }}">Venda</a>
+                {% else %}—{% endif %}
+              </td>
+              <td class="col-dir">{{ t.valor|br }}</td>
+              <td class="col-dir">{{ saldo|br }}</td>
+              <td>{{ t.situacao|capitalize }}</td>
+              <td class="col-centro">
+                {% if t.situacao == 'ABERTO' %}
+                  <button type="button" class="btn-mini"
+                          onclick="abrirBaixa({{ t.id_pdv_titulo }}, {{ saldo }}, '{{ (t.nome_cliente or '')|replace("'", "") }}')">
+                    Receber
+                  </button>
+                {% else %}—{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="vazio">Nenhum título nesta situação.</div>
+  {% endif %}
+  <div class="nota-rodape">
+    Cada título nasceu de uma nota a prazo, que nasceu de uma venda — a rastreabilidade vai até o
+    vendedor. O recebimento gera lançamento no fluxo de caixa.
+  </div>
+</div>
+
+<div class="modal-fundo" id="modalBaixa">
+  <div class="modal">
+    <h3>Receber título</h3>
+    <div id="baixaCliente" style="margin-bottom:14px; color:#555"></div>
+    <div class="campo" style="margin-bottom:12px">
+      <label for="baixaValor">Valor recebido</label>
+      <input type="number" step="0.01" id="baixaValor">
+    </div>
+    <div class="campo" style="margin-bottom:12px">
+      <label for="baixaConta">Entrou em qual conta</label>
+      <select id="baixaConta">
+        {% for c in contas %}<option value="{{ c.id_pdv_conta_financeira }}">{{ c.nome }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="baixaData">Data</label>
+      <input type="date" id="baixaData" value="{{ hoje_iso }}">
+    </div>
+    <div class="status-msg" id="statusBaixa"></div>
+    <div class="modal-acoes">
+      <button type="button" class="btn" style="background:#888; border-color:#888"
+              onclick="document.getElementById('modalBaixa').classList.remove('aberto')">Cancelar</button>
+      <button type="button" class="btn" style="background:#16a34a; border-color:#16a34a" id="btnConfirmar">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let tituloAtual = null;
+
+  function paraNumero(texto) {
+    if (!texto) return 0;
+    const n = parseFloat(String(texto).trim().replace(",", "."));
+    return isNaN(n) ? 0 : n;
+  }
+
+  function abrirBaixa(id, saldo, cliente) {
+    tituloAtual = id;
+    document.getElementById("baixaValor").value = saldo.toFixed(2);
+    document.getElementById("baixaCliente").textContent =
+      `${cliente || "Cliente"} — saldo em aberto R$ ${saldo.toFixed(2)}`;
+    document.getElementById("statusBaixa").textContent = "";
+    document.getElementById("modalBaixa").classList.add("aberto");
+  }
+
+  document.getElementById("btnConfirmar").addEventListener("click", async () => {
+    const el = document.getElementById("statusBaixa");
+    try {
+      const resp = await fetch("/pdv/api/financeiro/titulos-receber/baixar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id_pdv_titulo: tituloAtual,
+          id_pdv_conta_financeira: Number(document.getElementById("baixaConta").value),
+          valor: paraNumero(document.getElementById("baixaValor").value),
+          data_baixa: document.getElementById("baixaData").value,
+        }),
+      });
+      const contentType = resp.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+      }
+      const data = await resp.json();
+      if (data.ok) { location.reload(); return; }
+      el.textContent = data.erro || "Erro.";
+    } catch (e) {
+      el.textContent = e.message || "Erro.";
+    }
+  });
+</script>
+
+{% endblock %}

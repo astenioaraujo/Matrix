@@ -1,0 +1,334 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+{#
+  A venda não é reaberta. Esta tela cria um documento NOVO de devolução, que
+  aponta para a venda de origem. Cada item mostra quanto ainda pode voltar
+  (vendido − já devolvido), e devolver tudo equivale a cancelar a venda.
+#}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .bloco-titulo { font-size:17px; font-weight:800; margin-bottom:12px; color:#1a3a63; }
+
+  .cabecalho { display:flex; flex-wrap:wrap; gap:30px; }
+  .info-rotulo { font-size:12px; font-weight:700; color:#666; }
+  .info-valor { font-size:17px; font-weight:700; }
+
+  .linha-campos { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  input, select { padding:8px 10px; border-radius:6px; border:1px solid #bbb;
+                  font-size:14px; box-sizing:border-box; }
+
+  .tabela-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.col-centro { text-align:center; white-space:nowrap; }
+  tr.esgotado td { color:#999; background:#fafafa; }
+  td input.qtd { width:100px; text-align:right; }
+
+  .btn { padding:9px 18px; border-radius:8px; border:1px solid #1a73e8; background:#1a73e8;
+         color:#fff; font-weight:700; cursor:pointer; }
+  .btn.secundario { background:#fff; color:#1a73e8; }
+  .btn-confirmar { padding:14px 34px; font-size:18px; border-radius:10px; border:none;
+                   background:#c0392b; color:#fff; font-weight:800; cursor:pointer; }
+  .btn-confirmar:disabled { background:#9ca3af; cursor:not-allowed; }
+
+  .resumo { display:flex; flex-wrap:wrap; gap:26px; align-items:center; justify-content:space-between; }
+  .total-item { display:flex; flex-direction:column; }
+  .total-rotulo { font-size:12px; font-weight:700; color:#666; }
+  .total-valor { font-size:26px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .total-valor.destaque { color:#c0392b; }
+
+  .aviso { margin-top:12px; font-size:14px; min-height:20px; color:#9f2f2f; font-weight:600; }
+  .aviso.sucesso { color:#16a34a; }
+  .dica { font-size:12px; color:#666; margin-top:8px; }
+  .selo-cancelamento { display:none; background:#fdecea; border:1px solid #f0b3ad; color:#9f2f2f;
+                       border-radius:8px; padding:10px 14px; font-weight:700; margin-top:12px; }
+  .selo-cancelamento.visivel { display:block; }
+  .aviso-regra { background:#f4f6f9; border-left:4px solid #1a3a63; padding:12px 16px;
+                 font-size:13px; color:#444; border-radius:0 8px 8px 0; margin-bottom:16px; }
+  .ja-cancelada { background:#fdecea; border:1px solid #f0b3ad; border-radius:8px;
+                  padding:14px 16px; font-weight:700; color:#9f2f2f; }
+</style>
+
+<div class="pagina-titulo">↩️ Devolução — Venda nº {{ venda.numero_venda }}</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+{% if venda.situacao != 'CONCLUIDA' %}
+  <div class="ja-cancelada">
+    Esta venda já está {{ venda.situacao|lower }}. Não há o que devolver.
+  </div>
+{% else %}
+
+<div class="aviso-regra">
+  A venda <strong>não será alterada</strong>. Isto cria um documento novo de devolução, que aponta
+  para ela: os itens voltam ao estoque e o valor segue o destino escolhido. Devolver tudo equivale
+  a <strong>cancelar a venda</strong>.
+</div>
+
+<div class="bloco">
+  <div class="cabecalho">
+    <div>
+      <div class="info-rotulo">Data da venda</div>
+      <div class="info-valor">{{ venda.data_venda.strftime('%d/%m/%Y') }}</div>
+    </div>
+    <div>
+      <div class="info-rotulo">Cliente</div>
+      <div class="info-valor">{{ venda.nome_cliente or 'Consumidor' }}</div>
+    </div>
+    <div>
+      <div class="info-rotulo">Vendedor</div>
+      <div class="info-valor">{{ venda.nome_vendedor or '—' }}</div>
+    </div>
+    <div>
+      <div class="info-rotulo">Valor da venda</div>
+      <div class="info-valor">R$ {{ venda.valor_total|br }}</div>
+    </div>
+    <div>
+      <div class="info-rotulo">Como foi recebida</div>
+      <div class="info-valor">
+        {% for r in recebimentos %}
+          {{ rotulos_forma.get(r.forma, r.forma) }}{{ '' if loop.last else ' + ' }}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">O que está voltando</div>
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Produto</th>
+          <th style="width:70px">Un.</th>
+          <th style="width:100px">Vendido</th>
+          <th style="width:110px">Já devolvido</th>
+          <th style="width:110px">Disponível</th>
+          <th style="width:130px">Preço unit.</th>
+          <th style="width:130px">Devolver</th>
+          <th style="width:130px">Valor</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in itens %}
+          <tr class="{{ 'esgotado' if item.disponivel <= 0 }}"
+              data-item="{{ item.id_pdv_venda_item }}"
+              data-preco="{{ item.preco_efetivo }}"
+              data-disponivel="{{ item.disponivel }}">
+            <td>{{ item.descricao_produto }}</td>
+            <td>{{ item.unidade }}</td>
+            <td class="col-dir">{{ item.quantidade|br }}</td>
+            <td class="col-dir">{{ item.devolvido|br }}</td>
+            <td class="col-dir">{{ item.disponivel|br }}</td>
+            <td class="col-dir">{{ item.preco_efetivo|br }}</td>
+            <td class="col-centro">
+              {% if item.disponivel > 0 %}
+                <input type="number" step="any" min="0" max="{{ item.disponivel }}"
+                       class="qtd" value="0">
+              {% else %}—{% endif %}
+            </td>
+            <td class="col-dir valor-item">0,00</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div style="margin-top:12px">
+    <button type="button" class="btn secundario" id="btnTudo">Devolver tudo (cancelar a venda)</button>
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Destino do valor</div>
+  <div class="linha-campos">
+    <div class="campo">
+      <label for="selDestino">Para onde vai o valor devolvido</label>
+      <select id="selDestino" style="min-width:320px">
+        <option value="DINHEIRO">{{ destinos['DINHEIRO'] }}</option>
+        {% if tem_nota_aberta %}
+          <option value="ABATIMENTO_NOTA_PRAZO">{{ destinos['ABATIMENTO_NOTA_PRAZO'] }}</option>
+        {% endif %}
+        {% if tem_cartao %}
+          <option value="ESTORNO_CARTAO">{{ destinos['ESTORNO_CARTAO'] }}</option>
+        {% endif %}
+      </select>
+    </div>
+    <div class="campo" id="campoConta">
+      <label for="selConta">Sai de qual conta</label>
+      <select id="selConta" style="min-width:200px">
+        {% for c in contas %}<option value="{{ c.id_pdv_conta_financeira }}">{{ c.nome }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="inpData">Data</label>
+      <input type="date" id="inpData" value="{{ hoje }}">
+    </div>
+    <div class="campo" style="flex:1; min-width:220px">
+      <label for="inpMotivo">Motivo</label>
+      <input type="text" id="inpMotivo" placeholder="Ex.: peça com defeito, tamanho errado">
+    </div>
+  </div>
+  <div class="dica" id="dicaDestino"></div>
+</div>
+
+<div class="bloco">
+  <div class="resumo">
+    <div class="total-item">
+      <div class="total-rotulo">TOTAL A DEVOLVER</div>
+      <div class="total-valor destaque" id="totalDevolucao">0,00</div>
+    </div>
+    <button type="button" class="btn-confirmar" id="btnConfirmar">Confirmar Devolução</button>
+  </div>
+  <div class="selo-cancelamento" id="seloCancelamento">
+    Todos os itens disponíveis estão sendo devolvidos — a venda será marcada como
+    <strong>CANCELADA</strong>. Os valores e as formas de recebimento dela continuam registrados.
+  </div>
+  <div class="aviso" id="aviso"></div>
+</div>
+
+<script>
+  const LINHAS = Array.from(document.querySelectorAll("tbody tr[data-item]"));
+
+  const DICAS = {
+    DINHEIRO: "Gera uma saída no fluxo de caixa, na conta escolhida.",
+    ABATIMENTO_NOTA_PRAZO: "A dívida do cliente diminui. Não movimenta caixa — nenhum dinheiro trocou de mãos.",
+    ESTORNO_CARTAO: "O estorno é feito na maquineta e chega pelo acerto da operadora. As parcelas a receber ficam marcadas como estornadas; não passa pelo caixa da loja.",
+  };
+
+  function paraNumero(texto) {
+    if (texto === null || texto === undefined || texto === "") return 0;
+    if (typeof texto === "number") return texto;
+    const n = parseFloat(String(texto).trim().replace(",", "."));
+    return isNaN(n) ? 0 : n;
+  }
+
+  function formatarBR(valor) {
+    return valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function recalcular() {
+    let total = 0;
+    let devolveuTudo = true;
+    let temAlgo = false;
+
+    LINHAS.forEach(tr => {
+      const campo = tr.querySelector(".qtd");
+      const disponivel = paraNumero(tr.dataset.disponivel);
+      if (disponivel <= 0) return;
+
+      let quantidade = campo ? paraNumero(campo.value) : 0;
+      if (quantidade > disponivel) { quantidade = disponivel; campo.value = disponivel; }
+
+      const valor = Math.round(quantidade * paraNumero(tr.dataset.preco) * 100) / 100;
+      tr.querySelector(".valor-item").textContent = formatarBR(valor);
+      total += valor;
+
+      if (quantidade > 0) temAlgo = true;
+      if (Math.abs(quantidade - disponivel) > 0.0001) devolveuTudo = false;
+    });
+
+    total = Math.round(total * 100) / 100;
+    document.getElementById("totalDevolucao").textContent = formatarBR(total);
+    document.getElementById("seloCancelamento")
+      .classList.toggle("visivel", temAlgo && devolveuTudo);
+
+    return { total, temAlgo };
+  }
+
+  function ajustarDestino() {
+    const destino = document.getElementById("selDestino").value;
+    document.getElementById("campoConta").style.display =
+      destino === "DINHEIRO" ? "flex" : "none";
+    document.getElementById("dicaDestino").textContent = DICAS[destino] || "";
+  }
+
+  LINHAS.forEach(tr => {
+    const campo = tr.querySelector(".qtd");
+    if (campo) campo.addEventListener("input", recalcular);
+  });
+
+  document.getElementById("btnTudo").addEventListener("click", () => {
+    LINHAS.forEach(tr => {
+      const campo = tr.querySelector(".qtd");
+      if (campo) campo.value = tr.dataset.disponivel;
+    });
+    recalcular();
+  });
+
+  document.getElementById("selDestino").addEventListener("change", ajustarDestino);
+
+  document.getElementById("btnConfirmar").addEventListener("click", async () => {
+    const btn = document.getElementById("btnConfirmar");
+    const aviso = document.getElementById("aviso");
+    const { total, temAlgo } = recalcular();
+
+    if (!temAlgo) { aviso.textContent = "Informe o que está sendo devolvido."; return; }
+
+    const cancelando = document.getElementById("seloCancelamento").classList.contains("visivel");
+    const pergunta = cancelando
+      ? `Devolver TUDO e cancelar a venda nº {{ venda.numero_venda }} (R$ ${formatarBR(total)})?`
+      : `Confirmar a devolução de R$ ${formatarBR(total)}?`;
+    if (!confirm(pergunta)) return;
+
+    const itens = [];
+    LINHAS.forEach(tr => {
+      const campo = tr.querySelector(".qtd");
+      const quantidade = campo ? paraNumero(campo.value) : 0;
+      if (quantidade > 0) {
+        itens.push({ id_pdv_venda_item: Number(tr.dataset.item), quantidade: quantidade });
+      }
+    });
+
+    const destino = document.getElementById("selDestino").value;
+    btn.disabled = true;
+    aviso.classList.remove("sucesso");
+    aviso.textContent = "Registrando…";
+    try {
+      const resp = await fetch("/pdv/api/devolucoes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id_pdv_venda: {{ venda.id_pdv_venda }},
+          data_devolucao: document.getElementById("inpData").value,
+          destino_valor: destino,
+          id_pdv_conta_financeira: destino === "DINHEIRO"
+            ? Number(document.getElementById("selConta").value) : null,
+          motivo: document.getElementById("inpMotivo").value,
+          itens: itens,
+        }),
+      });
+      const contentType = resp.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+      }
+      const data = await resp.json();
+      if (data.ok) {
+        aviso.classList.add("sucesso");
+        aviso.textContent = `Devolução nº ${data.numero_devolucao} (${data.tipo.toLowerCase()}) registrada. Redirecionando…`;
+        setTimeout(() => { location.href = `/pdv/devolucoes/${data.id_pdv_devolucao}`; }, 900);
+      } else {
+        aviso.textContent = data.erro || "Erro ao registrar a devolução.";
+      }
+    } catch (e) {
+      aviso.textContent = e.message || "Erro ao registrar a devolução.";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  ajustarDestino();
+  recalcular();
+</script>
+
+{% endif %}
+
+{% endblock %}

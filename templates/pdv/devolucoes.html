@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .filtros { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  input { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+  .btn { padding:9px 18px; border-radius:8px; border:1px solid #1a73e8; background:#1a73e8;
+         color:#fff; font-weight:700; cursor:pointer; }
+  .tabela-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.col-centro { text-align:center; white-space:nowrap; }
+  .selo { display:inline-block; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:800; }
+  .selo.total { background:#fdecea; color:#9f2f2f; }
+  .selo.parcial { background:#fff7e6; color:#8a6100; }
+  .total-geral { margin-top:14px; font-size:20px; font-weight:800; text-align:right; }
+  .vazio { color:#777; padding:12px 0; }
+  a.link { color:#1a73e8; font-weight:700; text-decoration:none; }
+  a.link:hover { text-decoration:underline; }
+</style>
+
+<div class="pagina-titulo">↩️ Devoluções</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <form method="get" class="filtros">
+    <div class="campo"><label for="data_de">De</label>
+      <input type="date" id="data_de" name="data_de" value="{{ data_de }}"></div>
+    <div class="campo"><label for="data_ate">Até</label>
+      <input type="date" id="data_ate" name="data_ate" value="{{ data_ate }}"></div>
+    <button type="submit" class="btn">Consultar</button>
+  </form>
+  <div style="font-size:12px; color:#666; margin-top:10px">
+    Para devolver, abra a venda em <strong>Consultar Vendas</strong> e use o botão de devolução.
+  </div>
+</div>
+
+<div class="bloco">
+  {% if devolucoes %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:100px">Nº</th>
+            <th style="width:110px">Data</th>
+            <th style="width:100px">Venda</th>
+            <th>Cliente</th>
+            <th style="width:100px">Tipo</th>
+            <th style="width:110px">Itens</th>
+            <th>Destino do valor</th>
+            <th style="width:130px">Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in devolucoes %}
+            <tr>
+              <td>
+                <a class="link" href="{{ url_for('pdv.detalhe_devolucao', id_devolucao=d.id_pdv_devolucao) }}">
+                  {{ d.numero_devolucao }}
+                </a>
+              </td>
+              <td>{{ d.data_devolucao.strftime('%d/%m/%Y') }}</td>
+              <td>
+                <a class="link" href="{{ url_for('pdv.detalhe_venda', id_venda=d.id_pdv_venda) }}">
+                  nº {{ d.numero_venda }}
+                </a>
+              </td>
+              <td>{{ d.nome_cliente or 'Consumidor' }}</td>
+              <td class="col-centro">
+                <span class="selo {{ 'total' if d.tipo == 'TOTAL' else 'parcial' }}">
+                  {{ 'Cancelamento' if d.tipo == 'TOTAL' else 'Parcial' }}
+                </span>
+              </td>
+              <td class="col-centro">{{ d.itens }}</td>
+              <td>
+                {{ destinos.get(d.destino_valor, d.destino_valor) }}
+                {{ ' — ' ~ d.nome_conta if d.nome_conta }}
+              </td>
+              <td class="col-dir">{{ d.valor_total|br }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="total-geral">Total devolvido no período: R$ {{ total|br }}</div>
+  {% else %}
+    <div class="vazio">Nenhuma devolução no período.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 8px; }
+  .empresa { font-size: 20px; margin-bottom: 26px; }
+
+  .lista-cadastros { display: grid; gap: 12px; max-width: 760px; }
+
+  .cadastro-item {
+    display: block;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 12px;
+    padding: 16px 20px;
+    text-decoration: none;
+    color: #111;
+    transition: 0.15s ease;
+  }
+
+  .cadastro-item:hover { border-color: #1a73e8; transform: translateY(-2px); }
+  .cadastro-titulo { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+  .cadastro-desc { font-size: 14px; color: #555; }
+  .vazio { color: #777; }
+</style>
+
+<div class="pagina-titulo">📇 Cadastros do PDV</div>
+<div class="empresa">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="lista-cadastros">
+  {% for item in itens %}
+    <a class="cadastro-item" href="{{ url_for('pdv.cadastro', chave=item.chave) }}">
+      <div class="cadastro-titulo">{{ item.titulo }}</div>
+      <div class="cadastro-desc">{{ item.descricao }}</div>
+    </a>
+  {% else %}
+    <div class="vazio">Você não tem acesso a nenhum cadastro do PDV.</div>
+  {% endfor %}
+</div>
+
+{% endblock %}

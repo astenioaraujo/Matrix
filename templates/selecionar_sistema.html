@@ -97,6 +97,7 @@
   .btn-canivete { background: #475569; }
   .btn-projetos { background: #b45309; }
   .btn-mercado { background: #0369a1; }
+  .btn-pdv { background: #0f9d58; }
 
   @media (max-width: 700px) {
     .pagina-wrap {
@@ -146,6 +147,13 @@
     <div class="secao-titulo">Acesso aos módulos</div>
 
     <div class="grid-botoes">
+
+      {% if pode_pdv %}
+        <a class="btn-sistema btn-pdv" href="{{ url_for('pdv.menu_pdv') }}">
+          <div class="btn-icone">🛒</div>
+          <div>PDV Matrix</div>
+        </a>
+      {% endif %}
 
       {% if pode_operacoes %}
         <a class="btn-sistema btn-operacoes" href="{{ url_for('operacoes.menu_operacoes') }}">

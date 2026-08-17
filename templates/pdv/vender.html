@@ -1,0 +1,568 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 32px; font-weight: 800; margin-bottom: 4px; color: #111; }
+  .pagina-subtitulo { font-size: 18px; margin-bottom: 20px; color: #333; }
+
+  .bloco {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+
+  .bloco-titulo {
+    font-size: 17px;
+    font-weight: 800;
+    margin-bottom: 12px;
+    color: #1a3a63;
+  }
+
+  .linha-campos { display: flex; flex-wrap: wrap; gap: 14px; }
+  .campo { display: flex; flex-direction: column; gap: 4px; }
+  .campo label { font-size: 12px; font-weight: 700; color: #555; }
+
+  input, select {
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid #bbb;
+    box-sizing: border-box;
+    font-size: 14px;
+  }
+
+  .tabela-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+  th { background: #dbe8f4; white-space: nowrap; font-size: 13px; }
+  td input, td select { width: 100%; }
+  td.col-centro { text-align: center; white-space: nowrap; }
+  td.col-dir { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+  .btn {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn:hover { filter: brightness(0.93); }
+  .btn.secundario { background: #fff; color: #1a73e8; }
+  .btn.remover { background: #c0392b; border-color: #c0392b; padding: 4px 10px; font-size: 13px; }
+
+  .btn-concluir {
+    padding: 14px 34px;
+    font-size: 18px;
+    border-radius: 10px;
+    border: none;
+    background: #16a34a;
+    color: #fff;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .btn-concluir:disabled { background: #9ca3af; cursor: not-allowed; }
+
+  /* Formas de recebimento: uma embaixo da outra, valor sempre na mesma coluna */
+  .formas-lista { display: flex; flex-direction: column; gap: 8px; }
+
+  .forma-linha {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 12px;
+    border: 1px solid #e2e6ea;
+    border-radius: 8px;
+    background: #fafbfc;
+  }
+
+  .forma-linha.ativa { border-color: #16a34a; background: #f2fbf5; }
+
+  .forma-nome { width: 200px; font-weight: 700; font-size: 15px; flex-shrink: 0; }
+
+  .forma-valor input {
+    width: 150px;
+    text-align: right;
+    font-size: 17px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .forma-extra {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex: 1;
+    opacity: 0.45;
+    transition: opacity 0.15s ease;
+  }
+
+  .forma-linha.ativa .forma-extra { opacity: 1; }
+
+  .extra-rotulo { font-size: 12px; font-weight: 700; color: #666; }
+  .forma-extra select { min-width: 170px; }
+  .extra-nota { font-size: 13px; color: #666; }
+
+  @media (max-width: 700px) {
+    .forma-linha { flex-wrap: wrap; }
+    .forma-nome { width: 100%; }
+    .forma-valor input { width: 100%; }
+  }
+
+  .resumo {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 26px;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .totais { display: flex; flex-wrap: wrap; gap: 26px; }
+
+  .total-item { display: flex; flex-direction: column; }
+  .total-rotulo { font-size: 12px; font-weight: 700; color: #666; }
+  .total-valor { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .total-valor.ok { color: #16a34a; }
+  .total-valor.falta { color: #c0392b; }
+
+  .aviso {
+    margin-top: 12px;
+    font-size: 14px;
+    min-height: 20px;
+    color: #9f2f2f;
+    font-weight: 600;
+  }
+
+  .aviso.sucesso { color: #16a34a; }
+
+  .faltando-cadastro {
+    background: #fff7e6;
+    border: 1px solid #f0c674;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    font-size: 14px;
+  }
+</style>
+
+<div class="pagina-titulo">🧾 Realizar Venda</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+{% if not vendedores or not produtos or not contas %}
+  <div class="faltando-cadastro">
+    <strong>Antes de vender, complete os cadastros:</strong>
+    {% if not vendedores %} nenhum <em>vendedor</em> cadastrado;{% endif %}
+    {% if not produtos %} nenhum <em>produto</em> cadastrado;{% endif %}
+    {% if not contas %} nenhuma <em>conta financeira</em> cadastrada (é ela que recebe o dinheiro e o PIX);{% endif %}
+    <a href="{{ url_for('pdv.menu_cadastros') }}">ir para os Cadastros</a>.
+  </div>
+{% endif %}
+
+<div class="bloco">
+  <div class="bloco-titulo">Venda</div>
+  <div class="linha-campos">
+    <div class="campo">
+      <label for="selCliente">Cliente</label>
+      <select id="selCliente" style="min-width:260px">
+        <option value="">Consumidor não identificado</option>
+        {% for c in clientes %}
+          <option value="{{ c.id_pdv_cliente }}">{{ c.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="selVendedor">Vendedor</label>
+      <select id="selVendedor" style="min-width:220px">
+        <option value="">Selecione…</option>
+        {% for v in vendedores %}
+          <option value="{{ v.id_pdv_vendedor }}">{{ v.nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo" style="flex:1; min-width:240px">
+      <label for="inpObservacao">Observação</label>
+      <input type="text" id="inpObservacao" placeholder="Opcional">
+    </div>
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Itens</div>
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:34%">Produto</th>
+          <th style="width:110px">Qtde</th>
+          <th style="width:130px">Preço Unit.</th>
+          <th style="width:130px">Desconto</th>
+          <th style="width:130px">Total</th>
+          <th style="width:70px"></th>
+        </tr>
+      </thead>
+      <tbody id="corpoItens"></tbody>
+    </table>
+  </div>
+  <div style="margin-top:12px">
+    <button type="button" class="btn secundario" id="btnNovoItem">+ Item</button>
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Formas de Recebimento</div>
+
+  {#
+    As seis formas ficam sempre à vista, uma embaixo da outra, e a vendedora só
+    preenche o valor das que usar. Uma venda pode combinar várias; a soma tem
+    que fechar com o total. Cada forma pede a sua informação complementar ao
+    lado — conta que recebeu, operadora, parcelas — e ela só acende quando a
+    forma tem valor.
+  #}
+
+  <div class="formas-lista">
+    {% for codigo, rotulo in formas %}
+      <div class="forma-linha" data-forma="{{ codigo }}">
+        <div class="forma-nome">{{ rotulo }}</div>
+
+        <div class="forma-valor">
+          <input type="number" step="0.01" class="rec-valor" value="" placeholder="0,00">
+        </div>
+
+        <div class="forma-extra">
+          {% if codigo == 'DINHEIRO' %}
+            {# dinheiro é dinheiro: cai na gaveta, ninguém escolhe conta #}
+            <span class="extra-nota">
+              Entra no {{ nome_caixa_padrao or 'caixa da loja' }}.
+            </span>
+
+          {% elif codigo == 'PIX' %}
+            <label class="extra-rotulo">Conta</label>
+            <select class="rec-conta">
+              {% for c in contas %}
+                <option value="{{ c.id_pdv_conta_financeira }}">{{ c.nome }}</option>
+              {% endfor %}
+            </select>
+
+          {% elif codigo in ('DEBITO', 'CREDITO') %}
+            <label class="extra-rotulo">Operadora</label>
+            <select class="rec-operadora">
+              {% for o in operadoras %}
+                {% if (codigo == 'DEBITO' and o.aceita_debito) or (codigo == 'CREDITO' and o.aceita_credito) %}
+                  <option value="{{ o.id_pdv_operadora }}">{{ o.nome }}</option>
+                {% endif %}
+              {% endfor %}
+            </select>
+
+            {% if codigo == 'CREDITO' %}
+              <label class="extra-rotulo">Parcelas</label>
+              <input type="number" min="1" class="rec-parcelas" value="1" style="width:80px">
+            {% endif %}
+
+            <label class="extra-rotulo">NSU</label>
+            <input type="text" class="rec-nsu" placeholder="Opcional" style="width:130px">
+
+          {% elif codigo == 'NOTA_PRAZO' %}
+            <span class="extra-nota">Gera uma pendência em Contas a Receber, no nome do cliente.</span>
+
+          {% else %}
+            <span class="extra-nota">Vai para a conciliação de maletas.</span>
+          {% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div style="margin-top:14px">
+    <button type="button" class="btn secundario" id="btnCompletar"
+            title="Joga o que falta para fechar a venda na última forma que você usou">
+      Completar restante
+    </button>
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="resumo">
+    <div class="totais">
+      <div class="total-item">
+        <div class="total-rotulo">Desconto da venda</div>
+        <input type="number" step="0.01" id="inpDescontoVenda" value="0" style="width:130px; font-size:18px">
+      </div>
+      <div class="total-item">
+        <div class="total-rotulo">TOTAL DA VENDA</div>
+        <div class="total-valor" id="totalVenda">0,00</div>
+      </div>
+      <div class="total-item">
+        <div class="total-rotulo">Recebido</div>
+        <div class="total-valor" id="totalRecebido">0,00</div>
+      </div>
+      <div class="total-item">
+        <div class="total-rotulo">Falta</div>
+        <div class="total-valor" id="totalFalta">0,00</div>
+      </div>
+    </div>
+    <button type="button" class="btn-concluir" id="btnConcluir">Concluir Venda</button>
+  </div>
+  <div class="aviso" id="aviso"></div>
+</div>
+
+<script>
+  // Produtos vêm para o JS porque a linha de item é criada na hora e precisa
+  // puxar preço e custo. Contas, operadoras e formas já saem renderizadas nos
+  // selects fixos do HTML.
+  const PRODUTOS = {{ produtos | tojson }};
+
+  function escapeHtml(texto) {
+    const div = document.createElement("div");
+    div.textContent = (texto === null || texto === undefined) ? "" : texto;
+    return div.innerHTML;
+  }
+
+  // Tolerante a texto meio digitado: "12," não pode virar NaN e ser gravado
+  // como zero sem ninguém perceber.
+  function paraNumero(texto) {
+    if (texto === null || texto === undefined || texto === "") return 0;
+    if (typeof texto === "number") return texto;
+    const limpo = String(texto).trim().replace(/\s/g, "").replace(",", ".");
+    const n = parseFloat(limpo);
+    return isNaN(n) ? 0 : n;
+  }
+
+  function formatarBR(valor) {
+    return valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function centavos(valor) {
+    return Math.round(paraNumero(valor) * 100);
+  }
+
+  function mostrarAviso(mensagem, sucesso) {
+    const el = document.getElementById("aviso");
+    el.textContent = mensagem || "";
+    el.classList.toggle("sucesso", !!sucesso);
+  }
+
+  // ─── ITENS ────────────────────────────────────────────────────────────────
+
+  function linhaItem() {
+    const tr = document.createElement("tr");
+    const opcoes = PRODUTOS.map(p =>
+      `<option value="${p.id_pdv_produto}">${escapeHtml((p.codigo ? p.codigo + " — " : "") + p.descricao)}</option>`
+    ).join("");
+
+    tr.innerHTML = `
+      <td><select class="item-produto"><option value="">Selecione…</option>${opcoes}</select></td>
+      <td><input type="number" step="any" class="item-qtd" value="1"></td>
+      <td><input type="number" step="0.01" class="item-preco" value="0"></td>
+      <td><input type="number" step="0.01" class="item-desconto" value="0"></td>
+      <td class="col-dir item-total">0,00</td>
+      <td class="col-centro"><button type="button" class="btn remover">×</button></td>
+    `;
+
+    tr.querySelector(".item-produto").addEventListener("change", (ev) => {
+      const produto = PRODUTOS.find(p => String(p.id_pdv_produto) === ev.target.value);
+      if (produto) tr.querySelector(".item-preco").value = produto.preco_venda;
+      recalcular();
+    });
+    tr.querySelectorAll("input").forEach(el => el.addEventListener("input", recalcular));
+    tr.querySelector(".remover").addEventListener("click", () => { tr.remove(); recalcular(); });
+    return tr;
+  }
+
+  function totalDoItem(tr) {
+    const qtd = paraNumero(tr.querySelector(".item-qtd").value);
+    const preco = paraNumero(tr.querySelector(".item-preco").value);
+    const desconto = paraNumero(tr.querySelector(".item-desconto").value);
+    return Math.round((qtd * preco - desconto) * 100) / 100;
+  }
+
+  // ─── RECEBIMENTOS ─────────────────────────────────────────────────────────
+  // As linhas são fixas (uma por forma, montadas no HTML). Só destacamos a
+  // forma que tem valor, para os campos complementares dela ganharem foco
+  // visual — o resto continua à vista, mas apagado.
+
+  const LINHAS_FORMA = Array.from(document.querySelectorAll(".forma-linha"));
+
+  // guarda a última forma em que a vendedora digitou, para o "Completar
+  // restante" saber onde jogar a diferença
+  let ultimaFormaUsada = LINHAS_FORMA[0] || null;
+
+  LINHAS_FORMA.forEach(linha => {
+    const campoValor = linha.querySelector(".rec-valor");
+    campoValor.addEventListener("input", () => {
+      ultimaFormaUsada = linha;
+      recalcular();
+    });
+    campoValor.addEventListener("focus", () => { ultimaFormaUsada = linha; });
+  });
+
+  // ─── TOTAIS ───────────────────────────────────────────────────────────────
+
+  function recalcular() {
+    let bruto = 0;
+    document.querySelectorAll("#corpoItens tr").forEach(tr => {
+      const total = totalDoItem(tr);
+      tr.querySelector(".item-total").textContent = formatarBR(total);
+      bruto += total;
+    });
+
+    const desconto = paraNumero(document.getElementById("inpDescontoVenda").value);
+    const total = Math.round((bruto - desconto) * 100) / 100;
+
+    let recebido = 0;
+    LINHAS_FORMA.forEach(linha => {
+      const valor = paraNumero(linha.querySelector(".rec-valor").value);
+      recebido += valor;
+      linha.classList.toggle("ativa", centavos(valor) > 0);
+    });
+    recebido = Math.round(recebido * 100) / 100;
+
+    const falta = Math.round((total - recebido) * 100) / 100;
+
+    document.getElementById("totalVenda").textContent = formatarBR(total);
+    document.getElementById("totalRecebido").textContent = formatarBR(recebido);
+
+    const elFalta = document.getElementById("totalFalta");
+    elFalta.textContent = formatarBR(falta);
+    elFalta.classList.toggle("ok", centavos(falta) === 0 && centavos(total) > 0);
+    elFalta.classList.toggle("falta", centavos(falta) !== 0);
+
+    return { total, recebido, falta };
+  }
+
+  // ─── CONCLUSÃO ────────────────────────────────────────────────────────────
+
+  function coletarItens() {
+    const itens = [];
+    document.querySelectorAll("#corpoItens tr").forEach(tr => {
+      const idProduto = tr.querySelector(".item-produto").value;
+      if (!idProduto) return;
+      const produto = PRODUTOS.find(p => String(p.id_pdv_produto) === idProduto);
+      itens.push({
+        id_pdv_produto: Number(idProduto),
+        descricao_produto: produto ? produto.descricao : "",
+        unidade: produto ? produto.unidade : "UN",
+        quantidade: paraNumero(tr.querySelector(".item-qtd").value),
+        preco_unitario: paraNumero(tr.querySelector(".item-preco").value),
+        valor_desconto: paraNumero(tr.querySelector(".item-desconto").value),
+        custo_unitario: produto ? produto.custo_atual : 0,
+      });
+    });
+    return itens;
+  }
+
+  // Só as formas com valor entram na venda: as demais nem viram registro.
+  function coletarRecebimentos() {
+    const recebimentos = [];
+    LINHAS_FORMA.forEach(linha => {
+      const valor = paraNumero(linha.querySelector(".rec-valor").value);
+      if (centavos(valor) <= 0) return;
+      const conta = linha.querySelector(".rec-conta");
+      const operadora = linha.querySelector(".rec-operadora");
+      const parcelas = linha.querySelector(".rec-parcelas");
+      const nsu = linha.querySelector(".rec-nsu");
+      recebimentos.push({
+        forma: linha.dataset.forma,
+        valor: valor,
+        id_pdv_conta_financeira: conta ? Number(conta.value) : null,
+        id_pdv_operadora: operadora ? Number(operadora.value) : null,
+        qtd_parcelas: parcelas ? Number(parcelas.value || 1) : 1,
+        nsu: nsu ? nsu.value : "",
+      });
+    });
+    return recebimentos;
+  }
+
+  async function concluir() {
+    const btn = document.getElementById("btnConcluir");
+    const { total, falta } = recalcular();
+
+    const itens = coletarItens();
+    if (!itens.length) { mostrarAviso("A venda não tem itens."); return; }
+    if (!document.getElementById("selVendedor").value) { mostrarAviso("Informe o vendedor."); return; }
+    if (centavos(total) <= 0) { mostrarAviso("O total da venda tem que ser maior que zero."); return; }
+    if (centavos(falta) !== 0) {
+      mostrarAviso(`As formas de recebimento não fecham com o total: faltam R$ ${formatarBR(falta)}.`);
+      return;
+    }
+
+    const payload = {
+      id_pdv_cliente: document.getElementById("selCliente").value || null,
+      id_pdv_vendedor: Number(document.getElementById("selVendedor").value),
+      valor_desconto: paraNumero(document.getElementById("inpDescontoVenda").value),
+      observacao: document.getElementById("inpObservacao").value,
+      itens: itens,
+      recebimentos: coletarRecebimentos(),
+    };
+
+    btn.disabled = true;
+    mostrarAviso("Concluindo…");
+    try {
+      const resp = await fetch("/pdv/api/vendas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const contentType = resp.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+      }
+      const data = await resp.json();
+      if (data.ok) {
+        mostrarAviso(`Venda nº ${data.numero_venda} concluída — R$ ${formatarBR(data.valor_total)}.`, true);
+        limparTela();
+      } else {
+        mostrarAviso(data.erro || "Erro ao concluir a venda.");
+      }
+    } catch (e) {
+      mostrarAviso(e.message || "Erro ao concluir a venda.");
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function limparTela() {
+    document.getElementById("selCliente").value = "";
+    document.getElementById("inpObservacao").value = "";
+    document.getElementById("inpDescontoVenda").value = 0;
+    document.getElementById("corpoItens").innerHTML = "";
+    document.getElementById("corpoItens").appendChild(linhaItem());
+    LINHAS_FORMA.forEach(linha => {
+      linha.querySelector(".rec-valor").value = "";
+      const parcelas = linha.querySelector(".rec-parcelas");
+      if (parcelas) parcelas.value = 1;
+      const nsu = linha.querySelector(".rec-nsu");
+      if (nsu) nsu.value = "";
+    });
+    recalcular();
+  }
+
+  // ─── LIGAÇÕES ─────────────────────────────────────────────────────────────
+
+  document.getElementById("btnNovoItem").addEventListener("click", () => {
+    document.getElementById("corpoItens").appendChild(linhaItem());
+  });
+
+  document.getElementById("btnCompletar").addEventListener("click", () => {
+    const { falta } = recalcular();
+    if (!ultimaFormaUsada || centavos(falta) === 0) return;
+    const campo = ultimaFormaUsada.querySelector(".rec-valor");
+    const atual = paraNumero(campo.value);
+    campo.value = (Math.round((atual + falta) * 100) / 100).toFixed(2);
+    recalcular();
+  });
+
+  document.getElementById("inpDescontoVenda").addEventListener("input", recalcular);
+  document.getElementById("btnConcluir").addEventListener("click", concluir);
+
+  document.getElementById("corpoItens").appendChild(linhaItem());
+  recalcular();
+</script>
+
+{% endblock %}

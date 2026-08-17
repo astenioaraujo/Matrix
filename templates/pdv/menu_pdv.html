@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 36px; font-weight: 800; margin-bottom: 10px; }
+  .empresa { font-size: 22px; margin-bottom: 30px; }
+
+  .menu-botoes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 260px);
+    gap: 16px;
+    margin-bottom: 50px;
+  }
+
+  .menu-card {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 68px;
+    padding: 12px 18px;
+    border-radius: 14px;
+    color: #fff;
+    text-decoration: none;
+    font-size: 16px;
+    font-weight: 800;
+    text-align: center;
+    line-height: 1.15;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.14);
+    transition: 0.18s ease;
+  }
+
+  .menu-card:hover { transform: translateY(-3px); filter: brightness(0.96); }
+
+  @media (max-width: 700px) {
+    .pagina-titulo { font-size: 30px; }
+    .empresa { font-size: 18px; }
+    .menu-botoes { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="pagina-titulo">🛒 PDV Matrix</div>
+<div class="empresa">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="menu-botoes">
+
+  {% if pode_vender %}
+    <a class="menu-card" style="background:#16a34a;" href="{{ url_for('pdv.vender') }}">
+      🧾 Realizar Venda
+    </a>
+  {% endif %}
+
+  {% if pode_consultar %}
+    <a class="menu-card" style="background:#1d4ed8;" href="{{ url_for('pdv.consultar_vendas') }}">
+      🔎 Consultar Vendas
+    </a>
+  {% endif %}
+
+  {% if pode_estoque %}
+    <a class="menu-card" style="background:#b45309;" href="{{ url_for('pdv.consultar_estoque') }}">
+      📦 Estoque
+    </a>
+  {% endif %}
+
+  {% if pode_entradas %}
+    <a class="menu-card" style="background:#0f766e;" href="{{ url_for('pdv.consultar_entradas') }}">
+      📥 Entrada de Mercadorias
+    </a>
+  {% endif %}
+
+  {% if pode_devolucoes %}
+    <a class="menu-card" style="background:#c0392b;" href="{{ url_for('pdv.consultar_devolucoes') }}">
+      ↩️ Devoluções
+    </a>
+  {% endif %}
+
+  {% if pode_caixa_central %}
+    <a class="menu-card" style="background:#7c3aed;" href="{{ url_for('pdv.caixa_central') }}">
+      🧮 Caixa Central de Vendas
+    </a>
+  {% endif %}
+
+  {% if pode_financeiro %}
+    <a class="menu-card" style="background:#2f66e0;" href="{{ url_for('pdv.menu_financeiro') }}">
+      💰 Financeiro
+    </a>
+  {% endif %}
+
+  {% if pode_cadastros %}
+    <a class="menu-card" style="background:#475569;" href="{{ url_for('pdv.menu_cadastros') }}">
+      📇 Cadastros
+    </a>
+  {% endif %}
+
+</div>
+
+{% endblock %}

@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 32px; font-weight: 800; margin-bottom: 4px; color: #111; }
+  .pagina-subtitulo { font-size: 18px; margin-bottom: 20px; color: #333; }
+
+  .bloco {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+
+  .filtros { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+  .campo { display: flex; flex-direction: column; gap: 4px; }
+  .campo label { font-size: 12px; font-weight: 700; color: #555; }
+  input { padding: 8px 10px; border-radius: 6px; border: 1px solid #bbb; font-size: 14px; }
+
+  .btn {
+    padding: 9px 18px;
+    border-radius: 8px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .tabela-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 14px; }
+  th { background: #dbe8f4; white-space: nowrap; }
+  td.col-dir { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.col-centro { text-align: center; white-space: nowrap; }
+  tr.cancelada td { color: #999; text-decoration: line-through; }
+
+  .total-geral {
+    margin-top: 14px;
+    font-size: 20px;
+    font-weight: 800;
+    text-align: right;
+  }
+
+  .vazio { color: #777; padding: 12px 0; }
+  a.link-venda { color: #1a73e8; font-weight: 700; text-decoration: none; }
+  a.link-venda:hover { text-decoration: underline; }
+</style>
+
+<div class="pagina-titulo">🔎 Consultar Vendas</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <form method="get" class="filtros">
+    <div class="campo">
+      <label for="data_de">De</label>
+      <input type="date" id="data_de" name="data_de" value="{{ data_de }}">
+    </div>
+    <div class="campo">
+      <label for="data_ate">Até</label>
+      <input type="date" id="data_ate" name="data_ate" value="{{ data_ate }}">
+    </div>
+    <button type="submit" class="btn">Consultar</button>
+  </form>
+</div>
+
+<div class="bloco">
+  {% if vendas %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:90px">Venda</th>
+            <th style="width:110px">Data</th>
+            <th style="width:90px">Hora</th>
+            <th>Cliente</th>
+            <th>Vendedor</th>
+            <th>Formas de Recebimento</th>
+            <th style="width:110px">Situação</th>
+            <th style="width:130px">Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in vendas %}
+            <tr class="{{ 'cancelada' if v.situacao != 'CONCLUIDA' }}">
+              <td>
+                <a class="link-venda" href="{{ url_for('pdv.detalhe_venda', id_venda=v.id_pdv_venda) }}">
+                  nº {{ v.numero_venda }}
+                </a>
+              </td>
+              <td>{{ v.data_venda.strftime('%d/%m/%Y') }}</td>
+              <td>{{ v.hora_venda.strftime('%H:%M') if v.hora_venda else '' }}</td>
+              <td>{{ v.nome_cliente or 'Consumidor' }}</td>
+              <td>{{ v.nome_vendedor or '' }}</td>
+              <td>
+                {% for forma in (v.formas or '').split(', ') if forma %}
+                  {{ rotulos_forma.get(forma, forma) }}{{ '' if loop.last else ' + ' }}
+                {% endfor %}
+              </td>
+              <td class="col-centro">{{ v.situacao|capitalize }}</td>
+              <td class="col-dir">{{ v.valor_total|br }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="total-geral">Total do período: R$ {{ total|br }}</div>
+  {% else %}
+    <div class="vazio">Nenhuma venda no período.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

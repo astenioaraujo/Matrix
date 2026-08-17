@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:30px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:17px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .bloco-titulo { font-size:16px; font-weight:800; margin-bottom:12px; color:#1a3a63; }
+  .cabecalho { display:flex; flex-wrap:wrap; gap:30px; }
+  .info-rotulo { font-size:12px; font-weight:700; color:#666; }
+  .info-valor { font-size:17px; font-weight:700; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .tabela-wrap { overflow-x:auto; }
+  tfoot td { font-weight:800; background:#f5f7fa; }
+  .vazio { color:#777; font-size:14px; }
+  .nota-rodape { font-size:13px; color:#666; margin-top:10px; }
+  .selo { display:inline-block; padding:3px 12px; border-radius:20px; font-size:13px; font-weight:800; }
+  .selo.total { background:#fdecea; color:#9f2f2f; }
+  .selo.parcial { background:#fff7e6; color:#8a6100; }
+  a.link { color:#1a73e8; font-weight:700; text-decoration:none; }
+</style>
+
+<div class="pagina-titulo">
+  Devolução nº {{ devolucao.numero_devolucao }}
+  <span class="selo {{ 'total' if devolucao.tipo == 'TOTAL' else 'parcial' }}">
+    {{ 'Cancelamento da venda' if devolucao.tipo == 'TOTAL' else 'Devolução parcial' }}
+  </span>
+</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <div class="cabecalho">
+    <div>
+      <div class="info-rotulo">Data</div>
+      <div class="info-valor">{{ devolucao.data_devolucao.strftime('%d/%m/%Y') }}</div>
+    </div>
+    <div>
+      <div class="info-rotulo">Venda de origem</div>
+      <div class="info-valor">
+        <a class="link" href="{{ url_for('pdv.detalhe_venda', id_venda=devolucao.id_pdv_venda) }}">
+          nº {{ devolucao.numero_venda }}
+        </a>
+        — {{ devolucao.data_venda.strftime('%d/%m/%Y') }} — R$ {{ devolucao.valor_venda|br }}
+      </div>
+    </div>
+    <div>
+      <div class="info-rotulo">Cliente</div>
+      <div class="info-valor">{{ devolucao.nome_cliente or 'Consumidor' }}</div>
+    </div>
+    <div>
+      <div class="info-rotulo">Valor devolvido</div>
+      <div class="info-valor">R$ {{ devolucao.valor_total|br }}</div>
+    </div>
+    <div>
+      <div class="info-rotulo">Destino do valor</div>
+      <div class="info-valor">
+        {{ destinos.get(devolucao.destino_valor, devolucao.destino_valor) }}
+        {{ ' — ' ~ devolucao.nome_conta if devolucao.nome_conta }}
+      </div>
+    </div>
+    <div>
+      <div class="info-rotulo">Registrado por</div>
+      <div class="info-valor">{{ devolucao.nome_usuario or '—' }}</div>
+    </div>
+  </div>
+  {% if devolucao.motivo %}
+    <div style="margin-top:14px"><span class="info-rotulo">Motivo:</span> {{ devolucao.motivo }}</div>
+  {% endif %}
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Itens devolvidos</div>
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Produto</th><th style="width:70px">Un.</th><th style="width:120px">Quantidade</th>
+          <th style="width:130px">Preço unit.</th><th style="width:130px">Valor</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in itens %}
+          <tr>
+            <td>{{ item.descricao_produto }}</td>
+            <td>{{ item.unidade }}</td>
+            <td class="col-dir">{{ item.quantidade|br }}</td>
+            <td class="col-dir">{{ item.preco_unitario|br }}</td>
+            <td class="col-dir">{{ item.valor_total|br }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr><td colspan="4">Total devolvido</td><td class="col-dir">{{ devolucao.valor_total|br }}</td></tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">O que esta devolução produziu</div>
+
+  <div style="margin-bottom:18px">
+    <div style="font-weight:700; margin-bottom:6px">Estoque (mercadoria de volta)</div>
+    {% if movimentos %}
+      <div class="tabela-wrap">
+        <table>
+          <thead>
+            <tr><th style="width:120px">Data</th><th>Produto</th>
+                <th style="width:130px">Quantidade</th><th style="width:130px">Custo Unit.</th></tr>
+          </thead>
+          <tbody>
+            {% for m in movimentos %}
+              <tr>
+                <td>{{ m.data_movimento.strftime('%d/%m/%Y') }}</td>
+                <td>{{ m.descricao }}</td>
+                <td class="col-dir">+{{ m.quantidade|br }}</td>
+                <td class="col-dir">{{ m.custo_unitario|br }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="vazio">Nenhum movimento de estoque (itens sem produto cadastrado).</div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div style="font-weight:700; margin-bottom:6px">Fluxo de Caixa</div>
+    {% if lancamentos %}
+      <div class="tabela-wrap">
+        <table>
+          <thead>
+            <tr><th style="width:120px">Data</th><th>Conta</th><th>Histórico</th><th style="width:130px">Valor</th></tr>
+          </thead>
+          <tbody>
+            {% for l in lancamentos %}
+              <tr>
+                <td>{{ l.data_lancamento.strftime('%d/%m/%Y') }}</td>
+                <td>{{ l.nome_conta }}</td>
+                <td>{{ l.historico }}</td>
+                <td class="col-dir">{{ l.valor|br }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="vazio">
+        Nenhum lançamento — {{ 'a dívida do cliente foi abatida, mas dinheiro nenhum trocou de mãos.'
+          if devolucao.destino_valor == 'ABATIMENTO_NOTA_PRAZO'
+          else 'o estorno é feito pela operadora do cartão e não passa pelo caixa da loja.' }}
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

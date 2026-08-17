@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+{#
+  Informações gerenciais dos cartões.
+
+  A quantidade de parcelas quase não afeta o caixa quando a empresa antecipa
+  os recebíveis — mas afeta muito a gestão. É exatamente por isso que o
+  detalhe das parcelas é preservado mesmo com antecipação: sem ele, nada
+  desta tela existiria.
+#}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .bloco-titulo { font-size:17px; font-weight:800; margin-bottom:12px; color:#1a3a63; }
+  .filtros { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  input { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+  .btn { padding:9px 18px; border-radius:8px; border:1px solid #1a73e8; background:#1a73e8;
+         color:#fff; font-weight:700; cursor:pointer; }
+  .resumo { display:flex; flex-wrap:wrap; gap:34px; }
+  .resumo-item { display:flex; flex-direction:column; }
+  .resumo-rotulo { font-size:12px; font-weight:700; color:#666; }
+  .resumo-valor { font-size:26px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .tabela-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.col-centro { text-align:center; white-space:nowrap; }
+  tfoot td { font-weight:800; background:#f5f7fa; }
+  .barra { background:#e9eef5; border-radius:4px; height:16px; position:relative; min-width:110px; }
+  .barra-preenchida { background:#2f66e0; height:100%; border-radius:4px; }
+  .vazio { color:#777; padding:12px 0; }
+  .nota { font-size:13px; color:#666; margin-top:12px; }
+</style>
+
+<div class="pagina-titulo">📊 Gerencial de Cartões</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <form method="get" class="filtros">
+    <div class="campo"><label for="data_de">De</label>
+      <input type="date" id="data_de" name="data_de" value="{{ data_de }}"></div>
+    <div class="campo"><label for="data_ate">Até</label>
+      <input type="date" id="data_ate" name="data_ate" value="{{ data_ate }}"></div>
+    <button type="submit" class="btn">Consultar</button>
+  </form>
+</div>
+
+<div class="bloco">
+  <div class="resumo">
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Total em cartão</div>
+      <div class="resumo-valor">R$ {{ total_valor|br }}</div>
+    </div>
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Operações</div>
+      <div class="resumo-valor">{{ total_operacoes }}</div>
+    </div>
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Ticket médio</div>
+      <div class="resumo-valor">R$ {{ ticket_medio_geral|br }}</div>
+    </div>
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Prazo médio de recebimento</div>
+      <div class="resumo-valor">{{ prazo_medio|round(1) }} dias</div>
+    </div>
+  </div>
+  <div class="nota">
+    O prazo médio é ponderado pelo valor de cada parcela: é o prazo que a empresa teria
+    <strong>caso não antecipasse</strong> os recebíveis. Comparado ao custo da antecipação, é ele
+    que diz se antecipar compensa.
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Distribuição por quantidade de parcelas</div>
+  {% if distribuicao %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:120px">Modalidade</th>
+            <th style="width:110px">Parcelas</th>
+            <th style="width:110px">Operações</th>
+            <th style="width:150px">Valor</th>
+            <th style="width:120px">% do total</th>
+            <th style="width:180px"></th>
+            <th style="width:150px">Ticket médio</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in distribuicao %}
+            <tr>
+              <td>{{ d.modalidade|capitalize }}</td>
+              <td class="col-centro">{{ d.qtd_parcelas }}x{{ ' (à vista)' if d.qtd_parcelas == 1 }}</td>
+              <td class="col-centro">{{ d.operacoes }}</td>
+              <td class="col-dir">{{ d.valor|br }}</td>
+              <td class="col-dir">{{ d.percentual|round(1) }}%</td>
+              <td>
+                <div class="barra">
+                  <div class="barra-preenchida" style="width: {{ d.percentual|round(1) }}%"></div>
+                </div>
+              </td>
+              <td class="col-dir">{{ d.ticket_medio|br }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="2">Total</td>
+            <td class="col-centro">{{ total_operacoes }}</td>
+            <td class="col-dir">{{ total_valor|br }}</td>
+            <td class="col-dir">100,0%</td>
+            <td></td>
+            <td class="col-dir">{{ ticket_medio_geral|br }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  {% else %}
+    <div class="vazio">Nenhuma venda em cartão no período.</div>
+  {% endif %}
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Por operadora</div>
+  {% if por_operadora %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr><th>Operadora</th><th style="width:120px">Operações</th><th style="width:160px">Valor</th></tr>
+        </thead>
+        <tbody>
+          {% for o in por_operadora %}
+            <tr>
+              <td>{{ o.nome or '— sem operadora —' }}</td>
+              <td class="col-centro">{{ o.operacoes }}</td>
+              <td class="col-dir">{{ o.valor|br }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="vazio">Nenhuma venda em cartão no período.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+{#
+  Lançamento manual e transferência. Só entra aqui o que efetivamente
+  movimentou dinheiro — título a receber ou a pagar não se lança aqui, se
+  baixa nas telas de Contas a Receber / a Pagar.
+#}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .bloco-titulo { font-size:17px; font-weight:800; margin-bottom:12px; color:#1a3a63; }
+  .linha-campos { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  input, select { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+  .btn { padding:10px 20px; border-radius:8px; border:none; background:#16a34a;
+         color:#fff; font-weight:800; cursor:pointer; font-size:15px; }
+  .btn:hover { filter:brightness(0.93); }
+  .btn:disabled { background:#9ca3af; cursor:not-allowed; }
+  .status-msg { font-size:14px; margin-top:12px; color:#1e6b34; min-height:20px; font-weight:600; }
+  .status-msg.erro { color:#9f2f2f; }
+  .dica { font-size:12px; color:#666; margin-top:8px; }
+  .faltando { background:#fff7e6; border:1px solid #f0c674; border-radius:8px;
+              padding:14px 16px; margin-bottom:16px; font-size:14px; }
+</style>
+
+<div class="pagina-titulo">✍️ Lançamentos e Transferências</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+{% if not contas %}
+  <div class="faltando">
+    Nenhuma conta financeira cadastrada.
+    <a href="{{ url_for('pdv.cadastro', chave='contas-financeiras') }}">Cadastrar agora</a>.
+  </div>
+{% endif %}
+
+<div class="bloco">
+  <div class="bloco-titulo">Lançamento manual</div>
+  <div class="linha-campos">
+    <div class="campo">
+      <label for="selConta">Conta</label>
+      <select id="selConta" style="min-width:220px">
+        {% for c in contas %}<option value="{{ c.id_pdv_conta_financeira }}">{{ c.nome }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="selSentido">Tipo</label>
+      <select id="selSentido">
+        <option value="ENTRADA">Entrada (+)</option>
+        <option value="SAIDA">Saída (−)</option>
+      </select>
+    </div>
+    <div class="campo">
+      <label for="inpValor">Valor</label>
+      <input type="number" step="0.01" id="inpValor" style="width:150px">
+    </div>
+    <div class="campo">
+      <label for="inpData">Data</label>
+      <input type="date" id="inpData" value="{{ hoje }}">
+    </div>
+    <div class="campo" style="flex:1; min-width:240px">
+      <label for="inpHistorico">Histórico</label>
+      <input type="text" id="inpHistorico" placeholder="O que foi esse dinheiro">
+    </div>
+    <button type="button" class="btn" id="btnLancar">Lançar</button>
+  </div>
+  <div class="dica">
+    Use para o que não passa por venda nem por título: aporte, tarifa bancária, despesa paga na hora.
+  </div>
+  <div class="status-msg" id="statusLancamento"></div>
+</div>
+
+{% if pode_transferir %}
+<div class="bloco">
+  <div class="bloco-titulo">Transferência entre contas</div>
+  <div class="linha-campos">
+    <div class="campo">
+      <label for="selOrigem">De</label>
+      <select id="selOrigem" style="min-width:200px">
+        {% for c in contas %}<option value="{{ c.id_pdv_conta_financeira }}">{{ c.nome }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="selDestino">Para</label>
+      <select id="selDestino" style="min-width:200px">
+        {% for c in contas %}<option value="{{ c.id_pdv_conta_financeira }}">{{ c.nome }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="inpValorTransf">Valor</label>
+      <input type="number" step="0.01" id="inpValorTransf" style="width:150px">
+    </div>
+    <div class="campo">
+      <label for="inpDataTransf">Data</label>
+      <input type="date" id="inpDataTransf" value="{{ hoje }}">
+    </div>
+    <div class="campo" style="flex:1; min-width:200px">
+      <label for="inpHistTransf">Histórico</label>
+      <input type="text" id="inpHistTransf" placeholder="Ex.: depósito do caixa no banco">
+    </div>
+    <button type="button" class="btn" style="background:#1d4ed8" id="btnTransferir">Transferir</button>
+  </div>
+  <div class="dica">
+    Gera dois lançamentos amarrados: sai de uma conta, entra na outra. Para a empresa não houve
+    entrada nem saída de dinheiro — só mudou de lugar.
+  </div>
+  <div class="status-msg" id="statusTransferencia"></div>
+</div>
+{% endif %}
+
+<script>
+  function paraNumero(texto) {
+    if (!texto) return 0;
+    const n = parseFloat(String(texto).trim().replace(",", "."));
+    return isNaN(n) ? 0 : n;
+  }
+
+  function mostrar(id, mensagem, erro) {
+    const el = document.getElementById(id);
+    el.textContent = mensagem;
+    el.classList.toggle("erro", !!erro);
+  }
+
+  async function enviar(url, payload, idStatus, sucesso) {
+    try {
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const contentType = resp.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+      }
+      const data = await resp.json();
+      if (data.ok) { mostrar(idStatus, sucesso, false); return true; }
+      mostrar(idStatus, data.erro || "Erro.", true);
+      return false;
+    } catch (e) {
+      mostrar(idStatus, e.message || "Erro.", true);
+      return false;
+    }
+  }
+
+  document.getElementById("btnLancar").addEventListener("click", async (ev) => {
+    const btn = ev.target;
+    const valor = paraNumero(document.getElementById("inpValor").value);
+    if (valor <= 0) { mostrar("statusLancamento", "Informe um valor maior que zero.", true); return; }
+    if (!document.getElementById("inpHistorico").value.trim()) {
+      mostrar("statusLancamento", "Informe o histórico.", true); return;
+    }
+    btn.disabled = true;
+    const ok = await enviar("/pdv/api/financeiro/lancamentos", {
+      id_pdv_conta_financeira: Number(document.getElementById("selConta").value),
+      sentido: document.getElementById("selSentido").value,
+      valor: valor,
+      data_lancamento: document.getElementById("inpData").value,
+      historico: document.getElementById("inpHistorico").value,
+    }, "statusLancamento", "Lançamento gravado.");
+    if (ok) {
+      document.getElementById("inpValor").value = "";
+      document.getElementById("inpHistorico").value = "";
+    }
+    btn.disabled = false;
+  });
+
+  const btnTransferir = document.getElementById("btnTransferir");
+  if (btnTransferir) {
+    btnTransferir.addEventListener("click", async () => {
+      const valor = paraNumero(document.getElementById("inpValorTransf").value);
+      if (valor <= 0) { mostrar("statusTransferencia", "Informe um valor maior que zero.", true); return; }
+      btnTransferir.disabled = true;
+      const ok = await enviar("/pdv/api/financeiro/transferencias", {
+        id_conta_origem: Number(document.getElementById("selOrigem").value),
+        id_conta_destino: Number(document.getElementById("selDestino").value),
+        valor: valor,
+        data_movimento: document.getElementById("inpDataTransf").value,
+        historico: document.getElementById("inpHistTransf").value,
+      }, "statusTransferencia", "Transferência realizada.");
+      if (ok) {
+        document.getElementById("inpValorTransf").value = "";
+        document.getElementById("inpHistTransf").value = "";
+      }
+      btnTransferir.disabled = false;
+    });
+  }
+</script>
+
+{% endblock %}

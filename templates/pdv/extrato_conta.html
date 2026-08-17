@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+{#
+  Extrato da conta, no mesmo formato do extrato que o banco fornece — é isso
+  que torna a conciliação possível: os dois têm a mesma estrutura.
+#}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .filtros { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  input, select { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+  .btn { padding:9px 18px; border-radius:8px; border:1px solid #1a73e8; background:#1a73e8;
+         color:#fff; font-weight:700; cursor:pointer; }
+  .btn.secundario { background:#fff; color:#1a73e8; }
+  .resumo { display:flex; flex-wrap:wrap; gap:32px; }
+  .resumo-item { display:flex; flex-direction:column; }
+  .resumo-rotulo { font-size:12px; font-weight:700; color:#666; }
+  .resumo-valor { font-size:24px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .resumo-valor.entrada { color:#16a34a; }
+  .resumo-valor.saida { color:#c0392b; }
+  .resumo-valor.negativo { color:#c0392b; }
+  .tabela-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.col-centro { text-align:center; white-space:nowrap; }
+  td.entrada { color:#16a34a; font-weight:700; }
+  td.saida { color:#c0392b; font-weight:700; }
+  tr.conciliado td { background:#f4faf6; }
+  tfoot td { font-weight:800; background:#f5f7fa; }
+  .vazio { color:#777; }
+  .status-msg { font-size:13px; margin-top:10px; color:#1e6b34; min-height:18px; }
+  .status-msg.erro { color:#9f2f2f; }
+  a.link { color:#1a73e8; font-weight:700; text-decoration:none; }
+</style>
+
+<div class="pagina-titulo">📄 Extrato — {{ conta.nome }}</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <form method="get" class="filtros" id="formFiltro">
+    <div class="campo">
+      <label for="selConta">Conta</label>
+      <select id="selConta" onchange="trocarConta(this.value)" style="min-width:240px">
+        {% for c in contas %}
+          <option value="{{ c.id_pdv_conta_financeira }}"
+                  {{ 'selected' if c.id_pdv_conta_financeira == conta.id_pdv_conta_financeira }}>
+            {{ c.nome }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo"><label for="data_de">De</label>
+      <input type="date" id="data_de" name="data_de" value="{{ data_de }}"></div>
+    <div class="campo"><label for="data_ate">Até</label>
+      <input type="date" id="data_ate" name="data_ate" value="{{ data_ate }}"></div>
+    <button type="submit" class="btn">Consultar</button>
+  </form>
+</div>
+
+<div class="bloco">
+  <div class="resumo">
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Saldo inicial</div>
+      <div class="resumo-valor">{{ extrato.saldo_inicial|br }}</div>
+    </div>
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Entradas</div>
+      <div class="resumo-valor entrada">+{{ extrato.entradas|br }}</div>
+    </div>
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Saídas</div>
+      <div class="resumo-valor saida">−{{ extrato.saidas|br }}</div>
+    </div>
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Saldo final</div>
+      <div class="resumo-valor {{ 'negativo' if extrato.saldo_final < 0 }}">{{ extrato.saldo_final|br }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="bloco">
+  {% if extrato.lancamentos %}
+    {% if pode_conciliar %}
+      <div style="margin-bottom:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center">
+        <button type="button" class="btn secundario" onclick="conciliar(true)">Marcar conciliados</button>
+        <button type="button" class="btn secundario" onclick="conciliar(false)">Desmarcar</button>
+        <span style="font-size:13px; color:#666">
+          Conferência contra o extrato do banco — não altera valor nenhum.
+        </span>
+      </div>
+    {% endif %}
+
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            {% if pode_conciliar %}<th style="width:40px"><input type="checkbox" id="marcarTodos"></th>{% endif %}
+            <th style="width:110px">Data</th>
+            <th>Histórico</th>
+            <th style="width:190px">Origem</th>
+            <th style="width:140px">Valor</th>
+            <th style="width:140px">Saldo</th>
+            <th style="width:90px">Concil.</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            {% if pode_conciliar %}<td></td>{% endif %}
+            <td colspan="4"><em>Saldo inicial</em></td>
+            <td class="col-dir">{{ extrato.saldo_inicial|br }}</td>
+            <td></td>
+          </tr>
+          {% for l in extrato.lancamentos %}
+            <tr class="{{ 'conciliado' if l.conciliado }}">
+              {% if pode_conciliar %}
+                <td class="col-centro"><input type="checkbox" class="marca" value="{{ l.id_pdv_lancamento }}"></td>
+              {% endif %}
+              <td>{{ l.data_lancamento.strftime('%d/%m/%Y') }}</td>
+              <td>{{ l.historico }}</td>
+              <td>
+                {% if l.tipo_origem == 'VENDA' and l.id_origem %}
+                  <a class="link" href="{{ url_for('pdv.detalhe_venda', id_venda=l.id_origem) }}">
+                    {{ origens.get(l.tipo_origem, l.tipo_origem) }}
+                  </a>
+                {% else %}
+                  {{ origens.get(l.tipo_origem, l.tipo_origem) }}
+                {% endif %}
+              </td>
+              <td class="col-dir {{ 'entrada' if l.valor >= 0 else 'saida' }}">
+                {{ '+' if l.valor >= 0 }}{{ l.valor|br }}
+              </td>
+              <td class="col-dir">{{ l.saldo|br }}</td>
+              <td class="col-centro">{{ '✓' if l.conciliado else '' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            {% if pode_conciliar %}<td></td>{% endif %}
+            <td colspan="3">Saldo inicial {{ extrato.saldo_inicial|br }} + entradas {{ extrato.entradas|br }} − saídas {{ extrato.saidas|br }}</td>
+            <td></td>
+            <td class="col-dir">{{ extrato.saldo_final|br }}</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  {% else %}
+    <div class="vazio">Nenhum lançamento no período. Saldo: {{ extrato.saldo_inicial|br }}.</div>
+  {% endif %}
+  <div class="status-msg" id="status"></div>
+</div>
+
+<script>
+  function trocarConta(idConta) {
+    const de = document.getElementById("data_de").value;
+    const ate = document.getElementById("data_ate").value;
+    location.href = `/pdv/financeiro/extrato/${idConta}?data_de=${de}&data_ate=${ate}`;
+  }
+
+  const marcarTodos = document.getElementById("marcarTodos");
+  if (marcarTodos) {
+    marcarTodos.addEventListener("change", (ev) => {
+      document.querySelectorAll(".marca").forEach(el => { el.checked = ev.target.checked; });
+    });
+  }
+
+  async function conciliar(valor) {
+    const ids = Array.from(document.querySelectorAll(".marca:checked")).map(el => Number(el.value));
+    const el = document.getElementById("status");
+    if (!ids.length) {
+      el.classList.add("erro");
+      el.textContent = "Selecione ao menos um lançamento.";
+      return;
+    }
+    try {
+      const resp = await fetch("/pdv/api/financeiro/conciliar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: ids, conciliado: valor }),
+      });
+      const data = await resp.json();
+      if (data.ok) { location.reload(); }
+      else { el.classList.add("erro"); el.textContent = data.erro || "Erro."; }
+    } catch (e) {
+      el.classList.add("erro");
+      el.textContent = e.message || "Erro.";
+    }
+  }
+</script>
+
+{% endblock %}

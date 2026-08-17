@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 32px; font-weight: 800; margin-bottom: 4px; color: #111; }
+  .pagina-subtitulo { font-size: 18px; margin-bottom: 20px; color: #333; }
+
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .bloco-titulo { font-size:16px; font-weight:800; margin-bottom:12px; color:#1a3a63; }
+
+  .tabela-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.col-centro { text-align:center; white-space:nowrap; }
+  tr.inativo td { color:#999; }
+  tr.negativo td.saldo { color:#c0392b; font-weight:800; }
+
+  a.link { color:#1a73e8; font-weight:700; text-decoration:none; }
+  a.link:hover { text-decoration:underline; }
+
+  .total-geral { margin-top:14px; font-size:19px; font-weight:800; text-align:right; }
+
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  input, select { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+
+  .form-ajuste { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; }
+
+  .btn { padding:9px 18px; border-radius:8px; border:1px solid #1a73e8; background:#1a73e8;
+         color:#fff; font-weight:700; cursor:pointer; }
+  .btn:hover { filter:brightness(0.93); }
+
+  .status-msg { font-size:13px; margin-top:10px; color:#1e6b34; min-height:18px; }
+  .status-msg.erro { color:#9f2f2f; }
+  .vazio { color:#777; }
+</style>
+
+<div class="pagina-titulo">📦 Estoque</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+{% if pode_ajustar %}
+<div class="bloco">
+  <div class="bloco-titulo">Ajustar Estoque</div>
+  <div class="form-ajuste">
+    <div class="campo">
+      <label for="selProduto">Produto</label>
+      <select id="selProduto" style="min-width:260px">
+        {% for p in produtos %}
+          <option value="{{ p.id_pdv_produto }}">{{ (p.codigo ~ ' — ' if p.codigo else '') }}{{ p.descricao }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="selTipo">Tipo</label>
+      <select id="selTipo">
+        <option value="ENTRADA">Entrada de mercadoria</option>
+        <option value="DEVOLUCAO">Devolução</option>
+        <option value="PERDA">Perda / quebra</option>
+        <option value="AJUSTE">Ajuste de inventário</option>
+      </select>
+    </div>
+    <div class="campo">
+      <label for="inpQtd">Quantidade</label>
+      <input type="number" step="any" id="inpQtd" value="1" style="width:120px">
+    </div>
+    <div class="campo">
+      <label for="inpCusto">Custo unit. (opcional)</label>
+      <input type="number" step="0.01" id="inpCusto" placeholder="mantém o atual" style="width:160px">
+    </div>
+    <div class="campo" style="flex:1; min-width:200px">
+      <label for="inpHistorico">Histórico</label>
+      <input type="text" id="inpHistorico" placeholder="Opcional">
+    </div>
+    <button type="button" class="btn" id="btnAjustar">Lançar</button>
+  </div>
+  <div style="font-size:12px; color:#666; margin-top:8px">
+    Entrada e devolução somam; perda subtrai. No ajuste de inventário o sinal é o que você digitar
+    (use <strong>−</strong> para baixar).
+  </div>
+  <div class="status-msg" id="status"></div>
+</div>
+{% endif %}
+
+<div class="bloco">
+  <div class="bloco-titulo">Posição atual</div>
+  {% if produtos %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:120px">Código</th>
+            <th>Produto</th>
+            <th style="width:70px">Un.</th>
+            <th style="width:110px">Qtde</th>
+            <th style="width:120px">Custo</th>
+            <th style="width:140px">Valor em Custo</th>
+            <th style="width:130px">Preço de Venda</th>
+            <th style="width:100px">Extrato</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in produtos %}
+            <tr class="{{ 'inativo' if not p.ativo }} {{ 'negativo' if (p.quantidade_atual or 0) < 0 }}">
+              <td>{{ p.codigo or '—' }}</td>
+              <td>{{ p.descricao }}</td>
+              <td>{{ p.unidade }}</td>
+              <td class="col-dir saldo">{{ p.quantidade_atual|br }}</td>
+              <td class="col-dir">{{ p.custo_atual|br }}</td>
+              <td class="col-dir">{{ p.valor_custo|br }}</td>
+              <td class="col-dir">{{ p.preco_venda|br }}</td>
+              <td class="col-centro">
+                <a class="link" href="{{ url_for('pdv.extrato_estoque', id_produto=p.id_pdv_produto) }}">ver</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="total-geral">Estoque avaliado ao custo: R$ {{ total_custo|br }}</div>
+  {% else %}
+    <div class="vazio">Nenhum produto cadastrado.</div>
+  {% endif %}
+</div>
+
+<script>
+  const btn = document.getElementById("btnAjustar");
+  if (btn) {
+    btn.addEventListener("click", async () => {
+      const el = document.getElementById("status");
+      const payload = {
+        id_pdv_produto: Number(document.getElementById("selProduto").value),
+        tipo: document.getElementById("selTipo").value,
+        quantidade: document.getElementById("inpQtd").value,
+        custo_unitario: document.getElementById("inpCusto").value,
+        historico: document.getElementById("inpHistorico").value,
+      };
+      btn.disabled = true;
+      try {
+        const resp = await fetch("/pdv/estoque/ajustar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const contentType = resp.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+        }
+        const data = await resp.json();
+        if (data.ok) {
+          el.classList.remove("erro");
+          el.textContent = "Lançado. Atualizando…";
+          location.reload();
+        } else {
+          el.classList.add("erro");
+          el.textContent = data.erro || "Erro ao lançar.";
+        }
+      } catch (e) {
+        el.classList.add("erro");
+        el.textContent = e.message || "Erro ao lançar.";
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+</script>
+
+{% endblock %}

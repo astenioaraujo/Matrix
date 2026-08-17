@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+{#
+  A venda concluída é só leitura. Esta tela mostra o documento original e,
+  abaixo, o que ele produziu em cada módulo — a rastreabilidade que o
+  documento exige: da parcela de cartão ou do título de volta até a venda.
+#}
+
+<style>
+  .pagina-titulo { font-size: 30px; font-weight: 800; margin-bottom: 4px; color: #111; }
+  .pagina-subtitulo { font-size: 17px; margin-bottom: 20px; color: #333; }
+
+  .bloco {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+
+  .bloco-titulo { font-size: 16px; font-weight: 800; margin-bottom: 12px; color: #1a3a63; }
+
+  .cabecalho-venda { display: flex; flex-wrap: wrap; gap: 30px; }
+  .info-rotulo { font-size: 12px; font-weight: 700; color: #666; }
+  .info-valor { font-size: 17px; font-weight: 700; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 14px; }
+  th { background: #dbe8f4; white-space: nowrap; }
+  td.col-dir { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.col-centro { text-align: center; white-space: nowrap; }
+  .tabela-wrap { overflow-x: auto; }
+
+  tfoot td { font-weight: 800; background: #f5f7fa; }
+  .vazio { color: #777; font-size: 14px; }
+</style>
+
+<div class="pagina-titulo">Venda nº {{ venda.numero_venda }}</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <div class="cabecalho-venda">
+    <div>
+      <div class="info-rotulo">Data / Hora</div>
+      <div class="info-valor">
+        {{ venda.data_venda.strftime('%d/%m/%Y') }}
+        {{ venda.hora_venda.strftime('%H:%M') if venda.hora_venda else '' }}
+      </div>
+    </div>
+    <div>
+      <div class="info-rotulo">Cliente</div>
+      <div class="info-valor">{{ venda.nome_cliente or 'Consumidor não identificado' }}</div>
+    </div>
+    <div>
+      <div class="info-rotulo">Vendedor</div>
+      <div class="info-valor">{{ venda.nome_vendedor or '' }}</div>
+    </div>
+    <div>
+      <div class="info-rotulo">Situação</div>
+      <div class="info-valor">{{ venda.situacao|capitalize }}</div>
+    </div>
+    <div>
+      <div class="info-rotulo">Valor Total</div>
+      <div class="info-valor">R$ {{ venda.valor_total|br }}</div>
+    </div>
+  </div>
+  {% if venda.observacao %}
+    <div style="margin-top:14px"><span class="info-rotulo">Observação:</span> {{ venda.observacao }}</div>
+  {% endif %}
+
+  {% if pode_devolver and venda.situacao == 'CONCLUIDA' %}
+    <div style="margin-top:16px">
+      <a class="btn-devolver" href="{{ url_for('pdv.nova_devolucao', id_venda=venda.id_pdv_venda) }}">
+        ↩️ Registrar devolução / cancelar
+      </a>
+    </div>
+  {% endif %}
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Itens</div>
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:60px">#</th>
+          <th>Produto</th>
+          <th style="width:80px">Un.</th>
+          <th style="width:110px">Qtde</th>
+          <th style="width:130px">Preço Unit.</th>
+          <th style="width:120px">Desconto</th>
+          <th style="width:130px">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in itens %}
+          <tr>
+            <td>{{ item.sequencia }}</td>
+            <td>{{ item.descricao_produto }}</td>
+            <td>{{ item.unidade }}</td>
+            <td class="col-dir">{{ item.quantidade|br }}</td>
+            <td class="col-dir">{{ item.preco_unitario|br }}</td>
+            <td class="col-dir">{{ item.valor_desconto|br }}</td>
+            <td class="col-dir">{{ item.valor_total|br }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="6">Bruto {{ venda.valor_bruto|br }} — Desconto da venda {{ venda.valor_desconto|br }}</td>
+          <td class="col-dir">{{ venda.valor_total|br }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Formas de Recebimento</div>
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:60px">#</th>
+          <th style="width:200px">Forma</th>
+          <th style="width:140px">Valor</th>
+          <th>Conta / Operadora</th>
+          <th style="width:100px">Parcelas</th>
+          <th style="width:140px">NSU</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in recebimentos %}
+          <tr>
+            <td>{{ r.sequencia }}</td>
+            <td>{{ rotulos_forma.get(r.forma, r.forma) }}</td>
+            <td class="col-dir">{{ r.valor|br }}</td>
+            <td>{{ r.nome_conta or r.nome_operadora or '—' }}</td>
+            <td class="col-centro">{{ r.qtd_parcelas }}</td>
+            <td>{{ r.nsu or '—' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">O que esta venda produziu</div>
+
+  <div style="margin-bottom:18px">
+    <div style="font-weight:700; margin-bottom:6px">Fluxo de Caixa (dinheiro que entrou agora)</div>
+    {% if lancamentos %}
+      <div class="tabela-wrap">
+        <table>
+          <thead>
+            <tr><th style="width:120px">Data</th><th>Conta</th><th>Histórico</th><th style="width:130px">Valor</th></tr>
+          </thead>
+          <tbody>
+            {% for l in lancamentos %}
+              <tr>
+                <td>{{ l.data_lancamento.strftime('%d/%m/%Y') }}</td>
+                <td>{{ l.nome_conta }}</td>
+                <td>{{ l.historico }}</td>
+                <td class="col-dir">{{ l.valor|br }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="vazio">Nenhum lançamento de caixa nesta venda.</div>
+    {% endif %}
+  </div>
+
+  <div style="margin-bottom:18px">
+    <div style="font-weight:700; margin-bottom:6px">Cartões</div>
+    {% if parcelas_cartao %}
+      <div class="tabela-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Operadora</th><th style="width:110px">Modalidade</th>
+              <th style="width:90px">Parcela</th><th style="width:130px">Valor</th>
+              <th style="width:150px">Previsão de Crédito</th><th style="width:120px">Situação</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in parcelas_cartao %}
+              <tr>
+                <td>{{ p.nome_operadora or '—' }}</td>
+                <td>{{ p.modalidade|capitalize }}</td>
+                <td class="col-centro">{{ p.numero_parcela }}</td>
+                <td class="col-dir">{{ p.valor|br }}</td>
+                <td>{{ p.previsao_credito.strftime('%d/%m/%Y') if p.previsao_credito else '—' }}</td>
+                <td>{{ p.situacao }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="vazio">Nenhum recebimento em cartão nesta venda.</div>
+    {% endif %}
+  </div>
+
+  <div style="margin-bottom:18px">
+    <div style="font-weight:700; margin-bottom:6px">Notas a Prazo</div>
+    {% if notas %}
+      <div class="tabela-wrap">
+        <table>
+          <thead>
+            <tr><th style="width:130px">Emissão</th><th style="width:140px">Valor</th>
+                <th style="width:140px">Baixado</th><th style="width:130px">Situação</th></tr>
+          </thead>
+          <tbody>
+            {% for n in notas %}
+              <tr>
+                <td>{{ n.data_emissao.strftime('%d/%m/%Y') }}</td>
+                <td class="col-dir">{{ n.valor|br }}</td>
+                <td class="col-dir">{{ n.valor_baixado|br }}</td>
+                <td>{{ n.situacao|capitalize }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="vazio">Nenhuma nota a prazo nesta venda.</div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div style="font-weight:700; margin-bottom:6px">Consignação (maletas)</div>
+    {% if consignacoes %}
+      <div class="tabela-wrap">
+        <table>
+          <thead>
+            <tr><th style="width:130px">Envio</th><th style="width:140px">Valor</th>
+                <th style="width:150px">Conciliado</th><th style="width:130px">Situação</th></tr>
+          </thead>
+          <tbody>
+            {% for c in consignacoes %}
+              <tr>
+                <td>{{ c.data_envio.strftime('%d/%m/%Y') }}</td>
+                <td class="col-dir">{{ c.valor|br }}</td>
+                <td class="col-dir">{{ c.valor_conciliado|br }}</td>
+                <td>{{ c.situacao|capitalize }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="vazio">Nenhuma consignação nesta venda.</div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

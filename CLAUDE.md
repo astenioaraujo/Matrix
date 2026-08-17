@@ -181,6 +181,148 @@ Acesso concedido na EMP010: `CONSULTAR_FUNCOES` + `RH/MENU` para todos os 31 usu
 
 ---
 
+# PDV Matrix
+
+ERP de loja (vendas, estoque, financeiro), módulo próprio no menu principal (`routes/pdv_routes.py`, prefixo `/pdv`, sistema de permissões `PDV`). Especificação: `ESTRUTURA DO FINANCEIRO PARA SISTEMAS DE GESTÃO INFORMATIZADOS.pdf` (Inovai, 16/08/2026).
+
+`_cod_filial()` devolve 1 fixo (loja única por enquanto); quando houver mais de uma, isso passa a sair da tela. A migration cria `cod_filial 1 (Loja)` para a INOVAI (`EMP001`), que não tinha filial nenhuma.
+
+## Trava por empresa (proteção)
+
+`pdv_parametros` (`migrations/criar_pdv_parametros.sql`), uma linha por empresa, coluna `opera_pdv`. **Empresa sem linha não opera com PDV** — é o padrão. Ligada em **Configurações → Configuração de PDV** (`config_pdv` em `configuracoes_routes.py`, `templates/config_pdv.html`, permissão `CONFIGURACOES/CONFIGURACAO_PDV` 1720).
+
+A trava **vale inclusive para o superusuário** — é o único lugar do sistema em que o bypass de superusuário não se aplica, de propósito: é o que impede o módulo novo de aparecer em empresa que não deveria tê-lo. E ela está em **`pode()` / `_checar_acesso()` / `_erro_permissao()`** do `pdv_routes.py`, não só no menu: sem isso a URL digitada à mão entraria. Desmarcar só esconde, não apaga venda nenhuma.
+
+`empresa_opera_pdv()` fica em `services/pdv_service.py`, cacheada em `g` — o menu principal e cada tela do PDV perguntam na mesma requisição.
+
+No menu principal o PDV é a **primeira** opção, antes de Operações.
+
+**Não compartilha nada com o Financeiro do Matrix.** O PDV tem o seu próprio núcleo financeiro (`pdv_contas_financeiras` + `pdv_lancamentos_financeiros`), justamente para que testar na INOVAI não chegue perto de Lucena/Vilela. Todas as tabelas têm prefixo `pdv_`.
+
+## Regra central: a venda encerra a operação comercial
+
+Concluída, a venda **não volta a ser alterada**. Tudo o que acontece depois (baixa de nota a prazo, crédito de cartão, conciliação de maleta) pertence ao módulo de destino e nunca altera a venda original. Nada de campos `valor_dinheiro`/`valor_pix`/`valor_cartao` na venda: forma de recebimento é registro independente, então forma nova não mexe no schema.
+
+    Venda → Itens da Venda
+    Venda → Formas de Recebimento → módulo de destino
+
+**Desague de cada forma** (`_desaguar_recebimento`, tudo na mesma transação da venda):
+
+| Forma | Destino |
+|---|---|
+| DINHEIRO, PIX | `pdv_lancamentos_financeiros` (entrou dinheiro agora) |
+| DEBITO, CREDITO | `pdv_cartoes_recebimentos` + `pdv_cartoes_parcelas` (uma linha por parcela; débito gera uma) |
+| NOTA_PRAZO | `pdv_notas_prazo` (pendência do cliente) |
+| CONSIGNACAO | `pdv_consignacoes` (maletas, conciliação própria) |
+
+O detalhe das parcelas de cartão existe **mesmo com antecipação de recebíveis** — é ele que responde depois "essa venda foi em quantas vezes". A previsão de crédito sai dos dias da operadora; a diferença de arredondamento vai toda na **última** parcela, para a soma fechar com o valor do cartão.
+
+A venda só é concluída depois de duas validações: soma dos itens = total, e soma dos recebimentos = total. Comparação **em centavos** (`_centavos`), não em float. Nota a prazo e consignação exigem cliente identificado.
+
+## Telas
+
+`/pdv` (menu) → Realizar Venda (`/pdv/vender`), Consultar Vendas (`/pdv/vendas`, com detalhe em `/pdv/vendas/<id>`) e Cadastros (`/pdv/cadastros`).
+
+O detalhe da venda mostra, abaixo do documento original, **o que aquela venda produziu** em cada módulo — a rastreabilidade que o documento exige (da parcela de cartão ou do título de volta até a venda e o vendedor).
+
+**Os cinco cadastros são dirigidos por especificação**: `CADASTROS` em `pdv_routes.py` descreve tabela, PK, campos e tipos, e `templates/pdv/cadastro.html` monta a grade a partir disso. Cadastro novo = uma entrada no dicionário, sem template nem endpoint novo. Excluir registro já usado numa venda cai em erro de FK e a mensagem manda desativar em vez de excluir — histórico não se apaga.
+
+**Dinheiro não escolhe conta.** O lançamento financeiro exige uma conta (é o extrato), mas na venda a vendedora não escolhe onde o dinheiro cai — cai na gaveta. A conta que é a gaveta leva `caixa_padrao` no cadastro (**uma por empresa**, garantido por índice único parcial `uq_pdv_caixa_padrao`) e o backend a resolve sozinho. PIX, sim, pede a conta. Sem gaveta marcada, a venda em dinheiro é recusada com a mensagem de como resolver.
+
+## Estoque (fase 2)
+
+`pdv_estoque_movimentos` é o **extrato do produto**: entrada positiva, saída negativa, cada linha com `tipo_origem`/`id_origem` dizendo de onde veio. `pdv_produtos.quantidade_atual` é o consolidado dele.
+
+> **Ninguém escreve `quantidade_atual` por fora** de `services/pdv_estoque_service.py`. Quem movimenta chama `movimentar()`, que grava o movimento e ajusta o saldo na mesma transação, recebendo o cursor de quem chamou. Saldo sem movimento é saldo sem lastro. Por isso `quantidade_atual` **saiu do cadastro de produtos** — para acertar, use Estoque → Ajustar.
+
+Telas: `/pdv/estoque` (posição de todos os produtos + ajuste manual) e `/pdv/estoque/<id>` (extrato do produto no período: saldo inicial + entradas − saídas = saldo final, com o saldo corrente calculado linha a linha, nunca persistido). Tipos de ajuste: `ENTRADA` e `DEVOLUCAO` sempre somam, `PERDA` sempre subtrai, `AJUSTE` respeita o sinal digitado (é o que acerta inventário nos dois sentidos). Entrada com custo informado atualiza `custo_atual`/`ultimo_preco_compra` (o parâmetro do sistema é Último Preço de Compra).
+
+A venda baixa o estoque na **mesma transação** (`baixar_itens_da_venda`) — Itens da Venda → Movimentações de Estoque.
+
+## Entrada de Mercadorias (fase 3)
+
+    CT-e → Nota Fiscal de Entrada → Itens → custo (mercadoria + frete) → Estoque + Contas a Pagar
+
+Tabelas: `pdv_fornecedores`, `pdv_ctes`, `pdv_notas_entrada`, `pdv_notas_entrada_itens`, `pdv_titulos_pagar` (`migrations/criar_pdv_entrada_mercadorias.sql`). Fornecedores e CT-e são cadastros comuns — entraram como duas entradas no `CADASTROS`, sem template nem endpoint novo.
+
+**O CT-e é lançado antes da nota**, de propósito: durante a entrada ele é vinculado à compra e o **frete vira custo da mercadoria**. `ratear_frete` (`services/pdv_entrada_service.py`) distribui proporcionalmente ao valor de cada item, **em centavos**, jogando a sobra no último item — a soma dos rateios fecha exata com o frete. `custo_unitario` = (valor do item + frete rateado) ÷ quantidade; é ele que vai para o estoque e vira `custo_atual`/`ultimo_preco_compra` (parâmetro do sistema: Último Preço de Compra).
+
+Concluir a nota, numa transação só: grava cabeçalho e itens → rateia o frete → dá entrada no estoque (`tipo_origem = 'NOTA_ENTRADA'`) → atualiza o custo do produto → gera os títulos a pagar. Se houver parcelas, a soma delas tem que fechar com o total da nota (comparação em centavos). `parcelar()` sugere a divisão (sobra na última) e a tela deixa editar valor e vencimento de cada uma.
+
+> **Comprar não é pagar.** A entrada **não gera lançamento no fluxo de caixa** — gera obrigação em `pdv_titulos_pagar`. A saída de dinheiro só nasce na baixa do título. O teste confere isso explicitamente.
+
+Telas: `/pdv/entradas` (lista), `/pdv/entradas/nova`, `/pdv/entradas/<id>` (documento + o que ele produziu no estoque e no CP) e `/pdv/contas-pagar` (títulos, com vencidos em destaque).
+
+## Financeiro / Fluxo de Caixa (fase 4)
+
+`services/pdv_financeiro_service.py`. Menu próprio em `/pdv/financeiro`.
+
+> **Fluxo de Caixa é dinheiro.** Título a receber não é dinheiro; título a pagar não é saída. O lançamento nasce no momento em que o valor efetivamente se movimenta. Isto é o que decide onde cada operação lança:
+>
+> | Operação | Lança? |
+> |---|---|
+> | Venda em dinheiro/PIX | **sim** (+) |
+> | Nota a Prazo → Títulos a Receber | **não** — só reorganiza a obrigação |
+> | Baixa de nota ou de título a receber | **sim** (+) |
+> | Entrada de mercadoria (a compra) | **não** — gera obrigação |
+> | Pagamento de título a pagar | **sim** (−) |
+
+Toda gravação passa por `lancar()`, que recebe o cursor de quem chamou e roda na transação do fato que a originou. **Saldo não é coluna em lugar nenhum** — `saldo_ate()` reconstrói a partir do `saldo_inicial` do cadastro mais os lançamentos anteriores.
+
+**Transferência entre contas** não tem tabela própria: são dois lançamentos (−X e +X) amarrados pelo mesmo `id_transferencia`, que é o id do primeiro. O Caixa Geral soma as transferências **à parte** e as mostra numa nota de rodapé — os saldos individuais mudaram mesmo, mas para a empresa não houve receita nem despesa. Sem isso o total de entradas seria lido como faturamento.
+
+**Conciliação bancária** é a coluna `conciliado` no lançamento, marcada em lote na tela de extrato. É conferência contra o extrato do banco — **não altera valor nenhum**.
+
+Telas: `/pdv/financeiro` (menu), `/financeiro/caixa-geral` (consolidado, uma linha por conta + total), `/financeiro/extrato[/<id_conta>]` (extrato + conciliação), `/financeiro/lancamentos` (lançamento manual e transferência), `/financeiro/notas-prazo` (receber e converter em títulos), `/financeiro/titulos-receber` e `/pdv/contas-pagar` (com o pagamento).
+
+Baixa parcial é aceita nos três lados: `valor_baixado` acumula e a situação só vira BAIXADO/BAIXADA quando quita. Baixar acima do saldo em aberto é recusado.
+
+**Permissões** (sistema `PDV`): `MENU` 1600, `VENDER` 1610, `CONSULTAR_VENDAS` 1620, `CADASTROS` 1630, `CLIENTES` 1640, `PRODUTOS` 1650, `VENDEDORES` 1660, `CONTAS_FINANCEIRAS` 1670, `OPERADORAS_CARTAO` 1680, `LANCAMENTOS` 1690, `NOTAS_PRAZO` 1700, `CAIXA_CENTRAL` 1710, `ESTOQUE` 1720, `AJUSTE_ESTOQUE` 1730, `FORNECEDORES` 1740, `CTE` 1750, `ENTRADA_MERCADORIAS` 1760, `CONTAS_PAGAR` 1770, `FINANCEIRO_MENU` 1775, `EXTRATO` 1780, `CAIXA_GERAL` 1790, `TRANSFERENCIAS` 1800, `CONCILIACAO` 1810, `TITULOS_RECEBER` 1820, `BAIXAR_PAGAR` 1830. Nenhuma concedida a ninguém — só bypass de superusuário.
+
+Migrations: `criar_pdv_matrix.sql` (14 tabelas), `criar_pdv_parametros.sql`, `criar_pdv_estoque.sql`, `criar_pdv_entrada_mercadorias.sql`, `criar_pdv_financeiro.sql`. Todas as tabelas com RLS habilitado.
+
+## Caixa Central de Vendas (fase 5)
+
+`/pdv/caixa-central` — conferência do dia pelo Financeiro, com os totais por forma de recebimento (é o que se confere contra o caixa e as maquinetas) e a lista de vendas com seus recebimentos.
+
+> **Corrigir um atributo do recebimento não é reabrir a venda.** Só dois campos são corrigíveis, e a lista está explícita em `CAMPOS_CORRIGIVEIS`: `id_pdv_operadora` e `qtd_parcelas`. Valor, produto, cliente, vendedor e o total da venda **não entram nela de propósito** — o endpoint ignora qualquer outro campo que venha no JSON.
+
+Ao corrigir, as parcelas de cartão são **refeitas** (elas são derivadas da operadora e da quantidade), mas o valor total do recebimento continua o mesmo — o que muda é como ele se distribui no tempo. Cada alteração grava uma linha em `pdv_caixa_central_auditoria` (`migrations/criar_pdv_caixa_central.sql`) com valor anterior, valor novo, descrição por extenso dos dois, usuário e data/hora. As correções do dia aparecem na própria tela.
+
+**Gerencial de cartões** (`/pdv/caixa-central/cartoes`): distribuição por quantidade de parcelas (operações, valor, % e ticket médio), quebra por operadora e **prazo médio de recebimento ponderado pelo valor** — o prazo que a empresa teria caso não antecipasse, que comparado ao custo da antecipação diz se antecipar compensa. É para isto que o detalhe das parcelas é preservado mesmo com antecipação.
+
+### Bug corrigido (não reintroduzir)
+
+- **`qtd_parcelas` zerada virava 1 silenciosamente**: o parse era `int(_num(x, 1)) or 1`, então um `0` digitado por engano caía no fallback e transformava uma venda em 6x numa venda à vista — passando pela validação `valor < 1`, que nunca via o zero. Agora o parse não tem fallback (`_num(x, 0)`) e o zero é recusado.
+
+## Devolução e Cancelamento (fase 6)
+
+Não está no documento da Inovai, mas segue o princípio dele: **devolver é operação nova**, com documento próprio (`pdv_devolucoes` + `pdv_devolucoes_itens`, `migrations/criar_pdv_devolucoes.sql`), que aponta para a venda de origem. `services/pdv_devolucao_service.py`.
+
+A venda original **não é alterada** — itens, valores e formas de recebimento continuam como estavam. O único campo que muda é `situacao`, e só na devolução total: é marcador de estado, não alteração de valores. **Cancelamento é a devolução total**, mesma tabela e mesmo caminho; não existe apagar venda.
+
+`itens_disponiveis()` calcula `vendido − já devolvido` por item da venda — é isso que impede devolver duas vezes a mesma peça (validado no serviço, não só na tela). O preço usado é o **efetivo** (`valor_total ÷ quantidade`), já com o desconto que o item levou na venda.
+
+**Destino do valor** — e só o primeiro mexe em caixa, pelo princípio de sempre:
+
+| Destino | Efeito |
+|---|---|
+| `DINHEIRO` | lançamento **negativo** na conta escolhida |
+| `ABATIMENTO_NOTA_PRAZO` | reduz a nota a prazo em aberto — **sem lançamento**, dinheiro nenhum trocou de mãos |
+| `ESTORNO_CARTAO` | marca as parcelas como `ESTORNADO` — **sem lançamento**, o estorno chega pelo acerto da operadora |
+
+Os itens sempre voltam ao estoque (`tipo = 'DEVOLUCAO'`, pelo custo com que saíram). A tela só oferece abatimento se existe nota a prazo em aberto, e estorno se houve cartão.
+
+Telas: `/pdv/devolucoes` (lista), `/pdv/devolucoes/nova/<id_venda>` (a partir do botão no detalhe da venda) e `/pdv/devolucoes/<id>`. Permissão `PDV/DEVOLUCOES` 1840.
+
+## Pendente no PDV
+
+- **Integração TEF** (o documento a cita como "quando aplicável"): hoje a operadora e o NSU são digitados.
+- **Boletos**: `pdv_titulos_receber` já suporta o conceito (título com valor e vencimento); falta emissão/identificação.
+- **Múltiplas filiais**: `_cod_filial()` devolve 1 fixo.
+
+---
+
 # Canivete Suíço
 
 Módulo pessoal (`routes/canivete_routes.py`, prefixo `/canivete`): Finanças Pessoais e Agenda. Permissões no sistema `CANIVETE`: `MENU`, `AGENDA`, `FINANCAS_PESSOAIS_MENU`, `FINANCAS_PESSOAIS_LANCAR`, `FINANCAS_PESSOAIS_CONSULTAR`, `FINANCAS_PESSOAIS_CONFIGURACOES`.

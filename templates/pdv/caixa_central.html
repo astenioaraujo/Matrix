@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+{#
+  Conferência do dia pelo Financeiro.
+
+  A venda continua fechada. O que esta tela permite é corrigir informações
+  COMPLEMENTARES do recebimento — a operadora registrada errada, a quantidade
+  de parcelas diferente da que passou na maquineta. Produto, quantidade,
+  preço, cliente, vendedor, valor total da venda e valor recebido não são
+  editáveis aqui, e não é por acaso.
+#}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .bloco-titulo { font-size:17px; font-weight:800; margin-bottom:12px; color:#1a3a63; }
+
+  .filtros { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  input, select { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+
+  .btn { padding:9px 18px; border-radius:8px; border:1px solid #1a73e8; background:#1a73e8;
+         color:#fff; font-weight:700; cursor:pointer; text-decoration:none; display:inline-block; }
+  .btn:hover { filter:brightness(0.93); }
+  .btn-mini { padding:5px 12px; border-radius:6px; border:none; background:#7c3aed;
+              color:#fff; font-weight:700; font-size:13px; cursor:pointer; }
+  .btn-mini:disabled { background:#c7c7c7; cursor:not-allowed; }
+
+  .tabela-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.col-centro { text-align:center; white-space:nowrap; }
+
+  tr.venda-linha td { background:#f5f8fc; font-weight:700; }
+  tr.receb-linha td { font-size:13px; }
+  tr.receb-linha td.recuo { padding-left:26px; color:#555; }
+
+  .totais-forma { display:flex; flex-wrap:wrap; gap:26px; }
+  .total-item { display:flex; flex-direction:column; }
+  .total-rotulo { font-size:12px; font-weight:700; color:#666; }
+  .total-valor { font-size:22px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .total-valor.destaque { color:#16a34a; }
+
+  .status-msg { font-size:13px; min-height:18px; color:#9f2f2f; font-weight:600; }
+  .vazio { color:#777; padding:12px 0; }
+  a.link { color:#1a73e8; font-weight:700; text-decoration:none; }
+  a.link:hover { text-decoration:underline; }
+
+  .aviso-regra { background:#f4f6f9; border-left:4px solid #1a3a63; padding:12px 16px;
+                 font-size:13px; color:#444; border-radius:0 8px 8px 0; margin-bottom:16px; }
+
+  .sel-correcao { padding:4px 6px; font-size:13px; }
+  .inp-parcelas { width:64px; padding:4px 6px; font-size:13px; }
+</style>
+
+<div class="pagina-titulo">🧮 Caixa Central de Vendas</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="aviso-regra">
+  A venda permanece <strong>fechada</strong>. Aqui só se corrigem informações complementares do
+  recebimento — operadora de cartão e quantidade de parcelas. O produto, o valor da venda e o
+  valor recebido não mudam, e toda correção fica registrada com autor, data e hora.
+</div>
+
+<div class="bloco">
+  <form method="get" class="filtros">
+    <div class="campo">
+      <label for="data">Dia</label>
+      <input type="date" id="data" name="data" value="{{ data }}">
+    </div>
+    <button type="submit" class="btn">Conferir</button>
+    <a class="btn" style="background:#0f766e; border-color:#0f766e"
+       href="{{ url_for('pdv.gerencial_cartoes') }}">📊 Gerencial de Cartões</a>
+  </form>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Totais do dia</div>
+  <div class="totais-forma">
+    <div class="total-item">
+      <div class="total-rotulo">TOTAL VENDIDO</div>
+      <div class="total-valor destaque">{{ total_dia|br }}</div>
+    </div>
+    {% for forma, valor in totais_forma.items() %}
+      <div class="total-item">
+        <div class="total-rotulo">{{ rotulos_forma.get(forma, forma)|upper }}</div>
+        <div class="total-valor">{{ valor|br }}</div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Vendas e formas de recebimento</div>
+  {% if vendas %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:90px">Venda</th>
+            <th style="width:80px">Hora</th>
+            <th>Cliente / Forma</th>
+            <th>Vendedor / Destino</th>
+            <th style="width:150px">Operadora</th>
+            <th style="width:110px">Parcelas</th>
+            <th style="width:130px">Valor</th>
+            <th style="width:110px">Ação</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in vendas %}
+            <tr class="venda-linha">
+              <td>
+                <a class="link" href="{{ url_for('pdv.detalhe_venda', id_venda=v.id_pdv_venda) }}">
+                  nº {{ v.numero_venda }}
+                </a>
+              </td>
+              <td>{{ v.hora_venda.strftime('%H:%M') if v.hora_venda else '' }}</td>
+              <td>{{ v.nome_cliente or 'Consumidor' }}</td>
+              <td>{{ v.nome_vendedor or '' }}</td>
+              <td colspan="2">{{ v.situacao|capitalize }}</td>
+              <td class="col-dir">{{ v.valor_total|br }}</td>
+              <td></td>
+            </tr>
+            {% for r in v.recebimentos %}
+              <tr class="receb-linha" data-receb="{{ r.id_pdv_venda_recebimento }}">
+                <td></td>
+                <td></td>
+                <td class="recuo">{{ rotulos_forma.get(r.forma, r.forma) }}</td>
+                <td>{{ r.nome_conta or '—' }}</td>
+                <td>
+                  {% if r.forma in formas_cartao %}
+                    <select class="sel-correcao sel-operadora">
+                      {% for o in operadoras %}
+                        {% if (r.forma == 'DEBITO' and o.aceita_debito) or (r.forma == 'CREDITO' and o.aceita_credito) %}
+                          <option value="{{ o.id_pdv_operadora }}"
+                                  {{ 'selected' if o.id_pdv_operadora == r.id_pdv_operadora }}>
+                            {{ o.nome }}
+                          </option>
+                        {% endif %}
+                      {% endfor %}
+                    </select>
+                  {% else %}—{% endif %}
+                </td>
+                <td class="col-centro">
+                  {% if r.forma == 'CREDITO' %}
+                    <input type="number" min="1" class="inp-parcelas" value="{{ r.qtd_parcelas }}">
+                  {% elif r.forma == 'DEBITO' %}
+                    1x
+                  {% else %}—{% endif %}
+                </td>
+                <td class="col-dir">{{ r.valor|br }}</td>
+                <td class="col-centro">
+                  {% if r.forma in formas_cartao %}
+                    <button type="button" class="btn-mini btn-corrigir">Corrigir</button>
+                  {% else %}—{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="status-msg" id="status"></div>
+  {% else %}
+    <div class="vazio">Nenhuma venda neste dia.</div>
+  {% endif %}
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Correções do dia</div>
+  {% if auditoria %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:160px">Quando</th>
+            <th style="width:90px">Venda</th>
+            <th style="width:160px">Campo</th>
+            <th>De</th>
+            <th>Para</th>
+            <th style="width:160px">Usuário</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in auditoria %}
+            <tr>
+              <td>{{ a.alterado_em.strftime('%d/%m/%Y %H:%M') }}</td>
+              <td>nº {{ a.numero_venda }}</td>
+              <td>{{ 'Operadora' if a.campo == 'id_pdv_operadora' else 'Parcelas' }}</td>
+              <td>{{ a.descricao_anterior or a.valor_anterior or '—' }}</td>
+              <td>{{ a.descricao_nova or a.valor_novo or '—' }}</td>
+              <td>{{ a.nome_usuario or '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="vazio">Nenhuma correção registrada neste dia.</div>
+  {% endif %}
+</div>
+
+<script>
+  function mostrarStatus(mensagem) {
+    const el = document.getElementById("status");
+    if (el) el.textContent = mensagem || "";
+  }
+
+  document.querySelectorAll(".btn-corrigir").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const linha = btn.closest("tr");
+      const operadora = linha.querySelector(".sel-operadora");
+      const parcelas = linha.querySelector(".inp-parcelas");
+
+      const payload = { id_pdv_venda_recebimento: Number(linha.dataset.receb) };
+      if (operadora) payload.id_pdv_operadora = Number(operadora.value);
+      if (parcelas) payload.qtd_parcelas = Number(parcelas.value || 1);
+
+      btn.disabled = true;
+      mostrarStatus("");
+      try {
+        const resp = await fetch("/pdv/api/caixa-central/corrigir", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const contentType = resp.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+        }
+        const data = await resp.json();
+        if (data.ok) {
+          if (data.alterado) { location.reload(); return; }
+          mostrarStatus("Nada foi alterado.");
+        } else {
+          mostrarStatus(data.erro || "Erro ao corrigir.");
+        }
+      } catch (e) {
+        mostrarStatus(e.message || "Erro ao corrigir.");
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+</script>
+
+{% endblock %}

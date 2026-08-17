@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 32px; font-weight: 800; margin-bottom: 8px; color: #111; }
+  .empresa { font-size: 19px; margin-bottom: 24px; color: #333; }
+
+  .bloco {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 22px;
+    max-width: 720px;
+  }
+
+  .opcao {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 0;
+  }
+
+  .opcao input[type="checkbox"] { width: 20px; height: 20px; margin-top: 2px; }
+  .opcao-titulo { font-size: 17px; font-weight: 700; }
+  .opcao-desc { font-size: 14px; color: #555; margin-top: 4px; line-height: 1.45; }
+
+  .btn-salvar {
+    margin-top: 18px;
+    padding: 11px 26px;
+    border-radius: 8px;
+    border: none;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    font-size: 15px;
+    cursor: pointer;
+  }
+
+  .btn-salvar:hover { filter: brightness(0.93); }
+
+  .flash {
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-weight: 600;
+    max-width: 720px;
+  }
+
+  .flash.sucesso { background: #e6f6ec; border: 1px solid #a8dcbb; color: #1e6b34; }
+  .flash.error   { background: #fdecea; border: 1px solid #f0b3ad; color: #9f2f2f; }
+</style>
+
+<div class="pagina-titulo">Configuração de PDV</div>
+<div class="empresa"><strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa }}</div>
+
+{% with mensagens = get_flashed_messages(with_categories=true) %}
+  {% for categoria, mensagem in mensagens %}
+    <div class="flash {{ categoria }}">{{ mensagem }}</div>
+  {% endfor %}
+{% endwith %}
+
+<form method="post" class="bloco">
+  <div class="opcao">
+    <input type="checkbox" id="opera_pdv" name="opera_pdv" {{ 'checked' if opera_pdv }}>
+    <label for="opera_pdv">
+      <div class="opcao-titulo">Esta empresa opera com PDV</div>
+      <div class="opcao-desc">
+        Desmarcado, o módulo PDV Matrix não aparece no menu desta empresa e as
+        telas dele recusam o acesso — inclusive para o superusuário e inclusive
+        pela URL digitada à mão. Desmarcar apenas esconde: nenhum dado de venda
+        é apagado.
+      </div>
+    </label>
+  </div>
+
+  <button type="submit" class="btn-salvar">Salvar</button>
+</form>
+
+{% endblock %}
