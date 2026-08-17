@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+{#
+  Canais de venda por filial. Canal é a porta por onde a venda saiu — não é
+  filial. O parâmetro de estoque decide se cada canal tem saldo próprio ou se
+  todos usam o estoque da loja.
+#}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .bloco-titulo { font-size:17px; font-weight:800; margin-bottom:12px; color:#1a3a63; }
+
+  .opcao { display:flex; align-items:flex-start; gap:12px; }
+  .opcao input[type="checkbox"] { width:20px; height:20px; margin-top:2px; }
+  .opcao-titulo { font-size:16px; font-weight:700; }
+  .opcao-desc { font-size:13px; color:#555; margin-top:4px; line-height:1.5; }
+
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  td.col-centro { text-align:center; white-space:nowrap; }
+  td input[type="text"], td input[type="number"] { width:100%; padding:6px 8px;
+      box-sizing:border-box; border-radius:6px; border:1px solid #bbb; }
+  .tabela-wrap { overflow-x:auto; }
+
+  .btn { padding:9px 18px; border-radius:8px; border:1px solid #1a73e8; background:#1a73e8;
+         color:#fff; font-weight:700; cursor:pointer; text-decoration:none; display:inline-block; }
+  .btn-mini { padding:6px 12px; border-radius:6px; border:1px solid #1a73e8; background:#1a73e8;
+              color:#fff; font-weight:700; font-size:13px; cursor:pointer; }
+  .btn-mini.excluir { border-color:#c0392b; background:#c0392b; }
+
+  .topo-bloco { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:12px; }
+  .status-msg { font-size:13px; margin-top:10px; color:#1e6b34; min-height:18px; }
+  .status-msg.erro { color:#9f2f2f; }
+  .selo-padrao { background:#e6f0fd; color:#1a3a63; padding:2px 8px; border-radius:20px; font-size:12px; font-weight:800; }
+</style>
+
+<div class="pagina-titulo">🏷️ Canais de Venda</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Estoque dos canais</div>
+  <div class="opcao">
+    <input type="checkbox" id="estoquePorCanal" {{ 'checked' if estoque_por_canal }}>
+    <label for="estoquePorCanal">
+      <div class="opcao-titulo">Cada canal tem estoque próprio</div>
+      <div class="opcao-desc">
+        <strong>Desmarcado (padrão):</strong> os canais usam o estoque da loja. Existe um saldo só,
+        e o canal serve para saber por onde a venda saiu — é o caso de uma peça que está na loja e
+        também é anunciada no site.<br>
+        <strong>Marcado:</strong> cada canal tem saldo separado, e mover peça de um canal para
+        outro passa a exigir transferência.
+      </div>
+    </label>
+  </div>
+  <div class="status-msg" id="statusParametro"></div>
+
+  {% if estoque_por_canal and pode_transferir %}
+    <div style="margin-top:14px">
+      <a class="btn" href="{{ url_for('pdv.tela_transferir_canal') }}">⇄ Transferir estoque entre canais</a>
+    </div>
+  {% endif %}
+</div>
+
+{% for filial in filiais %}
+  <div class="bloco">
+    <div class="topo-bloco">
+      <div class="bloco-titulo" style="margin:0">
+        Filial {{ filial.cod_filial }} — {{ filial.nome_filial }}
+      </div>
+      <button type="button" class="btn-mini" onclick="novoCanal({{ filial.cod_filial }})">+ Novo Canal</button>
+    </div>
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:90px">Ordem</th>
+            <th>Nome do canal</th>
+            <th style="width:90px">Padrão</th>
+            <th style="width:70px">Ativo</th>
+            <th style="width:160px">Ações</th>
+          </tr>
+        </thead>
+        <tbody id="corpo-{{ filial.cod_filial }}">
+          {% for c in filial.canais %}
+            <tr data-id="{{ c.id_pdv_canal }}" data-filial="{{ filial.cod_filial }}">
+              <td><input type="number" class="in-ordem" value="{{ c.ordem }}"></td>
+              <td>
+                <input type="text" class="in-nome" value="{{ c.nome }}">
+              </td>
+              <td class="col-centro"><input type="radio" name="padrao-{{ filial.cod_filial }}"
+                     class="in-padrao" {{ 'checked' if c.padrao }}></td>
+              <td class="col-centro"><input type="checkbox" class="in-ativo" {{ 'checked' if c.ativo }}></td>
+              <td class="col-centro">
+                <button type="button" class="btn-mini" onclick="salvarCanal(this)">Salvar</button>
+                <button type="button" class="btn-mini excluir" onclick="excluirCanal(this)">Excluir</button>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="status-msg" id="status-{{ filial.cod_filial }}"></div>
+  </div>
+{% else %}
+  <div class="bloco">Nenhuma filial cadastrada para esta empresa.</div>
+{% endfor %}
+
+<script>
+  async function fetchJson(url, opcoes) {
+    const resp = await fetch(url, opcoes);
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+    }
+    return resp.json();
+  }
+
+  function mostrar(id, mensagem, erro) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = mensagem;
+    el.classList.toggle("erro", !!erro);
+    if (!erro) setTimeout(() => { el.textContent = ""; }, 2500);
+  }
+
+  function novoCanal(codFilial) {
+    const tr = document.createElement("tr");
+    tr.dataset.id = "";
+    tr.dataset.filial = codFilial;
+    tr.innerHTML = `
+      <td><input type="number" class="in-ordem" value="10"></td>
+      <td><input type="text" class="in-nome" placeholder="Ex.: Marketplace"></td>
+      <td class="col-centro"><input type="radio" name="padrao-${codFilial}" class="in-padrao"></td>
+      <td class="col-centro"><input type="checkbox" class="in-ativo" checked></td>
+      <td class="col-centro">
+        <button type="button" class="btn-mini" onclick="salvarCanal(this)">Salvar</button>
+      </td>
+    `;
+    document.getElementById("corpo-" + codFilial).appendChild(tr);
+  }
+
+  async function salvarCanal(botao) {
+    const tr = botao.closest("tr");
+    const codFilial = tr.dataset.filial;
+    const nome = tr.querySelector(".in-nome").value.trim();
+    if (!nome) { mostrar("status-" + codFilial, "Informe o nome do canal.", true); return; }
+
+    const payload = {
+      cod_filial: Number(codFilial),
+      nome: nome,
+      ordem: Number(tr.querySelector(".in-ordem").value || 10),
+      padrao: tr.querySelector(".in-padrao").checked,
+      ativo: tr.querySelector(".in-ativo").checked,
+    };
+    const id = tr.dataset.id;
+    try {
+      const data = await fetchJson(id ? `/pdv/api/canais/${id}` : "/pdv/api/canais", {
+        method: id ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (data.ok) { location.reload(); }
+      else { mostrar("status-" + codFilial, data.erro || "Erro ao salvar.", true); }
+    } catch (e) {
+      mostrar("status-" + codFilial, e.message || "Erro ao salvar.", true);
+    }
+  }
+
+  async function excluirCanal(botao) {
+    const tr = botao.closest("tr");
+    if (!confirm("Excluir este canal?")) return;
+    try {
+      const data = await fetchJson(`/pdv/api/canais/${tr.dataset.id}`, { method: "DELETE" });
+      if (data.ok) { location.reload(); }
+      else { mostrar("status-" + tr.dataset.filial, data.erro || "Erro ao excluir.", true); }
+    } catch (e) {
+      mostrar("status-" + tr.dataset.filial, e.message || "Erro ao excluir.", true);
+    }
+  }
+
+  document.getElementById("estoquePorCanal").addEventListener("change", async (ev) => {
+    try {
+      const data = await fetchJson("/pdv/api/canais/estoque-por-canal", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estoque_por_canal: ev.target.checked }),
+      });
+      if (data.ok) { location.reload(); }
+      else { mostrar("statusParametro", data.erro || "Erro.", true); }
+    } catch (e) {
+      mostrar("statusParametro", e.message || "Erro.", true);
+    }
+  });
+</script>
+
+{% endblock %}

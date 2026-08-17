@@ -68,6 +68,12 @@
     </a>
   {% endif %}
 
+  {% if pode_canais %}
+    <a class="menu-card" style="background:#0369a1;" href="{{ url_for('pdv.config_canais') }}">
+      🏷️ Canais de Venda
+    </a>
+  {% endif %}
+
   {% if pode_devolucoes %}
     <a class="menu-card" style="background:#c0392b;" href="{{ url_for('pdv.consultar_devolucoes') }}">
       ↩️ Devoluções

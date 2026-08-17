@@ -31,6 +31,9 @@ from services.pdv_estoque_service import (baixar_itens_da_venda, extrato_produto
                                           movimentar, TIPOS_MOVIMENTO)
 from services.pdv_entrada_service import (ratear_frete, custo_unitario,
                                           gerar_titulos_pagar, parcelar)
+from services.pdv_canais_service import (canais_da_filial, canal_padrao,
+                                         estoque_por_canal, saldos_por_canal,
+                                         transferir_estoque)
 from services.pdv_devolucao_service import (itens_disponiveis, registrar_devolucao,
                                             DESTINOS_VALOR)
 from services.pdv_financeiro_service import (lancar, transferir, extrato_conta,
@@ -287,6 +290,7 @@ def menu_pdv():
         pode_financeiro=pode("FINANCEIRO_MENU"),
         pode_caixa_central=pode("CAIXA_CENTRAL"),
         pode_devolucoes=pode("DEVOLUCOES"),
+        pode_canais=pode("CANAIS_VENDA"),
     )
 
 
@@ -523,8 +527,17 @@ def vender():
 
     caixa_padrao = next((c for c in contas if c.get("caixa_padrao")), None)
 
+    cur = _cursor()
+    try:
+        canais = canais_da_filial(cur, _empresa(), _cod_filial())
+        padrao = canal_padrao(cur, _empresa(), _cod_filial())
+    finally:
+        cur.close()
+
     return render_template(
         "pdv/vender.html",
+        canais=canais,
+        id_canal_padrao=padrao["id_pdv_canal"] if padrao else None,
         nome_caixa_padrao=caixa_padrao["nome"] if caixa_padrao else None,
         nome_empresa=session.get("nome_empresa"),
         url_voltar=url_for("pdv.menu_pdv"),
@@ -673,17 +686,29 @@ def api_concluir_venda():
             "WHERE cod_empresa = %s AND cod_filial = %s", (cod_empresa, cod_filial))
         numero_venda = cur.fetchone()["proximo"]
 
+        # por onde a venda saiu: balcão, e-commerce, outlet
+        id_canal = dados.get("id_pdv_canal") or None
+        if id_canal:
+            cur.execute("""
+                SELECT 1 FROM pdv_canais_venda
+                WHERE id_pdv_canal = %s AND cod_empresa = %s AND ativo
+            """, (id_canal, cod_empresa))
+            if not cur.fetchone():
+                return jsonify({"ok": False, "erro": "Canal de venda inválido."}), 400
+
         cur.execute("""
             INSERT INTO pdv_vendas
                 (cod_empresa, cod_filial, numero_venda, data_venda, hora_venda,
                  id_pdv_cliente, nome_cliente, id_pdv_vendedor, nome_vendedor,
-                 valor_bruto, valor_desconto, valor_total, situacao, observacao, id_usuario)
-            VALUES (%s, %s, %s, %s, now()::time, %s, %s, %s, %s, %s, %s, %s, 'CONCLUIDA', %s, %s)
+                 valor_bruto, valor_desconto, valor_total, situacao, observacao,
+                 id_usuario, id_pdv_canal)
+            VALUES (%s, %s, %s, %s, now()::time, %s, %s, %s, %s, %s, %s, %s, 'CONCLUIDA',
+                    %s, %s, %s)
             RETURNING id_pdv_venda
         """, (cod_empresa, cod_filial, numero_venda, data_venda,
               id_cliente, nome_cliente, id_vendedor, nome_vendedor,
               valor_bruto, desconto_venda, valor_total,
-              (dados.get("observacao") or "").strip() or None, id_usuario))
+              (dados.get("observacao") or "").strip() or None, id_usuario, id_canal))
         id_venda = cur.fetchone()["id_pdv_venda"]
 
         movimentos_estoque = []
@@ -707,7 +732,7 @@ def api_concluir_venda():
 
         # Itens da Venda → Movimentações de Estoque
         baixar_itens_da_venda(cur, cod_empresa, cod_filial, id_venda, data_venda,
-                              movimentos_estoque, id_usuario)
+                              movimentos_estoque, id_usuario, id_canal)
 
         for sequencia, receb in enumerate(recebimentos, start=1):
             forma = receb["_forma"]
@@ -981,6 +1006,13 @@ def consultar_estoque():
 
     total_custo = sum(float(p["valor_custo"] or 0) for p in produtos)
 
+    cur = _cursor()
+    try:
+        canais = canais_da_filial(cur, _empresa(), _cod_filial())
+        por_canal = estoque_por_canal(cur, _empresa())
+    finally:
+        cur.close()
+
     return render_template(
         "pdv/estoque.html",
         nome_empresa=session.get("nome_empresa"),
@@ -988,6 +1020,8 @@ def consultar_estoque():
         produtos=produtos,
         total_custo=total_custo,
         pode_ajustar=pode("AJUSTE_ESTOQUE"),
+        canais=canais,
+        estoque_por_canal=por_canal,
     )
 
 
@@ -1074,11 +1108,20 @@ def ajustar_estoque():
 
         custo = _num(dados.get("custo_unitario")) or float(produto["custo_atual"] or 0)
 
+        # com estoque por canal ligado, o movimento precisa dizer a que canal
+        # pertence — senão o saldo fica num limbo "sem canal"
+        id_canal = dados.get("id_pdv_canal") or None
+        if estoque_por_canal(cur, _empresa()) and not id_canal:
+            return jsonify({
+                "ok": False,
+                "erro": "Informe o canal: esta empresa controla estoque separado por canal.",
+            }), 400
+
         movimentar(
             cur, _empresa(), _cod_filial(), id_produto, date.today(), tipo,
             quantidade, custo_unitario=custo, tipo_origem="AJUSTE",
             historico=(dados.get("historico") or "").strip() or TIPOS_MOVIMENTO.get(tipo),
-            id_usuario=session.get("id_usuario"),
+            id_usuario=session.get("id_usuario"), id_canal=id_canal,
         )
 
         # entrada manual atualiza o custo do produto (parâmetro do sistema é
@@ -2453,3 +2496,227 @@ def detalhe_devolucao(id_devolucao):
         lancamentos=lancamentos,
         destinos=DESTINOS_VALOR,
     )
+
+
+# ─── CANAIS DE VENDA ─────────────────────────────────────────────────────────
+# Canal é a porta por onde a venda saiu (balcão, e-commerce, outlet) — não é
+# filial. Por padrão todos usam o estoque da filial; o parâmetro
+# `estoque_por_canal` liga o saldo individualizado.
+
+@pdv_bp.route("/canais")
+def config_canais():
+    redir = _checar_acesso("CANAIS_VENDA")
+    if redir:
+        return redir
+
+    cur = _cursor()
+    try:
+        cur.execute("""
+            SELECT cod_filial, nome_filial FROM filiais
+            WHERE cod_empresa = %s AND ativo ORDER BY cod_filial
+        """, (_empresa(),))
+        filiais = [dict(r) for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT id_pdv_canal, cod_filial, nome, padrao, ativo, ordem
+            FROM pdv_canais_venda WHERE cod_empresa = %s
+            ORDER BY cod_filial, ordem, nome
+        """, (_empresa(),))
+        canais = [dict(r) for r in cur.fetchall()]
+
+        por_canal = estoque_por_canal(cur, _empresa())
+    finally:
+        cur.close()
+
+    for filial in filiais:
+        filial["canais"] = [c for c in canais if c["cod_filial"] == filial["cod_filial"]]
+
+    return render_template(
+        "pdv/canais_venda.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("pdv.menu_pdv"),
+        filiais=filiais,
+        estoque_por_canal=por_canal,
+        pode_transferir=pode("TRANSFERIR_ESTOQUE"),
+    )
+
+
+@pdv_bp.route("/api/canais", methods=["POST"])
+@pdv_bp.route("/api/canais/<int:id_canal>", methods=["PUT", "DELETE"])
+def api_canais(id_canal=None):
+    erro = _erro_permissao("CANAIS_VENDA")
+    if erro:
+        return erro
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        if request.method == "DELETE":
+            try:
+                cur.execute("""
+                    DELETE FROM pdv_canais_venda
+                    WHERE id_pdv_canal = %s AND cod_empresa = %s
+                """, (id_canal, _empresa()))
+            except Exception:
+                conn.rollback()
+                return jsonify({
+                    "ok": False,
+                    "erro": ("Este canal já foi usado em vendas ou movimentos. "
+                             "Desmarque 'Ativo' em vez de excluir."),
+                }), 400
+            conn.commit()
+            return jsonify({"ok": True})
+
+        dados = request.get_json(silent=True) or {}
+        nome = (dados.get("nome") or "").strip()
+        if not nome:
+            return jsonify({"ok": False, "erro": "Informe o nome do canal."}), 400
+
+        padrao = bool(dados.get("padrao"))
+        ativo = bool(dados.get("ativo", True))
+        ordem = int(_num(dados.get("ordem"), 10)) or 10
+        cod_filial = int(_num(dados.get("cod_filial"), _cod_filial()))
+
+        try:
+            # só um canal padrão por filial: marcar um desmarca o outro
+            if padrao:
+                cur.execute("""
+                    UPDATE pdv_canais_venda SET padrao = FALSE, atualizado_em = now()
+                    WHERE cod_empresa = %s AND cod_filial = %s
+                """, (_empresa(), cod_filial))
+
+            if id_canal:
+                cur.execute("""
+                    UPDATE pdv_canais_venda
+                       SET nome = %s, padrao = %s, ativo = %s, ordem = %s,
+                           atualizado_em = now()
+                     WHERE id_pdv_canal = %s AND cod_empresa = %s
+                """, (nome, padrao, ativo, ordem, id_canal, _empresa()))
+                if cur.rowcount == 0:
+                    return jsonify({"ok": False, "erro": "Canal não encontrado."}), 404
+            else:
+                cur.execute("""
+                    INSERT INTO pdv_canais_venda
+                        (cod_empresa, cod_filial, nome, padrao, ativo, ordem)
+                    VALUES (%s, %s, %s, %s, %s, %s) RETURNING id_pdv_canal
+                """, (_empresa(), cod_filial, nome, padrao, ativo, ordem))
+                id_canal = cur.fetchone()[0]
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            return jsonify({"ok": False, "erro": f"Erro ao salvar: {e}"}), 500
+    finally:
+        cur.close()
+    return jsonify({"ok": True, "id": id_canal})
+
+
+@pdv_bp.route("/api/canais/estoque-por-canal", methods=["PUT"])
+def api_estoque_por_canal():
+    """
+    Liga/desliga o saldo individualizado por canal.
+
+    Desligado (padrão), os canais usam o estoque da filial e a transferência
+    entre canais deixa de fazer sentido — some da tela.
+    """
+    erro = _erro_permissao("CANAIS_VENDA")
+    if erro:
+        return erro
+
+    dados = request.get_json(silent=True) or {}
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO pdv_parametros (cod_empresa, opera_pdv, estoque_por_canal)
+            VALUES (%s, TRUE, %s)
+            ON CONFLICT (cod_empresa)
+            DO UPDATE SET estoque_por_canal = EXCLUDED.estoque_por_canal,
+                          atualizado_em = now()
+        """, (_empresa(), bool(dados.get("estoque_por_canal"))))
+        conn.commit()
+    finally:
+        cur.close()
+    return jsonify({"ok": True})
+
+
+@pdv_bp.route("/canais/transferir")
+def tela_transferir_canal():
+    redir = _checar_acesso("TRANSFERIR_ESTOQUE")
+    if redir:
+        return redir
+
+    cur = _cursor()
+    try:
+        if not estoque_por_canal(cur, _empresa()):
+            flash("Os canais usam o estoque da filial — não há o que transferir.", "error")
+            return redirect(url_for("pdv.config_canais"))
+
+        canais = canais_da_filial(cur, _empresa(), _cod_filial())
+        cur.execute("""
+            SELECT id_pdv_produto, codigo, descricao, unidade, quantidade_atual
+            FROM pdv_produtos WHERE cod_empresa = %s AND ativo
+            ORDER BY ordem, descricao
+        """, (_empresa(),))
+        produtos = [dict(r) for r in cur.fetchall()]
+    finally:
+        cur.close()
+
+    for p in produtos:
+        p["quantidade_atual"] = float(p["quantidade_atual"] or 0)
+
+    return render_template(
+        "pdv/transferir_canal.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("pdv.config_canais"),
+        canais=canais,
+        produtos=produtos,
+        hoje=date.today().isoformat(),
+    )
+
+
+@pdv_bp.route("/api/canais/saldos/<int:id_produto>")
+def api_saldos_canal(id_produto):
+    erro = _erro_permissao("TRANSFERIR_ESTOQUE")
+    if erro:
+        return erro
+    cur = _cursor()
+    try:
+        return jsonify({"ok": True, **saldos_por_canal(cur, _empresa(), id_produto)})
+    finally:
+        cur.close()
+
+
+@pdv_bp.route("/api/canais/transferir", methods=["POST"])
+def api_transferir_canal():
+    erro = _erro_permissao("TRANSFERIR_ESTOQUE")
+    if erro:
+        return erro
+
+    dados = request.get_json(silent=True) or {}
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if not estoque_por_canal(cur, _empresa()):
+            return jsonify({
+                "ok": False,
+                "erro": "Os canais usam o estoque da filial — não há o que transferir.",
+            }), 400
+
+        transferir_estoque(
+            cur, _empresa(), _cod_filial(), dados.get("id_pdv_produto"),
+            dados.get("id_canal_origem"), dados.get("id_canal_destino"),
+            _num(dados.get("quantidade")),
+            (dados.get("data_movimento") or date.today().isoformat()).strip(),
+            (dados.get("observacao") or "").strip() or None,
+            session.get("id_usuario"),
+        )
+        conn.commit()
+    except ValueError as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": f"Erro ao transferir: {e}"}), 500
+    finally:
+        cur.close()
+    return jsonify({"ok": True})

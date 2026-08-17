@@ -63,6 +63,17 @@
         <option value="AJUSTE">Ajuste de inventário</option>
       </select>
     </div>
+    {% if canais %}
+      <div class="campo">
+        <label for="selCanal">Canal{{ '' if estoque_por_canal else ' (opcional)' }}</label>
+        <select id="selCanal">
+          {% if not estoque_por_canal %}<option value="">—</option>{% endif %}
+          {% for c in canais %}
+            <option value="{{ c.id_pdv_canal }}" {{ 'selected' if c.padrao }}>{{ c.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
     <div class="campo">
       <label for="inpQtd">Quantidade</label>
       <input type="number" step="any" id="inpQtd" value="1" style="width:120px">
@@ -137,6 +148,8 @@
         quantidade: document.getElementById("inpQtd").value,
         custo_unitario: document.getElementById("inpCusto").value,
         historico: document.getElementById("inpHistorico").value,
+        id_pdv_canal: document.getElementById("selCanal")
+          ? (document.getElementById("selCanal").value || null) : null,
       };
       btn.disabled = true;
       try {

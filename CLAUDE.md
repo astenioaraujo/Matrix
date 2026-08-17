@@ -295,6 +295,25 @@ Ao corrigir, as parcelas de cartão são **refeitas** (elas são derivadas da op
 
 - **`qtd_parcelas` zerada virava 1 silenciosamente**: o parse era `int(_num(x, 1)) or 1`, então um `0` digitado por engano caía no fallback e transformava uma venda em 6x numa venda à vista — passando pela validação `valor < 1`, que nunca via o zero. Agora o parse não tem fallback (`_num(x, 0)`) e o zero é recusado.
 
+## Canais de Venda
+
+Uma loja vende por mais de uma porta: balcão, e-commerce, outlet. **Canal não é filial** — tratar canal como filial obrigaria a dividir o estoque, e na maioria dos casos ele é o mesmo (a peça está na loja e também é anunciada no site). `pdv_canais_venda` (`migrations/criar_pdv_canais_venda.sql`), por `(cod_empresa, cod_filial)`, com um canal `padrao` por filial (índice único parcial).
+
+**O parâmetro `pdv_parametros.estoque_por_canal` decide o modelo:**
+
+| | Saldo | Transferência entre canais |
+|---|---|---|
+| `FALSE` (padrão) | um só, da filial | não existe — a tela recusa |
+| `TRUE` | por canal, somado dos movimentos | obrigatória para mover peça |
+
+**O canal é gravado no movimento e na venda nos dois modos** (`pdv_estoque_movimentos.id_pdv_canal`, `pdv_vendas.id_pdv_canal`) — mesmo com estoque compartilhado dá para saber quanto o e-commerce vendeu. Com `estoque_por_canal = TRUE`, o ajuste de estoque **exige** o canal (senão o saldo cairia num limbo "sem canal", que a tela de transferência mostra à parte).
+
+`transferir_estoque()` (`services/pdv_canais_service.py`) é um **par de movimentos** — saída num canal, entrada no outro — que se anulam em `quantidade_atual`: a peça continua na loja, só mudou de vitrine.
+
+Telas: `/pdv/canais` (canais por filial + o parâmetro) e `/pdv/canais/transferir`. Permissões `CANAIS_VENDA` 1850 e `TRANSFERIR_ESTOQUE` 1860.
+
+**N'O Closet (EMP013)**: uma filial (1) e três canais — Loja Física (padrão), E-commerce, Outlet — com **estoque compartilhado**, que é o que o arquivo de estoque da loja reflete.
+
 ## Devolução e Cancelamento (fase 6)
 
 Não está no documento da Inovai, mas segue o princípio dele: **devolver é operação nova**, com documento próprio (`pdv_devolucoes` + `pdv_devolucoes_itens`, `migrations/criar_pdv_devolucoes.sql`), que aponta para a venda de origem. `services/pdv_devolucao_service.py`.

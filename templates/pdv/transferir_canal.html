@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+{#
+  Transferência entre canais: um par de movimentos, saída num canal e entrada
+  no outro. O saldo TOTAL do produto não muda — a peça continua na loja, só
+  passou a ser oferecida por outro canal.
+#}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .bloco-titulo { font-size:17px; font-weight:800; margin-bottom:12px; color:#1a3a63; }
+  .linha-campos { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  input, select { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+  .btn { padding:10px 22px; border-radius:8px; border:none; background:#1d4ed8;
+         color:#fff; font-weight:800; cursor:pointer; font-size:15px; }
+  .btn:disabled { background:#9ca3af; cursor:not-allowed; }
+  table { width:100%; border-collapse:collapse; max-width:520px; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; }
+  .status-msg { font-size:14px; margin-top:12px; min-height:20px; color:#9f2f2f; font-weight:600; }
+  .status-msg.sucesso { color:#16a34a; }
+  .dica { font-size:12px; color:#666; margin-top:10px; }
+</style>
+
+<div class="pagina-titulo">⇄ Transferir Estoque entre Canais</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Produto</div>
+  <div class="linha-campos">
+    <div class="campo" style="flex:1; min-width:300px">
+      <label for="selProduto">Produto</label>
+      <select id="selProduto">
+        {% for p in produtos %}
+          <option value="{{ p.id_pdv_produto }}">
+            {{ (p.codigo ~ ' — ' if p.codigo else '') }}{{ p.descricao }} ({{ p.quantidade_atual|br }} {{ p.unidade }})
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div style="margin-top:16px">
+    <table id="tabelaSaldos">
+      <thead><tr><th>Canal</th><th style="width:140px">Saldo</th></tr></thead>
+      <tbody id="corpoSaldos"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Transferência</div>
+  <div class="linha-campos">
+    <div class="campo">
+      <label for="selOrigem">De</label>
+      <select id="selOrigem">
+        {% for c in canais %}<option value="{{ c.id_pdv_canal }}">{{ c.nome }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="selDestino">Para</label>
+      <select id="selDestino">
+        {% for c in canais %}<option value="{{ c.id_pdv_canal }}">{{ c.nome }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="inpQtd">Quantidade</label>
+      <input type="number" step="any" min="0" id="inpQtd" value="1" style="width:130px">
+    </div>
+    <div class="campo">
+      <label for="inpData">Data</label>
+      <input type="date" id="inpData" value="{{ hoje }}">
+    </div>
+    <div class="campo" style="flex:1; min-width:200px">
+      <label for="inpObs">Observação</label>
+      <input type="text" id="inpObs" placeholder="Opcional">
+    </div>
+    <button type="button" class="btn" id="btnTransferir">Transferir</button>
+  </div>
+  <div class="dica">
+    O saldo total do produto não muda — a peça continua na loja, só passa a ser oferecida por
+    outro canal.
+  </div>
+  <div class="status-msg" id="status"></div>
+</div>
+
+<script>
+  function formatarBR(valor) {
+    return Number(valor).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  async function carregarSaldos() {
+    const id = document.getElementById("selProduto").value;
+    const corpo = document.getElementById("corpoSaldos");
+    corpo.innerHTML = "";
+    if (!id) return;
+    try {
+      const resp = await fetch(`/pdv/api/canais/saldos/${id}`);
+      const data = await resp.json();
+      if (!data.ok) return;
+      (data.canais || []).forEach(c => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${c.nome}</td><td class="col-dir">${formatarBR(c.saldo)}</td>`;
+        corpo.appendChild(tr);
+      });
+      if (data.sem_canal) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td><em>Sem canal definido</em></td><td class="col-dir">${formatarBR(data.sem_canal)}</td>`;
+        corpo.appendChild(tr);
+      }
+    } catch (e) { /* a tela continua utilizável sem o detalhamento */ }
+  }
+
+  document.getElementById("selProduto").addEventListener("change", carregarSaldos);
+
+  document.getElementById("btnTransferir").addEventListener("click", async () => {
+    const btn = document.getElementById("btnTransferir");
+    const el = document.getElementById("status");
+    btn.disabled = true;
+    el.classList.remove("sucesso");
+    try {
+      const resp = await fetch("/pdv/api/canais/transferir", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id_pdv_produto: Number(document.getElementById("selProduto").value),
+          id_canal_origem: Number(document.getElementById("selOrigem").value),
+          id_canal_destino: Number(document.getElementById("selDestino").value),
+          quantidade: document.getElementById("inpQtd").value,
+          data_movimento: document.getElementById("inpData").value,
+          observacao: document.getElementById("inpObs").value,
+        }),
+      });
+      const contentType = resp.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+      }
+      const data = await resp.json();
+      if (data.ok) {
+        el.classList.add("sucesso");
+        el.textContent = "Transferência realizada.";
+        carregarSaldos();
+      } else {
+        el.textContent = data.erro || "Erro ao transferir.";
+      }
+    } catch (e) {
+      el.textContent = e.message || "Erro ao transferir.";
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  carregarSaldos();
+</script>
+
+{% endblock %}

@@ -186,6 +186,18 @@
         {% endfor %}
       </select>
     </div>
+    {% if canais %}
+      <div class="campo">
+        <label for="selCanal">Canal</label>
+        <select id="selCanal" style="min-width:170px">
+          {% for c in canais %}
+            <option value="{{ c.id_pdv_canal }}" {{ 'selected' if c.id_pdv_canal == id_canal_padrao }}>
+              {{ c.nome }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
     <div class="campo" style="flex:1; min-width:240px">
       <label for="inpObservacao">Observação</label>
       <input type="text" id="inpObservacao" placeholder="Opcional">
@@ -495,6 +507,8 @@
     const payload = {
       id_pdv_cliente: document.getElementById("selCliente").value || null,
       id_pdv_vendedor: Number(document.getElementById("selVendedor").value),
+      id_pdv_canal: document.getElementById("selCanal")
+        ? Number(document.getElementById("selCanal").value) : null,
       valor_desconto: paraNumero(document.getElementById("inpDescontoVenda").value),
       observacao: document.getElementById("inpObservacao").value,
       itens: itens,

@@ -27,13 +27,17 @@ TIPOS_MOVIMENTO = {
 
 def movimentar(cur, cod_empresa, cod_filial, id_produto, data_movimento, tipo,
                quantidade, custo_unitario=0, tipo_origem="AJUSTE", id_origem=None,
-               historico=None, id_usuario=None):
+               historico=None, id_usuario=None, id_canal=None):
     """
     Registra um movimento e reflete no saldo do produto.
 
     `quantidade` positiva entra, negativa sai. Recebe o cursor de quem chamou
     para rodar dentro da transação do documento que provocou o movimento (a
     venda, a nota de entrada): ou tudo grava, ou nada grava.
+
+    `id_canal` é o canal de venda por onde a peça entrou ou saiu. Ele é
+    gravado mesmo quando a empresa usa estoque compartilhado — é o que permite
+    saber depois quanto cada canal vendeu.
 
     Devolve o id do movimento.
     """
@@ -43,12 +47,13 @@ def movimentar(cur, cod_empresa, cod_filial, id_produto, data_movimento, tipo,
     cur.execute("""
         INSERT INTO pdv_estoque_movimentos
             (cod_empresa, cod_filial, id_pdv_produto, data_movimento, tipo,
-             quantidade, custo_unitario, tipo_origem, id_origem, historico, id_usuario)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             quantidade, custo_unitario, tipo_origem, id_origem, historico,
+             id_usuario, id_pdv_canal)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id_pdv_estoque_movimento
     """, (cod_empresa, cod_filial, id_produto, data_movimento, tipo,
           quantidade, custo_unitario or 0, tipo_origem, id_origem,
-          historico, id_usuario))
+          historico, id_usuario, id_canal))
     linha = cur.fetchone()
     id_movimento = linha[0] if isinstance(linha, tuple) else linha["id_pdv_estoque_movimento"]
 
@@ -63,7 +68,7 @@ def movimentar(cur, cod_empresa, cod_filial, id_produto, data_movimento, tipo,
 
 
 def baixar_itens_da_venda(cur, cod_empresa, cod_filial, id_venda, data_venda,
-                          itens, id_usuario=None):
+                          itens, id_usuario=None, id_canal=None):
     """
     Saída de estoque dos itens de uma venda concluída.
 
@@ -84,6 +89,7 @@ def baixar_itens_da_venda(cur, cod_empresa, cod_filial, id_venda, data_venda,
             id_origem=id_venda,
             historico=f"Venda — {item.get('descricao_produto') or ''}".strip(" —"),
             id_usuario=id_usuario,
+            id_canal=id_canal,
         )
 
 
