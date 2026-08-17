@@ -818,11 +818,14 @@
         {% set tot_total.v   = tot_total.v   + soma.v %}
         {% set tot_totalcx.v = tot_totalcx.v + tcx %}
 
-        {# Só ontem, anteontem e o dia anterior a esse aceitam digitação. #}
-        {% set dia_editavel = edicao_ini <= d <= edicao_fim %}
+        {# Só ontem, anteontem e o dia anterior a esse aceitam digitação —
+           mais as datas antigas abertas por liberação temporária. #}
+        {% set dia_liberado = d in datas_liberadas %}
+        {% set dia_editavel = (edicao_ini <= d <= edicao_fim) or dia_liberado %}
 
-        {# Dia antigo: some quando a chave "só os últimos dias" está ligada. #}
-        {% set dia_recente = edicao_ini <= d <= hoje %}
+        {# Dia antigo: some quando a chave "só os últimos dias" está ligada.
+           Dia liberado precisa aparecer, senão não teria como digitar nele. #}
+        {% set dia_recente = (edicao_ini <= d <= hoje) or dia_liberado %}
 
         <tr data-data="{{ d.strftime('%Y-%m-%d') }}"
             data-filial="{{ cod_filial_atual or '' }}"

@@ -3891,67 +3891,119 @@ def acessos_caixas():
 DIAS_EDICAO_CAIXA = 3
 
 
-def _liberacao_caixa_vigente(cod_empresa):
-    """Liberação temporária de datas antigas ainda dentro do prazo, ou None.
+def _liberacoes_caixa_vigentes(cod_empresa):
+    """Todas as liberações temporárias ainda dentro do prazo, mais recentes
+    primeiro.
 
-    Mesmo desenho da liberação de Saldos: uma linha por ativação, sem rotina
-    de expiração — vale a mais recente e só enquanto o relógio deixar.
+    As liberações são **acumulativas**: cada linha abre um período fechado
+    (desde/até) para uma filial ou para todas (`cod_filial` nulo), e todas as
+    que ainda não expiraram valem ao mesmo tempo. Antes só a última linha era
+    lida (`ORDER BY ativado_em DESC LIMIT 1`), então liberar uma segunda data
+    cancelava a primeira sem avisar — era isso que fazia a liberação "não
+    funcionar" depois de vários cliques.
+
+    Não há rotina de expiração: quem expira é o relógio, na leitura.
     """
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
         cur.execute("""
-            SELECT cl.data_liberada_desde, cl.ativado_em, u.nome AS ativado_por
+            SELECT cl.id_liberacao, cl.data_liberada_desde, cl.data_liberada_ate,
+                   cl.cod_filial, cl.ativado_em, u.nome AS ativado_por,
+                   f.nome_filial
             FROM caixas_liberacao_temporaria cl
             LEFT JOIN usuarios u ON u.id_usuario = cl.id_usuario_ativou
+            LEFT JOIN filiais f ON f.cod_empresa = cl.cod_empresa
+                               AND f.cod_filial = cl.cod_filial
             WHERE cl.cod_empresa = %s
+              AND cl.revogado_em IS NULL
+              AND cl.ativado_em >= (NOW() AT TIME ZONE 'UTC') - %s::interval
             ORDER BY cl.ativado_em DESC
-            LIMIT 1
-        """, (cod_empresa,))
-        liberacao = cur.fetchone()
+        """, (cod_empresa, f"{HORAS_LIBERACAO_CAIXAS} hours"))
+        linhas = cur.fetchall()
     finally:
         cur.close()
         conn.close()
 
-    if not liberacao:
-        return None
+    agora = datetime.now()
+    vigentes = []
+    for lib in linhas:
+        expira_em = (_ativado_em_local(lib["ativado_em"])
+                     + timedelta(hours=HORAS_LIBERACAO_CAIXAS))
+        if agora >= expira_em:
+            continue
+        lib["expira_em"] = expira_em
+        vigentes.append(lib)
+    return vigentes
 
-    expira_em = (_ativado_em_local(liberacao["ativado_em"])
-                 + timedelta(hours=HORAS_LIBERACAO_CAIXAS))
-    if datetime.now() >= expira_em:
-        return None
 
-    liberacao["expira_em"] = expira_em
-    return liberacao
+def _liberacao_cobre(lib, d, cod_filial=None):
+    """A liberação abrange esta data nesta filial?
+
+    `cod_filial` nulo na liberação = todas as filiais. `cod_filial` nulo na
+    pergunta (tela que ainda não escolheu filial) aceita qualquer liberação —
+    a trava por filial que vale é a dos endpoints de gravação, onde a filial
+    é sempre conhecida.
+    """
+    if not (lib["data_liberada_desde"] <= d <= lib["data_liberada_ate"]):
+        return False
+    if lib["cod_filial"] is None or cod_filial is None:
+        return True
+    return int(lib["cod_filial"]) == int(cod_filial)
 
 
 def _janela_edicao_caixa(hoje=None, cod_empresa=None):
-    """(primeiro_dia, ultimo_dia) em que a digitação é permitida.
+    """(primeiro_dia, ultimo_dia) da janela **normal** de digitação.
 
-    Uma liberação temporária vigente puxa o primeiro dia para trás; o último
-    continua sendo hoje (data futura nunca é digitável).
+    As datas abertas por liberação temporária não entram aqui: elas podem ser
+    períodos soltos, um por filial, e não cabem num intervalo único. Quem
+    precisa delas usa `_datas_liberadas_caixa`.
     """
     hoje = hoje or date.today()
-    ini = hoje - timedelta(days=DIAS_EDICAO_CAIXA)
+    return (hoje - timedelta(days=DIAS_EDICAO_CAIXA), hoje)
 
+
+def _datas_liberadas_caixa(cod_empresa=None, cod_filial=None):
+    """Conjunto de datas extras abertas por liberação temporária vigente."""
     if cod_empresa is None:
         cod_empresa = str(session.get("cod_empresa") or "").strip()
-    if cod_empresa:
-        liberacao = _liberacao_caixa_vigente(cod_empresa)
-        if liberacao and liberacao["data_liberada_desde"] < ini:
-            ini = liberacao["data_liberada_desde"]
+    if not cod_empresa:
+        return set()
 
-    return (ini, hoje)
+    datas = set()
+    for lib in _liberacoes_caixa_vigentes(cod_empresa):
+        if cod_filial is not None and lib["cod_filial"] is not None \
+                and int(lib["cod_filial"]) != int(cod_filial):
+            continue
+        d = lib["data_liberada_desde"]
+        while d <= lib["data_liberada_ate"]:
+            datas.add(d)
+            d += timedelta(days=1)
+    return datas
 
 
-def _data_caixa_editavel(data_str, hoje=None, cod_empresa=None):
+def _data_caixa_editavel(data_str, hoje=None, cod_empresa=None, cod_filial=None):
     """A data pode receber digitação? Vale para a grade e para o detalhamento."""
-    ini, fim = _janela_edicao_caixa(hoje, cod_empresa)
     try:
         d = data_str if isinstance(data_str, date) else date.fromisoformat(str(data_str)[:10])
     except (TypeError, ValueError):
         return False
-    return ini <= d <= fim
+
+    ini, fim = _janela_edicao_caixa(hoje, cod_empresa)
+    if ini <= d <= fim:
+        return True
+
+    # Data futura nunca é digitável, nem liberada.
+    if d > fim:
+        return False
+
+    if cod_empresa is None:
+        cod_empresa = str(session.get("cod_empresa") or "").strip()
+    if not cod_empresa:
+        return False
+
+    return any(_liberacao_cobre(lib, d, cod_filial)
+               for lib in _liberacoes_caixa_vigentes(cod_empresa))
 
 
 def _resumo_por_agrupamento(formas, valores, datas):
@@ -4051,7 +4103,7 @@ def conferir_caixas():
 
             # A tela já bloqueia, mas o bloqueio que vale é este: fora da
             # janela de digitação nada entra, venha de onde vier.
-            if not _data_caixa_editavel(data_post, hoje):
+            if not _data_caixa_editavel(data_post, hoje, cod_empresa, cod_filial_p):
                 return jsonify({
                     "ok": False,
                     "erro": "Data fora do prazo de digitação do caixa."
@@ -4481,6 +4533,11 @@ def conferir_caixas():
 
     # uma consulta só — a janela é usada em dois pontos do template
     janela_edicao = _janela_edicao_caixa(hoje, cod_empresa)
+    # Datas fora da janela normal abertas por liberação temporária. Numa aba
+    # de filial vale a liberação daquela filial (mais as de "todas"); nas abas
+    # de total ninguém digita, então o conjunto nem é consultado.
+    datas_liberadas = (_datas_liberadas_caixa(cod_empresa, cod_filial_atual)
+                       if cod_filial_atual else set())
 
     return render_template(
         "conferir_caixas.html",
@@ -4513,6 +4570,7 @@ def conferir_caixas():
         resumo_agrupamento=resumo_agrupamento,
         edicao_ini=janela_edicao[0],
         edicao_fim=janela_edicao[1],
+        datas_liberadas=datas_liberadas,
         hoje=hoje,
         # "dia que se está processando": por convenção da operação, o caixa
         # fechado hoje é sempre o de ontem
@@ -4630,7 +4688,7 @@ def api_caixas_observacao_dia():
     observacao  = (request.form.get("observacao") or "").strip()
 
     # Mesma janela de digitação do resto do caixa.
-    if not _data_caixa_editavel(data_str):
+    if not _data_caixa_editavel(data_str, cod_empresa=cod_empresa, cod_filial=cod_filial):
         return jsonify({
             "ok": False,
             "erro": "Data fora do prazo de digitação do caixa."
@@ -4813,7 +4871,7 @@ def api_caixas_detalhe_salvar():
     id_linha    = request.form.get("id_linha") or ""
 
     # Mesma janela de digitação da grade — detalhar é digitar.
-    if not _data_caixa_editavel(data_str):
+    if not _data_caixa_editavel(data_str, cod_empresa=cod_empresa, cod_filial=cod_filial):
         return jsonify({
             "ok": False,
             "erro": "Data fora do prazo de digitação do caixa."
@@ -4883,20 +4941,77 @@ def api_caixas_detalhe_salvar():
 
 # ---------------------------------------------------------------------------
 # LIBERAÇÃO TEMPORÁRIA DE DATAS ANTIGAS (caixas)
-# Espelha a liberação de Saldos: abre uma data já fora da janela de digitação
-# por algumas horas, e expira sozinha.
+# Abre um PERÍODO já fora da janela de digitação, para uma filial ou para
+# todas, por algumas horas. As liberações se somam e expiram sozinhas.
 # ---------------------------------------------------------------------------
-@financeiro_bp.route("/caixas/configuracoes/liberacao-temporaria")
+def _filiais_empresa(cod_empresa):
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT cod_filial, nome_filial FROM filiais
+             WHERE cod_empresa = %s AND ativo = TRUE
+             ORDER BY cod_filial
+        """, (cod_empresa,))
+        return cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+
+def _sugestao_periodo_liberacao(cod_empresa, hoje=None):
+    """(data_inicial, data_final) sugeridas na tela.
+
+    Inicial: primeiro dia do mês corrente. Final: o último dia que ainda NÃO
+    está aberto — a véspera do início da janela normal de digitação. Se o mês
+    mal começou e tudo já está aberto, as duas pontas se encostam no dia 1º.
+    """
+    hoje = hoje or date.today()
+    ini = hoje.replace(day=1)
+    fim = _janela_edicao_caixa(hoje, cod_empresa)[0] - timedelta(days=1)
+    return (ini, max(ini, fim))
+
+
+def _liberacao_json(lib):
+    return {
+        "id_liberacao": lib["id_liberacao"],
+        "data_liberada_desde": lib["data_liberada_desde"].isoformat(),
+        "data_liberada_ate": lib["data_liberada_ate"].isoformat(),
+        "cod_filial": lib["cod_filial"],
+        "nome_filial": lib["nome_filial"] if lib["cod_filial"] is not None else None,
+        "expira_em": lib["expira_em"].isoformat(),
+        "ativado_por": lib["ativado_por"],
+    }
+
+
+def _payload_liberacoes(cod_empresa):
+    """O que a tela precisa para se redesenhar: as liberações vigentes e a
+    data mínima da janela normal. Criar, encerrar e consultar devolvem tudo
+    isso, para a lista não depender de uma segunda requisição."""
+    return {
+        "liberacoes": [_liberacao_json(l)
+                       for l in _liberacoes_caixa_vigentes(cod_empresa)],
+        "data_minima_editavel":
+            _janela_edicao_caixa(cod_empresa=cod_empresa)[0].isoformat(),
+    }
+
+
+@financeiro_bp.route("/caixas/liberacao-temporaria")
 @permissao_obrigatoria("FINANCEIRO", "CONFIGURACOES_CAIXAS",
                        redirecionar_para="financeiro.menu_caixas")
 def caixas_liberacao_temporaria():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    sug_ini, sug_fim = _sugestao_periodo_liberacao(cod_empresa)
     return render_template(
         "caixas_liberacao_temporaria.html",
-        empresa_ativa=str(session["cod_empresa"]).strip(),
+        empresa_ativa=cod_empresa,
         nome_empresa_ativa=session["nome_empresa"],
-        url_voltar=url_for("financeiro.configuracoes_caixas"),
+        url_voltar=url_for("financeiro.menu_caixas"),
         horas_liberacao=HORAS_LIBERACAO_CAIXAS,
         dias_edicao=DIAS_EDICAO_CAIXA,
+        filiais=_filiais_empresa(cod_empresa),
+        sugestao_inicial=sug_ini.isoformat(),
+        sugestao_final=sug_fim.isoformat(),
     )
 
 
@@ -4905,17 +5020,7 @@ def caixas_liberacao_temporaria():
                        redirecionar_para="financeiro.menu_caixas")
 def api_status_liberacao_temporaria_caixas():
     cod_empresa = str(session["cod_empresa"]).strip()
-    liberacao = _liberacao_caixa_vigente(cod_empresa)
-    data_minima, _ = _janela_edicao_caixa(cod_empresa=cod_empresa)
-
-    return jsonify({
-        "ok": True,
-        "ativa": bool(liberacao),
-        "data_liberada_desde": liberacao["data_liberada_desde"].isoformat() if liberacao else None,
-        "expira_em": liberacao["expira_em"].isoformat() if liberacao else None,
-        "ativado_por": liberacao["ativado_por"] if liberacao else None,
-        "data_minima_editavel": data_minima.isoformat(),
-    })
+    return jsonify(dict(_payload_liberacoes(cod_empresa), ok=True))
 
 
 @financeiro_bp.route("/api/caixas/liberacao-temporaria", methods=["POST"])
@@ -4926,21 +5031,43 @@ def api_ativar_liberacao_temporaria_caixas():
     id_usuario = session["id_usuario"]
     dados = request.get_json(silent=True) or {}
 
-    data_liberada_desde = dados.get("data_liberada_desde")
-    try:
-        data_liberada_desde = datetime.strptime(data_liberada_desde, "%Y-%m-%d").date()
-    except (TypeError, ValueError):
-        return jsonify({"ok": False, "erro": "Informe data_liberada_desde no formato YYYY-MM-DD."}), 400
+    def _data(campo):
+        try:
+            return datetime.strptime(dados.get(campo), "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            return None
+
+    data_inicial = _data("data_inicial")
+    data_final = _data("data_final")
+    if not data_inicial or not data_final:
+        return jsonify({"ok": False,
+                        "erro": "Informe data_inicial e data_final (YYYY-MM-DD)."}), 400
+    if data_final < data_inicial:
+        return jsonify({"ok": False,
+                        "erro": "A data final não pode ser anterior à inicial."}), 400
+
+    # "TODAS" (ou vazio) grava NULL — vale para a empresa inteira.
+    cod_filial = dados.get("cod_filial")
+    if cod_filial in (None, "", "TODAS"):
+        cod_filial = None
+    else:
+        try:
+            cod_filial = int(cod_filial)
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "erro": "Filial inválida."}), 400
+        if cod_filial not in {f["cod_filial"] for f in _filiais_empresa(cod_empresa)}:
+            return jsonify({"ok": False, "erro": "Filial inválida."}), 400
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
         cur.execute("""
-            INSERT INTO caixas_liberacao_temporaria (cod_empresa, data_liberada_desde, id_usuario_ativou)
-            VALUES (%s, %s, %s)
-            RETURNING id_liberacao, data_liberada_desde, ativado_em
-        """, (cod_empresa, data_liberada_desde, id_usuario))
-        liberacao = cur.fetchone()
+            INSERT INTO caixas_liberacao_temporaria
+                (cod_empresa, data_liberada_desde, data_liberada_ate,
+                 cod_filial, id_usuario_ativou)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id_liberacao
+        """, (cod_empresa, data_inicial, data_final, cod_filial, id_usuario))
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -4949,13 +5076,36 @@ def api_ativar_liberacao_temporaria_caixas():
         cur.close()
         conn.close()
 
-    expira_em = (_ativado_em_local(liberacao["ativado_em"])
-                 + timedelta(hours=HORAS_LIBERACAO_CAIXAS))
-    return jsonify({
-        "ok": True,
-        "data_liberada_desde": liberacao["data_liberada_desde"].isoformat(),
-        "expira_em": expira_em.isoformat(),
-    }), 201
+    return jsonify(dict(_payload_liberacoes(cod_empresa), ok=True)), 201
+
+
+@financeiro_bp.route("/api/caixas/liberacao-temporaria/<int:id_liberacao>",
+                     methods=["DELETE"])
+@permissao_obrigatoria("FINANCEIRO", "CONFIGURACOES_CAIXAS",
+                       redirecionar_para="financeiro.menu_caixas")
+def api_revogar_liberacao_temporaria_caixas(id_liberacao):
+    """Encerra uma liberação antes da hora. A linha fica no histórico —
+    marcar `revogado_em` diz quando parou de valer; apagar não diria nada."""
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            UPDATE caixas_liberacao_temporaria
+               SET revogado_em = NOW()
+             WHERE id_liberacao = %s AND cod_empresa = %s AND revogado_em IS NULL
+        """, (id_liberacao, cod_empresa))
+        encontrou = cur.rowcount > 0
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+    if not encontrou:
+        return jsonify({"ok": False, "erro": "Liberação não encontrada."}), 404
+
+    return jsonify(dict(_payload_liberacoes(cod_empresa), ok=True))
 
 
 @financeiro_bp.route("/caixas/configuracoes", methods=["GET", "POST"])

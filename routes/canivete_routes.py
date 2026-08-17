@@ -317,7 +317,8 @@ def fp_consultar():
         total = cur.fetchone()["total"]
 
         cur.execute("""
-            SELECT c.nome AS classificacao,
+            SELECT c.id AS id_classificacao,
+                   c.nome AS classificacao,
                    COALESCE(c.valor_orcado, 0) AS orcado,
                    COALESCE(SUM(l.valor), 0) AS realizado,
                    c.ajustar_ao_real
@@ -333,7 +334,8 @@ def fp_consultar():
 
             UNION ALL
 
-            SELECT '(Sem classificação)' AS classificacao,
+            SELECT NULL::integer AS id_classificacao,
+                   '(Sem classificação)' AS classificacao,
                    0 AS orcado,
                    COALESCE(SUM(valor), 0) AS realizado,
                    FALSE AS ajustar_ao_real
@@ -349,6 +351,13 @@ def fp_consultar():
         totais_classificacao = cur.fetchall() or []
 
         total_orcado = sum(r["orcado"] for r in totais_classificacao)
+
+        cur.execute("""
+            SELECT id, nome FROM fp_contas_bancarias
+            WHERE id_usuario = %s AND ativo = TRUE
+            ORDER BY nome
+        """, (id_usuario,))
+        contas_bancarias = cur.fetchall() or []
 
     finally:
         cur.close()
@@ -366,6 +375,9 @@ def fp_consultar():
         filtro=filtro,
         lancamentos_json=lancamentos_json,
         classificacoes_consulta=classificacoes_consulta,
+        contas_bancarias=contas_bancarias,
+        pode_lancar=_tem_perm(id_usuario, cod_empresa, "FINANCAS_PESSOAIS_LANCAR"),
+        hoje_iso=hoje.isoformat(),
         total=total,
         totais_classificacao=totais_classificacao,
         total_orcado=total_orcado,
@@ -375,6 +387,70 @@ def fp_consultar():
         meses=meses,
         nomes_meses=nomes_meses,
     )
+
+
+@canivete_bp.route("/financas-pessoais/pagar", methods=["POST"])
+def fp_pagar():
+    """Paga uma classificação ainda sem realizado: cria o lançamento de hoje."""
+    r = _checar_login()
+    if r:
+        return r
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    if not _tem_perm(id_usuario, cod_empresa, "FINANCAS_PESSOAIS_LANCAR"):
+        flash("Sem permissão para lançar.", "error")
+        return redirect(request.form.get("proxima_url") or url_for("canivete.fp_consultar"))
+
+    id_classificacao = request.form.get("id_classificacao") or None
+    descricao = (request.form.get("descricao") or "").strip()
+    id_conta_bancaria = request.form.get("id_conta_bancaria") or None
+    valor_raw = (request.form.get("valor") or "0").replace(".", "").replace(",", ".")
+    try:
+        valor = float(valor_raw)
+    except ValueError:
+        valor = 0.0
+
+    proxima_url = request.form.get("proxima_url") or url_for("canivete.fp_consultar")
+
+    if not descricao or valor == 0:
+        flash("Informe um valor para o pagamento.", "error")
+        return redirect(proxima_url)
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        # a classificação precisa ser do próprio usuário
+        if id_classificacao:
+            cur.execute("""
+                SELECT COALESCE(valor_orcado, 0) AS orcado FROM fp_classificacoes
+                WHERE id = %s AND id_usuario = %s
+            """, (id_classificacao, id_usuario))
+            linha = cur.fetchone()
+            if not linha:
+                flash("Classificação inválida.", "error")
+                return redirect(proxima_url)
+            # despesa é negativa no banco; o modal informa o valor absoluto
+            valor = -abs(valor) if float(linha["orcado"]) <= 0 else abs(valor)
+        if id_conta_bancaria:
+            cur.execute("SELECT 1 FROM fp_contas_bancarias WHERE id = %s AND id_usuario = %s",
+                        (id_conta_bancaria, id_usuario))
+            if not cur.fetchone():
+                flash("Conta bancária inválida.", "error")
+                return redirect(proxima_url)
+
+        cur.execute("""
+            INSERT INTO fp_lancamentos (id_usuario, data, descricao, valor, id_classificacao, id_conta_bancaria)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (id_usuario, date.today(), descricao, valor, id_classificacao, id_conta_bancaria))
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+    flash("Pagamento lançado.", "success")
+    return redirect(proxima_url)
 
 
 # -----------------------------------------------------------

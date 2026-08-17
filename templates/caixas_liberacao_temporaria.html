@@ -13,9 +13,11 @@
     border-radius: 10px;
     padding: 20px;
     max-width: 900px;
+    margin-bottom: 22px;
   }
 
-  .topo-bloco { margin-bottom: 14px; }
+  .bloco h3 { font-size: 18px; font-weight: 700; margin-bottom: 14px; }
+  .topo-bloco { margin-bottom: 16px; color: #444; }
 
   .btn-novo {
     padding: 10px 18px;
@@ -26,24 +28,42 @@
     font-weight: 700;
     cursor: pointer;
   }
-
   .btn-novo:hover { filter: brightness(0.92); }
 
   .linha-form-acesso {
     display: flex;
-    gap: 10px;
-    align-items: center;
-    margin-bottom: 16px;
+    gap: 14px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
   }
 
-  .linha-form-acesso input[type="date"] {
+  .campo { display: flex; flex-direction: column; gap: 5px; }
+  .campo label { font-size: 12px; font-weight: 700; color: #555; text-transform: uppercase; }
+
+  .linha-form-acesso input[type="date"],
+  .linha-form-acesso select {
     padding: 8px 10px;
     border-radius: 8px;
     border: 1px solid #bbb;
+    height: 38px;
+    font-size: 14px;
   }
 
   .status-msg { font-size: 13px; margin-top: 10px; color: #1e6b34; min-height: 18px; }
   .status-msg.erro { color: #9f2f2f; }
+
+  table.liberacoes { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.liberacoes th { background: #14114f; color: #fff; text-align: left; padding: 9px 12px; font-weight: 700; }
+  table.liberacoes td { padding: 9px 12px; border-bottom: 1px solid #eee; }
+  table.liberacoes tr:hover td { background: #f9fafb; }
+  .vazio { text-align: center; color: #888; font-style: italic; padding: 18px; }
+
+  .btn-revogar {
+    background: #dc2626; color: #fff; font-weight: 700; border: none;
+    border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 13px;
+  }
+  .btn-revogar:hover { background: #b91c1c; }
 </style>
 
 <div class="pagina-titulo">Liberação Temporária</div>
@@ -54,18 +74,53 @@
 
 <div class="bloco">
   <div class="topo-bloco">
-    Normalmente só é possível digitar o caixa dos últimos {{ dias_edicao }} dias. Liberar aqui permite
-    editar a partir de uma data mais antiga — mas dura só <strong>{{ horas_liberacao }} horas</strong>
-    depois de ativado, voltando sozinho ao normal em seguida.
+    Normalmente só é possível digitar o caixa dos últimos {{ dias_edicao }} dias. Aqui você abre um
+    <strong>período</strong> mais antigo, para todas as filiais ou para uma só. Cada liberação dura
+    <strong>{{ horas_liberacao }} horas</strong> e depois volta sozinha ao normal. As liberações são
+    <strong>acumulativas</strong>: uma não cancela a outra.
   </div>
 
   <div class="linha-form-acesso">
-    <input type="date" id="dataLiberacaoDesde">
+    <div class="campo">
+      <label for="dataInicial">Data inicial</label>
+      <input type="date" id="dataInicial" value="{{ sugestao_inicial }}">
+    </div>
+    <div class="campo">
+      <label for="dataFinal">Data final</label>
+      <input type="date" id="dataFinal" value="{{ sugestao_final }}">
+    </div>
+    <div class="campo">
+      <label for="filialLiberacao">Filial</label>
+      <select id="filialLiberacao">
+        <option value="TODAS">Todas as filiais</option>
+        {% for f in filiais %}
+        <option value="{{ f.cod_filial }}">{{ f.cod_filial }} - {{ f.nome_filial }}</option>
+        {% endfor %}
+      </select>
+    </div>
     <button type="button" class="btn-novo" id="btnLiberarTemp">Liberar Temporariamente</button>
   </div>
 
-  <div id="statusLiberacaoAtual" style="margin-bottom:14px; font-weight:700;"></div>
   <div class="status-msg" id="statusLiberacaoTemp"></div>
+</div>
+
+<div class="bloco">
+  <h3>Liberações ativas</h3>
+  <div id="resumoJanela" style="margin-bottom:12px; color:#444;"></div>
+  <table class="liberacoes">
+    <thead>
+      <tr>
+        <th style="width:230px;">Período liberado</th>
+        <th>Filial</th>
+        <th style="width:120px;">Expira às</th>
+        <th style="width:190px;">Liberado por</th>
+        <th style="width:110px;"></th>
+      </tr>
+    </thead>
+    <tbody id="corpoLiberacoes">
+      <tr><td colspan="5" class="vazio">Carregando...</td></tr>
+    </tbody>
+  </table>
 </div>
 
 <script>
@@ -84,7 +139,7 @@
     const el = document.getElementById(idStatus);
     el.textContent = mensagem;
     el.classList.toggle("erro", !!erro);
-    if (!erro) setTimeout(() => { el.textContent = ""; }, 2500);
+    if (!erro) setTimeout(() => { el.textContent = ""; }, 3000);
   }
 
   function formatarDataBR(dataIso) {
@@ -92,39 +147,80 @@
     return `${dia}/${mes}/${ano}`;
   }
 
-  async function carregarStatusLiberacaoTemp() {
-    const elStatus = document.getElementById("statusLiberacaoAtual");
+  function formatarHora(iso) {
+    const d = new Date(iso);
+    return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+
+  function renderLiberacoes(dados) {
+    const corpo = document.getElementById("corpoLiberacoes");
+    const resumo = document.getElementById("resumoJanela");
+    const libs = dados.liberacoes || [];
+
+    resumo.textContent = `Sem liberação, só é possível digitar a partir de `
+      + `${formatarDataBR(dados.data_minima_editavel)}.`;
+
+    if (!libs.length) {
+      corpo.innerHTML = '<tr><td colspan="5" class="vazio">Nenhuma liberação ativa no momento.</td></tr>';
+      return;
+    }
+
+    corpo.innerHTML = libs.map(l => {
+      const periodo = l.data_liberada_desde === l.data_liberada_ate
+        ? formatarDataBR(l.data_liberada_desde)
+        : `${formatarDataBR(l.data_liberada_desde)} a ${formatarDataBR(l.data_liberada_ate)}`;
+      const filial = l.cod_filial === null
+        ? "Todas as filiais"
+        : `${l.cod_filial} - ${l.nome_filial || ""}`;
+      return `<tr>
+        <td><strong>${periodo}</strong></td>
+        <td>${filial}</td>
+        <td>${formatarHora(l.expira_em)}</td>
+        <td>${l.ativado_por || "—"}</td>
+        <td><button type="button" class="btn-revogar" data-id="${l.id_liberacao}">Encerrar</button></td>
+      </tr>`;
+    }).join("");
+
+    corpo.querySelectorAll(".btn-revogar").forEach(b => {
+      b.addEventListener("click", () => revogar(b.dataset.id));
+    });
+  }
+
+  async function carregarLiberacoes() {
     try {
-      const data = await fetchJson("/api/caixas/liberacao-temporaria");
-      if (data.ativa) {
-        const expira = new Date(data.expira_em);
-        const hora = String(expira.getHours()).padStart(2, "0") + ":" + String(expira.getMinutes()).padStart(2, "0");
-        elStatus.textContent = `Liberação ATIVA (por ${data.ativado_por}): desde ${formatarDataBR(data.data_liberada_desde)}, expira às ${hora}.`;
-        elStatus.style.color = "#8a4b00";
-      } else {
-        elStatus.textContent = `Sem liberação ativa. Hoje só é possível digitar a partir de ${formatarDataBR(data.data_minima_editavel)}.`;
-        elStatus.style.color = "#444";
-      }
+      renderLiberacoes(await fetchJson("/api/caixas/liberacao-temporaria"));
     } catch (e) {
       mostrarStatus("statusLiberacaoTemp", e.message || "Erro ao carregar.", true);
     }
   }
 
   async function ativarLiberacaoTemp() {
-    const dataLiberacao = document.getElementById("dataLiberacaoDesde").value;
-    if (!dataLiberacao) {
-      mostrarStatus("statusLiberacaoTemp", "Selecione a data.", true);
+    const dataInicial = document.getElementById("dataInicial").value;
+    const dataFinal   = document.getElementById("dataFinal").value;
+    const codFilial   = document.getElementById("filialLiberacao").value;
+
+    if (!dataInicial || !dataFinal) {
+      mostrarStatus("statusLiberacaoTemp", "Informe a data inicial e a final.", true);
       return;
     }
+    if (dataFinal < dataInicial) {
+      mostrarStatus("statusLiberacaoTemp", "A data final não pode ser anterior à inicial.", true);
+      return;
+    }
+
     try {
       const data = await fetchJson("/api/caixas/liberacao-temporaria", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data_liberada_desde: dataLiberacao }),
+        body: JSON.stringify({
+          data_inicial: dataInicial,
+          data_final: dataFinal,
+          cod_filial: codFilial,
+        }),
       });
       if (data.ok) {
-        mostrarStatus("statusLiberacaoTemp", `Liberado com sucesso por ${HORAS_LIBERACAO} horas.`, false);
-        carregarStatusLiberacaoTemp();
+        mostrarStatus("statusLiberacaoTemp", `Liberado por ${HORAS_LIBERACAO} horas.`, false);
+        renderLiberacoes(data);
       } else {
         mostrarStatus("statusLiberacaoTemp", data.erro || "Erro ao liberar.", true);
       }
@@ -133,9 +229,23 @@
     }
   }
 
+  async function revogar(id) {
+    try {
+      const data = await fetchJson(`/api/caixas/liberacao-temporaria/${id}`, { method: "DELETE" });
+      if (data.ok) {
+        mostrarStatus("statusLiberacaoTemp", "Liberação encerrada.", false);
+        renderLiberacoes(data);
+      } else {
+        mostrarStatus("statusLiberacaoTemp", data.erro || "Erro ao encerrar.", true);
+      }
+    } catch (e) {
+      mostrarStatus("statusLiberacaoTemp", e.message || "Erro ao encerrar.", true);
+    }
+  }
+
   document.getElementById("btnLiberarTemp").addEventListener("click", ativarLiberacaoTemp);
 
-  carregarStatusLiberacaoTemp();
+  carregarLiberacoes();
 </script>
 
 {% endblock %}

@@ -66,6 +66,12 @@
         </a>
     {% endif %}
 
+    {% if pode_configuracoes_caixas %}
+        <a href="{{ url_for('financeiro.caixas_liberacao_temporaria') }}">
+            Liberação Temporária
+        </a>
+    {% endif %}
+
     {% if pode_acessos_caixas %}
         <a href="{{ url_for('financeiro.acessos_caixas') }}">
             Acessos de Caixas

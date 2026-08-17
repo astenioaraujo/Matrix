@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .card-import {
+    max-width: 900px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 22px;
+  }
+
+  .linha-form {
+    margin-bottom: 16px;
+  }
+
+  .linha-form label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .linha-form input[type="file"] {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid #c9c9c9;
+    border-radius: 8px;
+    font-size: 15px;
+  }
+
+  .acoes {
+    margin-top: 18px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .btn-acao {
+    display: inline-block;
+    padding: 10px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    border: 1px solid #c7c7c7;
+    background: #f7f7f7;
+    color: #1f3c88;
+    cursor: pointer;
+  }
+
+  .btn-importar {
+    background: #2e9b57;
+    color: #fff;
+    border-color: #2e9b57;
+  }
+
+  .btn-importar:hover {
+    background: #25834a;
+    border-color: #25834a;
+  }
+
+  .flash-msg {
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-weight: 600;
+  }
+
+  .flash-success {
+    background: #e6f4ea;
+    color: #1e6b34;
+    border: 1px solid #b7dfc2;
+  }
+
+  .flash-error {
+    background: #fdeaea;
+    color: #9f2f2f;
+    border: 1px solid #efc2c2;
+  }
+
+  .flash-warning {
+    background: #fff7e6;
+    color: #8a5a00;
+    border: 1px solid #f0d58a;
+  }
+
+  .obs-campo {
+    margin-top: 6px;
+    font-size: 13px;
+    color: #666;
+  }
+
+  .selo-origem {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #ede7f6;
+    color: #4527a0;
+    font-weight: 700;
+    font-size: 13px;
+  }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">Importar Vendas Diárias</div>
+  <div class="pagina-subtitulo">
+    Empresa: <strong>{{ nome_empresa }}</strong>
+    &nbsp;<span class="selo-origem">Origem: {{ origem_diarias_empresa().rotulo }}</span>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="flash-msg
+          {% if category == 'success' %}flash-success
+          {% elif category == 'warning' %}flash-warning
+          {% else %}flash-error{% endif %}">
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="card-import">
+    <form method="post" enctype="multipart/form-data">
+      <div class="linha-form">
+        <label for="arquivo">Arquivo CSV do O Closet</label>
+        <input type="file" id="arquivo" name="arquivo" accept=".csv,text/csv" required>
+        <div class="obs-campo">
+          Relatório “vendas item por pagamento” (colunas Data, Produto,
+          Total do item e Custo total). Cada linha do arquivo é uma peça; a
+          importação agrupa por dia e produto.
+        </div>
+      </div>
+
+      <div class="linha-form obs-campo">
+        O período é lido do próprio arquivo: tudo o que já existir entre a
+        primeira e a última data do arquivo é regravado, então dá para
+        reimportar o mesmo intervalo quantas vezes for preciso. Itens sem preço
+        de compra entram com metade do valor de venda como custo.
+      </div>
+
+      <div class="acoes">
+        <button type="submit" class="btn-acao btn-importar">Importar</button>
+        <a class="btn-acao" href="{{ url_for('sistema.menu_vendas') }}">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}

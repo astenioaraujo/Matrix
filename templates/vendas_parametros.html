@@ -131,6 +131,19 @@
         </label>
       {% endfor %}
 
+      <div class="bloco-titulo" style="margin-top:22px;">Origem da importação das vendas diárias</div>
+      <div class="bloco-obs">
+        Define o formato de arquivo esperado na tela “Importar Vendas Diárias”.
+      </div>
+
+      {% for chave, rotulo in sistemas_origem_diarias.items() %}
+        <label class="opcao">
+          <input type="radio" name="sistema_origem_diarias" value="{{ chave }}"
+                 {% if chave == sistema_origem_diarias_atual %}checked{% endif %}>
+          <span>{{ rotulo }}</span>
+        </label>
+      {% endfor %}
+
       <div class="acoes">
         <button type="submit" class="btn-acao btn-salvar">Salvar</button>
         <a class="btn-acao" href="{{ url_for('sistema.menu_vendas') }}">Cancelar</a>

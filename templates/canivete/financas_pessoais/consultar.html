@@ -99,10 +99,58 @@
     white-space: nowrap;
   }
   .btn-detalhar:hover { background: #0f766e; color: #fff; }
+
+  .btn-pagar {
+    background: #16a34a;
+    border: 1px solid #16a34a;
+    color: #fff;
+    border-radius: 5px;
+    padding: 2px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-pagar:hover { background: #15803d; }
+
+  .modal-fundo {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 900;
+    align-items: center; justify-content: center;
+  }
+  .modal-fundo.visivel { display: flex; }
+  .modal-caixa {
+    background: #fff; border-radius: 12px; padding: 22px 24px;
+    width: 360px; max-width: 92vw;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+  }
+  .modal-caixa h3 { font-size: 18px; font-weight: 800; margin: 0 0 4px; }
+  .modal-caixa .sub { font-size: 13px; color: #777; margin-bottom: 16px; }
+  .modal-caixa label { display: block; font-size: 13px; font-weight: 700; margin: 10px 0 4px; color: #555; }
+  .modal-caixa input, .modal-caixa select {
+    width: 100%; height: 38px; border: 1px solid #ccc; border-radius: 8px;
+    padding: 0 10px; font-size: 14px;
+  }
+  .modal-acoes { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+  .modal-acoes button { height: 38px; padding: 0 16px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+  .btn-cancelar { background: #fff; border: 1px solid #ccc; color: #555; }
+  .btn-confirmar { background: #16a34a; border: none; color: #fff; }
+
+  .flash { padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; font-weight: 600; }
+  .flash.success { background: #dcfce7; color: #166534; }
+  .flash.error { background: #fee2e2; color: #991b1b; }
 </style>
 
 <h2>💰 Finanças Pessoais — Consultar</h2>
 <div class="empresa">Usuário: <strong>{{ nome_usuario }}</strong></div>
+
+{% with msgs = get_flashed_messages(with_categories=true) %}
+  {% for categoria, msg in msgs %}
+    <div class="flash {{ categoria }}">{{ msg }}</div>
+  {% endfor %}
+{% endwith %}
 
 <form method="get">
   <div class="filtro-bar">
@@ -188,9 +236,12 @@
                 {% else %}—{% endif %}
               </td>
               {% set tem_lanc = t.realizado | float != 0 %}
-              <td>
+              <td style="white-space:nowrap;">
                 {% if tem_lanc %}
                   <button class="btn-detalhar" onclick="event.stopPropagation(); detalhar('{{ t.classificacao | e }}')">Detalhar</button>
+                {% elif pode_lancar and t.id_classificacao %}
+                  <button class="btn-pagar" data-id-class="{{ t.id_classificacao }}" data-orcado="{{ t.orcado | float }}"
+                          onclick="event.stopPropagation(); abrirPagamento(this)">Pagar</button>
                 {% endif %}
               </td>
             </tr>
@@ -239,8 +290,57 @@
 <p style="color:#888; font-style:italic;">Nenhuma classificação cadastrada.</p>
 {% endif %}
 
+{% if pode_lancar %}
+<div class="modal-fundo" id="modal-pagar">
+  <div class="modal-caixa">
+    <h3>Pagar</h3>
+    <div class="sub" id="pagar-classe"></div>
+    <form method="POST" action="{{ url_for('canivete.fp_pagar') }}" id="form-pagar">
+      <input type="hidden" name="id_classificacao" id="pagar-id">
+      <input type="hidden" name="descricao" id="pagar-descricao">
+      <input type="hidden" name="proxima_url" value="{{ request.full_path }}">
+
+      <label>Valor a pagar (R$)</label>
+      <input type="text" name="valor" id="pagar-valor" inputmode="decimal" autocomplete="off">
+
+      <label>Pagar por qual banco</label>
+      <select name="id_conta_bancaria" id="pagar-conta">
+        <option value="">— Sem conta —</option>
+        {% for b in contas_bancarias %}
+          <option value="{{ b.id }}">{{ b.nome }}</option>
+        {% endfor %}
+      </select>
+
+      <div class="modal-acoes">
+        <button type="button" class="btn-cancelar" onclick="fecharPagamento()">Cancelar</button>
+        <button type="submit" class="btn-confirmar">Confirmar pagamento</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 <script>
   const LANC = {{ lancamentos_json | safe }};
+
+  function abrirPagamento(btn) {
+    const idClass   = btn.dataset.idClass;
+    const orcado    = parseFloat(btn.dataset.orcado) || 0;
+    const nomeClass = btn.closest('tr').dataset.class;
+    document.getElementById('pagar-id').value = idClass;
+    document.getElementById('pagar-descricao').value = nomeClass;
+    document.getElementById('pagar-classe').textContent = nomeClass;
+    document.getElementById('pagar-valor').value =
+      Math.abs(orcado || 0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+    document.getElementById('pagar-conta').selectedIndex = 0;
+    document.getElementById('modal-pagar').classList.add('visivel');
+    setTimeout(() => document.getElementById('pagar-valor').select(), 50);
+  }
+
+  function fecharPagamento() {
+    document.getElementById('modal-pagar').classList.remove('visivel');
+  }
+
   const CLASSIFS = [
     { id: '', nome: '(Sem classificação)' },
     {% for c in classificacoes_consulta %}
