@@ -3925,7 +3925,7 @@ def _liberacoes_caixa_vigentes(cod_empresa):
         cur.close()
         conn.close()
 
-    agora = datetime.now()
+    agora = _agora_local()
     vigentes = []
     for lib in linhas:
         expira_em = (_ativado_em_local(lib["ativado_em"])
@@ -3959,7 +3959,7 @@ def _janela_edicao_caixa(hoje=None, cod_empresa=None):
     períodos soltos, um por filial, e não cabem num intervalo único. Quem
     precisa delas usa `_datas_liberadas_caixa`.
     """
-    hoje = hoje or date.today()
+    hoje = hoje or _hoje_local()
     return (hoje - timedelta(days=DIAS_EDICAO_CAIXA), hoje)
 
 
@@ -4075,7 +4075,10 @@ def conferir_caixas():
     cod_empresa = str(session["cod_empresa"]).strip()
     id_usuario  = session["id_usuario"]
     tipo_global = str(session.get("tipo_global") or "").strip().lower()
-    hoje        = date.today()
+    # Data de Brasília, não a do relógio do servidor (que em produção é UTC
+    # e vira o dia seguinte às 21h daqui) — é ela que define a janela de
+    # digitação e o "dia que se está processando".
+    hoje        = _hoje_local()
 
     mes_sel  = int(request.args.get("mes")  or hoje.month)
     ano_sel  = int(request.args.get("ano")  or hoje.year)
@@ -4966,7 +4969,7 @@ def _sugestao_periodo_liberacao(cod_empresa, hoje=None):
     está aberto — a véspera do início da janela normal de digitação. Se o mês
     mal começou e tudo já está aberto, as duas pontas se encostam no dia 1º.
     """
-    hoje = hoje or date.today()
+    hoje = hoje or _hoje_local()
     ini = hoje.replace(day=1)
     fim = _janela_edicao_caixa(hoje, cod_empresa)[0] - timedelta(days=1)
     return (ini, max(ini, fim))
@@ -5664,6 +5667,26 @@ def _ativado_em_local(ativado_em):
                       .replace(tzinfo=None))
 
 
+def _agora_local():
+    """Agora em horário de Brasília, ingênuo — o mesmo referencial de
+    `_ativado_em_local`.
+
+    Não usar `datetime.now()` para comparar com a expiração de uma liberação:
+    ele devolve o relógio do **servidor**, que em produção roda em UTC. O
+    `expira_em` já está em Brasília, então a comparação encurtava a liberação
+    em três horas — a liberação de 4 horas morria em 1, e a tela anunciava um
+    horário de expiração que nunca chegava a valer.
+    """
+    return datetime.now(FUSO_LOCAL).replace(tzinfo=None)
+
+
+def _hoje_local():
+    """A data de hoje em Brasília. Pela mesma razão: num servidor em UTC,
+    `date.today()` já vira o dia seguinte às 21h daqui, e a janela de
+    digitação passaria a contar de um dia que ainda não começou."""
+    return _agora_local().date()
+
+
 # =========================
 # DIAS ÚTEIS (SALDOS SÓ TRABALHA COM DIA ÚTIL)
 # =========================
@@ -5729,7 +5752,7 @@ def data_minima_editavel(cod_empresa):
 
     if liberacao:
         ativado = _ativado_em_local(liberacao["ativado_em"])
-        if (datetime.now() - ativado) < timedelta(hours=HORAS_LIBERACAO_SALDOS):
+        if (_agora_local() - ativado) < timedelta(hours=HORAS_LIBERACAO_SALDOS):
             return liberacao["data_liberada_desde"]
 
     # dois últimos dias úteis: numa segunda-feira libera sexta e quinta,
@@ -6363,7 +6386,7 @@ def api_status_liberacao_temporaria():
         # usuário usa para saber quanto tempo ainda tem
         expira_em = (_ativado_em_local(liberacao["ativado_em"])
                      + timedelta(hours=HORAS_LIBERACAO_SALDOS))
-        ativa = datetime.now() < expira_em
+        ativa = _agora_local() < expira_em
 
     return jsonify({
         "ok": True,
