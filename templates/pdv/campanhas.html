@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+{#
+  Cadastro das campanhas. Além de criar e editar, aqui ficam as ações de ciclo
+  de vida: pausar (suspende e pode retomar) e encerrar (interrompe antes do
+  previsto, trazendo a data de término para hoje).
+#}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .bloco-titulo { font-size:17px; font-weight:800; margin-bottom:12px; color:#1a3a63; }
+  .linha-campos { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  input { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+  .btn { padding:10px 20px; border-radius:8px; border:none; background:#7c3aed;
+         color:#fff; font-weight:800; cursor:pointer; font-size:15px; }
+  .btn-mini { padding:5px 11px; border-radius:6px; border:none; color:#fff;
+              font-weight:700; font-size:12px; cursor:pointer; margin:1px; }
+  .btn-mini.pausar { background:#b45309; }
+  .btn-mini.retomar { background:#16a34a; }
+  .btn-mini.encerrar { background:#c0392b; }
+  .btn-mini.itens { background:#0f766e; text-decoration:none; display:inline-block; }
+  .btn-mini.salvar { background:#1a73e8; }
+  .tabela-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.col-centro { text-align:center; white-space:nowrap; }
+  td input { width:100%; box-sizing:border-box; padding:6px 8px; }
+  .selo { display:inline-block; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:800; }
+  .selo.ATIVA { background:#e6f6ec; color:#1e6b34; }
+  .selo.PAUSADA { background:#fff7e6; color:#8a6100; }
+  .selo.ENCERRADA { background:#f1f1f1; color:#666; }
+  .selo.vigente { background:#16a34a; color:#fff; }
+  tr.encerrada td { color:#999; }
+  .status-msg { font-size:13px; margin-top:10px; color:#9f2f2f; min-height:18px; font-weight:600; }
+  .vazio { color:#777; }
+</style>
+
+<div class="pagina-titulo">➕ Campanhas</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Nova campanha</div>
+  <div class="linha-campos">
+    <div class="campo" style="flex:1; min-width:240px">
+      <label for="inpNome">Nome</label>
+      <input type="text" id="inpNome" placeholder="Ex.: Campanha do Dia das Mães">
+    </div>
+    <div class="campo">
+      <label for="inpInicio">Início</label>
+      <input type="date" id="inpInicio" value="{{ hoje }}">
+    </div>
+    <div class="campo">
+      <label for="inpFim">Término</label>
+      <input type="date" id="inpFim" value="{{ hoje }}">
+    </div>
+    <div class="campo">
+      <label for="inpDesconto">Desconto %</label>
+      <input type="number" step="0.01" min="0" max="99" id="inpDesconto" value="10" style="width:120px">
+    </div>
+    <button type="button" class="btn" id="btnCriar">Criar campanha</button>
+  </div>
+  <div style="font-size:12px; color:#666; margin-top:8px">
+    O desconto aqui é o sugerido ao carregar os itens — cada item pode ficar com um percentual
+    próprio na tela de Itens da Campanha.
+  </div>
+  <div class="status-msg" id="statusNova"></div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Campanhas cadastradas</div>
+  {% if campanhas %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Nome</th>
+            <th style="width:140px">Início</th>
+            <th style="width:140px">Término</th>
+            <th style="width:110px">Desconto</th>
+            <th style="width:80px">Itens</th>
+            <th style="width:130px">Situação</th>
+            <th style="width:250px">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in campanhas %}
+            <tr data-id="{{ c.id_pdv_campanha }}" class="{{ 'encerrada' if c.situacao == 'ENCERRADA' }}">
+              <td><input type="text" class="in-nome" value="{{ c.nome }}"
+                         {{ 'disabled' if c.situacao == 'ENCERRADA' }}></td>
+              <td><input type="date" class="in-inicio" value="{{ c.data_inicio.isoformat() }}"
+                         {{ 'disabled' if c.situacao == 'ENCERRADA' }}></td>
+              <td><input type="date" class="in-fim" value="{{ c.data_fim.isoformat() }}"
+                         {{ 'disabled' if c.situacao == 'ENCERRADA' }}></td>
+              <td><input type="number" step="0.01" class="in-desconto"
+                         value="{{ c.percentual_desconto }}"
+                         {{ 'disabled' if c.situacao == 'ENCERRADA' }}></td>
+              <td class="col-centro">{{ c.itens }}</td>
+              <td class="col-centro">
+                {% if c.vigente %}
+                  <span class="selo vigente">Valendo hoje</span>
+                {% else %}
+                  <span class="selo {{ c.situacao }}">{{ situacoes.get(c.situacao, c.situacao) }}</span>
+                {% endif %}
+              </td>
+              <td class="col-centro">
+                {% if c.situacao != 'ENCERRADA' %}
+                  <button type="button" class="btn-mini salvar" onclick="salvar(this)">Salvar</button>
+                  {% if c.situacao == 'ATIVA' %}
+                    <button type="button" class="btn-mini pausar" onclick="situacao(this,'PAUSADA')">Pausar</button>
+                  {% else %}
+                    <button type="button" class="btn-mini retomar" onclick="situacao(this,'ATIVA')">Retomar</button>
+                  {% endif %}
+                  <button type="button" class="btn-mini encerrar" onclick="encerrar(this)">Encerrar</button>
+                {% endif %}
+                {% if pode_itens %}
+                  <a class="btn-mini itens"
+                     href="{{ url_for('pdv.itens_campanha', id_campanha=c.id_pdv_campanha) }}">Itens</a>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="status-msg" id="status"></div>
+    <div style="font-size:12px; color:#666; margin-top:10px">
+      <strong>Pausar</strong> suspende a campanha e pode ser desfeito.
+      <strong>Encerrar</strong> interrompe de vez e traz o término para hoje — o período gravado
+      passa a refletir o que de fato valeu; para valer de novo, cria-se outra campanha.
+      Vendas já feitas não mudam: o preço que valeu está gravado nelas.
+    </div>
+  {% else %}
+    <div class="vazio">Nenhuma campanha cadastrada.</div>
+  {% endif %}
+</div>
+
+<script>
+  async function fetchJson(url, opcoes) {
+    const resp = await fetch(url, opcoes);
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+    }
+    return resp.json();
+  }
+
+  function erro(id, mensagem) {
+    document.getElementById(id).textContent = mensagem || "";
+  }
+
+  document.getElementById("btnCriar").addEventListener("click", async () => {
+    const payload = {
+      nome: document.getElementById("inpNome").value,
+      data_inicio: document.getElementById("inpInicio").value,
+      data_fim: document.getElementById("inpFim").value,
+      percentual_desconto: document.getElementById("inpDesconto").value,
+    };
+    try {
+      const data = await fetchJson("/pdv/api/campanhas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (data.ok) { location.reload(); } else { erro("statusNova", data.erro); }
+    } catch (e) { erro("statusNova", e.message); }
+  });
+
+  async function salvar(botao) {
+    const tr = botao.closest("tr");
+    try {
+      const data = await fetchJson(`/pdv/api/campanhas/${tr.dataset.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nome: tr.querySelector(".in-nome").value,
+          data_inicio: tr.querySelector(".in-inicio").value,
+          data_fim: tr.querySelector(".in-fim").value,
+          percentual_desconto: tr.querySelector(".in-desconto").value,
+        }),
+      });
+      if (data.ok) { location.reload(); } else { erro("status", data.erro); }
+    } catch (e) { erro("status", e.message); }
+  }
+
+  async function situacao(botao, nova) {
+    const tr = botao.closest("tr");
+    try {
+      const data = await fetchJson(`/pdv/api/campanhas/${tr.dataset.id}/situacao`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ situacao: nova }),
+      });
+      if (data.ok) { location.reload(); } else { erro("status", data.erro); }
+    } catch (e) { erro("status", e.message); }
+  }
+
+  function encerrar(botao) {
+    if (!confirm("Encerrar esta campanha agora? O término passa a ser hoje e não há como reativá-la.")) return;
+    situacao(botao, "ENCERRADA");
+  }
+</script>
+
+{% endblock %}

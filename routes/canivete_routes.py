@@ -95,7 +95,7 @@ def fp_lancar():
         flash("Sem permissão.", "error")
         return redirect(url_for("canivete.menu_financas_pessoais"))
 
-    hoje = date.today()
+    hoje = _hoje_br()
     mes_sel = int(request.args.get("mes") or request.form.get("mes") or hoje.month)
     ano_sel = int(request.args.get("ano") or request.form.get("ano") or hoje.year)
 
@@ -262,7 +262,7 @@ def fp_consultar():
         flash("Sem permissão.", "error")
         return redirect(url_for("canivete.menu_financas_pessoais"))
 
-    hoje = date.today()
+    hoje = _hoje_br()
     mes_sel = int(request.args.get("mes") or hoje.month)
     ano_sel = int(request.args.get("ano") or hoje.year)
     filtro = request.args.get("filtro", "todos")
@@ -443,7 +443,7 @@ def fp_pagar():
         cur.execute("""
             INSERT INTO fp_lancamentos (id_usuario, data, descricao, valor, id_classificacao, id_conta_bancaria)
             VALUES (%s, %s, %s, %s, %s, %s)
-        """, (id_usuario, date.today(), descricao, valor, id_classificacao, id_conta_bancaria))
+        """, (id_usuario, _hoje_br(), descricao, valor, id_classificacao, id_conta_bancaria))
         conn.commit()
     finally:
         cur.close()
@@ -567,7 +567,18 @@ def fp_configuracoes():
 import json as _json_agenda
 import calendar as _calendar_mod
 import re as _re_agenda
-from datetime import date, timedelta
+from datetime import date, datetime as _datetime_agenda, timedelta
+from zoneinfo import ZoneInfo
+
+# O servidor roda em UTC. Sem isto, às 21h daqui já era "amanhã" para ele e a
+# programação do dia virava sozinha três horas antes da meia-noite. Natal/RN
+# não tem horário de verão desde 2019, então America/Recife é UTC-3 fixo.
+FUSO_BR = ZoneInfo("America/Recife")
+
+
+def _hoje_br() -> date:
+    """A data de hoje no fuso do usuário, não no do servidor."""
+    return _datetime_agenda.now(FUSO_BR).date()
 
 DIAS_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
 MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
@@ -728,10 +739,18 @@ def _codigo_casa_linha(codigo: str, dias, pares) -> bool:
     return any(_semana_efetiva(c, total) == indice for indice, total in pares)
 
 
-def _codigo_dia_casa(codigo: str, dia) -> bool:
+# Quantas tarefas podem ser passadas para amanhã de uma vez. O limite existe
+# para a programação de amanhã não virar depósito do que não foi feito hoje.
+LIMITE_AMANHA = 3
+
+
+def _codigo_dia_casa(codigo: str, dia, dia_inicio=None) -> bool:
     """
     D  — repete todo dia.
     DU — repete só em dias úteis (segunda a sexta).
+    A  — passa para amanhã: aparece no dia em que foi criada e **no dia
+         seguinte**, e só. Não existe girar de novo — se aparecesse enquanto o
+         código continuasse A, a tarefa se empurraria para sempre.
     Branco — não repete (só aparece no dia em que foi criada).
     """
     c = (codigo or "").strip().upper()
@@ -739,7 +758,83 @@ def _codigo_dia_casa(codigo: str, dia) -> bool:
         return True
     if c == "DU":
         return dia.weekday() < 5   # 0=Seg .. 4=Sex
+    if c == "A":
+        return bool(dia_inicio) and dia == dia_inicio + timedelta(days=1)
     return False
+
+
+# Hashtag do projeto: "livro Eduardo #PS" pertence ao projeto de hashtag PS.
+_RE_HASHTAG = _re_agenda.compile(r"#([A-Za-z0-9]{1,12})\b")
+
+
+def _hashtag_do_texto(texto: str):
+    """Primeira hashtag do texto, em maiúsculas. None se não houver."""
+    m = _RE_HASHTAG.search(texto or "")
+    return m.group(1).upper() if m else None
+
+
+def _norm_hashtag(valor: str):
+    """Aceita com ou sem o #; devolve em maiúsculas, ou None se vazia."""
+    v = (valor or "").strip().lstrip("#").upper()
+    return v or None
+
+
+def _ultimo_dia_tarefa(codigo: str, dia_inicio, dia_fim):
+    """
+    Último dia em que a tarefa ainda aparece na programação.
+    D e DU não têm fim (a não ser dia_fim) — nunca são despejadas no projeto.
+    """
+    c = (codigo or "").strip().upper()
+    if c in ("D", "DU"):
+        return dia_fim
+    fim = dia_inicio + timedelta(days=1) if c == "A" else dia_inicio
+    return min(fim, dia_fim) if dia_fim else fim
+
+
+def _despejar_tarefas_com_hashtag(cur, id_usuario, hoje):
+    """
+    Virada do dia: tarefa do dia com hashtag que não foi concluída e não tem
+    código para segurá-la (D, DU ou A ainda valendo) vira **tarefa eventual**
+    do projeto daquela hashtag — na primeira posição e em destaque.
+
+    Roda na abertura da agenda, não em rotina noturna. `migrada_em` faz a
+    varredura ser idempotente: cada tarefa é despejada uma vez só.
+    """
+    cur.execute("""
+        SELECT id, hashtag FROM agenda_projetos
+        WHERE id_usuario=%s AND ativo AND hashtag IS NOT NULL
+    """, (id_usuario,))
+    projetos = {(p["hashtag"] or "").upper(): p["id"] for p in cur.fetchall()}
+    if not projetos:
+        return
+
+    cur.execute("""
+        SELECT t.id, t.texto, t.codigo, t.dia_inicio, t.dia_fim
+        FROM agenda_dia_tarefas t
+        WHERE t.id_usuario=%s
+          AND t.migrada_em IS NULL
+          AND COALESCE(t.codigo,'') NOT IN ('D','DU')
+          AND t.dia_inicio < %s
+          AND t.texto LIKE '%%#%%'
+          AND NOT EXISTS (SELECT 1 FROM agenda_dia_execucoes e
+                          WHERE e.id_tarefa = t.id AND e.concluido)
+    """, (id_usuario, hoje))
+
+    for t in cur.fetchall():
+        fim = _ultimo_dia_tarefa(t["codigo"], t["dia_inicio"], t["dia_fim"])
+        if not fim or hoje <= fim:
+            continue                      # ainda aparece hoje
+        id_projeto = projetos.get(_hashtag_do_texto(t["texto"]) or "")
+        if not id_projeto:
+            continue                      # hashtag sem projeto: fica onde está
+        cur.execute("""
+            INSERT INTO agenda_proj_tarefas (id_projeto, bloco, texto, destaque, ordem)
+            VALUES (%s, 'eventual', %s, TRUE,
+                    COALESCE((SELECT MIN(ordem)-1 FROM agenda_proj_tarefas
+                              WHERE id_projeto=%s AND bloco='eventual'), 0))
+        """, (id_projeto, t["texto"], id_projeto))
+        cur.execute("UPDATE agenda_dia_tarefas SET migrada_em = now() WHERE id=%s",
+                    (t["id"],))
 
 
 @canivete_bp.route("/agenda")
@@ -749,7 +844,7 @@ def agenda():
         return r
     id_usuario = session["id_usuario"]
 
-    hoje = date.today()
+    hoje = _hoje_br()
     ref_str = request.args.get("ref", hoje.isoformat())
     try:
         ref = date.fromisoformat(ref_str)
@@ -796,6 +891,9 @@ def agenda():
         (e["id_tarefa"], e["semana_inicio"].isoformat()): e["concluido"]
         for e in cur.fetchall()
     }
+
+    # virada do dia: o que tinha hashtag e não foi feito cai no projeto
+    _despejar_tarefas_com_hashtag(cur, id_usuario, hoje)
 
     # programação do dia (uma caixa única, sempre a de hoje)
     cur.execute("""
@@ -865,7 +963,7 @@ def agenda():
             continue
         mostra = (ini_t == hoje)
         if not mostra and hoje > ini_t:
-            mostra = _codigo_dia_casa(t["codigo"], hoje)
+            mostra = _codigo_dia_casa(t["codigo"], hoje, ini_t)
         if mostra:
             programacao_hoje.append({
                 "id":        t["id"],
@@ -923,10 +1021,17 @@ _RE_CODIGO = _re_agenda.compile(r"^(S[1-5]?|D(?:[1-9]|[12][0-9]|3[01]))$")
 ERRO_CODIGO = ("Código inválido. Use S para toda semana, S1–S5 para semana "
                "do mês, ou D1–D31 para dia do mês. Em branco não repete.")
 
-_RE_CODIGO_DIA = _re_agenda.compile(r"^(D|DU)$")
+_RE_CODIGO_DIA = _re_agenda.compile(r"^(D|DU|A)$")
 
-ERRO_CODIGO_DIA = ("Código inválido. Use D para repetir todo dia, "
-                    "DU para repetir só em dias úteis. Em branco não repete.")
+ERRO_CODIGO_DIA = ("Código inválido. Use D para repetir todo dia, DU para "
+                   "repetir só em dias úteis, A para passar para amanhã. "
+                   "Em branco não repete.")
+
+ERRO_LIMITE_AMANHA = (f"Só {LIMITE_AMANHA} tarefas podem ser passadas para "
+                      "amanhã. Conclua ou tire o A de alguma antes.")
+
+ERRO_JA_GIRADA = ("Esta tarefa já veio de ontem. Não dá para passá-la de novo "
+                  "— resolva hoje ou crie uma nova.")
 
 
 def _norm_codigo_dia(codigo: str):
@@ -937,6 +1042,34 @@ def _norm_codigo_dia(codigo: str):
     if _RE_CODIGO_DIA.match(c):
         return c, None
     return None, ERRO_CODIGO_DIA
+
+
+def _checar_amanha(cur, id_usuario, hoje, id_tarefa=None, dia_inicio=None,
+                   conferir_limite=True):
+    """
+    As duas travas do código A. Devolve a mensagem de erro, ou None.
+
+    1. **Uma volta só.** Tarefa que já está aparecendo no dia seguinte ao que
+       nasceu veio de ontem — marcá-la de novo a empurraria indefinidamente.
+    2. **No máximo LIMITE_AMANHA por dia.**
+    """
+    if dia_inicio and dia_inicio < hoje:
+        return ERRO_JA_GIRADA
+
+    if not conferir_limite:
+        return None
+
+    cur.execute("""
+        SELECT COUNT(*) FROM agenda_dia_tarefas
+        WHERE id_usuario = %s AND codigo = 'A' AND dia_inicio = %s
+          AND (dia_fim IS NULL OR dia_fim >= %s)
+          AND (%s IS NULL OR id <> %s)
+    """, (id_usuario, hoje, hoje, id_tarefa, id_tarefa))
+    linha = cur.fetchone()
+    total = (linha[0] if isinstance(linha, tuple) else linha["count"]) or 0
+    if total >= LIMITE_AMANHA:
+        return ERRO_LIMITE_AMANHA
+    return None
 
 
 def _norm_codigo(codigo: str):
@@ -1110,6 +1243,13 @@ def agenda_dia_criar():
 
     conn = get_connection()
     cur  = conn.cursor()
+
+    if codigo == "A":
+        erro = _checar_amanha(cur, id_usuario, _hoje_br())
+        if erro:
+            cur.close(); conn.close()
+            return jsonify({"ok": False, "erro": erro}), 400
+
     cur.execute("""
         INSERT INTO agenda_dia_tarefas (id_usuario, texto, codigo, dia_inicio, ordem)
         VALUES (%s, %s, %s, %s,
@@ -1159,6 +1299,23 @@ def agenda_dia_salvar():
     except ValueError:
         dia = atual["dia_inicio"]
 
+    if codigo == "A":
+        # Tarefa que já veio de ontem não gira de novo. Isso é checado mesmo
+        # quando o código não mudou: sem o aviso, marcar A outra vez não faria
+        # nada e o usuário acharia que passou.
+        ja_era_a = (atual["codigo"] or "") == "A"
+        erro = _checar_amanha(
+            cur, id_usuario, _hoje_br(),
+            id_tarefa=id_tarefa,
+            dia_inicio=atual["dia_inicio"],
+            # o limite só vale ao marcar; salvar o texto de uma tarefa que já
+            # é A não pode esbarrar nele
+            conferir_limite=not ja_era_a,
+        )
+        if erro:
+            cur.close(); conn.close()
+            return jsonify({"ok": False, "erro": erro}), 400
+
     mudou_codigo = (atual["codigo"] or "") != codigo
     novo_id = None
 
@@ -1187,6 +1344,32 @@ def agenda_dia_salvar():
     cur.close(); conn.close()
     return jsonify({"ok": True, "codigo": codigo,
                     "recarregar": mudou_codigo, "novo_id": novo_id})
+
+
+@canivete_bp.route("/agenda/dia/mover-fim", methods=["POST"])
+def agenda_dia_mover_fim():
+    """
+    Manda a tarefa para o fim da programação do dia.
+
+    É o jeito de despriorizar sem apagar e redigitar: a lista é ordenada por
+    `ordem`, então basta a tarefa passar a ter a maior de todas.
+    """
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("""
+        UPDATE agenda_dia_tarefas
+           SET ordem = COALESCE((SELECT MAX(ordem)+1 FROM agenda_dia_tarefas
+                                 WHERE id_usuario=%s), 0)
+         WHERE id=%s AND id_usuario=%s
+    """, (id_usuario, request.form.get("id", ""), id_usuario))
+    conn.commit()
+    cur.close(); conn.close()
+    return jsonify({"ok": True})
 
 
 @canivete_bp.route("/agenda/dia/excluir", methods=["POST"])
@@ -1362,8 +1545,22 @@ def agenda_salvar_slots():
 
 def _competencia_atual(hoje=None):
     """Competência = 1º dia do mês corrente."""
-    h = hoje or date.today()
+    h = hoje or _hoje_br()
     return date(h.year, h.month, 1)
+
+
+ERRO_HASHTAG_REPETIDA = ("Essa hashtag já é de outro projeto. A hashtag é o "
+                         "endereço do projeto — cada uma serve a um só.")
+
+
+def _hashtag_em_uso(cur, id_usuario, hashtag, id_projeto=None) -> bool:
+    cur.execute("""
+        SELECT 1 FROM agenda_projetos
+        WHERE id_usuario=%s AND ativo AND upper(hashtag)=%s
+          AND (%s IS NULL OR id <> %s)
+        LIMIT 1
+    """, (id_usuario, hashtag.upper(), id_projeto, id_projeto))
+    return cur.fetchone() is not None
 
 
 def _projeto_do_usuario(cur, id_projeto, id_usuario) -> bool:
@@ -1403,11 +1600,18 @@ def _tem_pendencia_anterior(cur, id_projeto, competencia) -> bool:
 
 
 def _tarefas_bloco(tarefas, id_projeto, bloco):
-    """Metas ou eventuais de um projeto, com a data da conclusão (para o filtro)."""
-    return [
+    """
+    Metas ou eventuais de um projeto, com a data da conclusão (para o filtro).
+
+    As que vieram da programação do dia com hashtag (`destaque`) sobem para o
+    topo: foram programadas para um dia, não foram feitas, e é isso que a cor
+    e a posição dizem.
+    """
+    linhas = [
         {
             "id":        t["id"],
             "texto":     t["texto"] or "",
+            "destaque":  t["destaque"],
             "concluido": t["concluido"],
             "cancelado": t["cancelado"],
             # data de saída da lista: serve ao filtro por período do 👁
@@ -1417,6 +1621,8 @@ def _tarefas_bloco(tarefas, id_projeto, bloco):
         for t in tarefas
         if t["id_projeto"] == id_projeto and t["bloco"] == bloco
     ]
+    linhas.sort(key=lambda x: (not x["destaque"] or x["concluido"] or x["cancelado"]))
+    return linhas
 
 
 def _dados_projetos(cur, id_usuario, hoje=None):
@@ -1431,7 +1637,7 @@ def _dados_projetos(cur, id_usuario, hoje=None):
     comp = _competencia_atual(hoje)
 
     cur.execute("""
-        SELECT id, nome, ordem, competencia
+        SELECT id, nome, hashtag, ordem, competencia
         FROM agenda_projetos
         WHERE id_usuario=%s AND ativo
         ORDER BY ordem, id
@@ -1451,7 +1657,7 @@ def _dados_projetos(cur, id_usuario, hoje=None):
     ids = [p["id"] for p in projetos]
 
     cur.execute("""
-        SELECT id, id_projeto, bloco, texto, concluido, concluido_em,
+        SELECT id, id_projeto, bloco, texto, destaque, concluido, concluido_em,
                cancelado, cancelado_em, ordem
         FROM agenda_proj_tarefas
         WHERE id_projeto = ANY(%s)
@@ -1497,6 +1703,7 @@ def _dados_projetos(cur, id_usuario, hoje=None):
         saida.append({
             "id":    p["id"],
             "nome":  p["nome"],
+            "hashtag": p["hashtag"] or "",
             "metas":     _tarefas_bloco(tarefas, p["id"], "meta"),
             "eventuais": _tarefas_bloco(tarefas, p["id"], "eventual"),
             "recorrencias": recs,
@@ -1518,18 +1725,22 @@ def agenda_projeto_criar():
         return jsonify({"ok": False}), 401
     id_usuario = session["id_usuario"]
     nome = (request.form.get("nome") or "").strip()
+    hashtag = _norm_hashtag(request.form.get("hashtag"))
     if not nome:
         return jsonify({"ok": False, "erro": "Informe o nome do projeto."})
 
     conn = get_connection()
     cur  = conn.cursor(cursor_factory=RealDictCursor)
+    if hashtag and _hashtag_em_uso(cur, id_usuario, hashtag):
+        cur.close(); conn.close()
+        return jsonify({"ok": False, "erro": ERRO_HASHTAG_REPETIDA})
     cur.execute("""
-        INSERT INTO agenda_projetos (id_usuario, nome, ordem, competencia)
-        VALUES (%s, %s,
+        INSERT INTO agenda_projetos (id_usuario, nome, hashtag, ordem, competencia)
+        VALUES (%s, %s, %s,
                 COALESCE((SELECT MAX(ordem)+1 FROM agenda_projetos WHERE id_usuario=%s), 10),
                 %s)
         RETURNING id
-    """, (id_usuario, nome, id_usuario, _competencia_atual()))
+    """, (id_usuario, nome, hashtag, id_usuario, _competencia_atual()))
     novo = cur.fetchone()["id"]
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True, "id": novo})
@@ -1543,13 +1754,18 @@ def agenda_projeto_renomear():
     id_usuario = session["id_usuario"]
     id_projeto = request.form.get("id")
     nome = (request.form.get("nome") or "").strip()
+    hashtag = _norm_hashtag(request.form.get("hashtag"))
     if not id_projeto or not nome:
         return jsonify({"ok": False, "erro": "Informe o nome do projeto."})
 
     conn = get_connection()
-    cur  = conn.cursor()
-    cur.execute("UPDATE agenda_projetos SET nome=%s WHERE id=%s AND id_usuario=%s",
-                (nome, id_projeto, id_usuario))
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    if hashtag and _hashtag_em_uso(cur, id_usuario, hashtag, id_projeto):
+        cur.close(); conn.close()
+        return jsonify({"ok": False, "erro": ERRO_HASHTAG_REPETIDA})
+    cur.execute("""UPDATE agenda_projetos SET nome=%s, hashtag=%s
+                   WHERE id=%s AND id_usuario=%s""",
+                (nome, hashtag, id_projeto, id_usuario))
     ok = cur.rowcount > 0
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": ok})

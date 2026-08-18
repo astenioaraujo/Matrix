@@ -40,7 +40,7 @@
       <select id="selProduto">
         {% for p in produtos %}
           <option value="{{ p.id_pdv_produto }}">
-            {{ (p.codigo ~ ' — ' if p.codigo else '') }}{{ p.descricao }} ({{ p.quantidade_atual|br }} {{ p.unidade }})
+            {{ (p.sku ~ ' — ' if p.sku else '') }}{{ p.descricao }} ({{ p.quantidade_atual|br }} {{ p.unidade }})
           </option>
         {% endfor %}
       </select>

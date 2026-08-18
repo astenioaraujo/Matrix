@@ -44,7 +44,7 @@
 
 <div class="pagina-titulo">{{ produto.descricao }}</div>
 <div class="pagina-subtitulo">
-  {{ ('Código ' ~ produto.codigo ~ ' — ') if produto.codigo }}
+  {{ ('SKU ' ~ produto.sku ~ ' — ') if produto.sku }}
   Saldo atual: <strong>{{ produto.quantidade_atual|br }} {{ produto.unidade }}</strong>
 </div>
 

@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+{#
+  Itens da campanha: escolhe a campanha (filtrando por ano), carrega os
+  produtos por marca ou categoria — ou todos — e aplica o percentual. O preço
+  promocional é calculado do desconto, não gravado.
+#}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .bloco-titulo { font-size:17px; font-weight:800; margin-bottom:12px; color:#1a3a63; }
+  .linha-campos { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  input, select { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+  .btn { padding:9px 18px; border-radius:8px; border:1px solid #1a73e8; background:#1a73e8;
+         color:#fff; font-weight:700; cursor:pointer; }
+  .btn.carregar { background:#0f766e; border-color:#0f766e; padding:10px 22px; font-weight:800; }
+  .btn.limpar { background:#fff; color:#c0392b; border-color:#c0392b; }
+  .btn-mini { padding:4px 10px; border-radius:6px; border:none; background:#c0392b;
+              color:#fff; font-weight:700; font-size:12px; cursor:pointer; }
+  .tabela-wrap { overflow-x:auto; max-height:600px; overflow-y:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:7px; text-align:left; font-size:13px; }
+  th { background:#dbe8f4; white-space:nowrap; position:sticky; top:0; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.col-centro { text-align:center; white-space:nowrap; }
+  td.promo { color:#16a34a; font-weight:800; }
+  td.cheio { color:#999; text-decoration:line-through; }
+  .selo { display:inline-block; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:800; }
+  .selo.ATIVA { background:#e6f6ec; color:#1e6b34; }
+  .selo.PAUSADA { background:#fff7e6; color:#8a6100; }
+  .selo.ENCERRADA { background:#f1f1f1; color:#666; }
+  .status-msg { font-size:14px; margin-top:10px; min-height:20px; color:#9f2f2f; font-weight:600; }
+  .status-msg.sucesso { color:#16a34a; }
+  .vazio { color:#777; padding:12px 0; }
+  .resumo { display:flex; flex-wrap:wrap; gap:30px; }
+  .resumo-item { display:flex; flex-direction:column; }
+  .resumo-rotulo { font-size:12px; font-weight:700; color:#666; }
+  .resumo-valor { font-size:22px; font-weight:800; }
+</style>
+
+<div class="pagina-titulo">📋 Itens da Campanha</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Escolha a campanha</div>
+  <form method="get" class="linha-campos">
+    <div class="campo">
+      <label for="ano">Ano</label>
+      <select id="ano" name="ano" onchange="this.form.submit()">
+        {% for a in anos %}
+          <option value="{{ a }}" {{ 'selected' if ano and a|string == ano|string }}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo" style="flex:1; min-width:300px">
+      <label for="id_campanha">Campanha</label>
+      <select id="id_campanha" name="id_campanha" onchange="this.form.submit()">
+        <option value="">Selecione…</option>
+        {% for c in campanhas %}
+          <option value="{{ c.id_pdv_campanha }}"
+                  {{ 'selected' if campanha and c.id_pdv_campanha == campanha.id_pdv_campanha }}>
+            {{ c.nome }} — {{ c.data_inicio.strftime('%d/%m') }} a {{ c.data_fim.strftime('%d/%m/%Y') }}
+            ({{ c.itens }} itens)
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn">Abrir</button>
+  </form>
+  {% if not campanhas %}
+    <div class="vazio" style="margin-top:10px">
+      Nenhuma campanha neste ano.
+      <a href="{{ url_for('pdv.cadastrar_campanhas') }}">Cadastrar uma</a>.
+    </div>
+  {% endif %}
+</div>
+
+{% if campanha %}
+  <div class="bloco">
+    <div class="resumo">
+      <div class="resumo-item">
+        <div class="resumo-rotulo">Campanha</div>
+        <div class="resumo-valor">{{ campanha.nome }}</div>
+      </div>
+      <div class="resumo-item">
+        <div class="resumo-rotulo">Período</div>
+        <div class="resumo-valor">
+          {{ campanha.data_inicio.strftime('%d/%m/%Y') }} a {{ campanha.data_fim.strftime('%d/%m/%Y') }}
+        </div>
+      </div>
+      <div class="resumo-item">
+        <div class="resumo-rotulo">Situação</div>
+        <div class="resumo-valor">
+          <span class="selo {{ campanha.situacao }}">{{ campanha.situacao|capitalize }}</span>
+        </div>
+      </div>
+      <div class="resumo-item">
+        <div class="resumo-rotulo">Itens</div>
+        <div class="resumo-valor">{{ total_itens }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bloco">
+    <div class="bloco-titulo">Carregar itens</div>
+    <div class="linha-campos">
+      <div class="campo">
+        <label for="selMarca">Marca</label>
+        <select id="selMarca" style="min-width:190px">
+          <option value="">Todas</option>
+          {% for m in marcas %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="selCategoria">Tipo de peça (categoria)</label>
+        <select id="selCategoria" style="min-width:190px">
+          <option value="">Todas</option>
+          {% for c in categorias %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="inpDesconto">Desconto %</label>
+        <input type="number" step="0.01" min="0" max="99" id="inpDesconto"
+               value="{{ campanha.percentual_desconto }}" style="width:120px">
+      </div>
+      <button type="button" class="btn carregar" id="btnCarregar">Carregar itens</button>
+      {% if total_itens %}
+        <button type="button" class="btn limpar" id="btnLimpar">Esvaziar campanha</button>
+      {% endif %}
+    </div>
+    <div style="font-size:12px; color:#666; margin-top:8px">
+      Sem marca e sem categoria, entram <strong>todos</strong> os produtos ativos. Produto que já
+      estava na campanha tem o desconto atualizado — rodar o filtro de novo corrige, não duplica.
+    </div>
+    <div class="status-msg" id="status"></div>
+  </div>
+
+  <div class="bloco">
+    <div class="bloco-titulo">Itens desta campanha</div>
+    {% if itens %}
+      <div class="tabela-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:140px">SKU</th>
+              <th>Produto</th>
+              <th style="width:110px">Marca</th>
+              <th style="width:110px">Categoria</th>
+              <th style="width:90px">Tam.</th>
+              <th style="width:80px">Estoque</th>
+              <th style="width:110px">Preço cheio</th>
+              <th style="width:90px">Desc.</th>
+              <th style="width:120px">Promocional</th>
+              <th style="width:70px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for i in itens %}
+              <tr data-item="{{ i.id_pdv_campanha_item }}">
+                <td>{{ i.sku or '—' }}</td>
+                <td>{{ i.descricao }}</td>
+                <td>{{ i.marca or '—' }}</td>
+                <td>{{ i.categoria or '—' }}</td>
+                <td>{{ i.tamanho or '—' }}</td>
+                <td class="col-dir">{{ i.quantidade_atual|br }}</td>
+                <td class="col-dir cheio">{{ i.preco_venda|br }}</td>
+                <td class="col-dir">{{ i.percentual_desconto|br }}%</td>
+                <td class="col-dir promo">{{ i.preco_promocional|br }}</td>
+                <td class="col-centro">
+                  <button type="button" class="btn-mini" onclick="remover(this)">×</button>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="vazio">Nenhum item nesta campanha. Use o filtro acima para carregar.</div>
+    {% endif %}
+  </div>
+{% endif %}
+
+<script>
+  const ID_CAMPANHA = {{ campanha.id_pdv_campanha if campanha else 'null' }};
+
+  async function fetchJson(url, opcoes) {
+    const resp = await fetch(url, opcoes);
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+    }
+    return resp.json();
+  }
+
+  function mostrar(mensagem, sucesso) {
+    const el = document.getElementById("status");
+    if (!el) return;
+    el.textContent = mensagem || "";
+    el.classList.toggle("sucesso", !!sucesso);
+  }
+
+  const btnCarregar = document.getElementById("btnCarregar");
+  if (btnCarregar) {
+    btnCarregar.addEventListener("click", async () => {
+      const marca = document.getElementById("selMarca").value;
+      const categoria = document.getElementById("selCategoria").value;
+      if (!marca && !categoria &&
+          !confirm("Sem filtro, TODOS os produtos ativos entram na campanha. Continuar?")) return;
+
+      btnCarregar.disabled = true;
+      mostrar("Carregando…");
+      try {
+        const data = await fetchJson(`/pdv/api/campanhas/${ID_CAMPANHA}/carregar`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            marca: marca, categoria: categoria,
+            percentual_desconto: document.getElementById("inpDesconto").value,
+          }),
+        });
+        if (data.ok) {
+          mostrar(`${data.incluidos} incluído(s), ${data.atualizados} atualizado(s).`, true);
+          setTimeout(() => location.reload(), 700);
+        } else { mostrar(data.erro || "Erro ao carregar."); }
+      } catch (e) { mostrar(e.message || "Erro ao carregar."); }
+      finally { btnCarregar.disabled = false; }
+    });
+  }
+
+  const btnLimpar = document.getElementById("btnLimpar");
+  if (btnLimpar) {
+    btnLimpar.addEventListener("click", async () => {
+      if (!confirm("Remover todos os itens desta campanha?")) return;
+      try {
+        const data = await fetchJson(`/pdv/api/campanhas/${ID_CAMPANHA}/itens`, { method: "DELETE" });
+        if (data.ok) { location.reload(); } else { mostrar(data.erro); }
+      } catch (e) { mostrar(e.message); }
+    });
+  }
+
+  async function remover(botao) {
+    const tr = botao.closest("tr");
+    try {
+      const data = await fetchJson(`/pdv/api/campanhas/itens/${tr.dataset.item}`, { method: "DELETE" });
+      if (data.ok) { tr.remove(); } else { mostrar(data.erro); }
+    } catch (e) { mostrar(e.message); }
+  }
+</script>
+
+{% endblock %}

@@ -258,7 +258,7 @@
   function linhaItem() {
     const tr = document.createElement("tr");
     const opcoes = PRODUTOS.map(p =>
-      `<option value="${p.id_pdv_produto}">${escapeHtml((p.codigo ? p.codigo + " — " : "") + p.descricao)}</option>`
+      `<option value="${p.id_pdv_produto}">${escapeHtml((p.sku ? p.sku + " — " : "") + p.descricao)}</option>`
     ).join("");
 
     tr.innerHTML = `

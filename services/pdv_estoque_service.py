@@ -1,16 +1,23 @@
 """
 Estoque do PDV Matrix.
 
-O saldo de um produto (`pdv_produtos.quantidade_atual`) é o consolidado da
-movimentação (`pdv_estoque_movimentos`), que funciona como o extrato de uma
-conta: entrada positiva, saída negativa, e cada linha diz de onde veio.
+O saldo **é da loja**: fica em `pdv_produtos_filiais.quantidade_atual`, e é o
+consolidado da movimentação (`pdv_estoque_movimentos`), que funciona como o
+extrato de uma conta — entrada positiva, saída negativa, cada linha dizendo de
+onde veio.
 
     Saldo inicial + Entradas − Saídas = Saldo final
 
-Por isso **ninguém escreve `quantidade_atual` por fora daqui**: quem movimenta
-estoque chama `movimentar()`, que grava o movimento e ajusta o saldo na mesma
+O cadastro central (`pdv_produtos`) não tem saldo nenhum: ele descreve a peça
+(SKU, descrição, preço), que é a mesma em qualquer loja.
+
+Por isso **ninguém escreve o saldo por fora daqui**: quem movimenta estoque
+chama `movimentar()`, que grava o movimento e ajusta o saldo da loja na mesma
 transação. Saldo sem movimento é saldo sem lastro — não dá para auditar nem
 para descobrir depois de onde veio a diferença.
+
+`movimentar()` também **inclui o produto na loja** quando ele ainda não estava
+lá: receber a mercadoria é o que faz a loja passar a trabalhar aquela peça.
 """
 
 # Tipos de movimento. O sinal da quantidade é que diz se entra ou sai; o tipo
@@ -57,12 +64,20 @@ def movimentar(cur, cod_empresa, cod_filial, id_produto, data_movimento, tipo,
     linha = cur.fetchone()
     id_movimento = linha[0] if isinstance(linha, tuple) else linha["id_pdv_estoque_movimento"]
 
+    # o item passa a existir nesta loja, se ainda não existia
+    from services.pdv_produtos_filiais_service import garantir_produto_na_filial
+    garantir_produto_na_filial(cur, cod_empresa, cod_filial, id_produto,
+                               data_movimento=data_movimento)
+
     cur.execute("""
-        UPDATE pdv_produtos
+        UPDATE pdv_produtos_filiais
            SET quantidade_atual = quantidade_atual + %s,
+               ultimo_movimento_em = GREATEST(
+                   COALESCE(ultimo_movimento_em, %s::date), %s::date),
                atualizado_em = now()
-         WHERE id_pdv_produto = %s AND cod_empresa = %s
-    """, (quantidade, id_produto, cod_empresa))
+         WHERE cod_empresa = %s AND cod_filial = %s AND id_pdv_produto = %s
+    """, (quantidade, data_movimento, data_movimento,
+          cod_empresa, cod_filial, id_produto))
 
     return id_movimento
 

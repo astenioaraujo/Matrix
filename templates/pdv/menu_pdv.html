@@ -68,6 +68,12 @@
     </a>
   {% endif %}
 
+  {% if pode_campanhas %}
+    <a class="menu-card" style="background:#7c3aed;" href="{{ url_for('pdv.menu_campanhas') }}">
+      🏷️ Campanhas
+    </a>
+  {% endif %}
+
   {% if pode_canais %}
     <a class="menu-card" style="background:#0369a1;" href="{{ url_for('pdv.config_canais') }}">
       🏷️ Canais de Venda

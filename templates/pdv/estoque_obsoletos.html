@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+{#
+  Itens parados nesta loja e itens já ocultos.
+
+  Nada some sozinho: zerar não é sair de linha, é precisar repor. A lista
+  abaixo é sugestão — quem decide o que a loja deixa de trabalhar é quem cuida
+  dela. E ocultar nunca apaga: o item continua ligado às vendas.
+#}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .bloco-titulo { font-size:17px; font-weight:800; margin-bottom:12px; color:#1a3a63; }
+  .tabela-wrap { overflow-x:auto; max-height:520px; overflow-y:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; position:sticky; top:0; }
+  td.sku { font-family: ui-monospace, Menlo, monospace; font-size:13px; }
+  td.col-centro { text-align:center; white-space:nowrap; }
+  .btn-mini { padding:4px 11px; border-radius:6px; border:none; background:#6b7280;
+              color:#fff; font-weight:700; font-size:12px; cursor:pointer; }
+  .btn-mini.reexibir { background:#16a34a; }
+  .explica { background:#f4f6f9; border-left:4px solid #1a3a63; padding:12px 16px;
+             font-size:13px; color:#444; border-radius:0 8px 8px 0; line-height:1.6; }
+  .vazio { color:#777; padding:10px 0; }
+  .status-msg { font-size:13px; margin-top:10px; min-height:18px; color:#9f2f2f; font-weight:600; }
+</style>
+
+<div class="pagina-titulo">🧹 Itens parados nesta loja</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <div class="explica">
+    Estão aqui os itens <strong>zerados e sem movimento há mais de {{ meses }} meses</strong> nesta
+    loja. Nada é ocultado automaticamente — zerar quer dizer repor, não sair de linha, e sumir
+    sozinho com uma peça que a compradora esperava repor seria pior do que a lista comprida.<br><br>
+    <strong>Ocultar não apaga.</strong> O item sai das telas da loja, mas continua ligado às vendas
+    e aos movimentos: qualquer relatório de vendas passadas continua contando com ele. E se a peça
+    voltar a se movimentar aqui, ela reaparece sozinha.
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Candidatos a ocultar ({{ candidatos|length }})</div>
+  {% if candidatos %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:160px">SKU</th>
+            <th>Produto</th>
+            <th style="width:120px">Marca</th>
+            <th style="width:150px">Último movimento</th>
+            <th style="width:110px">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in candidatos %}
+            <tr data-produto="{{ p.id_pdv_produto }}">
+              <td class="sku">{{ p.sku or '—' }}</td>
+              <td>{{ p.descricao }}</td>
+              <td>{{ p.marca or '—' }}</td>
+              <td>
+                {{ (p.ultimo_movimento_em or p.incluido_em).strftime('%d/%m/%Y') }}
+              </td>
+              <td class="col-centro">
+                <button type="button" class="btn-mini" onclick="alternar(this, true)">Ocultar</button>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="vazio">Nenhum item parado há mais de {{ meses }} meses.</div>
+  {% endif %}
+  <div class="status-msg" id="status"></div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Já ocultos ({{ ocultos|length }})</div>
+  {% if ocultos %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:160px">SKU</th>
+            <th>Produto</th>
+            <th style="width:120px">Marca</th>
+            <th style="width:130px">Ocultado em</th>
+            <th style="width:110px">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in ocultos %}
+            <tr data-produto="{{ p.id_pdv_produto }}">
+              <td class="sku">{{ p.sku or '—' }}</td>
+              <td>{{ p.descricao }}</td>
+              <td>{{ p.marca or '—' }}</td>
+              <td>{{ p.ocultado_em.strftime('%d/%m/%Y') if p.ocultado_em else '—' }}</td>
+              <td class="col-centro">
+                <button type="button" class="btn-mini reexibir" onclick="alternar(this, false)">Reexibir</button>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="vazio">Nenhum item oculto nesta loja.</div>
+  {% endif %}
+</div>
+
+<script>
+  async function alternar(botao, ocultar) {
+    const tr = botao.closest("tr");
+    const el = document.getElementById("status");
+    try {
+      const resp = await fetch("/pdv/api/estoque/ocultar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id_pdv_produto: Number(tr.dataset.produto), ocultar: ocultar }),
+      });
+      const data = await resp.json();
+      if (data.ok) location.reload();
+      else { el.textContent = data.erro || "Erro."; }
+    } catch (e) {
+      el.textContent = "Não foi possível concluir.";
+    }
+  }
+</script>
+
+{% endblock %}

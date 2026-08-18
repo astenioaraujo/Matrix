@@ -37,9 +37,23 @@
   .status-msg { font-size:13px; margin-top:10px; color:#1e6b34; min-height:18px; }
   .status-msg.erro { color:#9f2f2f; }
   .vazio { color:#777; }
+  td.sku { font-family: ui-monospace, Menlo, monospace; font-size:13px; }
+  td.abaixo { color:#c0392b; font-weight:800; }
+  .selo-oculto { background:#f1f1f1; color:#666; padding:1px 8px; border-radius:20px;
+                 font-size:11px; font-weight:800; margin-left:6px; }
+  .btn-mini { padding:3px 9px; border-radius:6px; border:none; background:#1a73e8;
+              color:#fff; font-weight:700; font-size:11px; cursor:pointer; margin-left:4px; }
+  .btn-mini.ocultar { background:#6b7280; }
+  .aviso-loja { background:#f4f6f9; border-left:4px solid #1a3a63; padding:10px 14px;
+                font-size:13px; color:#444; border-radius:0 8px 8px 0; margin-bottom:14px; }
 </style>
 
-<div class="pagina-titulo">📦 Estoque</div>
+<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px">
+  <div class="pagina-titulo">📦 Estoque</div>
+  {% if pode_importar %}
+    <a class="btn" style="text-decoration:none" href="{{ url_for('pdv.importar_estoque') }}">📤 Importar Estoque</a>
+  {% endif %}
+</div>
 <div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
 
 {% if pode_ajustar %}
@@ -50,7 +64,7 @@
       <label for="selProduto">Produto</label>
       <select id="selProduto" style="min-width:260px">
         {% for p in produtos %}
-          <option value="{{ p.id_pdv_produto }}">{{ (p.codigo ~ ' — ' if p.codigo else '') }}{{ p.descricao }}</option>
+          <option value="{{ p.id_pdv_produto }}">{{ (p.sku ~ ' — ' if p.sku else '') }}{{ p.descricao }}</option>
         {% endfor %}
       </select>
     </div>
@@ -96,35 +110,84 @@
 </div>
 {% endif %}
 
+{% if pode_produtos_filial %}
 <div class="bloco">
-  <div class="bloco-titulo">Posição atual</div>
+  <div class="bloco-titulo">Incluir produto nesta loja</div>
+  <div class="aviso-loja">
+    O cadastro de produtos é da <strong>empresa</strong>; esta lista é <strong>desta loja</strong>.
+    Ao receber mercadoria, o item entra aqui sozinho — use o campo abaixo só para preparar a loja
+    para uma peça que ainda vai chegar.
+  </div>
+  <div class="form-ajuste">
+    <div class="campo">
+      <label for="inpSkuIncluir">SKU do cadastro da empresa</label>
+      <input type="text" id="inpSkuIncluir" placeholder="SKU ou leitor" style="width:220px">
+    </div>
+    <button type="button" class="btn" id="btnIncluirSku">Incluir na loja</button>
+    <a class="btn" style="background:#6b7280; border-color:#6b7280; text-decoration:none"
+       href="{{ url_for('pdv.obsoletos_da_loja') }}">Itens parados / ocultos</a>
+  </div>
+  <div class="status-msg" id="statusIncluir"></div>
+</div>
+{% endif %}
+
+<div class="bloco">
+  <div class="bloco-titulo">
+    Posição desta loja
+    {% if mostrar_ocultos %}
+      — <a class="link" href="{{ url_for('pdv.consultar_estoque') }}">esconder os ocultos</a>
+    {% else %}
+      — <a class="link" href="{{ url_for('pdv.consultar_estoque', mostrar_ocultos=1) }}">ver também os ocultos</a>
+    {% endif %}
+  </div>
   {% if produtos %}
     <div class="tabela-wrap">
       <table>
         <thead>
           <tr>
-            <th style="width:120px">Código</th>
+            <th style="width:150px">SKU</th>
             <th>Produto</th>
-            <th style="width:70px">Un.</th>
-            <th style="width:110px">Qtde</th>
-            <th style="width:120px">Custo</th>
-            <th style="width:140px">Valor em Custo</th>
-            <th style="width:130px">Preço de Venda</th>
-            <th style="width:100px">Extrato</th>
+            <th style="width:60px">Un.</th>
+            <th style="width:90px">Qtde</th>
+            <th style="width:90px">Reserv.</th>
+            <th style="width:95px">Disponível</th>
+            <th style="width:80px">Mín.</th>
+            <th style="width:110px">Custo</th>
+            <th style="width:130px">Valor em Custo</th>
+            <th style="width:120px">Preço</th>
+            <th style="width:150px">Ações</th>
           </tr>
         </thead>
         <tbody>
           {% for p in produtos %}
-            <tr class="{{ 'inativo' if not p.ativo }} {{ 'negativo' if (p.quantidade_atual or 0) < 0 }}">
-              <td>{{ p.codigo or '—' }}</td>
-              <td>{{ p.descricao }}</td>
+            <tr class="{{ 'inativo' if not p.ativo or p.situacao == 'OCULTO' }} {{ 'negativo' if (p.quantidade_atual or 0) < 0 }}"
+                data-produto="{{ p.id_pdv_produto }}">
+              <td class="sku">{{ p.sku or '—' }}</td>
+              <td>
+                {{ p.descricao }}
+                {% if p.situacao == 'OCULTO' %}<span class="selo-oculto">oculto</span>{% endif %}
+              </td>
               <td>{{ p.unidade }}</td>
               <td class="col-dir saldo">{{ p.quantidade_atual|br }}</td>
+              <td class="col-dir">{{ p.quantidade_reservada|br }}</td>
+              {# Disponível e "abaixo do mínimo" são calculados, nunca gravados #}
+              <td class="col-dir {{ 'abaixo' if p.estoque_minimo and p.disponivel < p.estoque_minimo }}">
+                {{ p.disponivel|br }}
+                {% if p.estoque_minimo and p.disponivel < p.estoque_minimo %}⚠{% endif %}
+              </td>
+              <td class="col-dir">{{ p.estoque_minimo|br }}</td>
               <td class="col-dir">{{ p.custo_atual|br }}</td>
               <td class="col-dir">{{ p.valor_custo|br }}</td>
               <td class="col-dir">{{ p.preco_venda|br }}</td>
               <td class="col-centro">
-                <a class="link" href="{{ url_for('pdv.extrato_estoque', id_produto=p.id_pdv_produto) }}">ver</a>
+                <a class="link" href="{{ url_for('pdv.extrato_estoque', id_produto=p.id_pdv_produto) }}">extrato</a>
+                {% if pode_produtos_filial %}
+                  {% if p.situacao == 'OCULTO' %}
+                    <button type="button" class="btn-mini" onclick="alternarOculto(this, false)">Reexibir</button>
+                  {% elif (p.quantidade_atual or 0) == 0 %}
+                    <button type="button" class="btn-mini ocultar" onclick="alternarOculto(this, true)">Ocultar</button>
+                  {% endif %}
+                {% endif %}
               </td>
             </tr>
           {% endfor %}
@@ -138,6 +201,57 @@
 </div>
 
 <script>
+  async function postJson(url, payload) {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+    }
+    return resp.json();
+  }
+
+  const btnIncluir = document.getElementById("btnIncluirSku");
+  if (btnIncluir) {
+    const campo = document.getElementById("inpSkuIncluir");
+    const enviar = async () => {
+      const el = document.getElementById("statusIncluir");
+      const sku = campo.value.trim();
+      if (!sku) return;
+      btnIncluir.disabled = true;
+      try {
+        const data = await postJson("/pdv/api/estoque/incluir-sku", { sku });
+        if (data.ok) { el.classList.remove("erro"); el.textContent = data.aviso; location.reload(); }
+        else { el.classList.add("erro"); el.textContent = data.erro; }
+      } catch (e) {
+        el.classList.add("erro"); el.textContent = e.message;
+      } finally { btnIncluir.disabled = false; }
+    };
+    btnIncluir.addEventListener("click", enviar);
+    // o leitor de código de barras termina com Enter
+    campo.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") { ev.preventDefault(); enviar(); }
+    });
+  }
+
+  async function alternarOculto(botao, ocultar) {
+    const tr = botao.closest("tr");
+    if (ocultar && !confirm("Ocultar este produto desta loja? Ele some das telas, mas continua " +
+                            "no histórico de vendas.")) return;
+    try {
+      const data = await postJson("/pdv/api/estoque/ocultar", {
+        id_pdv_produto: Number(tr.dataset.produto), ocultar: ocultar,
+      });
+      if (data.ok) location.reload();
+      else { const el = document.getElementById("status"); el.classList.add("erro"); el.textContent = data.erro; }
+    } catch (e) {
+      const el = document.getElementById("status"); el.classList.add("erro"); el.textContent = e.message;
+    }
+  }
+
   const btn = document.getElementById("btnAjustar");
   if (btn) {
     btn.addEventListener("click", async () => {

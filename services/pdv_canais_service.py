@@ -91,7 +91,7 @@ def transferir_estoque(cur, cod_empresa, cod_filial, id_produto, id_canal_origem
 
     O saldo TOTAL do produto não muda — a peça continua na loja, só passou a
     ser oferecida por outro canal. Por isso os dois movimentos se anulam em
-    `pdv_produtos.quantidade_atual`, que é o consolidado.
+    `pdv_produtos_filiais.quantidade_atual`, que é o saldo da loja.
     """
     if id_canal_origem == id_canal_destino:
         raise ValueError("O canal de origem e o de destino têm que ser diferentes.")

@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .bloco-titulo { font-size:17px; font-weight:800; margin-bottom:12px; color:#1a3a63; }
+  .linha-campos { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  input { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+  .btn { padding:10px 22px; border-radius:8px; border:none; background:#16a34a;
+         color:#fff; font-weight:800; cursor:pointer; font-size:15px; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .tabela-wrap { overflow-x:auto; }
+  .resumo { display:flex; flex-wrap:wrap; gap:30px; }
+  .resumo-item { display:flex; flex-direction:column; }
+  .resumo-rotulo { font-size:12px; font-weight:700; color:#666; }
+  .resumo-valor { font-size:24px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .ok { background:#e6f6ec; border:1px solid #a8dcbb; color:#1e6b34;
+        padding:12px 16px; border-radius:8px; font-weight:700; margin-bottom:14px; }
+  .flash { padding:10px 14px; border-radius:8px; margin-bottom:16px; font-weight:600; }
+  .flash.error { background:#fdecea; border:1px solid #f0b3ad; color:#9f2f2f; }
+  .avisos { background:#fff7e6; border:1px solid #f0c674; border-radius:8px;
+            padding:12px 16px; font-size:13px; max-height:220px; overflow:auto; }
+  .explica { background:#f4f6f9; border-left:4px solid #1a3a63; padding:12px 16px;
+             font-size:13px; color:#444; border-radius:0 8px 8px 0; line-height:1.6; }
+  .vazio { color:#777; }
+  code { background:#eef1f5; padding:1px 5px; border-radius:4px; }
+</style>
+
+<div class="pagina-titulo">📤 Importar Estoque</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+{% with mensagens = get_flashed_messages(with_categories=true) %}
+  {% for categoria, mensagem in mensagens %}
+    <div class="flash {{ categoria }}">{{ mensagem }}</div>
+  {% endfor %}
+{% endwith %}
+
+{% if resultado %}
+  <div class="bloco">
+    <div class="ok">
+      Importação concluída — <strong>{{ resultado.arquivo }}</strong>
+      (referência {{ resultado.referencia.strftime('%d/%m/%Y') }})
+    </div>
+    <div class="resumo">
+      <div class="resumo-item">
+        <div class="resumo-rotulo">Linhas lidas</div>
+        <div class="resumo-valor">{{ resultado.linhas }}</div>
+      </div>
+      <div class="resumo-item">
+        <div class="resumo-rotulo">Produtos</div>
+        <div class="resumo-valor">{{ resultado.produtos }}</div>
+      </div>
+      <div class="resumo-item">
+        <div class="resumo-rotulo">Novos</div>
+        <div class="resumo-valor">{{ resultado.produtos_novos }}</div>
+      </div>
+      <div class="resumo-item">
+        <div class="resumo-rotulo">Atualizados</div>
+        <div class="resumo-valor">{{ resultado.produtos_atualizados }}</div>
+      </div>
+      <div class="resumo-item">
+        <div class="resumo-rotulo">Movimentos</div>
+        <div class="resumo-valor">{{ resultado.movimentos }}</div>
+      </div>
+      <div class="resumo-item">
+        <div class="resumo-rotulo">Peças</div>
+        <div class="resumo-valor">{{ resultado.pecas|br }}</div>
+      </div>
+    </div>
+  </div>
+
+  {% if avisos %}
+    <div class="bloco">
+      <div class="bloco-titulo">Avisos</div>
+      <div class="avisos">
+        {% for a in avisos %}<div>{{ a }}</div>{% endfor %}
+      </div>
+    </div>
+  {% endif %}
+{% endif %}
+
+<div class="bloco">
+  <div class="bloco-titulo">Arquivo</div>
+  <form method="post" enctype="multipart/form-data" class="linha-campos">
+    <div class="campo">
+      <label for="arquivo">CSV do estoque</label>
+      <input type="file" id="arquivo" name="arquivo" accept=".csv" required>
+    </div>
+    <div class="campo">
+      <label for="data_referencia">Data de referência</label>
+      <input type="date" id="data_referencia" name="data_referencia">
+    </div>
+    <button type="submit" class="btn">Importar</button>
+  </form>
+  <div style="font-size:12px; color:#666; margin-top:8px">
+    A data sai do nome do arquivo quando ele segue o padrão
+    <code>estoque-AAAA-MM-DD.csv</code>; o campo acima só é usado quando não sai.
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Como a carga funciona</div>
+  <div class="explica">
+    <strong>O SKU vira o código do produto.</strong> Quando a mesma peça aparece em mais de uma
+    loja no arquivo, ela continua sendo <strong>um produto só</strong> — cada linha vira um
+    movimento de estoque no seu canal.<br><br>
+
+    <strong>Canais:</strong> "Loja Principal + E-commerce" e "Recebimento (a conferir)" entram no
+    canal <strong>Loja Física</strong>; "Loja Outlet" entra no <strong>Outlet</strong>.
+    {% if canais %}Canais desta filial: {{ canais|map(attribute='nome')|join(', ') }}.{% endif %}<br><br>
+
+    <strong>Reimportar é seguro:</strong> produto que ainda não tem movimento recebe a carga
+    inicial; produto que já tem histórico recebe apenas o <strong>ajuste da diferença</strong>
+    entre o arquivo e o saldo atual. Rodar o mesmo arquivo duas vezes não dobra o estoque.<br><br>
+
+    <strong>Não são importados</strong> (porque são calculados ou vêm das vendas): Disponível,
+    Abaixo do mínimo, Valor em estoque, Vendido 30d/90d/12 meses e Última venda.
+  </div>
+</div>
+
+<div class="bloco">
+  <div class="bloco-titulo">Importações anteriores</div>
+  {% if importacoes %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:150px">Quando</th>
+            <th>Arquivo</th>
+            <th style="width:120px">Referência</th>
+            <th style="width:90px">Linhas</th>
+            <th style="width:90px">Novos</th>
+            <th style="width:110px">Atualizados</th>
+            <th style="width:110px">Movimentos</th>
+            <th style="width:100px">Peças</th>
+            <th style="width:140px">Usuário</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for i in importacoes %}
+            <tr>
+              <td>{{ i.criado_em.strftime('%d/%m/%Y %H:%M') }}</td>
+              <td>{{ i.nome_arquivo }}</td>
+              <td>{{ i.data_referencia.strftime('%d/%m/%Y') }}</td>
+              <td class="col-dir">{{ i.linhas }}</td>
+              <td class="col-dir">{{ i.produtos_novos }}</td>
+              <td class="col-dir">{{ i.produtos_atualizados }}</td>
+              <td class="col-dir">{{ i.movimentos }}</td>
+              <td class="col-dir">{{ i.pecas|br }}</td>
+              <td>{{ i.nome_usuario or '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="vazio">Nenhuma importação até agora.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

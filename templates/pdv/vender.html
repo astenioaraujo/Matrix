@@ -142,6 +142,89 @@
 
   .aviso.sucesso { color: #16a34a; }
 
+  .selo-promo { font-size: 12px; font-weight: 700; color: #16a34a; margin-top: 3px; }
+
+  /* SKU é o campo de entrada — é nele que o leitor de código de barras
+     "digita", então ele nasce com o foco e é o maior da linha. */
+  .cel-sku { display: flex; gap: 4px; align-items: center; }
+  .item-sku {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+  .item-sku.nao-achou { background: #fdecea; border-color: #c0392b; }
+
+  .btn-lupa {
+    border: 1px solid #bbb;
+    background: #fff;
+    border-radius: 6px;
+    padding: 7px 9px;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+  }
+  .btn-lupa:hover { background: #eef4fb; border-color: #1a73e8; }
+
+  .item-descricao { font-size: 14px; }
+  .item-descricao .vazio { color: #999; font-style: italic; }
+  .item-descricao .detalhe { font-size: 11px; color: #777; }
+
+  /* Busca por descrição */
+  .modal-fundo { position: fixed; inset: 0; background: rgba(0,0,0,.45);
+                 display: none; align-items: flex-start; justify-content: center; z-index: 60; }
+  .modal-fundo.aberto { display: flex; }
+  .modal-busca {
+    background: #fff; border-radius: 12px; padding: 20px;
+    width: min(1040px, 96vw); margin-top: 5vh; max-height: 88vh;
+    display: flex; flex-direction: column;
+  }
+  .modal-busca h3 { margin: 0 0 12px; font-size: 19px; }
+  .busca-linha { display: flex; gap: 10px; align-items: flex-end; }
+  .busca-campo { display: flex; flex-direction: column; gap: 4px; }
+  .busca-campo label { font-size: 11px; font-weight: 700; color: #666; }
+  .busca-linha input { font-size: 15px; width: 100%; }
+  .busca-dica { font-size: 12px; color: #666; margin-top: 8px; line-height: 1.5; }
+  .busca-dica code { background: #eef1f5; padding: 1px 5px; border-radius: 4px; }
+  .busca-resultados { overflow: auto; margin-top: 12px; flex: 1; }
+  .busca-resultados table { font-size: 13px; }
+  .busca-resultados th { position: sticky; top: 0; }
+  .busca-resultados tr.achado { cursor: pointer; }
+  .busca-resultados tr.achado:hover td { background: #eef4fb; }
+  .busca-sku { font-family: ui-monospace, Menlo, monospace; font-weight: 700; }
+  .busca-status { font-size: 13px; color: #666; margin-top: 10px; min-height: 18px; }
+  .busca-status.erro { color: #9f2f2f; font-weight: 600; }
+
+  /* Preço na busca: em promoção, o cheio riscado por cima e o que vale
+     embaixo, em verde — a mesma cor que o selo de promoção usa na venda. */
+  .celula-preco { line-height: 1.25; padding-top: 5px; padding-bottom: 5px; }
+  .preco-normal { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .preco-cheio {
+    font-size: 11px;
+    color: #999;
+    text-decoration: line-through;
+    font-variant-numeric: tabular-nums;
+  }
+  .preco-promo {
+    font-size: 15px;
+    font-weight: 800;
+    color: #16a34a;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .preco-desconto {
+    font-size: 10px;
+    font-weight: 800;
+    background: #16a34a;
+    color: #fff;
+    border-radius: 20px;
+    padding: 1px 6px;
+    margin-left: 3px;
+    vertical-align: 1px;
+  }
+  .busca-resultados tr.em-promocao td { background: #f6fdf8; }
+  .busca-resultados tr.em-promocao:hover td { background: #e8f7ee; }
+
   .faltando-cadastro {
     background: #fff7e6;
     border: 1px solid #f0c674;
@@ -155,11 +238,11 @@
 <div class="pagina-titulo">🧾 Realizar Venda</div>
 <div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
 
-{% if not vendedores or not produtos or not contas %}
+{% if not vendedores or not total_produtos or not contas %}
   <div class="faltando-cadastro">
     <strong>Antes de vender, complete os cadastros:</strong>
     {% if not vendedores %} nenhum <em>vendedor</em> cadastrado;{% endif %}
-    {% if not produtos %} nenhum <em>produto</em> cadastrado;{% endif %}
+    {% if not total_produtos %} nenhum <em>produto</em> cadastrado;{% endif %}
     {% if not contas %} nenhuma <em>conta financeira</em> cadastrada (é ela que recebe o dinheiro e o PIX);{% endif %}
     <a href="{{ url_for('pdv.menu_cadastros') }}">ir para os Cadastros</a>.
   </div>
@@ -211,12 +294,13 @@
     <table>
       <thead>
         <tr>
-          <th style="width:34%">Produto</th>
-          <th style="width:110px">Qtde</th>
-          <th style="width:130px">Preço Unit.</th>
-          <th style="width:130px">Desconto</th>
-          <th style="width:130px">Total</th>
-          <th style="width:70px"></th>
+          <th style="width:190px">SKU</th>
+          <th>Produto</th>
+          <th style="width:100px">Qtde</th>
+          <th style="width:125px">Preço Unit.</th>
+          <th style="width:115px">Desconto</th>
+          <th style="width:125px">Total</th>
+          <th style="width:60px"></th>
         </tr>
       </thead>
       <tbody id="corpoItens"></tbody>
@@ -299,6 +383,53 @@
   </div>
 </div>
 
+<div class="modal-fundo" id="modalBusca">
+  <div class="modal-busca">
+    <h3>Buscar produto pela descrição</h3>
+    <div class="busca-linha">
+      <div class="busca-campo" style="flex:1">
+        <label for="inpBusca">Produto</label>
+        <input type="text" id="inpBusca" placeholder="Ex.: regata   ·   *bossa   ·   *regata *uv50"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();buscarProdutos();}">
+      </div>
+      <div class="busca-campo">
+        <label for="selMarcaBusca">Marca</label>
+        <select id="selMarcaBusca" style="min-width:180px"
+                onchange="buscarProdutos()">
+          <option value="">Todas</option>
+          {% for m in marcas %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+        </select>
+      </div>
+      <button type="button" class="btn" onclick="buscarProdutos()">Buscar</button>
+      <button type="button" class="btn secundario" onclick="fecharBusca()">Fechar</button>
+    </div>
+    <div class="busca-dica">
+      <code>regata</code> → o que <strong>começa</strong> com isso ·
+      <code>*bossa</code> → em <strong>qualquer posição</strong> do nome ·
+      <code>*regata *uv50</code> → vários termos, e a peça tem que ter
+      <strong>todos</strong> · <code>regata *uv50</code> → começa com um e contém o outro.<br>
+      A <strong>marca</strong> pode ser usada sozinha, para ver tudo dela, ou junto para
+      estreitar. Clique na linha para trazer o SKU.
+    </div>
+    <div class="busca-resultados">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:160px">SKU</th>
+            <th>Produto</th>
+            <th style="width:105px">Marca</th>
+            <th style="width:60px">Tam.</th>
+            <th style="width:75px">Estoque</th>
+            <th style="width:150px">Preço</th>
+          </tr>
+        </thead>
+        <tbody id="corpoBusca"></tbody>
+      </table>
+    </div>
+    <div class="busca-status" id="statusBusca"></div>
+  </div>
+</div>
+
 <div class="bloco">
   <div class="resumo">
     <div class="totais">
@@ -325,10 +456,9 @@
 </div>
 
 <script>
-  // Produtos vêm para o JS porque a linha de item é criada na hora e precisa
-  // puxar preço e custo. Contas, operadoras e formas já saem renderizadas nos
-  // selects fixos do HTML.
-  const PRODUTOS = {{ produtos | tojson }};
+  // Nada de lista de produtos embutida: a loja tem milhares de peças. O
+  // produto entra pelo SKU (leitor de código de barras) ou pela busca por
+  // descrição — os dois consultam o servidor na hora.
 
   function escapeHtml(texto) {
     const div = document.createElement("div");
@@ -362,14 +492,20 @@
 
   // ─── ITENS ────────────────────────────────────────────────────────────────
 
+  /* A linha começa pelo SKU: é o que o leitor de código de barras entrega.
+     Lido o SKU, a descrição e o preço aparecem sozinhos. */
   function linhaItem() {
     const tr = document.createElement("tr");
-    const opcoes = PRODUTOS.map(p =>
-      `<option value="${p.id_pdv_produto}">${escapeHtml((p.codigo ? p.codigo + " — " : "") + p.descricao)}</option>`
-    ).join("");
-
     tr.innerHTML = `
-      <td><select class="item-produto"><option value="">Selecione…</option>${opcoes}</select></td>
+      <td>
+        <div class="cel-sku">
+          <input type="text" class="item-sku" placeholder="SKU ou leitor">
+          <button type="button" class="btn-lupa" title="Buscar pela descrição">🔍</button>
+        </div>
+      </td>
+      <td class="item-descricao"><span class="vazio">Informe o SKU…</span>
+        <div class="selo-promo"></div>
+      </td>
       <td><input type="number" step="any" class="item-qtd" value="1"></td>
       <td><input type="number" step="0.01" class="item-preco" value="0"></td>
       <td><input type="number" step="0.01" class="item-desconto" value="0"></td>
@@ -377,14 +513,78 @@
       <td class="col-centro"><button type="button" class="btn remover">×</button></td>
     `;
 
-    tr.querySelector(".item-produto").addEventListener("change", (ev) => {
-      const produto = PRODUTOS.find(p => String(p.id_pdv_produto) === ev.target.value);
-      if (produto) tr.querySelector(".item-preco").value = produto.preco_venda;
-      recalcular();
+    const campoSku = tr.querySelector(".item-sku");
+    // o leitor de código de barras termina com Enter; digitando à mão, o Tab
+    // (blur) resolve igual
+    campoSku.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") { ev.preventDefault(); resolverSku(tr); }
     });
-    tr.querySelectorAll("input").forEach(el => el.addEventListener("input", recalcular));
+    campoSku.addEventListener("blur", () => resolverSku(tr));
+
+    tr.querySelector(".btn-lupa").addEventListener("click", () => abrirBusca(tr));
+    tr.querySelectorAll("input[type=number]")
+      .forEach(el => el.addEventListener("input", recalcular));
     tr.querySelector(".remover").addEventListener("click", () => { tr.remove(); recalcular(); });
     return tr;
+  }
+
+  /* Põe o produto na linha: descrição, preço (já promocional quando há
+     campanha) e o que a conclusão da venda precisa saber. */
+  function aplicarProduto(tr, produto) {
+    tr.dataset.idProduto = produto.id_pdv_produto;
+    tr.dataset.unidade   = produto.unidade || "UN";
+    tr.dataset.descricao = produto.descricao;
+    tr.dataset.custo     = produto.custo_atual || 0;
+    tr.querySelector(".item-sku").value = produto.sku || "";
+    tr.querySelector(".item-sku").classList.remove("nao-achou");
+
+    const detalhe = [produto.marca, produto.cor, produto.tamanho]
+                      .filter(Boolean).join(" · ");
+    const promo = produto.promocao;
+    tr.querySelector(".item-descricao").innerHTML = `
+      ${escapeHtml(produto.descricao)}
+      ${detalhe ? `<div class="detalhe">${escapeHtml(detalhe)}</div>` : ""}
+      <div class="selo-promo">${promo
+        ? `🏷️ ${escapeHtml(promo.campanha)} · −${promo.percentual_desconto}% ` +
+          `(de ${formatarBR(produto.preco_venda)})`
+        : ""}</div>`;
+
+    tr.querySelector(".item-preco").value = promo ? promo.preco_promocional
+                                                  : produto.preco_venda;
+    recalcular();
+  }
+
+  function limparProduto(tr, naoAchou) {
+    delete tr.dataset.idProduto;
+    tr.querySelector(".item-descricao").innerHTML =
+      `<span class="vazio">${naoAchou ? "SKU não encontrado" : "Informe o SKU…"}</span>
+       <div class="selo-promo"></div>`;
+    tr.querySelector(".item-sku").classList.toggle("nao-achou", !!naoAchou);
+    recalcular();
+  }
+
+  async function resolverSku(tr) {
+    const campo = tr.querySelector(".item-sku");
+    const sku = campo.value.trim();
+    if (!sku) { limparProduto(tr, false); return; }
+    if (tr.dataset.idProduto && tr.dataset.skuResolvido === sku) return;
+
+    try {
+      const resp = await fetch(`/pdv/api/produtos/sku/${encodeURIComponent(sku)}`);
+      const data = await resp.json();
+      if (data.ok) {
+        tr.dataset.skuResolvido = sku;
+        aplicarProduto(tr, data.produto);
+        mostrarAviso("");
+        tr.querySelector(".item-qtd").focus();
+        tr.querySelector(".item-qtd").select();
+      } else {
+        limparProduto(tr, true);
+        mostrarAviso(data.erro || "SKU não encontrado.");
+      }
+    } catch (e) {
+      mostrarAviso("Não foi possível consultar o SKU.");
+    }
   }
 
   function totalDoItem(tr) {
@@ -453,20 +653,111 @@
   function coletarItens() {
     const itens = [];
     document.querySelectorAll("#corpoItens tr").forEach(tr => {
-      const idProduto = tr.querySelector(".item-produto").value;
-      if (!idProduto) return;
-      const produto = PRODUTOS.find(p => String(p.id_pdv_produto) === idProduto);
+      if (!tr.dataset.idProduto) return;
       itens.push({
-        id_pdv_produto: Number(idProduto),
-        descricao_produto: produto ? produto.descricao : "",
-        unidade: produto ? produto.unidade : "UN",
+        id_pdv_produto: Number(tr.dataset.idProduto),
+        descricao_produto: tr.dataset.descricao || "",
+        unidade: tr.dataset.unidade || "UN",
         quantidade: paraNumero(tr.querySelector(".item-qtd").value),
         preco_unitario: paraNumero(tr.querySelector(".item-preco").value),
         valor_desconto: paraNumero(tr.querySelector(".item-desconto").value),
-        custo_unitario: produto ? produto.custo_atual : 0,
+        custo_unitario: paraNumero(tr.dataset.custo),
       });
     });
     return itens;
+  }
+
+  /* ─── BUSCA POR DESCRIÇÃO ───────────────────────────────────────────────
+     Alternativa ao SKU: para quando a etiqueta não lê ou a peça não tem. O
+     resultado sempre traz o SKU, que é o que vai para a linha. */
+
+  let linhaDaBusca = null;
+
+  function abrirBusca(tr) {
+    linhaDaBusca = tr;
+    document.getElementById("corpoBusca").innerHTML = "";
+    document.getElementById("statusBusca").textContent = "";
+    document.getElementById("modalBusca").classList.add("aberto");
+    const campo = document.getElementById("inpBusca");
+    campo.value = "";
+    document.getElementById("selMarcaBusca").value = "";
+    campo.focus();
+  }
+
+  function fecharBusca() {
+    document.getElementById("modalBusca").classList.remove("aberto");
+    linhaDaBusca = null;
+  }
+
+  function statusBusca(msg, erro) {
+    const el = document.getElementById("statusBusca");
+    el.textContent = msg || "";
+    el.classList.toggle("erro", !!erro);
+  }
+
+  async function buscarProdutos() {
+    const termo = document.getElementById("inpBusca").value.trim();
+    const marca = document.getElementById("selMarcaBusca").value;
+    const corpo = document.getElementById("corpoBusca");
+    corpo.innerHTML = "";
+    statusBusca("Buscando…");
+
+    try {
+      const resp = await fetch(`/pdv/api/produtos/buscar?termo=${encodeURIComponent(termo)}`
+                               + `&marca=${encodeURIComponent(marca)}`);
+      const data = await resp.json();
+      if (!data.ok) { statusBusca(data.erro || "Erro na busca.", true); return; }
+
+      if (!data.produtos.length) {
+        const varios = (termo.match(/\*/g) || []).length > 1;
+        statusBusca(
+          varios ? "Nenhuma peça tem todos esses termos ao mesmo tempo. Tire um deles."
+          : marca ? `Nenhum produto de ${marca} com esse texto nesta loja.`
+          : "Nenhum produto encontrado. Tente com * para procurar no meio do nome.", true);
+        return;
+      }
+
+      data.produtos.forEach(p => {
+        const tr = document.createElement("tr");
+        tr.className = "achado";
+        const promo = p.promocao;
+        // Em promoção, os dois preços aparecem: o cheio riscado e o que vai
+        // ser cobrado, em destaque. Sem isso a vendedora não sabe se o
+        // desconto está valendo nem de quanto era.
+        const celulaPreco = promo
+          ? `<div class="preco-cheio">${formatarBR(p.preco_venda)}</div>
+             <div class="preco-promo">${formatarBR(promo.preco_promocional)}
+               <span class="preco-desconto">−${promo.percentual_desconto}%</span>
+             </div>`
+          : `<div class="preco-normal">${formatarBR(p.preco_venda)}</div>`;
+
+        tr.innerHTML = `
+          <td class="busca-sku">${escapeHtml(p.sku || "—")}</td>
+          <td>${escapeHtml(p.descricao)}</td>
+          <td>${escapeHtml(p.marca || "—")}</td>
+          <td>${escapeHtml(p.tamanho || "—")}</td>
+          <td class="col-dir">${formatarBR(p.quantidade_atual)}</td>
+          <td class="col-dir celula-preco">${celulaPreco}</td>
+        `;
+        if (promo) tr.classList.add("em-promocao");
+        tr.addEventListener("click", () => {
+          if (linhaDaBusca) {
+            linhaDaBusca.dataset.skuResolvido = p.sku || "";
+            aplicarProduto(linhaDaBusca, p);
+            const qtd = linhaDaBusca.querySelector(".item-qtd");
+            fecharBusca();
+            qtd.focus(); qtd.select();
+          }
+        });
+        corpo.appendChild(tr);
+      });
+
+      statusBusca(data.excedeu
+        ? `Mostrando os ${data.limite} primeiros — refine a busca para ver o resto.`
+        : `${data.produtos.length} produto(s).`);
+    } catch (e) {
+      statusBusca("Não foi possível buscar.", true);
+    }
   }
 
   // Só as formas com valor entram na venda: as demais nem viram registro.
@@ -546,7 +837,9 @@
     document.getElementById("inpObservacao").value = "";
     document.getElementById("inpDescontoVenda").value = 0;
     document.getElementById("corpoItens").innerHTML = "";
-    document.getElementById("corpoItens").appendChild(linhaItem());
+    const primeira = linhaItem();
+    document.getElementById("corpoItens").appendChild(primeira);
+    primeira.querySelector(".item-sku").focus();
     LINHAS_FORMA.forEach(linha => {
       linha.querySelector(".rec-valor").value = "";
       const parcelas = linha.querySelector(".rec-parcelas");
@@ -560,7 +853,9 @@
   // ─── LIGAÇÕES ─────────────────────────────────────────────────────────────
 
   document.getElementById("btnNovoItem").addEventListener("click", () => {
-    document.getElementById("corpoItens").appendChild(linhaItem());
+    const tr = linhaItem();
+    document.getElementById("corpoItens").appendChild(tr);
+    tr.querySelector(".item-sku").focus();
   });
 
   document.getElementById("btnCompletar").addEventListener("click", () => {
@@ -575,7 +870,9 @@
   document.getElementById("inpDescontoVenda").addEventListener("input", recalcular);
   document.getElementById("btnConcluir").addEventListener("click", concluir);
 
-  document.getElementById("corpoItens").appendChild(linhaItem());
+  const primeiraLinha = linhaItem();
+  document.getElementById("corpoItens").appendChild(primeiraLinha);
+  primeiraLinha.querySelector(".item-sku").focus();
   recalcular();
 </script>
 

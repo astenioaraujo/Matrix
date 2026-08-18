@@ -225,15 +225,66 @@ A venda só é concluída depois de duas validações: soma dos itens = total, e
 
 O detalhe da venda mostra, abaixo do documento original, **o que aquela venda produziu** em cada módulo — a rastreabilidade que o documento exige (da parcela de cartão ou do título de volta até a venda e o vendedor).
 
-**Os cinco cadastros são dirigidos por especificação**: `CADASTROS` em `pdv_routes.py` descreve tabela, PK, campos e tipos, e `templates/pdv/cadastro.html` monta a grade a partir disso. Cadastro novo = uma entrada no dicionário, sem template nem endpoint novo. Excluir registro já usado numa venda cai em erro de FK e a mensagem manda desativar em vez de excluir — histórico não se apaga.
+**O produto entra pelo SKU.** `pdv_produtos.codigo` virou **`sku`** (`migrations/pdv_produtos_sku.sql`), único por empresa — é o que o **leitor de código de barras** lê, então é a chave de entrada da venda, não um campo ao lado da descrição. Na tela de venda a linha começa pelo SKU (Enter do leitor ou Tab resolvem), e a descrição, o preço e a promoção aparecem sozinhos.
+
+Ao lado do SKU, a **lupa** abre a busca (`GET /api/produtos/buscar`), com dois campos independentes:
+
+| Campo | Como funciona |
+|---|---|
+| **Produto** | vários termos na mesma linha, todos obrigatórios (E, não OU) — ver `_condicoes_descricao()` |
+| **Marca** | vale **sozinha** (lista tudo da marca) ou junto com a descrição |
+
+```
+regata            → descrição COMEÇA com "regata"
+*bossa            → contém "bossa" em qualquer posição
+*regata *uv50     → contém os dois
+regata *uv50      → começa com "regata" E contém "uv50"
+top speed power   → COMEÇA com a frase inteira
+```
+
+> A frase **sem asterisco não é quebrada em termos** de propósito: quem digita várias palavras sem asterisco está escrevendo o começo do nome, e "começa com top E começa com speed" nunca daria resultado.
+
+Um dos dois basta. As marcas oferecidas são só as que **aquela loja** trabalha — a lista da empresa traria marcas que ela não tem. O resultado sempre traz o SKU. Limite de 200 linhas (`LIMITE_BUSCA_PRODUTOS`), avisando quando há mais; só a maior marca d'O Closet (LIVE, ~1.100 peças) passa disso.
+
+> A tela de venda **não embute mais a lista de produtos**: com as ~2.200 peças d'O Closet ela pesava 529 KB por abertura; agora são 43 KB, e produto se consulta sob demanda (`GET /api/produtos/sku/<sku>` e a busca acima).
+
+**Vendedora é da loja, não da empresa.** `pdv_vendedores` tem `cod_filial` (`migrations/vendedores_por_filial.sql`): quem vende numa filial não aparece na outra — no cadastro, no seletor da tela de venda, nem na conclusão da venda, que recusa vendedor de outra loja (é pelo vendedor que se responde "quem vendeu isto"). Na especificação isso é a chave **`"por_filial": True`**, que faz a listagem filtrar, o registro novo nascer na filial corrente e o update/delete não saírem dela. Os demais cadastros continuam por empresa.
+
+**Os cadastros são dirigidos por especificação**: `CADASTROS` em `pdv_routes.py` descreve tabela, PK, campos e tipos, e `templates/pdv/cadastro.html` monta a grade a partir disso. Cadastro novo = uma entrada no dicionário, sem template nem endpoint novo. Excluir registro já usado numa venda cai em erro de FK e a mensagem manda desativar em vez de excluir — histórico não se apaga.
 
 **Dinheiro não escolhe conta.** O lançamento financeiro exige uma conta (é o extrato), mas na venda a vendedora não escolhe onde o dinheiro cai — cai na gaveta. A conta que é a gaveta leva `caixa_padrao` no cadastro (**uma por empresa**, garantido por índice único parcial `uq_pdv_caixa_padrao`) e o backend a resolve sozinho. PIX, sim, pede a conta. Sem gaveta marcada, a venda em dinheiro é recusada com a mensagem de como resolver.
+
+## O produto na loja: catálogo único, lista e saldo por filial
+
+    pdv_produtos          → cadastro central da EMPRESA (SKU, descrição, preço, marca…)
+    pdv_produtos_filiais  → quais peças a LOJA trabalha e quanto ela tem
+
+`migrations/criar_pdv_produtos_filiais.sql`, serviço em `services/pdv_produtos_filiais_service.py`.
+
+A peça é a mesma em qualquer loja — mesmo SKU, mesma descrição, mesmo preço —, mas cada loja tem a **sua** lista: sem isso uma filial pequena carregaria itens que nunca vendeu e que já saíram de linha. **`pdv_produtos` não tem saldo nenhum**: `quantidade_atual`, `quantidade_reservada`, `estoque_minimo` e `estoque_maximo` saíram de lá e vivem na filial (manter cópia nos dois lugares divergiria na primeira falha e ninguém saberia qual vale).
+
+**Como o item entra na loja:**
+
+| | |
+|---|---|
+| Sozinho | qualquer movimento ali (venda, entrada, importação, ajuste, transferência) — `movimentar()` chama `garantir_produto_na_filial()`. Receber a mercadoria já inclui o item |
+| Pelo SKU | digitado em Estoque → "Incluir produto nesta loja", para preparar a loja para uma peça que ainda vai chegar (`incluir_por_sku`) |
+
+**Como o item sai: nunca é apagado.** Venda e movimento apontam para ele. Ele fica **`OCULTO`** — some das telas e da busca da venda, mas continua contando em qualquer relatório de vendas passadas. Ocultar exige saldo zero. E se a peça voltar a se movimentar ali, ela **reaparece sozinha** (o movimento é a prova de que a loja trabalha aquilo de novo).
+
+**Nada some automaticamente.** `MESES_SEM_MOVIMENTO` = 6: a tela `/pdv/estoque/obsoletos` **sugere** os zerados e parados há mais tempo que isso, e quem decide é quem cuida da loja — zerar quer dizer repor, não sair de linha.
+
+**Calculados, nunca gravados**: Disponível (`quantidade_atual − quantidade_reservada`) e "abaixo do mínimo".
+
+A **campanha é da empresa**, não da loja: `produtos_do_filtro()` varre o cadastro central, porque o preço promocional vale em qualquer filial que trabalhe a peça. A **entrada de mercadorias** também enxerga o catálogo inteiro — é por ela que uma peça nova passa a existir na loja.
+
+Permissão `PRODUTOS_FILIAL` 1910.
 
 ## Estoque (fase 2)
 
 `pdv_estoque_movimentos` é o **extrato do produto**: entrada positiva, saída negativa, cada linha com `tipo_origem`/`id_origem` dizendo de onde veio. `pdv_produtos.quantidade_atual` é o consolidado dele.
 
-> **Ninguém escreve `quantidade_atual` por fora** de `services/pdv_estoque_service.py`. Quem movimenta chama `movimentar()`, que grava o movimento e ajusta o saldo na mesma transação, recebendo o cursor de quem chamou. Saldo sem movimento é saldo sem lastro. Por isso `quantidade_atual` **saiu do cadastro de produtos** — para acertar, use Estoque → Ajustar.
+> **Ninguém escreve o saldo por fora** de `services/pdv_estoque_service.py`. Quem movimenta chama `movimentar()`, que grava o movimento, ajusta `pdv_produtos_filiais.quantidade_atual` **da loja** e inclui o item nela se ainda não estava — tudo na mesma transação, com o cursor de quem chamou. Saldo sem movimento é saldo sem lastro; para acertar, use Estoque → Ajustar.
 
 Telas: `/pdv/estoque` (posição de todos os produtos + ajuste manual) e `/pdv/estoque/<id>` (extrato do produto no período: saldo inicial + entradas − saídas = saldo final, com o saldo corrente calculado linha a linha, nunca persistido). Tipos de ajuste: `ENTRADA` e `DEVOLUCAO` sempre somam, `PERDA` sempre subtrai, `AJUSTE` respeita o sinal digitado (é o que acerta inventário nos dois sentidos). Entrada com custo informado atualiza `custo_atual`/`ultimo_preco_compra` (o parâmetro do sistema é Último Preço de Compra).
 
@@ -314,6 +365,60 @@ Telas: `/pdv/canais` (canais por filial + o parâmetro) e `/pdv/canais/transferi
 
 **N'O Closet (EMP013)**: uma filial (1) e três canais — Loja Física (padrão), E-commerce, Outlet — com **estoque compartilhado**, que é o que o arquivo de estoque da loja reflete.
 
+## Importação do estoque (implantação)
+
+`services/pdv_importacao_estoque_service.py` + `/pdv/estoque/importar` (permissão `IMPORTAR_ESTOQUE` 1870). É carga de **implantação**: depois disso o estoque anda pelo fluxo normal (venda, entrada, ajuste).
+
+Colunas novas em `pdv_produtos`: `marca`, `categoria`, `cor`, `tamanho`, `quantidade_reservada`, `estoque_minimo`, `estoque_maximo` (`migrations/criar_pdv_importacao_estoque.sql`). **Não** viraram coluna, por serem calculadas: Disponível (`quantidade_atual − quantidade_reservada`), Abaixo do mínimo, Valor em estoque (custo e venda). "Vendido 30d/90d/12m" e "Última venda" saem das vendas.
+
+**O SKU vira `pdv_produtos.codigo`** e não é único no arquivo: a mesma peça aparece uma vez por loja. Vira **um produto** com **um movimento por linha**, cada um no seu canal — "Loja Principal + E-commerce" e "Recebimento (a conferir)" → Loja Física; "Loja Outlet" → Outlet (`MAPA_CANAIS`).
+
+**Reimportar é seguro**: produto sem movimento recebe a carga inicial (ENTRADA por linha); produto com histórico recebe só o **ajuste da diferença** entre o arquivo e o saldo atual.
+
+> **A gravação é em lote, de propósito.** ~2.200 produtos num banco remoto: uma consulta por produto (o caminho de `movimentar()`) não terminava — a primeira versão estourou 2 minutos. A versão em lote roda em ~10 s. O princípio continua: nenhum saldo sem movimento — os movimentos são inseridos e o `quantidade_atual` é somado a partir deles, na mesma transação.
+>
+> **`execute_values` precisa de `fetch=True`** para o `RETURNING` dos produtos novos: ele grava em páginas de 100 e, sem isso, só a última página devolve id — as demais ficavam sem id e a importação quebrava com `KeyError` no SKU.
+
+**Carga de 13/08/2026 (EMP013)**: 2.184 linhas → 2.178 produtos, 2.184 movimentos, 3.794 peças (3.252 Loja Física + 542 Outlet), 249 reservadas, R$ 406.761,46 em custo. Confere com o arquivo.
+
+> **A importação traz sempre o preço cheio.** Em 677 linhas do arquivo de 13/08/2026 o "Valor em estoque (venda)" é menor que `quantidade × Preço de venda` (descontos de 25% a 55%): a peça estava em promoção no sistema de origem. O `preco_venda` gravado é o **preço cheio** da coluna correspondente — o desconto passa a ser expresso por **campanha** (ver acima), que é onde ele tem período e pode ser pausado. A preço cheio o estoque vale R$ 971.546,96; com aqueles descontos, R$ 855.993,51.
+
+## Campanhas (preço promocional)
+
+    Campanha (nome + período + desconto)
+      → Itens da Campanha (carregados por filtro: marca, categoria ou todos)
+      → Venda dentro do período usa o preço promocional
+
+`pdv_campanhas` + `pdv_campanhas_itens` (`migrations/criar_pdv_campanhas.sql`), serviço em `services/pdv_campanhas_service.py`. Menu próprio em `/pdv/campanhas`, com **Cadastrar Campanha** (`/campanhas/cadastrar`) e **Itens da Campanha** (`/campanhas/itens`, filtrada por ano).
+
+**O que se grava por item é o percentual de desconto**, não o preço. O promocional é calculado (`preco_venda × (1 − desconto/100)`) — valor derivado não vira coluna. O preço que efetivamente valeu fica em `pdv_vendas_itens.preco_unitario`, e `pdv_vendas_itens.id_pdv_campanha` diz por qual campanha o item saiu.
+
+**A promoção é resolvida no servidor**, em `promocoes_do_dia()`, não pelo que a tela mandou: uma tela aberta desde ontem, com campanha já encerrada, não vende no preço velho. Produto em duas campanhas ao mesmo tempo fica com o **maior desconto** — critério fixo, para não depender da ordem de cadastro.
+
+**Situação da campanha** (substituiu o `ativo` booleano — com três estados, dois flags se contradiriam):
+
+| | Efeito |
+|---|---|
+| `ATIVA` | vale enquanto o dia estiver dentro do período |
+| `PAUSADA` | suspensa; volta a valer ao ser retomada |
+| `ENCERRADA` | interrompida antes do previsto — **`data_fim` vira hoje**, para o período gravado refletir o que de fato valeu. Não tem volta: para valer de novo, cria-se outra |
+
+Carregar itens grava **em lote** (o filtro pode alcançar os ~2.200 produtos) com `ON CONFLICT DO UPDATE`: rodar o filtro de novo com outro percentual **corrige em vez de duplicar**. Campanha que já tem venda **não pode ser excluída** (FK de `pdv_vendas_itens`) — a mensagem manda encerrar.
+
+Permissões: `CAMPANHAS_MENU` 1880, `CAMPANHAS` 1890, `CAMPANHAS_ITENS` 1900.
+
+### Carga das promoções de implantação (EMP013)
+
+`carga_promocoes_ocloset.py` (script de linha de comando, roda com `--aplicar`; sem a flag só simula). O arquivo de estoque não tem coluna de preço promocional, mas ele se revela: onde `Valor em estoque (venda)` é menor que `quantidade × Preço de venda`, a peça está com desconto —
+
+    desconto = 1 − (valor_venda ÷ quantidade) ÷ preço_de_venda
+
+Os percentuais são **arredondados ao inteiro**: o arquivo produz 30,01 / 30,02 / 54,99 por arredondamento de centavos, e os valores reais são 25, 30, 35, 40, 50 e 55%.
+
+Tudo entra numa **campanha só** — é o que o modelo permite, já que o percentual é gravado por item. Carga de 13/08/2026: **673 SKUs** (32 a 25%, 270 a 30%, 39 a 35%, 191 a 40%, 114 a 50%, 27 a 55%), campanha "Promoções vigentes em 13/08/2026", de 13/08 a 31/12/2026 (o término é palpite — ajustável na tela).
+
+Confere com o arquivo: estoque a preço promocional dá R$ 855.993,46 contra R$ 855.993,51 do arquivo — **5 centavos** de diferença em R$ 856 mil, resíduo do arredondamento dos percentuais.
+
 ## Devolução e Cancelamento (fase 6)
 
 Não está no documento da Inovai, mas segue o princípio dele: **devolver é operação nova**, com documento próprio (`pdv_devolucoes` + `pdv_devolucoes_itens`, `migrations/criar_pdv_devolucoes.sql`), que aponta para a venda de origem. `services/pdv_devolucao_service.py`.
@@ -348,6 +453,44 @@ Módulo pessoal (`routes/canivete_routes.py`, prefixo `/canivete`): Finanças Pe
 
 - **Finanças Pessoais** são **por usuário** (`fp_lancamentos`, `fp_classificacoes`, `fp_contas_bancarias` — chaveadas por `id_usuario`, não por empresa).
 - **Atalhos no topo** (`base.html`): 💰 Finanças Pessoais à esquerda de 📅 Agenda. O de finanças exige `CANIVETE/MENU` **e** `CANIVETE/FINANCAS_PESSOAIS_MENU`; o da agenda exige `CANIVETE/AGENDA`. Superusuário vê ambos.
+## Agenda — Programação do Dia
+
+A caixa verde de hoje (`agenda_dia_tarefas`, montada em `agenda()` e renderizada em `templates/canivete/agenda.html`).
+
+**Fuso horário**: o servidor roda em UTC, então `date.today()` virava o dia às 21h daqui e a programação se esvaziava três horas antes. Agora tudo no módulo usa `_hoje_br()` (`ZoneInfo("America/Recife")` — UTC-3 fixo, RN não tem horário de verão). **Não voltar a usar `date.today()` neste arquivo.**
+
+**Códigos** (`_RE_CODIGO_DIA`, `_codigo_dia_casa`): `D` todo dia, `DU` só dias úteis, `A` passa para amanhã, branco só hoje.
+
+O `A` não copia nada nem depende de rotina noturna: `_codigo_dia_casa` faz a tarefa aparecer no dia em que nasceu **e em `dia_inicio + 1`**, e só. É essa definição que já impede o giro infinito — não existe "amanhã do amanhã".
+
+Duas travas em `_checar_amanha()`, aplicadas em `agenda_dia_criar` e `agenda_dia_salvar`:
+
+| Trava | Regra |
+|---|---|
+| `LIMITE_AMANHA` = 3 | no máximo 3 tarefas com `A` por dia |
+| `ERRO_JA_GIRADA` | tarefa com `dia_inicio < hoje` já veio de ontem e não gira de novo — checado **mesmo quando o código não mudou**, senão marcar `A` outra vez seria um silêncio que o usuário leria como sucesso |
+
+Salvar o texto de uma tarefa que já é `A` não passa pelo limite (`conferir_limite=False`), senão editar a própria tarefa daria erro.
+
+> **Armadilha ao editar `agenda_dia_salvar`**: `mudou_codigo` aparece **antes**, em `agenda_recorrente_salvar`. Um `replace` no primeiro casamento põe o código na função errada e o teste passa reto — foi o que aconteceu na primeira versão desta trava.
+
+### Hashtag do projeto (programação do dia → tarefas eventuais)
+
+Cada projeto tem uma **hashtag** (`agenda_projetos.hashtag`, `migrations/adicionar_hashtag_projetos_agenda.sql`), única por usuário — PS pessoal, VL Vilela, LC Lucena, 30 (30 Set). Tarefa do dia escrita como `livro Eduardo #PS` pertence àquele projeto.
+
+Na **virada do dia**, tarefa com hashtag que não foi concluída e não tem código para segurá-la (`D`, `DU`, ou `A` ainda valendo) vira **tarefa eventual** do projeto, na **primeira posição** e em **vermelho** (`agenda_proj_tarefas.destaque`). Programada para um dia e não feita — é isso que a cor diz.
+
+- Roda em `_despejar_tarefas_com_hashtag`, na **abertura da agenda** — não há rotina noturna. `agenda_dia_tarefas.migrada_em` faz a varredura ser idempotente: cada tarefa é despejada uma vez só.
+- `_ultimo_dia_tarefa` decide quando a tarefa deixou de aparecer: branco = `dia_inicio`, `A` = `dia_inicio + 1`, `D`/`DU` = nunca (só `dia_fim`).
+- Hashtag sem projeto correspondente não despeja nada — a tarefa fica onde está.
+- Cadastrada no modal ⚙ Projetos, ao lado do nome; hashtag repetida é recusada (`ERRO_HASHTAG_REPETIDA`, mais índice único parcial no banco).
+
+**Erro na tela**: nada de `alert()` do navegador. A mensagem sai em `#dia-erro` (`mostrarErroDia`), no mesmo padrão do erro do journal (texto vermelho no próprio bloco, some sozinho).
+
+**Dica dos códigos** (`mostrarDicaDia`): caixinha escura ao focar o campo, listando as opções — antes só se descobria errando.
+
+**Seta ↓** por linha (`mandarParaOFimDia` → `POST /agenda/dia/mover-fim`): despriorizar sem apagar e redigitar, pondo a maior `ordem` na tarefa.
+
 - **Bug corrigido** em `templates/canivete/financas_pessoais/lancar.html`: o botão Excluir fechava o modal **antes** de montar a requisição, e `fecharModal()` zerava a variável do id — ia `id_excluir` vazio, o servidor não apagava nada mas respondia `ok`, e a linha sumia só da tela. Guardar o id numa variável local antes de fechar o modal.
 
 ---

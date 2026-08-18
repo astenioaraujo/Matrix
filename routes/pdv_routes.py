@@ -31,6 +31,14 @@ from services.pdv_estoque_service import (baixar_itens_da_venda, extrato_produto
                                           movimentar, TIPOS_MOVIMENTO)
 from services.pdv_entrada_service import (ratear_frete, custo_unitario,
                                           gerar_titulos_pagar, parcelar)
+from services.pdv_campanhas_service import (campanhas_vigentes, promocoes_do_dia,
+                                            preco_promocional, carregar_itens,
+                                            SITUACOES_CAMPANHA)
+from services.pdv_importacao_estoque_service import (ler_csv, agrupar_por_sku,
+                                                     importar, data_do_nome)
+from services.pdv_produtos_filiais_service import (incluir_por_sku, ocultar,
+                                                   candidatos_a_ocultar,
+                                                   MESES_SEM_MOVIMENTO)
 from services.pdv_canais_service import (canais_da_filial, canal_padrao,
                                          estoque_por_canal, saldos_por_canal,
                                          transferir_estoque)
@@ -117,7 +125,11 @@ def _cursor():
 # tela é montada a partir desta especificação. Cadastro novo = uma entrada
 # aqui, sem template nem endpoint novo.
 #
-#   tipo do campo: texto | numero | dinheiro | checkbox | data
+#   tipo do campo: texto | numero | dinheiro | checkbox | data | opcoes
+#
+#   "por_filial": True  →  o cadastro pertence à loja, não à empresa. A lista
+#   só traz os da filial corrente e o registro novo nasce nela. É o caso da
+#   vendedora: quem vende numa loja não vende na outra.
 
 CADASTROS = {
     "clientes": {
@@ -139,11 +151,13 @@ CADASTROS = {
     },
     "vendedores": {
         "titulo": "Vendedores",
-        "descricao": "Quem realiza as vendas. Não precisa ser usuário do Matrix.",
+        "descricao": ("Quem realiza as vendas nesta loja. Não precisa ser usuário do "
+                      "Matrix. A vendedora de uma filial não aparece na outra."),
         "permissao": "VENDEDORES",
         "tabela": "pdv_vendedores",
         "pk": "id_pdv_vendedor",
         "ordenacao": "ordem, nome",
+        "por_filial": True,
         "campos": [
             {"nome": "ordem", "rotulo": "Ordem", "tipo": "numero", "largura": "80px", "padrao": 10},
             {"nome": "nome", "rotulo": "Nome", "tipo": "texto", "obrigatorio": True},
@@ -160,7 +174,7 @@ CADASTROS = {
         "ordenacao": "ordem, descricao",
         "campos": [
             {"nome": "ordem", "rotulo": "Ordem", "tipo": "numero", "largura": "80px", "padrao": 10},
-            {"nome": "codigo", "rotulo": "Código", "tipo": "texto", "largura": "120px"},
+            {"nome": "sku", "rotulo": "SKU", "tipo": "texto", "largura": "150px"},
             {"nome": "descricao", "rotulo": "Descrição", "tipo": "texto", "obrigatorio": True},
             {"nome": "unidade", "rotulo": "Un.", "tipo": "texto", "largura": "70px", "padrao": "UN"},
             {"nome": "preco_venda", "rotulo": "Preço de Venda", "tipo": "dinheiro", "largura": "130px", "padrao": 0},
@@ -291,6 +305,7 @@ def menu_pdv():
         pode_caixa_central=pode("CAIXA_CENTRAL"),
         pode_devolucoes=pode("DEVOLUCOES"),
         pode_canais=pode("CANAIS_VENDA"),
+        pode_campanhas=pode("CAMPANHAS_MENU"),
     )
 
 
@@ -343,12 +358,15 @@ def api_cadastro_listar(chave):
         return erro
 
     colunas = [spec["pk"]] + [c["nome"] for c in spec["campos"]]
+    filtro = " AND cod_filial = %s" if spec.get("por_filial") else ""
+    parametros = [_empresa()] + ([_cod_filial()] if spec.get("por_filial") else [])
+
     cur = _cursor()
     try:
         cur.execute(
             f"SELECT {', '.join(colunas)} FROM {spec['tabela']} "
-            f"WHERE cod_empresa = %s ORDER BY {spec['ordenacao']}",
-            (_empresa(),),
+            f"WHERE cod_empresa = %s{filtro} ORDER BY {spec['ordenacao']}",
+            parametros,
         )
         registros = [dict(r) for r in cur.fetchall()]
     finally:
@@ -387,19 +405,25 @@ def api_cadastro_gravar(chave, id_registro=None):
         try:
             if id_registro:
                 sets = ", ".join(f"{c} = %s" for c in valores) + ", atualizado_em = now()"
+                filtro = " AND cod_filial = %s" if spec.get("por_filial") else ""
+                extra = [_cod_filial()] if spec.get("por_filial") else []
                 cur.execute(
                     f"UPDATE {spec['tabela']} SET {sets} "
-                    f"WHERE {spec['pk']} = %s AND cod_empresa = %s",
-                    list(valores.values()) + [id_registro, _empresa()],
+                    f"WHERE {spec['pk']} = %s AND cod_empresa = %s{filtro}",
+                    list(valores.values()) + [id_registro, _empresa()] + extra,
                 )
                 if cur.rowcount == 0:
                     return jsonify({"ok": False, "erro": "Registro não encontrado."}), 404
             else:
                 colunas = ["cod_empresa"] + list(valores)
+                iniciais = [_empresa()]
+                if spec.get("por_filial"):
+                    colunas.insert(1, "cod_filial")
+                    iniciais.append(_cod_filial())
                 cur.execute(
                     f"INSERT INTO {spec['tabela']} ({', '.join(colunas)}) "
                     f"VALUES ({', '.join(['%s'] * len(colunas))}) RETURNING {spec['pk']}",
-                    [_empresa()] + list(valores.values()),
+                    iniciais + list(valores.values()),
                 )
                 id_registro = cur.fetchone()[0]
             conn.commit()
@@ -431,10 +455,12 @@ def api_cadastro_excluir(chave, id_registro):
     cur = conn.cursor()
     try:
         try:
+            filtro = " AND cod_filial = %s" if spec.get("por_filial") else ""
+            extra = [_cod_filial()] if spec.get("por_filial") else []
             cur.execute(
                 f"DELETE FROM {spec['tabela']} "
-                f"WHERE {spec['pk']} = %s AND cod_empresa = %s",
-                (id_registro, _empresa()),
+                f"WHERE {spec['pk']} = %s AND cod_empresa = %s{filtro}",
+                [id_registro, _empresa()] + extra,
             )
         except Exception:
             # registro já usado por uma venda: o histórico não pode ser
@@ -499,14 +525,32 @@ def vender():
 
         cur.execute(
             "SELECT id_pdv_vendedor, nome FROM pdv_vendedores "
-            "WHERE cod_empresa = %s AND ativo ORDER BY ordem, nome", (_empresa(),))
+            "WHERE cod_empresa = %s AND cod_filial = %s AND ativo "
+            "ORDER BY ordem, nome", (_empresa(), _cod_filial()))
         vendedores = [dict(r) for r in cur.fetchall()]
 
-        cur.execute(
-            "SELECT id_pdv_produto, codigo, descricao, unidade, preco_venda, custo_atual "
-            "FROM pdv_produtos WHERE cod_empresa = %s AND ativo ORDER BY ordem, descricao",
-            (_empresa(),))
-        produtos = [dict(r) for r in cur.fetchall()]
+        # A loja tem ~2.200 peças: embutir todas na página levava meio mega de
+        # HTML a cada abertura. O produto entra pelo SKU (é o que o leitor de
+        # código de barras lê) ou pela busca por descrição, ambos sob demanda.
+        cur.execute("""
+            SELECT COUNT(*) AS total FROM pdv_produtos_filiais pf
+            JOIN pdv_produtos p ON p.id_pdv_produto = pf.id_pdv_produto
+            WHERE pf.cod_empresa = %s AND pf.cod_filial = %s
+              AND pf.situacao = 'ATIVO' AND p.ativo
+        """, (_empresa(), _cod_filial()))
+        total_produtos = cur.fetchone()["total"]
+
+        # só as marcas que esta loja trabalha — a lista da empresa inteira
+        # traria marcas que ela não tem
+        cur.execute("""
+            SELECT DISTINCT p.marca
+            FROM pdv_produtos_filiais pf
+            JOIN pdv_produtos p ON p.id_pdv_produto = pf.id_pdv_produto
+            WHERE pf.cod_empresa = %s AND pf.cod_filial = %s
+              AND pf.situacao = 'ATIVO' AND p.ativo AND p.marca IS NOT NULL
+            ORDER BY p.marca
+        """, (_empresa(), _cod_filial()))
+        marcas = [r["marca"] for r in cur.fetchall()]
 
         cur.execute(
             "SELECT id_pdv_conta_financeira, nome, caixa_padrao FROM pdv_contas_financeiras "
@@ -521,9 +565,6 @@ def vender():
     finally:
         cur.close()
 
-    for p in produtos:
-        p["preco_venda"] = float(p["preco_venda"] or 0)
-        p["custo_atual"] = float(p["custo_atual"] or 0)
 
     caixa_padrao = next((c for c in contas if c.get("caixa_padrao")), None)
 
@@ -543,7 +584,8 @@ def vender():
         url_voltar=url_for("pdv.menu_pdv"),
         clientes=clientes,
         vendedores=vendedores,
-        produtos=produtos,
+        total_produtos=total_produtos,
+        marcas=marcas,
         contas=contas,
         operadoras=operadoras,
         formas=FORMAS_RECEBIMENTO,
@@ -579,6 +621,16 @@ def api_concluir_venda():
 
     # A soma dos itens tem que dar o total, e a soma dos recebimentos também.
     # Só depois dessas duas validações a venda pode ser concluída.
+    # As promoções são resolvidas no servidor: o preço que vale é o da
+    # campanha vigente hoje, não o que a tela mandou. Assim uma tela aberta
+    # desde ontem, com uma campanha que já terminou, não vende no preço velho.
+    conn_promo = get_connection()
+    cur_promo = conn_promo.cursor(cursor_factory=RealDictCursor)
+    try:
+        promocoes = promocoes_do_dia(cur_promo, _empresa())
+    finally:
+        cur_promo.close()
+
     total_itens = 0
     for item in itens:
         quantidade = _num(item.get("quantidade"))
@@ -586,6 +638,9 @@ def api_concluir_venda():
         desconto = _num(item.get("valor_desconto"))
         if quantidade <= 0:
             return jsonify({"ok": False, "erro": "Item com quantidade zerada."}), 400
+        promo = promocoes.get(item.get("id_pdv_produto"))
+        item["_campanha"] = promo["id_pdv_campanha"] if promo else None
+
         item["_quantidade"] = quantidade
         item["_preco"] = preco
         item["_desconto"] = desconto
@@ -673,12 +728,18 @@ def api_concluir_venda():
                 return jsonify({"ok": False, "erro": "Cliente não encontrado."}), 400
             nome_cliente = linha["nome"]
 
-        cur.execute(
-            "SELECT nome FROM pdv_vendedores WHERE id_pdv_vendedor = %s AND cod_empresa = %s",
-            (id_vendedor, cod_empresa))
+        # a vendedora tem que ser desta loja: venda de uma filial não pode sair
+        # no nome de quem trabalha na outra
+        cur.execute("""
+            SELECT nome FROM pdv_vendedores
+            WHERE id_pdv_vendedor = %s AND cod_empresa = %s AND cod_filial = %s
+        """, (id_vendedor, cod_empresa, cod_filial))
         linha = cur.fetchone()
         if not linha:
-            return jsonify({"ok": False, "erro": "Vendedor não encontrado."}), 400
+            return jsonify({
+                "ok": False,
+                "erro": "Vendedor não encontrado nesta loja.",
+            }), 400
         nome_vendedor = linha["nome"]
 
         cur.execute(
@@ -722,13 +783,14 @@ def api_concluir_venda():
             cur.execute("""
                 INSERT INTO pdv_vendas_itens
                     (cod_empresa, id_pdv_venda, sequencia, id_pdv_produto, descricao_produto,
-                     unidade, quantidade, preco_unitario, valor_desconto, valor_total, custo_unitario)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     unidade, quantidade, preco_unitario, valor_desconto, valor_total,
+                     custo_unitario, id_pdv_campanha)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (cod_empresa, id_venda, sequencia, item.get("id_pdv_produto") or None,
                   (item.get("descricao_produto") or "").strip() or "Item",
                   (item.get("unidade") or "UN").strip(),
                   item["_quantidade"], item["_preco"], item["_desconto"], item["_total"],
-                  _num(item.get("custo_unitario"))))
+                  _num(item.get("custo_unitario")), item["_campanha"]))
 
         # Itens da Venda → Movimentações de Estoque
         baixar_itens_da_venda(cur, cod_empresa, cod_filial, id_venda, data_venda,
@@ -992,14 +1054,24 @@ def consultar_estoque():
 
     cur = _cursor()
     try:
+        # A posição é da LOJA: só os itens que esta filial trabalha, com o
+        # saldo dela. Disponível e "abaixo do mínimo" são calculados aqui,
+        # nunca gravados.
         cur.execute("""
-            SELECT id_pdv_produto, codigo, descricao, unidade,
-                   quantidade_atual, custo_atual, preco_venda, ativo,
-                   quantidade_atual * custo_atual AS valor_custo
-            FROM pdv_produtos
-            WHERE cod_empresa = %s
-            ORDER BY ordem, descricao
-        """, (_empresa(),))
+            SELECT p.id_pdv_produto, p.sku, p.descricao, p.unidade, p.ativo,
+                   p.custo_atual, p.preco_venda,
+                   pf.quantidade_atual, pf.quantidade_reservada,
+                   pf.estoque_minimo, pf.estoque_maximo, pf.situacao,
+                   pf.ultimo_movimento_em,
+                   pf.quantidade_atual - pf.quantidade_reservada AS disponivel,
+                   pf.quantidade_atual * p.custo_atual AS valor_custo
+            FROM pdv_produtos_filiais pf
+            JOIN pdv_produtos p ON p.id_pdv_produto = pf.id_pdv_produto
+            WHERE pf.cod_empresa = %s AND pf.cod_filial = %s
+              AND (pf.situacao = 'ATIVO' OR %s)
+            ORDER BY p.ordem, p.descricao
+        """, (_empresa(), _cod_filial(),
+              (request.args.get("mostrar_ocultos") or "") == "1"))
         produtos = [dict(r) for r in cur.fetchall()]
     finally:
         cur.close()
@@ -1020,6 +1092,9 @@ def consultar_estoque():
         produtos=produtos,
         total_custo=total_custo,
         pode_ajustar=pode("AJUSTE_ESTOQUE"),
+        pode_importar=pode("IMPORTAR_ESTOQUE"),
+        pode_produtos_filial=pode("PRODUTOS_FILIAL"),
+        mostrar_ocultos=(request.args.get("mostrar_ocultos") or "") == "1",
         canais=canais,
         estoque_por_canal=por_canal,
     )
@@ -1039,9 +1114,14 @@ def extrato_estoque(id_produto):
     cur = _cursor()
     try:
         cur.execute("""
-            SELECT id_pdv_produto, codigo, descricao, unidade, quantidade_atual, custo_atual
-            FROM pdv_produtos WHERE id_pdv_produto = %s AND cod_empresa = %s
-        """, (id_produto, _empresa()))
+            SELECT p.id_pdv_produto, p.sku, p.descricao, p.unidade, p.custo_atual,
+                   COALESCE(pf.quantidade_atual, 0) AS quantidade_atual
+            FROM pdv_produtos p
+            LEFT JOIN pdv_produtos_filiais pf
+                   ON pf.id_pdv_produto = p.id_pdv_produto
+                  AND pf.cod_empresa = p.cod_empresa AND pf.cod_filial = %s
+            WHERE p.id_pdv_produto = %s AND p.cod_empresa = %s
+        """, (_cod_filial(), id_produto, _empresa()))
         produto = cur.fetchone()
         if not produto:
             flash("Produto não encontrado.", "error")
@@ -1166,8 +1246,10 @@ def nova_entrada():
         """, (_empresa(),))
         ctes = [dict(r) for r in cur.fetchall()]
 
+        # a entrada enxerga o cadastro central inteiro: é justamente por ela
+        # que uma peça nova passa a existir na loja
         cur.execute(
-            "SELECT id_pdv_produto, codigo, descricao, unidade, custo_atual "
+            "SELECT id_pdv_produto, sku, descricao, unidade, custo_atual "
             "FROM pdv_produtos WHERE cod_empresa = %s AND ativo ORDER BY ordem, descricao",
             (_empresa(),))
         produtos = [dict(r) for r in cur.fetchall()]
@@ -2653,10 +2735,14 @@ def tela_transferir_canal():
 
         canais = canais_da_filial(cur, _empresa(), _cod_filial())
         cur.execute("""
-            SELECT id_pdv_produto, codigo, descricao, unidade, quantidade_atual
-            FROM pdv_produtos WHERE cod_empresa = %s AND ativo
-            ORDER BY ordem, descricao
-        """, (_empresa(),))
+            SELECT p.id_pdv_produto, p.sku, p.descricao, p.unidade,
+                   pf.quantidade_atual
+            FROM pdv_produtos_filiais pf
+            JOIN pdv_produtos p ON p.id_pdv_produto = pf.id_pdv_produto
+            WHERE pf.cod_empresa = %s AND pf.cod_filial = %s
+              AND pf.situacao = 'ATIVO' AND p.ativo
+            ORDER BY p.ordem, p.descricao
+        """, (_empresa(), _cod_filial()))
         produtos = [dict(r) for r in cur.fetchall()]
     finally:
         cur.close()
@@ -2720,3 +2806,736 @@ def api_transferir_canal():
     finally:
         cur.close()
     return jsonify({"ok": True})
+
+
+# ─── IMPORTAÇÃO DO ESTOQUE ───────────────────────────────────────────────────
+
+@pdv_bp.route("/estoque/importar", methods=["GET", "POST"])
+def importar_estoque():
+    """
+    Carga do estoque a partir do CSV da loja.
+
+    Reimportar o mesmo arquivo é seguro: produto que já tem movimento recebe
+    só o ajuste da diferença, nunca uma nova entrada cheia.
+    """
+    redir = _checar_acesso("IMPORTAR_ESTOQUE")
+    if redir:
+        return redir
+
+    cur = _cursor()
+    try:
+        canais = canais_da_filial(cur, _empresa(), _cod_filial())
+        cur.execute("""
+            SELECT * FROM pdv_estoque_importacoes
+            WHERE cod_empresa = %s ORDER BY id_pdv_estoque_importacao DESC LIMIT 10
+        """, (_empresa(),))
+        importacoes = [dict(r) for r in cur.fetchall()]
+    finally:
+        cur.close()
+
+    if request.method == "GET":
+        return render_template(
+            "pdv/importar_estoque.html",
+            nome_empresa=session.get("nome_empresa"),
+            url_voltar=url_for("pdv.consultar_estoque"),
+            canais=canais,
+            importacoes=importacoes,
+            resultado=None,
+            avisos=[],
+        )
+
+    arquivo = request.files.get("arquivo")
+    if not arquivo or not arquivo.filename:
+        flash("Escolha o arquivo CSV.", "error")
+        return redirect(url_for("pdv.importar_estoque"))
+
+    try:
+        linhas, avisos = ler_csv(arquivo.read())
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("pdv.importar_estoque"))
+
+    produtos = agrupar_por_sku(linhas)
+    referencia = (data_do_nome(arquivo.filename)
+                  or datetime.strptime(
+                      (request.form.get("data_referencia") or date.today().isoformat()),
+                      "%Y-%m-%d").date())
+
+    canais_por_nome = {c["nome"]: c["id_pdv_canal"] for c in canais}
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        resumo = importar(cur, _empresa(), _cod_filial(), produtos, referencia,
+                          canais_por_nome, session.get("id_usuario"))
+
+        cur.execute("""
+            INSERT INTO pdv_estoque_importacoes
+                (cod_empresa, cod_filial, nome_arquivo, data_referencia, linhas,
+                 produtos_novos, produtos_atualizados, movimentos, pecas,
+                 id_usuario, nome_usuario)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (_empresa(), _cod_filial(), arquivo.filename, referencia, len(linhas),
+              resumo["produtos_novos"], resumo["produtos_atualizados"],
+              resumo["movimentos"], resumo["pecas"],
+              session.get("id_usuario"), session.get("nome_usuario")))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao importar: {e}", "error")
+        return redirect(url_for("pdv.importar_estoque"))
+    finally:
+        cur.close()
+
+    cur = _cursor()
+    try:
+        cur.execute("""
+            SELECT * FROM pdv_estoque_importacoes
+            WHERE cod_empresa = %s ORDER BY id_pdv_estoque_importacao DESC LIMIT 10
+        """, (_empresa(),))
+        importacoes = [dict(r) for r in cur.fetchall()]
+    finally:
+        cur.close()
+
+    return render_template(
+        "pdv/importar_estoque.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("pdv.consultar_estoque"),
+        canais=canais,
+        importacoes=importacoes,
+        resultado={**resumo, "linhas": len(linhas), "produtos": len(produtos),
+                   "arquivo": arquivo.filename, "referencia": referencia},
+        avisos=avisos[:30],
+    )
+
+
+# ─── CAMPANHAS (PREÇO PROMOCIONAL) ───────────────────────────────────────────
+
+@pdv_bp.route("/campanhas")
+def menu_campanhas():
+    redir = _checar_acesso("CAMPANHAS_MENU")
+    if redir:
+        return redir
+
+    cur = _cursor()
+    try:
+        vigentes = campanhas_vigentes(cur, _empresa())
+        cur.execute("""
+            SELECT COUNT(*) AS total FROM pdv_campanhas_itens ci
+            JOIN pdv_campanhas c ON c.id_pdv_campanha = ci.id_pdv_campanha
+            WHERE ci.cod_empresa = %s AND c.situacao = 'ATIVA'
+              AND CURRENT_DATE BETWEEN c.data_inicio AND c.data_fim
+        """, (_empresa(),))
+        itens_vigentes = cur.fetchone()["total"]
+    finally:
+        cur.close()
+
+    return render_template(
+        "pdv/menu_campanhas.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("pdv.menu_pdv"),
+        vigentes=vigentes,
+        itens_vigentes=itens_vigentes,
+        pode_cadastrar=pode("CAMPANHAS"),
+        pode_itens=pode("CAMPANHAS_ITENS"),
+    )
+
+
+@pdv_bp.route("/campanhas/itens")
+def itens_campanha():
+    """
+    Carrega os itens de uma campanha por filtro (marca, categoria ou todos) e
+    aplica o percentual de desconto.
+    """
+    redir = _checar_acesso("CAMPANHAS_ITENS")
+    if redir:
+        return redir
+
+    ano = (request.args.get("ano") or "").strip()
+    id_campanha = request.args.get("id_campanha")
+
+    cur = _cursor()
+    try:
+        cur.execute("""
+            SELECT DISTINCT EXTRACT(YEAR FROM data_inicio)::int AS ano
+            FROM pdv_campanhas WHERE cod_empresa = %s ORDER BY 1 DESC
+        """, (_empresa(),))
+        anos = [r["ano"] for r in cur.fetchall()]
+
+        if not ano and anos:
+            ano = str(anos[0])
+
+        filtro_ano = " AND EXTRACT(YEAR FROM data_inicio) = %s" if ano else ""
+        parametros = [_empresa()] + ([int(ano)] if ano else [])
+        cur.execute(f"""
+            SELECT c.*, (SELECT COUNT(*) FROM pdv_campanhas_itens i
+                          WHERE i.id_pdv_campanha = c.id_pdv_campanha) AS itens
+            FROM pdv_campanhas c
+            WHERE c.cod_empresa = %s{filtro_ano}
+            ORDER BY c.data_inicio DESC, c.id_pdv_campanha DESC
+        """, parametros)
+        campanhas = [dict(r) for r in cur.fetchall()]
+
+        campanha = None
+        itens = []
+        if id_campanha:
+            campanha = next((c for c in campanhas
+                             if str(c["id_pdv_campanha"]) == str(id_campanha)), None)
+            if campanha:
+                cur.execute("""
+                    SELECT ci.id_pdv_campanha_item, ci.percentual_desconto,
+                           p.id_pdv_produto, p.sku, p.descricao, p.marca,
+                           p.categoria, p.cor, p.tamanho, p.preco_venda,
+                           COALESCE(pf.quantidade_atual, 0) AS quantidade_atual
+                    FROM pdv_campanhas_itens ci
+                    JOIN pdv_produtos p ON p.id_pdv_produto = ci.id_pdv_produto
+                    LEFT JOIN pdv_produtos_filiais pf
+                           ON pf.id_pdv_produto = p.id_pdv_produto
+                          AND pf.cod_empresa = p.cod_empresa AND pf.cod_filial = %s
+                    WHERE ci.id_pdv_campanha = %s
+                    ORDER BY p.descricao
+                """, (_cod_filial(), campanha["id_pdv_campanha"],))
+                itens = [dict(r) for r in cur.fetchall()]
+                for i in itens:
+                    i["preco_promocional"] = preco_promocional(
+                        i["preco_venda"], i["percentual_desconto"])
+
+        # os filtros disponíveis saem do próprio cadastro de produtos
+        cur.execute("""
+            SELECT DISTINCT marca FROM pdv_produtos
+            WHERE cod_empresa = %s AND ativo AND marca IS NOT NULL ORDER BY 1
+        """, (_empresa(),))
+        marcas = [r["marca"] for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT DISTINCT categoria FROM pdv_produtos
+            WHERE cod_empresa = %s AND ativo AND categoria IS NOT NULL ORDER BY 1
+        """, (_empresa(),))
+        categorias = [r["categoria"] for r in cur.fetchall()]
+    finally:
+        cur.close()
+
+    return render_template(
+        "pdv/campanha_itens.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("pdv.menu_campanhas"),
+        anos=anos,
+        ano=ano,
+        campanhas=campanhas,
+        campanha=campanha,
+        itens=itens,
+        marcas=marcas,
+        categorias=categorias,
+        total_itens=len(itens),
+    )
+
+
+@pdv_bp.route("/api/campanhas/<int:id_campanha>/carregar", methods=["POST"])
+def api_carregar_itens_campanha(id_campanha):
+    erro = _erro_permissao("CAMPANHAS_ITENS")
+    if erro:
+        return erro
+
+    dados = request.get_json(silent=True) or {}
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT 1 FROM pdv_campanhas
+            WHERE id_pdv_campanha = %s AND cod_empresa = %s
+        """, (id_campanha, _empresa()))
+        if not cur.fetchone():
+            return jsonify({"ok": False, "erro": "Campanha não encontrada."}), 404
+
+        incluidos, atualizados = carregar_itens(
+            cur, _empresa(), id_campanha,
+            _num(dados.get("percentual_desconto")),
+            (dados.get("marca") or "").strip() or None,
+            (dados.get("categoria") or "").strip() or None,
+        )
+        conn.commit()
+    except ValueError as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": f"Erro ao carregar itens: {e}"}), 500
+    finally:
+        cur.close()
+
+    return jsonify({"ok": True, "incluidos": incluidos, "atualizados": atualizados})
+
+
+@pdv_bp.route("/api/campanhas/itens/<int:id_item>", methods=["DELETE"])
+def api_remover_item_campanha(id_item):
+    erro = _erro_permissao("CAMPANHAS_ITENS")
+    if erro:
+        return erro
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            DELETE FROM pdv_campanhas_itens
+            WHERE id_pdv_campanha_item = %s AND cod_empresa = %s
+        """, (id_item, _empresa()))
+        conn.commit()
+    finally:
+        cur.close()
+    return jsonify({"ok": True})
+
+
+@pdv_bp.route("/api/campanhas/<int:id_campanha>/itens", methods=["DELETE"])
+def api_limpar_itens_campanha(id_campanha):
+    """Esvazia a campanha — útil para recarregar com outro filtro."""
+    erro = _erro_permissao("CAMPANHAS_ITENS")
+    if erro:
+        return erro
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            DELETE FROM pdv_campanhas_itens
+            WHERE id_pdv_campanha = %s AND cod_empresa = %s
+        """, (id_campanha, _empresa()))
+        removidos = cur.rowcount
+        conn.commit()
+    finally:
+        cur.close()
+    return jsonify({"ok": True, "removidos": removidos})
+
+
+@pdv_bp.route("/campanhas/cadastrar")
+def cadastrar_campanhas():
+    """
+    Cadastro das campanhas. Não usa o cadastro genérico porque a campanha tem
+    ações próprias de ciclo de vida: pausar, retomar e encerrar antes do fim.
+    """
+    redir = _checar_acesso("CAMPANHAS")
+    if redir:
+        return redir
+
+    cur = _cursor()
+    try:
+        cur.execute("""
+            SELECT c.*, (SELECT COUNT(*) FROM pdv_campanhas_itens i
+                          WHERE i.id_pdv_campanha = c.id_pdv_campanha) AS itens
+            FROM pdv_campanhas c
+            WHERE c.cod_empresa = %s
+            ORDER BY c.data_inicio DESC, c.id_pdv_campanha DESC
+        """, (_empresa(),))
+        campanhas = [dict(r) for r in cur.fetchall()]
+    finally:
+        cur.close()
+
+    hoje = date.today()
+    for c in campanhas:
+        c["vigente"] = (c["situacao"] == "ATIVA"
+                        and c["data_inicio"] <= hoje <= c["data_fim"])
+
+    return render_template(
+        "pdv/campanhas.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("pdv.menu_campanhas"),
+        campanhas=campanhas,
+        situacoes=SITUACOES_CAMPANHA,
+        hoje=hoje.isoformat(),
+        pode_itens=pode("CAMPANHAS_ITENS"),
+    )
+
+
+@pdv_bp.route("/api/campanhas", methods=["POST"])
+@pdv_bp.route("/api/campanhas/<int:id_campanha>", methods=["PUT", "DELETE"])
+def api_campanhas(id_campanha=None):
+    erro = _erro_permissao("CAMPANHAS")
+    if erro:
+        return erro
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        if request.method == "DELETE":
+            # os itens da campanha saem junto (ON DELETE CASCADE), mas venda
+            # que saiu por ela não deixa: o histórico aponta para a campanha e
+            # não pode virar referência solta
+            try:
+                cur.execute("""
+                    DELETE FROM pdv_campanhas
+                    WHERE id_pdv_campanha = %s AND cod_empresa = %s
+                """, (id_campanha, _empresa()))
+            except Exception:
+                conn.rollback()
+                return jsonify({
+                    "ok": False,
+                    "erro": ("Esta campanha já tem vendas. Encerre-a em vez de excluir — "
+                             "o histórico precisa continuar apontando para ela."),
+                }), 400
+            conn.commit()
+            return jsonify({"ok": True})
+
+        dados = request.get_json(silent=True) or {}
+        nome = (dados.get("nome") or "").strip()
+        inicio = (dados.get("data_inicio") or "").strip()
+        fim = (dados.get("data_fim") or "").strip()
+        percentual = _num(dados.get("percentual_desconto"))
+
+        if not nome:
+            return jsonify({"ok": False, "erro": "Informe o nome da campanha."}), 400
+        if not inicio or not fim:
+            return jsonify({"ok": False, "erro": "Informe o período da campanha."}), 400
+        if fim < inicio:
+            return jsonify({"ok": False, "erro": "O término não pode ser antes do início."}), 400
+        if percentual < 0 or percentual >= 100:
+            return jsonify({"ok": False, "erro": "O desconto tem que estar entre 0 e 100."}), 400
+
+        if id_campanha:
+            cur.execute("""
+                UPDATE pdv_campanhas
+                   SET nome = %s, data_inicio = %s, data_fim = %s,
+                       percentual_desconto = %s, observacao = %s, atualizado_em = now()
+                 WHERE id_pdv_campanha = %s AND cod_empresa = %s
+            """, (nome, inicio, fim, percentual,
+                  (dados.get("observacao") or "").strip() or None,
+                  id_campanha, _empresa()))
+            if cur.rowcount == 0:
+                return jsonify({"ok": False, "erro": "Campanha não encontrada."}), 404
+        else:
+            cur.execute("""
+                INSERT INTO pdv_campanhas
+                    (cod_empresa, nome, data_inicio, data_fim, percentual_desconto,
+                     observacao, situacao)
+                VALUES (%s, %s, %s, %s, %s, %s, 'ATIVA')
+                RETURNING id_pdv_campanha
+            """, (_empresa(), nome, inicio, fim, percentual,
+                  (dados.get("observacao") or "").strip() or None))
+            id_campanha = cur.fetchone()[0]
+        conn.commit()
+    finally:
+        cur.close()
+    return jsonify({"ok": True, "id": id_campanha})
+
+
+@pdv_bp.route("/api/campanhas/<int:id_campanha>/situacao", methods=["PUT"])
+def api_situacao_campanha(id_campanha):
+    """
+    Pausa, retoma ou encerra a campanha.
+
+    Encerrar traz `data_fim` para hoje: o período gravado passa a refletir o
+    que de fato valeu, e não o que estava previsto. Por isso encerrar não tem
+    volta — para valer de novo, cria-se outra campanha.
+    """
+    erro = _erro_permissao("CAMPANHAS")
+    if erro:
+        return erro
+
+    dados = request.get_json(silent=True) or {}
+    situacao = (dados.get("situacao") or "").strip().upper()
+    if situacao not in SITUACOES_CAMPANHA:
+        return jsonify({"ok": False, "erro": "Situação inválida."}), 400
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT situacao, data_inicio FROM pdv_campanhas
+            WHERE id_pdv_campanha = %s AND cod_empresa = %s
+        """, (id_campanha, _empresa()))
+        campanha = cur.fetchone()
+        if not campanha:
+            return jsonify({"ok": False, "erro": "Campanha não encontrada."}), 404
+        if campanha["situacao"] == "ENCERRADA":
+            return jsonify({
+                "ok": False,
+                "erro": "Esta campanha já foi encerrada. Crie uma nova para valer de novo.",
+            }), 400
+
+        if situacao == "ENCERRADA":
+            hoje = date.today()
+            # campanha encerrada antes mesmo de começar não pode ter término
+            # anterior ao início
+            fim = max(hoje, campanha["data_inicio"])
+            cur.execute("""
+                UPDATE pdv_campanhas
+                   SET situacao = 'ENCERRADA', data_fim = %s, atualizado_em = now()
+                 WHERE id_pdv_campanha = %s AND cod_empresa = %s
+            """, (fim, id_campanha, _empresa()))
+        else:
+            cur.execute("""
+                UPDATE pdv_campanhas SET situacao = %s, atualizado_em = now()
+                WHERE id_pdv_campanha = %s AND cod_empresa = %s
+            """, (situacao, id_campanha, _empresa()))
+        conn.commit()
+    finally:
+        cur.close()
+    return jsonify({"ok": True})
+
+
+# ─── BUSCA DE PRODUTO (SKU / DESCRIÇÃO) ──────────────────────────────────────
+# O SKU é a porta de entrada da venda: é ele que o leitor de código de barras
+# lê. A busca por descrição é o caminho alternativo, para quando a etiqueta
+# não lê ou a peça não tem etiqueta.
+
+# 60 era pouco para navegar uma marca inteira (a maior d'O Closet tem ~1.100
+# peças). 200 cabe na rolagem do modal sem pesar, e o aviso de "refine" cobre
+# o resto.
+LIMITE_BUSCA_PRODUTOS = 200
+
+
+def _condicoes_descricao(termo):
+    """
+    Traduz o que foi digitado em condições sobre a descrição.
+
+    A busca aceita **vários termos na mesma linha**, e todos precisam bater
+    (E, não OU) — é assim que `*regata *UV50` acha a regata que também é UV50.
+
+        regata            → descrição COMEÇA com "regata"
+        *bossa            → contém "bossa" em qualquer posição
+        *regata *uv50     → contém os dois
+        regata *uv50      → começa com "regata" E contém "uv50"
+        top speed power   → COMEÇA com a frase inteira
+
+    A última linha é a razão de a frase sem asterisco não ser quebrada: quem
+    digita várias palavras sem asterisco está escrevendo o começo do nome, e
+    "começa com top E começa com speed" seria impossível de satisfazer.
+
+    Devolve (condições, parâmetros).
+    """
+    termo = (termo or "").strip()
+    if not termo:
+        return [], []
+
+    # nenhum asterisco: a frase inteira é o começo do nome
+    if "*" not in termo:
+        if len(termo) < 2:
+            return [], []
+        return ["p.descricao ILIKE %s"], [f"{termo}%"]
+
+    condicoes, parametros = [], []
+    for parte in termo.split():
+        if parte.startswith("*"):
+            alvo = parte.lstrip("*").strip()
+            if not alvo:
+                continue                      # asterisco solto não filtra nada
+            condicoes.append("p.descricao ILIKE %s")
+            parametros.append(f"%{alvo}%")
+        else:
+            if len(parte) < 2:
+                continue
+            condicoes.append("p.descricao ILIKE %s")
+            parametros.append(f"{parte}%")
+    return condicoes, parametros
+
+
+def _produto_para_tela(cur, produto, promocoes=None):
+    """Produto no formato que a tela de venda usa, já com a promoção do dia."""
+    if promocoes is None:
+        promocoes = promocoes_do_dia(cur, _empresa())
+    promo = promocoes.get(produto["id_pdv_produto"])
+    return {
+        "id_pdv_produto": produto["id_pdv_produto"],
+        "sku": produto["sku"],
+        "descricao": produto["descricao"],
+        "unidade": produto.get("unidade") or "UN",
+        "marca": produto.get("marca"),
+        "tamanho": produto.get("tamanho"),
+        "cor": produto.get("cor"),
+        "preco_venda": float(produto["preco_venda"] or 0),
+        "custo_atual": float(produto.get("custo_atual") or 0),
+        "quantidade_atual": float(produto.get("quantidade_atual") or 0),
+        "promocao": promo,
+    }
+
+
+@pdv_bp.route("/api/produtos/sku/<path:sku>")
+def api_produto_por_sku(sku):
+    """
+    Leitura do SKU — o caminho do leitor de código de barras.
+
+    Busca exata, porque o leitor entrega o código exatamente como está na
+    etiqueta. Sem resultado, a tela avisa e a vendedora usa a busca por
+    descrição.
+    """
+    erro = _erro_permissao("VENDER")
+    if erro:
+        return erro
+
+    cur = _cursor()
+    try:
+        cur.execute("""
+            SELECT p.id_pdv_produto, p.sku, p.descricao, p.unidade, p.marca,
+                   p.cor, p.tamanho, p.preco_venda, p.custo_atual,
+                   pf.quantidade_atual
+            FROM pdv_produtos_filiais pf
+            JOIN pdv_produtos p ON p.id_pdv_produto = pf.id_pdv_produto
+            WHERE pf.cod_empresa = %s AND pf.cod_filial = %s
+              AND pf.situacao = 'ATIVO' AND p.ativo
+              AND upper(p.sku) = upper(%s)
+        """, (_empresa(), _cod_filial(), (sku or "").strip()))
+        produto = cur.fetchone()
+        if not produto:
+            return jsonify({"ok": False, "erro": f"SKU {sku} não encontrado."}), 404
+        return jsonify({"ok": True, "produto": _produto_para_tela(cur, dict(produto))})
+    finally:
+        cur.close()
+
+
+@pdv_bp.route("/api/produtos/buscar")
+def api_buscar_produtos():
+    """
+    Busca por descrição, devolvendo sempre o SKU.
+
+    Sem asterisco, procura o que **começa** com o texto e devolve em ordem
+    alfabética — é a busca de quem sabe o início do nome da peça.
+
+    Com asterisco (`*regata`), procura o texto em **qualquer posição** — é a
+    busca de quem lembra só um pedaço.
+    """
+    erro = _erro_permissao("VENDER")
+    if erro:
+        return erro
+
+    termo = (request.args.get("termo") or "").strip()
+    marca = (request.args.get("marca") or "").strip()
+
+    condicoes_termo, parametros_termo = _condicoes_descricao(termo)
+
+    # Um dos dois basta: escolhida a marca, dá para listar tudo dela sem
+    # digitar descrição nenhuma.
+    if not marca and not condicoes_termo:
+        return jsonify({
+            "ok": False,
+            "erro": "Digite ao menos 2 letras ou escolha uma marca.",
+        }), 400
+
+    condicoes = ["pf.cod_empresa = %s", "pf.cod_filial = %s",
+                 "pf.situacao = 'ATIVO'", "p.ativo"] + condicoes_termo
+    parametros = [_empresa(), _cod_filial()] + parametros_termo
+
+    if marca:
+        condicoes.append("p.marca = %s")
+        parametros.append(marca)
+
+    cur = _cursor()
+    try:
+        cur.execute(f"""
+            SELECT p.id_pdv_produto, p.sku, p.descricao, p.unidade, p.marca,
+                   p.cor, p.tamanho, p.preco_venda, p.custo_atual,
+                   pf.quantidade_atual
+            FROM pdv_produtos_filiais pf
+            JOIN pdv_produtos p ON p.id_pdv_produto = pf.id_pdv_produto
+            WHERE {' AND '.join(condicoes)}
+            ORDER BY p.descricao
+            LIMIT %s
+        """, parametros + [LIMITE_BUSCA_PRODUTOS + 1])
+        achados = [dict(r) for r in cur.fetchall()]
+
+        promocoes = promocoes_do_dia(cur, _empresa())
+        produtos = [_produto_para_tela(cur, p, promocoes)
+                    for p in achados[:LIMITE_BUSCA_PRODUTOS]]
+    finally:
+        cur.close()
+
+    return jsonify({
+        "ok": True,
+        "produtos": produtos,
+        # avisa que existe mais coisa do que coube, para a vendedora refinar
+        "excedeu": len(achados) > LIMITE_BUSCA_PRODUTOS,
+        "limite": LIMITE_BUSCA_PRODUTOS,
+    })
+
+
+# ─── PRODUTO NA LOJA ─────────────────────────────────────────────────────────
+# O cadastro é da empresa; a lista de itens é de cada loja. Aqui se inclui uma
+# peça na loja pelo SKU e se oculta o que saiu de linha — sem apagar nada,
+# porque venda e movimento apontam para o item.
+
+@pdv_bp.route("/api/estoque/incluir-sku", methods=["POST"])
+def api_incluir_produto_na_loja():
+    erro = _erro_permissao("PRODUTOS_FILIAL")
+    if erro:
+        return erro
+
+    dados = request.get_json(silent=True) or {}
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        resultado = incluir_por_sku(cur, _empresa(), _cod_filial(),
+                                    dados.get("sku"))
+        conn.commit()
+    except ValueError as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": f"Erro ao incluir: {e}"}), 500
+    finally:
+        cur.close()
+
+    if resultado["reativado"]:
+        aviso = f"{resultado['descricao']} voltou a aparecer nesta loja."
+    elif resultado["ja_existia"]:
+        aviso = f"{resultado['descricao']} já estava nesta loja."
+    else:
+        aviso = f"{resultado['descricao']} incluído nesta loja."
+    return jsonify({"ok": True, "aviso": aviso, **resultado})
+
+
+@pdv_bp.route("/api/estoque/ocultar", methods=["POST"])
+def api_ocultar_produto_na_loja():
+    erro = _erro_permissao("PRODUTOS_FILIAL")
+    if erro:
+        return erro
+
+    dados = request.get_json(silent=True) or {}
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        ocultar(cur, _empresa(), _cod_filial(), dados.get("id_pdv_produto"),
+                bool(dados.get("ocultar", True)))
+        conn.commit()
+    except ValueError as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+    return jsonify({"ok": True})
+
+
+@pdv_bp.route("/estoque/obsoletos")
+def obsoletos_da_loja():
+    """
+    Itens zerados e parados há mais de 6 meses nesta loja.
+
+    É uma sugestão de faxina, não uma limpeza automática: sumir sozinho com um
+    item que a compradora esperava repor seria pior do que a lista comprida.
+    """
+    redir = _checar_acesso("PRODUTOS_FILIAL")
+    if redir:
+        return redir
+
+    cur = _cursor()
+    try:
+        candidatos = candidatos_a_ocultar(cur, _empresa(), _cod_filial())
+
+        cur.execute("""
+            SELECT p.id_pdv_produto, p.sku, p.descricao, p.marca,
+                   pf.ocultado_em, pf.ultimo_movimento_em
+            FROM pdv_produtos_filiais pf
+            JOIN pdv_produtos p ON p.id_pdv_produto = pf.id_pdv_produto
+            WHERE pf.cod_empresa = %s AND pf.cod_filial = %s
+              AND pf.situacao = 'OCULTO'
+            ORDER BY p.descricao
+        """, (_empresa(), _cod_filial()))
+        ocultos = [dict(r) for r in cur.fetchall()]
+    finally:
+        cur.close()
+
+    return render_template(
+        "pdv/estoque_obsoletos.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("pdv.consultar_estoque"),
+        candidatos=candidatos,
+        ocultos=ocultos,
+        meses=MESES_SEM_MOVIMENTO,
+    )

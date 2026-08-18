@@ -194,6 +194,46 @@
 }
 .ag-proj-jnl-erro { font-size: 10px; font-weight: 700; color: #b91c1c; }
 
+/* Erro da programação do dia — mesma linguagem do erro do journal:
+   texto vermelho no próprio bloco, nunca um alert do navegador. */
+.ag-dia-erro {
+  display: none;
+  font-size: 10px;
+  font-weight: 700;
+  color: #b91c1c;
+  line-height: 1.35;
+  padding: 4px 6px 0;
+}
+.ag-dia-erro.visivel { display: block; }
+
+/* Caixinha com os códigos possíveis, ao focar o campo */
+.ag-dia-dica {
+  position: absolute;
+  z-index: 40;
+  background: #1f2937;
+  color: #fff;
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-size: 10px;
+  line-height: 1.6;
+  white-space: nowrap;
+  box-shadow: 0 6px 16px rgba(0,0,0,.28);
+  pointer-events: none;
+}
+.ag-dia-dica b { color: #86efac; }
+.ag-dia-dica .obs { color: #cbd5e1; }
+
+.ag-dia-fim {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: #6b7280;
+  padding: 0 2px;
+  line-height: 1;
+}
+.ag-dia-fim:hover { color: #111; }
+
 /* linha = check + texto — mesmo padrão da programação do dia */
 .ag-proj-linha { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; }
 /* concluída/cancelada sai da lista; o olho traz de volta (dentro do período) */
@@ -238,6 +278,15 @@
   color: #14532d; padding: 2px 0;
 }
 .ag-proj-bloco.eventuais .ag-proj-txt { color: #713f12; }
+/* eventual que veio da programação do dia com hashtag: foi programada para
+   um dia e não foi feita — vai para o topo e em vermelho */
+.ag-proj-linha.destaque .ag-proj-txt { color: #b91c1c; font-weight: 800; }
+.ag-proj-linha.destaque.feito .ag-proj-txt,
+.ag-proj-linha.destaque.cancelada .ag-proj-txt { color: #713f12; font-weight: 600; }
+.ag-proj-tag {
+  font-size: 10px; font-weight: 800; color: #6b21a8;
+  background: #ede9fe; border-radius: 4px; padding: 1px 4px; flex-shrink: 0;
+}
 .ag-proj-rec-txt {
   flex: 1; min-width: 0;
   font-size: 13px; font-weight: 600; color: #1e3a8a;
@@ -900,12 +949,15 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
             <input class="ag-dia-txt" type="text" value="{{ it.texto }}"
               onblur="salvarDia(this)" onkeydown="diaKeydown(event, this)">
             <input class="ag-dia-cod" type="text" maxlength="2" value="{{ it.codigo }}"
-              title="D: repete todo dia · DU: repete em dias úteis · em branco não repete."
-              onblur="salvarDia(this)">
+              title="D: repete todo dia · DU: repete em dias úteis · A: passa para amanhã (só 3, e uma vez só) · em branco não repete."
+              onfocus="mostrarDicaDia(this)" onblur="salvarDia(this)">
+            <button class="ag-dia-fim" title="Mandar para o fim da lista"
+              onclick="mandarParaOFimDia(this)">↓</button>
           </div>
           {% endfor %}
           <div class="ag-dia-separador"></div>
           <button class="ag-dia-add" onclick="addDiaLinha()">＋</button>
+          <div class="ag-dia-erro" id="dia-erro"></div>
           </div>
 
           {# JOURNAL DO DIA — mesma caixa dos projetos, preenchida por JS #}
@@ -976,6 +1028,9 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
       <div class="ag-proj-card" id="proj-{{ p.id }}" data-id="{{ p.id }}">
         <div class="ag-proj-nome">
           <span title="{{ p.nome }}">{{ p.nome }}</span>
+          {% if p.hashtag %}
+          <span class="ag-proj-tag" title="Hashtag do projeto">#{{ p.hashtag }}</span>
+          {% endif %}
           <select class="ag-proj-periodo" onchange="filtrarConcluidas(this)"
                   title="Período das concluídas">
             <option value="mes">Este mês</option>
@@ -1052,7 +1107,7 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
         <div class="ag-proj-bloco eventuais" data-bloco="eventual">
           <div class="ag-proj-bloco-tit"><span>Tarefas eventuais</span></div>
           {% for t in p.eventuais %}
-          <div class="ag-proj-linha {{ 'feito' if t.concluido else '' }} {{ 'cancelada' if t.cancelado else '' }}"
+          <div class="ag-proj-linha {{ 'feito' if t.concluido else '' }} {{ 'cancelada' if t.cancelado else '' }} {{ 'destaque' if t.destaque else '' }}"
                data-id="{{ t.id }}" data-texto="{{ t.texto }}"
                data-cancelado="{{ '1' if t.cancelado else '' }}"
                data-quando="{{ t.quando }}">
@@ -1359,6 +1414,7 @@ const URL_DIA_CRIAR    = "{{ url_for('canivete.agenda_dia_criar') }}";
 const URL_DIA_SALVAR   = "{{ url_for('canivete.agenda_dia_salvar') }}";
 const URL_DIA_EXCLUIR  = "{{ url_for('canivete.agenda_dia_excluir') }}";
 const URL_DIA_CONCLUIR = "{{ url_for('canivete.agenda_dia_concluir') }}";
+const URL_DIA_MOVER    = "{{ url_for('canivete.agenda_dia_mover_fim') }}";
 
 /* Mostra o espaço entre pendentes e concluídas só quando há concluídas */
 function atualizarSeparadorDia() {
@@ -1367,6 +1423,70 @@ function atualizarSeparadorDia() {
   const temFeito = !!cel.querySelector('.ag-dia-linha.feito');
   const sep = cel.querySelector('.ag-dia-separador');
   if (sep) sep.classList.toggle('ativo', temFeito);
+}
+
+/* Erro da programação do dia: no próprio bloco, como o erro do journal.
+   Nada de alert() — o alerta do navegador não é a linguagem do sistema e
+   ainda por cima interrompe a digitação. */
+function mostrarErroDia(msg) {
+  const el = document.getElementById('dia-erro');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('visivel');
+  clearTimeout(el._t);
+  el._t = setTimeout(esconderErroDia, 6000);
+}
+
+function esconderErroDia() {
+  const el = document.getElementById('dia-erro');
+  if (!el) return;
+  el.classList.remove('visivel');
+  el.textContent = '';
+}
+
+/* Os códigos possíveis aparecem ao focar o campo — antes só se descobria
+   errando. */
+function mostrarDicaDia(campo) {
+  let dica = document.getElementById('dia-dica');
+  if (!dica) {
+    dica = document.createElement('div');
+    dica.id = 'dia-dica';
+    dica.className = 'ag-dia-dica';
+    dica.innerHTML =
+      '<b>D</b> — todo dia<br>' +
+      '<b>DU</b> — só em dias úteis<br>' +
+      '<b>A</b> — passa para amanhã ' +
+      '<span class="obs">(no máximo 3, e uma vez só)</span><br>' +
+      '<span class="obs">em branco — vale só hoje</span><br>' +
+      '<span class="obs">#SIGLA no texto — na virada do dia, o que não foi ' +
+      'feito vira tarefa eventual do projeto</span>';
+    document.body.appendChild(dica);
+  }
+
+  const r = campo.getBoundingClientRect();
+  dica.style.top  = (window.scrollY + r.bottom + 6) + 'px';
+  // encosta à direita do campo, sem sair da janela
+  dica.style.left = Math.max(8, window.scrollX + r.right - 210) + 'px';
+  dica.style.display = 'block';
+
+  campo.addEventListener('blur', () => { dica.style.display = 'none'; },
+                         {once: true});
+}
+
+/* Despriorizar sem apagar e redigitar: a tarefa vai para o fim da lista. */
+function mandarParaOFimDia(btn) {
+  const linha = btn.closest('.ag-dia-linha');
+  const cel   = btn.closest('.ag-dia');
+  const id    = linha.dataset.id;
+  if (!id) return;
+
+  // o separador divide pendentes de concluídas; a linha vai para o fim do
+  // seu próprio grupo
+  const corpo = cel.querySelector('.ag-dia-corpo');
+  corpo.insertBefore(linha, cel.querySelector('.ag-dia-separador'));
+
+  post(URL_DIA_MOVER, {id});
+  atualizarSeparadorDia();
 }
 
 function salvarDia(campo) {
@@ -1392,11 +1512,12 @@ function salvarDia(campo) {
       if (!res.ok) {
         codEl.value = linha.dataset.codigo || '';
         codEl.classList.add('erro');
-        alert(res.erro || 'Não foi possível salvar.');
+        mostrarErroDia(res.erro || 'Não foi possível salvar.');
         codEl.focus();
         setTimeout(() => codEl.classList.remove('erro'), 2000);
         return;
       }
+      esconderErroDia();
       codEl.value = res.codigo;
       linha.dataset.codigo = res.codigo;
       linha.dataset.texto  = texto;
@@ -1440,7 +1561,10 @@ function addDiaLinha() {
     <input class="ag-dia-txt" type="text"
       onblur="salvarDia(this)" onkeydown="diaKeydown(event, this)">
     <input class="ag-dia-cod" type="text" maxlength="2"
-      title="D: repete todo dia · DU: repete em dias úteis · em branco não repete." onblur="salvarDia(this)">`;
+      title="D: repete todo dia · DU: repete em dias úteis · A: passa para amanhã (só 3, e uma vez só) · em branco não repete."
+      onfocus="mostrarDicaDia(this)" onblur="salvarDia(this)">
+    <button class="ag-dia-fim" title="Mandar para o fim da lista"
+      onclick="mandarParaOFimDia(this)">↓</button>`;
   cel.querySelector('.ag-dia-corpo')
      .insertBefore(div, cel.querySelector('.ag-dia-separador'));
 
@@ -1449,6 +1573,9 @@ function addDiaLinha() {
       div.dataset.id = res.id;
       div.dataset.codigo = res.codigo;
       div.dataset.texto = '';
+    } else if (res && res.erro) {
+      mostrarErroDia(res.erro);
+      div.remove();
     }
   });
   div.querySelector('.ag-dia-txt').focus();
@@ -2062,7 +2189,7 @@ function carregarRecsMes(id_projeto) {
 function abrirModalProjetos() {
   const cont = document.getElementById('modal-proj-lista');
   cont.innerHTML = '';
-  PROJETOS.forEach(p => addLinhaProjeto(p.id, p.nome));
+  PROJETOS.forEach(p => addLinhaProjeto(p.id, p.nome, p.hashtag || ''));
   if (!PROJETOS.length) addLinhaProjeto();
   document.getElementById('modal-proj-bg').classList.add('open');
 }
@@ -2071,12 +2198,15 @@ function fecharModalProjetos() {
   document.getElementById('modal-proj-bg').classList.remove('open');
 }
 
-function addLinhaProjeto(id = '', nome = '') {
+function addLinhaProjeto(id = '', nome = '', hashtag = '') {
   const div = document.createElement('div');
   div.className = 'ag-slot-row';
   div.dataset.id = id;
   div.innerHTML = `
     <input class="ag-slot-inp-tar" type="text" placeholder="Nome do projeto" value="${nome.replace(/"/g, '&quot;')}">
+    <input class="ag-slot-inp-tar" type="text" placeholder="#TAG" style="flex:0 0 70px"
+           title="Hashtag do projeto (ex.: PS). Tarefa do dia escrita com #PS cai aqui."
+           value="${hashtag.replace(/"/g, '&quot;')}">
     <button class="ag-slot-del" title="Remover projeto"
       onclick="this.closest('.ag-slot-row').remove()">×</button>`;
   document.getElementById('modal-proj-lista').appendChild(div);
@@ -2089,15 +2219,18 @@ function salvarModalProjetos() {
   const acoes  = [];
 
   linhas.forEach(l => {
-    const nome = l.querySelector('input').value.trim();
+    const inps = l.querySelectorAll('input');
+    const nome    = inps[0].value.trim();
+    const hashtag = inps[1].value.trim().replace(/^#/, '').toUpperCase();
     const id   = l.dataset.id;
     if (!nome) return;
     if (id) {
       vistos.add(String(id));
-      const antigo = (PROJETOS.find(p => String(p.id) === String(id)) || {}).nome;
-      if (nome !== antigo) acoes.push(post(URL_PROJ_RENOMEAR, {id, nome}));
+      const p = PROJETOS.find(x => String(x.id) === String(id)) || {};
+      if (nome !== p.nome || hashtag !== (p.hashtag || ''))
+        acoes.push(post(URL_PROJ_RENOMEAR, {id, nome, hashtag}));
     } else {
-      acoes.push(post(URL_PROJ_CRIAR, {nome}));
+      acoes.push(post(URL_PROJ_CRIAR, {nome, hashtag}));
     }
   });
   // projeto tirado da lista sai da tela (o histórico continua no banco)
@@ -2105,7 +2238,11 @@ function salvarModalProjetos() {
     if (!vistos.has(String(p.id))) acoes.push(post(URL_PROJ_EXCLUIR, {id: p.id}));
   });
 
-  Promise.all(acoes).then(() => window.location.reload());
+  Promise.all(acoes).then(res => {
+    const erro = (res || []).find(r => r && r.ok === false && r.erro);
+    if (erro) { alert(erro.erro); return; }
+    window.location.reload();
+  });
   fecharModalProjetos();
 }
 
