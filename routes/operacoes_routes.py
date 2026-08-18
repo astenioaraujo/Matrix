@@ -652,7 +652,19 @@ def consultar_medicoes():
         linhas = cur.fetchall() or []
 
         # FILIAIS SEM MEDIÇÃO NA DATA
-        filtros_alerta = ["f.cod_empresa = %s", "f.ativo = TRUE"]
+        # Filial sem nenhum tanque com capacidade (ex.: posto só de GNV) nunca
+        # tem medição a lançar — não pode entrar no alerta.
+        filtros_alerta = [
+            "f.cod_empresa = %s",
+            "f.ativo = TRUE",
+            """EXISTS (
+                SELECT 1
+                FROM capacidade_tanques ct
+                WHERE ct.cod_empresa = f.cod_empresa
+                  AND ct.cod_filial = f.cod_filial
+                  AND COALESCE(ct.capacidade_tanque, 0) > 0
+            )""",
+        ]
         params_where_alerta = [cod_empresa]
 
         if filial_sel is not None:
