@@ -123,6 +123,46 @@
         transition: 0.2s ease;
         }
 
+        .chips-empresa {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        }
+
+        .chip-empresa {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 54px;
+        height: 34px;
+        padding: 0 10px;
+        border-radius: 8px;
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.18);
+        color: #fff;
+        text-decoration: none;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+        line-height: 1;
+        white-space: nowrap;
+        transition: 0.2s ease;
+        }
+
+        .chip-empresa:hover {
+        background: rgba(255,255,255,0.18);
+        border-color: rgba(255,255,255,0.32);
+        transform: translateY(-1px);
+        }
+
+        .chip-empresa.ativa {
+        background: #2563eb;
+        border-color: #2563eb;
+        cursor: default;
+        transform: none;
+        }
+
         .btn-atalho-agenda:hover {
         background: rgba(255,255,255,0.18);
         border-color: rgba(255,255,255,0.32);
@@ -379,6 +419,24 @@
             <a href="{{ url_for('canivete.agenda') }}" class="btn-atalho-agenda" title="Ir para a Agenda">
               📅
             </a>
+          {% endif %}
+
+          {% set atalhos_topo = session.get("atalhos_empresas") or [] %}
+          {% set empresas_topo = (session.get("empresas_disponiveis") or [])
+               | selectattr("cod_empresa", "in", atalhos_topo) | list
+             if atalhos_topo else (session.get("empresas_disponiveis") or []) %}
+          {% if (session.get("empresas_disponiveis") or [])|length > 1 and empresas_topo %}
+            <div class="chips-empresa">
+              {% for emp in empresas_topo %}
+                {% if emp.cod_empresa == session.get("cod_empresa") %}
+                  <span class="chip-empresa ativa" title="{{ emp.nome_fantasia }}">{{ emp.cod_empresa }}</span>
+                {% else %}
+                  <a href="{{ url_for('auth.trocar_empresa_direto', cod=emp.cod_empresa) }}"
+                     class="chip-empresa"
+                     title="Trocar para {{ emp.nome_fantasia }}">{{ emp.cod_empresa }}</a>
+                {% endif %}
+              {% endfor %}
+            </div>
           {% endif %}
 
           <a href="{{ url_for('auth.trocar_empresa') }}" class="btn btn-secondary">

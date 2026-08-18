@@ -35,6 +35,47 @@
     box-sizing: border-box;
   }
 
+  .atalhos {
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px solid #ececec;
+  }
+
+  .atalhos-titulo {
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+
+  .atalhos-ajuda {
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 10px;
+  }
+
+  .atalhos-lista label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 400;
+    margin-bottom: 6px;
+  }
+
+  .flash {
+    background: #e8f5e9;
+    border: 1px solid #a5d6a7;
+    color: #1b5e20;
+    padding: 10px 12px;
+    border-radius: 8px;
+    margin-bottom: 14px;
+    font-size: 13px;
+  }
+
+  .flash.error {
+    background: #fdecea;
+    border-color: #f5c6cb;
+    color: #a12622;
+  }
+
   .btn {
     background: #1565c0;
     color: #fff;
@@ -49,6 +90,12 @@
 <div class="box">
   <div class="titulo">Escolher empresa</div>
 
+  {% with mensagens = get_flashed_messages(with_categories=true) %}
+    {% for categoria, texto in mensagens %}
+      <div class="flash {{ 'error' if categoria == 'error' else '' }}">{{ texto }}</div>
+    {% endfor %}
+  {% endwith %}
+
   <form method="post">
     <div class="linha-form">
       <label for="cod_empresa">Empresa</label>
@@ -61,6 +108,30 @@
 
     <button type="submit" class="btn">Continuar</button>
   </form>
+
+  {% if empresas|length > 1 %}
+  <div class="atalhos">
+    <div class="atalhos-titulo">Atalhos na barra do topo</div>
+    <div class="atalhos-ajuda">
+      As empresas marcadas viram ícone ao lado do botão "Trocar empresa", para
+      trocar com um clique. Sem nenhuma marcada, aparecem todas.
+    </div>
+
+    <form method="post" action="{{ url_for('auth.salvar_atalhos_empresas') }}">
+      <div class="atalhos-lista">
+        {% for e in empresas %}
+          <label>
+            <input type="checkbox" name="atalho" value="{{ e.cod_empresa }}"
+                   {% if e.cod_empresa in atalhos %}checked{% endif %}>
+            {{ e.cod_empresa }} - {{ e.nome_fantasia }}
+          </label>
+        {% endfor %}
+      </div>
+
+      <button type="submit" class="btn" style="margin-top:10px;">Salvar atalhos</button>
+    </form>
+  </div>
+  {% endif %}
 </div>
 
 {% endblock %}
