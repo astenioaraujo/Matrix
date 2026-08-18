@@ -48,7 +48,7 @@
 
   .grid-filtro {
     display: grid;
-    grid-template-columns: 130px 130px 280px 260px auto;
+    grid-template-columns: 300px 280px 260px auto;
     gap: 14px;
     align-items: end;
   }
@@ -140,6 +140,33 @@
     background: transparent;
   }
 
+  .mes-nav {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+  }
+
+  .mes-nav > div {
+    flex: 1;
+  }
+
+  .btn-mes-nav {
+    width: 38px;
+    height: 38px;
+    border: 1px solid #c7c7c7;
+    border-radius: 9px;
+    background: #c8e6c9;
+    color: #111;
+    font-size: 18px;
+    font-weight: 900;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .btn-mes-nav:hover {
+    background: #a5d6a7;
+  }
+
   .sem-dados {
     text-align: center;
     padding: 20px;
@@ -156,14 +183,17 @@
 
 <div class="card">
   <form method="get" class="grid-filtro">
-    <div>
-      <label>Ano</label>
-      <input type="number" name="ano" value="{{ ano_sel }}">
-    </div>
-
-    <div>
-      <label>Mês</label>
-      <input type="number" name="mes" value="{{ mes_sel }}">
+    <div class="mes-nav">
+      <button type="button" class="btn-mes-nav" onclick="mudarMes(-1)">←</button>
+      <div>
+        <label>Ano</label>
+        <input type="number" id="ano" name="ano" value="{{ ano_sel }}">
+      </div>
+      <div>
+        <label>Mês</label>
+        <input type="number" id="mes" name="mes" value="{{ mes_sel }}">
+      </div>
+      <button type="button" class="btn-mes-nav" onclick="mudarMes(1)">→</button>
     </div>
 
     <div>
@@ -298,5 +328,43 @@
     </tbody>
   </table>
 </div>
+
+<script>
+  function mudarMes(delta) {
+    const campoMes = document.getElementById("mes");
+    const campoAno = document.getElementById("ano");
+
+    if (!campoMes || !campoAno) {
+      return;
+    }
+
+    let mes = parseInt(campoMes.value || "0", 10);
+    let ano = parseInt(campoAno.value || "0", 10);
+
+    if (!mes || mes < 1 || mes > 12) {
+      mes = new Date().getMonth() + 1;
+    }
+
+    if (!ano) {
+      ano = new Date().getFullYear();
+    }
+
+    mes += delta;
+
+    if (mes < 1) {
+      mes = 12;
+      ano -= 1;
+    }
+
+    if (mes > 12) {
+      mes = 1;
+      ano += 1;
+    }
+
+    campoMes.value = String(mes);
+    campoAno.value = String(ano);
+    campoMes.form.submit();
+  }
+</script>
 
 {% endblock %}

@@ -45,6 +45,40 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 app.jinja_env.filters['br'] = formatar_numero_br
 
+
+def sigla_empresa(nome):
+    """Duas letras para o ícone de troca de empresa, a partir do nome fantasia.
+
+    Primeiro caractere + o seguinte: outro dígito se o primeiro for dígito
+    (30 Set → 30), senão a próxima consoante (Lucena → LC, Vilela → VL,
+    Inovai → IN, O Closet → OC).
+    """
+    import unicodedata
+
+    texto = "".join(
+        c for c in unicodedata.normalize("NFD", str(nome or ""))
+        if unicodedata.category(c) != "Mn"
+    )
+    texto = "".join(c for c in texto if c.isalnum())
+
+    if not texto:
+        return "?"
+
+    primeiro = texto[0]
+    resto = texto[1:]
+
+    if primeiro.isdigit():
+        seguinte = next((c for c in resto if c.isdigit()), "")
+    else:
+        seguinte = next(
+            (c for c in resto if c.isalpha() and c.upper() not in "AEIOU"), ""
+        )
+
+    return (primeiro + seguinte).upper()
+
+
+app.jinja_env.filters['sigla_empresa'] = sigla_empresa
+
 # REGISTRO DOS BLUEPRINTS
 app.register_blueprint(auth_bp)
 app.register_blueprint(sistema_bp)

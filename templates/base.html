@@ -140,7 +140,7 @@
         border-radius: 8px;
         background: rgba(255,255,255,0.08);
         border: 1px solid rgba(255,255,255,0.18);
-        color: #fff;
+        color: rgba(255,255,255,0.55);
         text-decoration: none;
         font-size: 12px;
         font-weight: 700;
@@ -151,12 +151,14 @@
         }
 
         .chip-empresa:hover {
+        color: rgba(255,255,255,0.85);
         background: rgba(255,255,255,0.18);
         border-color: rgba(255,255,255,0.32);
         transform: translateY(-1px);
         }
 
         .chip-empresa.ativa {
+        color: rgba(255,255,255,0.9);
         background: #2563eb;
         border-color: #2563eb;
         cursor: default;
@@ -429,11 +431,11 @@
             <div class="chips-empresa">
               {% for emp in empresas_topo %}
                 {% if emp.cod_empresa == session.get("cod_empresa") %}
-                  <span class="chip-empresa ativa" title="{{ emp.nome_fantasia }}">{{ emp.cod_empresa }}</span>
+                  <span class="chip-empresa ativa" title="{{ emp.cod_empresa }} - {{ emp.nome_fantasia }}">{{ emp.nome_fantasia | sigla_empresa }}</span>
                 {% else %}
                   <a href="{{ url_for('auth.trocar_empresa_direto', cod=emp.cod_empresa) }}"
                      class="chip-empresa"
-                     title="Trocar para {{ emp.nome_fantasia }}">{{ emp.cod_empresa }}</a>
+                     title="Trocar para {{ emp.cod_empresa }} - {{ emp.nome_fantasia }}">{{ emp.nome_fantasia | sigla_empresa }}</a>
                 {% endif %}
               {% endfor %}
             </div>
