@@ -661,6 +661,12 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
   font-size: 10px; color: #374151; margin-bottom: 1px;
 }
 .ag-slot-hora { color: #6366f1; font-weight: 700; min-width: 36px; }
+/* Cumprido e cancelado continuam na célula, riscados — o que sai de vez é só
+   o que foi excluído no ×. A cor do traço diz qual dos dois foi. */
+.ag-slot-linha.cumprido  { text-decoration: line-through 1.5px #16a34a; }
+.ag-slot-linha.cancelado { text-decoration: line-through 1.5px #dc2626; }
+.ag-slot-linha.cumprido  .ag-slot-hora,
+.ag-slot-linha.cancelado .ag-slot-hora { color: #94a3b8; }
 
 /* MODAL */
 .ag-modal-bg {
@@ -685,6 +691,14 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
   font-size: 12px; padding: 0 8px;
 }
 .ag-slot-del { background: none; border: none; cursor: pointer; color: #f87171; font-size: 16px; }
+/* ✔ cumprido e C cancelado: destino do compromisso, não exclusão */
+.ag-slot-sit {
+  background: none; border: 1px solid #e2e8f0; border-radius: 6px;
+  cursor: pointer; color: #cbd5e1; font-size: 12px; font-weight: 800;
+  width: 24px; height: 24px; flex: 0 0 24px; line-height: 1; padding: 0;
+}
+.ag-slot-sit.on.cumprido  { color: #16a34a; border-color: #16a34a; background: #f0fdf4; }
+.ag-slot-sit.on.cancelado { color: #dc2626; border-color: #dc2626; background: #fef2f2; }
 .ag-slot-add-btn { font-size: 12px; color: #6366f1; background: none; border: none; cursor: pointer; font-weight: 700; }
 .ag-modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
 .ag-save { background: #14114f; color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer; }
@@ -841,7 +855,7 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
             </div>
             {% if manha.slots %}
               {% for s in manha.slots %}
-              <div class="ag-slot-linha">
+              <div class="ag-slot-linha {{ s.situacao }}" data-situacao="{{ s.situacao or '' }}">
                 <span class="ag-slot-hora">{{ s.hora }}</span>
                 <span>{{ s.tarefa }}</span>
               </div>
@@ -865,7 +879,7 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
             </div>
             {% if tarde.slots %}
               {% for s in tarde.slots %}
-              <div class="ag-slot-linha">
+              <div class="ag-slot-linha {{ s.situacao }}" data-situacao="{{ s.situacao or '' }}">
                 <span class="ag-slot-hora">{{ s.hora }}</span>
                 <span>{{ s.tarefa }}</span>
               </div>
@@ -891,7 +905,7 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
             </div>
             {% if noturno.slots %}
               {% for s in noturno.slots %}
-              <div class="ag-slot-linha">
+              <div class="ag-slot-linha {{ s.situacao }}" data-situacao="{{ s.situacao or '' }}">
                 <span class="ag-slot-hora">{{ s.hora }}</span>
                 <span>{{ s.tarefa }}</span>
               </div>
@@ -1669,7 +1683,7 @@ function abrirModal(data, turno) {
     slotEls.forEach(el => {
       const hora   = el.querySelector('.ag-slot-hora')?.textContent.trim() || '';
       const tarefa = el.querySelectorAll('span')[1]?.textContent.trim() || '';
-      addSlot(hora, tarefa);
+      addSlot(hora, tarefa, el.dataset.situacao || '');
     });
   } else {
     addSlot();
@@ -1681,14 +1695,31 @@ function fecharModal() {
   document.getElementById('modal-bg').classList.remove('open');
 }
 
-function addSlot(hora='', tarefa='') {
+function addSlot(hora='', tarefa='', situacao='') {
   const div = document.createElement('div');
   div.className = 'ag-slot-row';
+  div.dataset.situacao = situacao;
   div.innerHTML = `
     <input class="ag-slot-inp-hora" type="time" value="${hora}">
     <input class="ag-slot-inp-tar" type="text" placeholder="Tarefa / compromisso" value="${tarefa}">
-    <button class="ag-slot-del" onclick="this.closest('.ag-slot-row').remove()">×</button>`;
+    <button class="ag-slot-sit cumprido ${situacao === 'cumprido' ? 'on' : ''}"
+      title="Compromisso cumprido" onclick="marcarSlot(this, 'cumprido')">✔</button>
+    <button class="ag-slot-sit cancelado ${situacao === 'cancelado' ? 'on' : ''}"
+      title="Compromisso cancelado — continua na agenda, riscado em vermelho"
+      onclick="marcarSlot(this, 'cancelado')">C</button>
+    <button class="ag-slot-del" title="Excluir de vez"
+      onclick="this.closest('.ag-slot-row').remove()">×</button>`;
   document.getElementById('modal-slots').appendChild(div);
+}
+
+/* Cumprido e cancelado se excluem entre si: o compromisso teve um destino só.
+   Clicar de novo no que já está marcado devolve a linha ao estado normal. */
+function marcarSlot(btn, situacao) {
+  const row = btn.closest('.ag-slot-row');
+  row.dataset.situacao = (row.dataset.situacao === situacao) ? '' : situacao;
+  row.querySelectorAll('.ag-slot-sit').forEach(b => {
+    b.classList.toggle('on', b.classList.contains(row.dataset.situacao || 'nada'));
+  });
 }
 
 function salvarModal() {
@@ -1697,7 +1728,7 @@ function salvarModal() {
   rows.forEach(r => {
     const hora   = r.querySelector('.ag-slot-inp-hora').value.trim();
     const tarefa = r.querySelector('.ag-slot-inp-tar').value.trim();
-    if (hora || tarefa) slots.push({hora, tarefa});
+    if (hora || tarefa) slots.push({hora, tarefa, situacao: r.dataset.situacao || ''});
   });
   // ordena por horário; sem hora fica no fim
   slots.sort((a, b) => (a.hora || '99:99').localeCompare(b.hora || '99:99'));

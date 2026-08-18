@@ -491,6 +491,18 @@ Na **virada do dia**, tarefa com hashtag que não foi concluída e não tem cód
 
 **Seta ↓** por linha (`mandarParaOFimDia` → `POST /agenda/dia/mover-fim`): despriorizar sem apagar e redigitar, pondo a maior `ordem` na tarefa.
 
+### Destino do compromisso de horário (slots da ⚙ de cada turno)
+
+Cada slot tem `situacao` no JSON de `agenda_blocos.slots`: vazio, `cumprido` ou `cancelado` (`SITUACOES_SLOT`; `agenda_salvar_slots` só aceita esses dois e descarta qualquer outra chave que venha na requisição).
+
+| No modal | Na célula |
+|---|---|
+| ✔ | riscado em **verde** — foi cumprido |
+| C | riscado em **vermelho** — foi cancelado, mas **fica registrado** |
+| × | sai de vez |
+
+`C` **não é excluir**: o compromisso que o outro lado desmarcou continua na agenda como registro do que estava combinado. Os dois estados se excluem entre si (`marcarSlot`) — um compromisso teve um destino só —, e clicar de novo no que já está marcado volta a linha ao normal.
+
 - **Bug corrigido** em `templates/canivete/financas_pessoais/lancar.html`: o botão Excluir fechava o modal **antes** de montar a requisição, e `fecharModal()` zerava a variável do id — ia `id_excluir` vazio, o servidor não apagava nada mas respondia `ok`, e a linha sumia só da tela. Guardar o id numa variável local antes de fechar o modal.
 
 ---

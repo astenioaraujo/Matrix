@@ -1497,6 +1497,11 @@ def agenda_quebrar():
     return jsonify({"ok": True})
 
 
+# Destino do compromisso de horário. Cumprido e cancelado continuam na
+# agenda (riscados, em verde e vermelho) — quem sai de vez é só o excluído.
+SITUACOES_SLOT = ("cumprido", "cancelado")
+
+
 @canivete_bp.route("/agenda/salvar-slots", methods=["POST"])
 def agenda_salvar_slots():
     r = _checar_login()
@@ -1513,9 +1518,21 @@ def agenda_salvar_slots():
     except Exception:
         return jsonify({"ok": False, "erro": "slots inválidos"})
 
+    # só os três campos do slot entram no JSON, e `situacao` só com um dos
+    # dois destinos possíveis — o resto do que vier na requisição é descartado
+    slots = [
+        {
+            "hora":     (s or {}).get("hora") or "",
+            "tarefa":   (s or {}).get("tarefa") or "",
+            "situacao": (s or {}).get("situacao")
+                        if (s or {}).get("situacao") in SITUACOES_SLOT else "",
+        }
+        for s in (slots if isinstance(slots, list) else [])
+    ]
+
     # sempre em ordem de horário — quem digitou fora de ordem (16:00 depois
     # das 17:00) não precisa se preocupar. Sem hora vai para o fim.
-    slots.sort(key=lambda s: (s or {}).get("hora") or "99:99")
+    slots.sort(key=lambda s: s["hora"] or "99:99")
 
     if turno not in ("manha", "tarde", "noturno") or not data_str:
         return jsonify({"ok": False})
