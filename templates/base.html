@@ -383,6 +383,68 @@
         background: #c62828;
         color: white;
         }
+
+        /* Celular. O `min-width: max-content` do body faz a página inteira
+           herdar a largura da linha mais larga — com os chips de empresa, a
+           barra do topo passou a ser essa linha, e os botões do menu ficavam
+           esticados para fora da tela. Aqui a barra quebra em linhas e deixa
+           de mandar na largura; quem precisa rolar de lado é só a tabela. */
+        @media (max-width: 820px) {
+        body {
+        min-width: 100%;
+        }
+
+        header {
+        padding: 12px 14px;
+        }
+
+        .header-inner {
+        gap: 10px;
+        }
+
+        .brand img {
+        height: 40px;
+        }
+
+        .topo-usuario {
+        width: 100%;
+        gap: 8px;
+        }
+
+        .chips-empresa {
+        gap: 5px;
+        }
+
+        .chip-empresa {
+        min-width: 42px;
+        height: 30px;
+        padding: 0 8px;
+        font-size: 11px;
+        }
+
+        .btn-atalho-agenda {
+        width: 30px;
+        height: 30px;
+        font-size: 14px;
+        }
+
+        .topo-usuario .btn {
+        padding: 7px 12px;
+        font-size: 13px;
+        }
+
+        .container {
+        width: 100%;
+        min-width: 0;
+        padding: 0 14px 32px 14px;
+        }
+
+        .table-wrapper {
+        width: 100%;
+        min-width: 0;
+        overflow-x: auto;
+        }
+        }
     </style>
 </head>
 
