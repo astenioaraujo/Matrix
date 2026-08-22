@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import tempfile
 import pdfplumber
 import psycopg2
@@ -542,7 +543,7 @@ def Importa_Fluxo_Caixa_PDF(
         ) as tmp:
             caminho_temp = tmp.name
             arquivo_pdf.stream.seek(0)
-            tmp.write(arquivo_pdf.read())
+            shutil.copyfileobj(arquivo_pdf.stream, tmp, 1024 * 1024)
 
         conn = get_connection()
         cur = conn.cursor()
@@ -561,6 +562,13 @@ def Importa_Fluxo_Caixa_PDF(
         with pdfplumber.open(caminho_temp) as pdf:
             for pagina in pdf.pages:
                 texto = pagina.extract_text(x_tolerance=1, y_tolerance=3) or ""
+
+                # pdfplumber guarda em cache os objetos de cada pagina lida.
+                # Num PDF grande isso acumula ate estourar a memoria da
+                # instancia (Render reinicia o worker e o navegador ve 502).
+                # O texto ja foi extraido aqui: a pagina nao serve mais.
+                pagina.close()
+
                 linhas = texto.splitlines()
                 buffer_linha = ""
 
