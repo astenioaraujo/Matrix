@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .filtros { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  select, input { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+  .btn { padding:9px 18px; border-radius:8px; border:1px solid #1a73e8; background:#1a73e8;
+         color:#fff; font-weight:700; cursor:pointer; }
+  .btn.verde { background:#16a34a; border-color:#16a34a; }
+  .btn.cinza { background:#888; border-color:#888; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.col-centro { text-align:center; white-space:nowrap; }
+  tr.vencido td { background:#fdecea; }
+  tr.baixado td { color:#888; }
+  .selo { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px;
+          font-weight:800; background:#eef2ff; color:#3730a3; }
+  .selo.orc { background:#f0fdf4; color:#166534; }
+  .selo.imp { background:#fff7ed; color:#9a3412; }
+  .resumo { display:flex; flex-wrap:wrap; gap:32px; }
+  .resumo-item { display:flex; flex-direction:column; }
+  .resumo-rotulo { font-size:12px; font-weight:700; color:#666; }
+  .resumo-valor { font-size:24px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .vazio { color:#777; padding:12px 0; }
+  .nota { font-size:13px; color:#666; margin-top:12px; }
+  .btn-mini { padding:5px 12px; border-radius:6px; border:none; background:#b02a37;
+              color:#fff; font-weight:700; font-size:13px; cursor:pointer; }
+  .status-msg { font-size:13px; margin-top:10px; min-height:18px; color:#9f2f2f; font-weight:600; }
+  .linha-nova { display:none; }
+  .linha-nova.aberta { display:table-row; }
+  .linha-nova td { background:#fffbea; }
+  .linha-nova input, .linha-nova select { width:100%; box-sizing:border-box; }
+</style>
+
+<div class="pagina-titulo">🧾 Títulos Manuais</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <form method="get" class="filtros">
+    <div class="campo">
+      <label for="mes">Competência</label>
+      <select id="mes" name="mes" onchange="this.form.submit()">
+        {% for numero, nome in meses %}
+          <option value="{{ numero }}" {{ 'selected' if numero == mes }}>{{ nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="ano">Ano</label>
+      <select id="ano" name="ano" onchange="this.form.submit()">
+        {% for a in anos %}<option value="{{ a }}" {{ 'selected' if a == ano }}>{{ a }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="situacao">Situação</label>
+      <select id="situacao" name="situacao" onchange="this.form.submit()">
+        <option value="TODOS" {{ 'selected' if situacao == 'TODOS' }}>Todos</option>
+        <option value="ABERTO" {{ 'selected' if situacao == 'ABERTO' }}>Em aberto</option>
+        <option value="BAIXADO" {{ 'selected' if situacao == 'BAIXADO' }}>Baixados</option>
+      </select>
+    </div>
+    <button type="submit" class="btn">Consultar</button>
+  </form>
+</div>
+
+<div class="bloco">
+  <div class="resumo">
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Lançado na competência</div>
+      <div class="resumo-valor">R$ {{ total|br }}</div>
+    </div>
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Ainda em aberto</div>
+      <div class="resumo-valor">R$ {{ total_aberto|br }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="bloco">
+  <button type="button" class="btn verde" style="margin-bottom:12px"
+          onclick="document.getElementById('linhaNova').classList.toggle('aberta')">
+    + Novo Título
+  </button>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:190px">Tipo de despesa</th>
+        <th style="width:170px">Classificação</th>
+        <th style="width:170px">Fornecedor</th>
+        <th>Descrição</th>
+        <th style="width:130px">Documento</th>
+        <th style="width:130px">Vencimento</th>
+        <th style="width:90px">Parcelas</th>
+        <th style="width:130px">Valor</th>
+        <th style="width:120px">Situação</th>
+        <th style="width:90px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="linha-nova" id="linhaNova">
+        <td>
+          <select id="novoTipo">
+            <option value="">— livre —</option>
+            {% for t in tipos %}
+              <option value="{{ t.id_pdv_despesa_tipo }}" data-dia="{{ t.dia_vencimento or 10 }}">{{ t.nome }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td style="color:#888; font-size:12px">do tipo</td>
+        <td>
+          <select id="novoFornecedor">
+            <option value="">— sem fornecedor —</option>
+            {% for f in fornecedores %}
+              <option value="{{ f.id_pdv_fornecedor }}">{{ f.nome }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td><input type="text" id="novaDescricao" placeholder="Energia da loja — agosto"></td>
+        <td><input type="text" id="novoDocumento" placeholder="nº da conta"></td>
+        <td><input type="date" id="novoVencimento"></td>
+        <td><input type="number" id="novasParcelas" min="1" value="1"></td>
+        <td><input type="number" step="0.01" id="novoValor" placeholder="0,00"></td>
+        <td colspan="2">
+          <button type="button" class="btn verde" id="btnSalvarTitulo">Incluir</button>
+          <button type="button" class="btn cinza"
+                  onclick="document.getElementById('linhaNova').classList.remove('aberta')">Cancelar</button>
+        </td>
+      </tr>
+
+      {% for t in titulos %}
+        <tr class="{{ 'baixado' if t.situacao == 'BAIXADO' }} {{ 'vencido' if t.situacao == 'ABERTO' and t.data_vencimento < hoje }}">
+          <td>
+            {{ t.nome_tipo or '—' }}
+            {% if t.origem == 'ORCAMENTO' %}<span class="selo orc">orçamento</span>
+            {% elif t.origem == 'IMPORTADO' %}<span class="selo imp">importado</span>{% endif %}
+          </td>
+          <td>
+            {% if t.cod_grupo %}
+              <small>{{ t.cod_grupo }}.{{ t.cod_conta }}</small> {{ t.nome_conta or '—' }}
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ t.nome_fornecedor or '—' }}</td>
+          <td>{{ t.descricao or '—' }}</td>
+          <td>{{ t.documento or '—' }}</td>
+          <td>{{ t.data_vencimento.strftime('%d/%m/%Y') }}</td>
+          <td class="col-centro">{{ t.numero_parcela }}/{{ t.total_parcelas }}</td>
+          <td class="col-dir">{{ t.valor|br }}</td>
+          <td>{{ t.situacao|capitalize }}{% if t.valor_baixado and t.situacao == 'ABERTO' %}
+              <br><small>baixado {{ t.valor_baixado|br }}</small>{% endif %}</td>
+          <td class="col-centro">
+            {% if t.situacao == 'ABERTO' and not t.valor_baixado %}
+              <button type="button" class="btn-mini"
+                      onclick="excluirTitulo({{ t.id_pdv_titulo_pagar }})">Excluir</button>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="10" class="vazio">Nenhum título manual nesta competência.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="status-msg" id="statusTitulo"></div>
+
+  <div class="nota">
+    O título incluído aqui é o <strong>mesmo</strong> título de
+    <a href="{{ url_for('pdv.contas_pagar') }}">Contas a Pagar</a> — é lá que ele é pago, e é o
+    pagamento (não a inclusão) que gera a saída no fluxo de caixa. A
+    <strong>competência</strong> é o mês a que a despesa se refere, que não é necessariamente o
+    do vencimento: a luz de agosto vence em setembro e continua sendo despesa de agosto.
+    A <strong>classificação</strong> (grupo e conta do Fluxo de Caixa do Matrix) vem do
+    <strong>tipo de despesa</strong>, não da linha do título: corrigir o tipo em
+    <a href="{{ url_for('pdv.cadastro', chave='despesas-tipos') }}">Cadastros → Tipos de Despesa</a>
+    reclassifica de uma vez todos os títulos daquele tipo, inclusive os já pagos.
+  </div>
+</div>
+
+<script>
+  function paraNumero(texto) {
+    if (!texto) return 0;
+    const n = parseFloat(String(texto).trim().replace(",", "."));
+    return isNaN(n) ? 0 : n;
+  }
+
+  const ANO = {{ ano }}, MES = {{ mes }};
+
+  // O tipo escolhido sugere o vencimento — dia do cadastro no mês da competência.
+  document.getElementById("novoTipo").addEventListener("change", (ev) => {
+    const opcao = ev.target.selectedOptions[0];
+    if (!opcao || !opcao.dataset.dia) return;
+    const dia = Math.min(Number(opcao.dataset.dia) || 10, new Date(ANO, MES, 0).getDate());
+    document.getElementById("novoVencimento").value =
+      `${ANO}-${String(MES).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+    if (!document.getElementById("novaDescricao").value) {
+      document.getElementById("novaDescricao").value = opcao.textContent.trim();
+    }
+  });
+
+  async function enviar(url, opcoes, elErro) {
+    const resp = await fetch(url, opcoes);
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+    }
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.erro || "Erro.");
+    return data;
+  }
+
+  document.getElementById("btnSalvarTitulo").addEventListener("click", async () => {
+    const el = document.getElementById("statusTitulo");
+    el.textContent = "";
+    try {
+      await enviar("/pdv/api/financeiro/titulos-manuais", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id_pdv_despesa_tipo: Number(document.getElementById("novoTipo").value) || null,
+          id_pdv_fornecedor: Number(document.getElementById("novoFornecedor").value) || null,
+          descricao: document.getElementById("novaDescricao").value,
+          documento: document.getElementById("novoDocumento").value,
+          valor: paraNumero(document.getElementById("novoValor").value),
+          data_vencimento: document.getElementById("novoVencimento").value,
+          qtd_parcelas: Number(document.getElementById("novasParcelas").value) || 1,
+          ano: ANO, mes: MES,
+        }),
+      }, el);
+      location.reload();
+    } catch (e) {
+      el.textContent = e.message || "Erro.";
+    }
+  });
+
+  async function excluirTitulo(id) {
+    const el = document.getElementById("statusTitulo");
+    el.textContent = "";
+    if (!confirm("Excluir este título?")) return;
+    try {
+      await enviar(`/pdv/api/financeiro/titulos-manuais/${id}`, { method: "DELETE" }, el);
+      location.reload();
+    } catch (e) {
+      el.textContent = e.message || "Erro.";
+    }
+  }
+</script>
+
+{% endblock %}

@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .filtros { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  select { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+  .btn { padding:9px 18px; border-radius:8px; border:1px solid #1a73e8; background:#1a73e8;
+         color:#fff; font-weight:700; cursor:pointer; }
+  .tabela-wrap { overflow-x:auto; }
+  table { width:100%; max-width:880px; border-collapse:collapse; table-layout:fixed; }
+  th, td { border:1px solid #ddd; padding:8px; font-size:14px; }
+  td.nome, tr.grupo td:nth-child(2) { word-break:break-word; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.centro { text-align:center; }
+  tr.grupo td { background:#eaf0f7; font-weight:800; }
+  tr.conta td.nome { padding-left:22px; }
+  tr.conta td.codigo { color:#5a6b80; font-weight:700; text-align:center; }
+  tr.total td { background:#dfe7ef; font-weight:800; border-top:2px solid #b9c6d6; }
+  .resumo { display:flex; flex-wrap:wrap; gap:32px; }
+  .resumo-item { display:flex; flex-direction:column; }
+  .resumo-rotulo { font-size:12px; font-weight:700; color:#666; }
+  .resumo-valor { font-size:24px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .vazio { color:#777; padding:12px 0; }
+  .nota { font-size:13px; color:#666; margin-top:12px; }
+</style>
+
+<div class="pagina-titulo">🗂️ Títulos a Pagar por Grupo e Conta</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <form method="get" class="filtros">
+    <div class="campo">
+      <label for="mes">Mês do vencimento</label>
+      <select id="mes" name="mes" onchange="this.form.submit()">
+        <option value="TODOS" {{ 'selected' if mes == 'TODOS' }}>Todos os meses</option>
+        {% for numero, nome in meses %}
+          <option value="{{ numero }}" {{ 'selected' if mes == numero|string }}>{{ nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="ano">Ano</label>
+      <select id="ano" name="ano" onchange="this.form.submit()">
+        {% for a in anos %}<option value="{{ a }}" {{ 'selected' if a == ano }}>{{ a }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="situacao">Situação</label>
+      <select id="situacao" name="situacao" onchange="this.form.submit()">
+        <option value="TODOS" {{ 'selected' if situacao == 'TODOS' }}>Todas</option>
+        <option value="ABERTO" {{ 'selected' if situacao == 'ABERTO' }}>Em aberto</option>
+        <option value="BAIXADO" {{ 'selected' if situacao == 'BAIXADO' }}>Pagos</option>
+      </select>
+    </div>
+    <button type="submit" class="btn">Consultar</button>
+  </form>
+</div>
+
+<div class="bloco">
+  <div class="resumo">
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Em aberto</div>
+      <div class="resumo-valor">R$ {{ dados.aberto|br }}</div>
+    </div>
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Já pago</div>
+      <div class="resumo-valor" style="color:#166534">R$ {{ dados.baixado|br }}</div>
+    </div>
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Total do filtro</div>
+      <div class="resumo-valor">R$ {{ dados.valor|br }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="bloco">
+  {% if dados.grupos %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:64px">Cód.</th>
+            <th style="width:250px">Grupo e conta</th>
+            <th style="width:74px">Títulos</th>
+            <th style="width:130px">Valor</th>
+            <th style="width:130px">Baixado</th>
+            <th style="width:130px">Em aberto</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for grupo in dados.grupos %}
+            <tr class="grupo">
+              <td class="centro">{{ grupo.cod_grupo or '—' }}</td>
+              <td>{{ grupo.descricao }}{% if grupo.abreviatura != '—' %} <small>({{ grupo.abreviatura }})</small>{% endif %}</td>
+              <td class="num">{{ grupo.titulos }}</td>
+              <td class="num">{{ grupo.valor|br }}</td>
+              <td class="num">{{ grupo.baixado|br }}</td>
+              <td class="num">{{ grupo.aberto|br }}</td>
+            </tr>
+            {% for conta in grupo.contas %}
+              <tr class="conta">
+                <td class="codigo">
+                  {%- if grupo.cod_grupo %}{{ grupo.cod_grupo }}.{{ conta.cod_conta }}{% else %}—{% endif -%}
+                </td>
+                <td class="nome">{{ conta.nome }}</td>
+                <td class="num">{{ conta.titulos }}</td>
+                <td class="num">{{ conta.valor|br }}</td>
+                <td class="num">{{ conta.baixado|br }}</td>
+                <td class="num">{{ conta.aberto|br }}</td>
+              </tr>
+            {% endfor %}
+          {% endfor %}
+          <tr class="total">
+            <td></td>
+            <td>TOTAL</td>
+            <td class="num">{{ dados.titulos }}</td>
+            <td class="num">{{ dados.valor|br }}</td>
+            <td class="num">{{ dados.baixado|br }}</td>
+            <td class="num">{{ dados.aberto|br }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="vazio">Nenhum título com esse filtro.</div>
+  {% endif %}
+
+  <div class="nota">
+    Só os totais: o grupo e a conta vêm da classificação gerencial do Matrix, pelo
+    <strong>tipo de despesa</strong> de cada título. Para ver os títulos de uma conta, use a
+    <a href="{{ url_for('pdv.contas_pagar') }}">Consulta de Títulos</a>. Título vindo de nota de
+    entrada ainda não tem tipo e aparece como <em>Sem classificação</em> — deixá-lo de fora
+    faria o total desta tela não bater com o do Contas a Pagar.
+  </div>
+</div>
+
+{% endblock %}

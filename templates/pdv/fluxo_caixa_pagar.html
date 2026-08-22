@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .filtros { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  select { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+  .btn { padding:9px 18px; border-radius:8px; border:1px solid #1a73e8; background:#1a73e8;
+         color:#fff; font-weight:700; cursor:pointer; }
+  .tabela-wrap { overflow-x:auto; }
+  /* larguras declaradas em <colgroup>: sem elas a coluna do compromisso
+     absorve toda a sobra e some para fora da tela */
+  table { border-collapse:collapse; table-layout:fixed; }
+  th, td { border:1px solid #ddd; padding:6px 8px; font-size:13px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  th.mes, td.mes { text-align:right; font-variant-numeric:tabular-nums; }
+  th.desc, td.desc { position:sticky; left:0; background:#fff; z-index:2; text-align:left; }
+  th.desc { background:#dbe8f4; z-index:3; }
+  th.tot, td.tot { text-align:right; font-variant-numeric:tabular-nums; font-weight:700; }
+  /* o compromisso é longo por natureza ("ROSANNE … — REFERENTE AO PAGAMENTO
+     DE … LIVE NF …"): corta com reticências e mostra o texto inteiro no
+     title, em vez de esticar a coluna */
+  td.desc .corta, th.desc .corta { display:block; overflow:hidden;
+                                   text-overflow:ellipsis; white-space:nowrap; }
+  tr.conta td { background:#eaf0f7; font-weight:800; }
+  tr.conta td.desc { background:#eaf0f7; }
+  tr.linha td.desc { padding-left:20px; color:#333; }
+  tr.linha td.desc small { color:#777; font-weight:600; font-size:11px; }
+  tr.total td { background:#dfe7ef; font-weight:800; border-top:2px solid #b9c6d6; }
+  tr.total td.desc { background:#dfe7ef; }
+  td.zero { color:#c9c9c9; }
+  .vazio { color:#777; padding:12px 0; }
+  .nota { font-size:13px; color:#666; margin-top:12px; }
+  .grupo-selo { font-size:11px; font-weight:800; color:#5a6b80; }
+</style>
+
+<div class="pagina-titulo">📈 Fluxo de Caixa — Contas a Pagar</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <form method="get" class="filtros">
+    <div class="campo">
+      <label for="ano">Ano</label>
+      <select id="ano" name="ano" onchange="this.form.submit()">
+        {% for a in anos %}<option value="{{ a }}" {{ 'selected' if a == ano }}>{{ a }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="mes_inicial">A partir de</label>
+      <select id="mes_inicial" name="mes_inicial" onchange="this.form.submit()">
+        {% for numero, nome in nomes_meses %}
+          <option value="{{ numero }}" {{ 'selected' if numero == mes_inicial }}>{{ nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn">Consultar</button>
+  </form>
+</div>
+
+<div class="bloco">
+  {% if dados.blocos %}
+    <div class="tabela-wrap">
+      <table>
+        <colgroup>
+          <col style="width:240px">
+          {% for m in dados.meses %}<col style="width:96px">{% endfor %}
+          <col style="width:112px">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="desc"><span class="corta">Compromisso</span></th>
+            {% for m in dados.meses %}<th class="mes">{{ nomes_meses[m-1][1][:3] }}</th>{% endfor %}
+            <th class="tot">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for bloco in dados.blocos %}
+            <tr class="conta">
+              <td class="desc" title="{{ bloco.nome_conta }}">
+                {% if bloco.chave[0] %}<span class="grupo-selo corta">{{ bloco.nome_grupo }} · {{ bloco.chave[0] }}.{{ bloco.chave[1] }}</span>{% endif %}
+                <span class="corta">{{ bloco.nome_conta }}</span>
+              </td>
+              {% for m in dados.meses %}
+                <td class="mes {{ 'zero' if not bloco.valores[m] }}">{{ bloco.valores[m]|br if bloco.valores[m] else '—' }}</td>
+              {% endfor %}
+              <td class="tot">{{ bloco.total|br }}</td>
+            </tr>
+            {% for linha in bloco.linhas %}
+              <tr class="linha">
+                <td class="desc" title="{{ linha.fornecedor or '' }}{% if linha.fornecedor %} — {% endif %}{{ linha.descricao }}">
+                  <span class="corta">{{ linha.fornecedor or linha.descricao }}</span>
+                  {% if linha.fornecedor %}<small class="corta">{{ linha.descricao }}</small>{% endif %}
+                </td>
+                {% for m in dados.meses %}
+                  <td class="mes {{ 'zero' if not linha.valores[m] }}"
+                      title="{{ linha.titulos[m] }} título(s)">
+                    {{ linha.valores[m]|br if linha.valores[m] else '—' }}
+                  </td>
+                {% endfor %}
+                <td class="tot">{{ linha.total|br }}</td>
+              </tr>
+            {% endfor %}
+          {% endfor %}
+          <tr class="total">
+            <td class="desc"><span class="corta">TOTAL A PAGAR</span></td>
+            {% for m in dados.meses %}<td class="mes">{{ dados.totais[m]|br }}</td>{% endfor %}
+            <td class="tot">{{ dados.total|br }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="vazio">Nenhum título a pagar em {{ ano }}.</div>
+  {% endif %}
+
+  <div class="nota">
+    Cada linha é um <strong>compromisso</strong>, não um título: as parcelas de um mesmo
+    pagamento — “FOLHA (2/12)”, “(3/12)”… — são agrupadas pelo fornecedor e pela descrição sem o
+    sufixo de parcela, que é como se lê um fluxo de caixa. O texto inteiro de uma linha cortada
+    aparece ao passar o mouse sobre ela. Os blocos seguem a classificação
+    gerencial do Matrix (grupo e conta), a mesma do Fluxo de Caixa do módulo Financeiro.
+    <strong>Nada aqui é gravado</strong> — a grade é recalculada a cada abertura, a partir dos
+    títulos de <a href="{{ url_for('pdv.contas_pagar') }}">Consulta de Títulos</a>.
+  </div>
+</div>
+
+{% endblock %}

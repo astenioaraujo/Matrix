@@ -20,6 +20,9 @@
 
 <div class="secao">Fluxo de Caixa</div>
 <div class="menu-botoes">
+  {% if pode_caixa %}
+    <a class="menu-card" style="background:#16a34a;" href="{{ url_for('pdv.caixa_do_dia') }}">💵 Caixa do Dia</a>
+  {% endif %}
   {% if pode_caixa_geral %}
     <a class="menu-card" style="background:#1d4ed8;" href="{{ url_for('pdv.caixa_geral_pdv') }}">🏦 Caixa Geral</a>
   {% endif %}
@@ -43,7 +46,13 @@
 
 <div class="secao">Contas a Pagar</div>
 <div class="menu-botoes">
-  <a class="menu-card" style="background:#b02a37;" href="{{ url_for('pdv.contas_pagar') }}">💸 Títulos a Pagar</a>
+  <a class="menu-card" style="background:#b02a37;" href="{{ url_for('pdv.menu_titulos_pagar') }}">💸 Títulos a Pagar</a>
+  {% if pode_titulos_manuais %}
+    <a class="menu-card" style="background:#9333ea;" href="{{ url_for('pdv.tela_titulos_manuais') }}">🧾 Entrada de Títulos Manuais</a>
+  {% endif %}
+  {% if pode_orcamento %}
+    <a class="menu-card" style="background:#7c3aed;" href="{{ url_for('pdv.tela_orcamento_despesas') }}">📆 Orçamento de Despesas</a>
+  {% endif %}
 </div>
 
 {% endblock %}

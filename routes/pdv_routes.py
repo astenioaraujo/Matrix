@@ -44,7 +44,14 @@ from services.pdv_canais_service import (canais_da_filial, canal_padrao,
                                          transferir_estoque)
 from services.pdv_devolucao_service import (itens_disponiveis, registrar_devolucao,
                                             DESTINOS_VALOR)
-from services.pdv_financeiro_service import (lancar, transferir, extrato_conta,
+from services.pdv_titulos_manuais_service import (tipos_despesa, listar_titulos,
+                                                  incluir_titulo, excluir_titulo,
+                                                  orcamento_do_ano, salvar_previsao,
+                                                  replicar_previsao,
+                                                  gerar_titulos_do_mes,
+                                                  fluxo_caixa_pagar,
+                                                  totais_por_grupo_conta, MESES)
+from services.pdv_financeiro_service import (lancar, saldo_ate, transferir, extrato_conta,
                                              caixa_geral, baixar_nota_prazo,
                                              converter_nota_em_titulos,
                                              baixar_titulo_receber, baixar_titulo_pagar,
@@ -258,6 +265,27 @@ CADASTROS = {
             {"nome": "aceita_credito", "rotulo": "Crédito", "tipo": "checkbox", "largura": "70px", "padrao": True},
             {"nome": "dias_credito_debito", "rotulo": "Dias (Débito)", "tipo": "numero", "largura": "110px", "padrao": 1},
             {"nome": "dias_credito_credito", "rotulo": "Dias (1ª parc. Crédito)", "tipo": "numero", "largura": "140px", "padrao": 30},
+            {"nome": "ativo", "rotulo": "Ativo", "tipo": "checkbox", "largura": "70px", "padrao": True},
+        ],
+    },
+    "despesas-tipos": {
+        "titulo": "Tipos de Despesa",
+        "descricao": ("O que a loja paga todo mês: luz, água, telefone, aluguel. É por "
+                      "este tipo que a despesa se agrupa no orçamento e nos títulos manuais."),
+        "permissao": "DESPESAS_TIPOS",
+        "tabela": "pdv_despesas_tipos",
+        "pk": "id_pdv_despesa_tipo",
+        "ordenacao": "ordem, nome",
+        "campos": [
+            {"nome": "ordem", "rotulo": "Ordem", "tipo": "numero", "largura": "80px", "padrao": 10},
+            {"nome": "nome", "rotulo": "Nome", "tipo": "texto", "obrigatorio": True},
+            {"nome": "grupo", "rotulo": "Grupo", "tipo": "texto", "largura": "160px"},
+            {"nome": "dia_vencimento", "rotulo": "Dia do Vencimento", "tipo": "numero", "largura": "140px", "padrao": 10},
+            # A classificação do Fluxo de Caixa do Matrix (grupos_gerenciais /
+            # contas_gerenciais). Fica no TIPO, não no título: reclassificar
+            # aqui conserta de uma vez todos os títulos daquele tipo.
+            {"nome": "cod_grupo", "rotulo": "Grupo", "tipo": "numero", "largura": "80px"},
+            {"nome": "cod_conta", "rotulo": "Conta", "tipo": "numero", "largura": "80px"},
             {"nome": "ativo", "rotulo": "Ativo", "tipo": "checkbox", "largura": "70px", "padrao": True},
         ],
     },
@@ -1567,48 +1595,150 @@ def contas_pagar():
     if redir:
         return redir
 
-    situacao = (request.args.get("situacao") or "ABERTO").strip().upper()
+    hoje = date.today()
+    situacao = (request.args.get("situacao") or "TODOS").strip().upper()
+    # "Todos" nos meses é o padrão: quem abre a tela quer ver o que deve, não
+    # um mês específico. O mês entra quando se pergunta "e novembro?".
+    mes = str(request.args.get("mes") or "TODOS").strip().upper()
+    ano = int(_num(request.args.get("ano"), hoje.year))
 
-    filtro = "" if situacao == "TODOS" else " AND t.situacao = %s"
-    parametros = [_empresa()] + ([] if situacao == "TODOS" else [situacao])
+    condicoes = ["t.cod_empresa = %s", "EXTRACT(YEAR FROM t.data_vencimento) = %s"]
+    parametros = [_empresa(), ano]
+    if mes != "TODOS":
+        condicoes.append("EXTRACT(MONTH FROM t.data_vencimento) = %s")
+        parametros.append(int(_num(mes, hoje.month)))
+    if situacao != "TODOS":
+        condicoes.append("t.situacao = %s")
+        parametros.append(situacao)
 
     cur = _cursor()
     try:
         cur.execute(f"""
-            SELECT t.*, n.numero AS numero_nota
+            SELECT t.*, n.numero AS numero_nota, d.nome AS nome_tipo,
+                   d.cod_grupo, d.cod_conta, cg.descricao AS nome_conta
             FROM pdv_titulos_pagar t
             LEFT JOIN pdv_notas_entrada n ON n.id_pdv_nota_entrada = t.id_pdv_nota_entrada
-            WHERE t.cod_empresa = %s{filtro}
+            LEFT JOIN pdv_despesas_tipos d ON d.id_pdv_despesa_tipo = t.id_pdv_despesa_tipo
+            LEFT JOIN contas_gerenciais cg ON cg.cod_empresa = t.cod_empresa
+                                          AND cg.cod_grupo = d.cod_grupo
+                                          AND cg.cod_conta = d.cod_conta
+            WHERE {' AND '.join(condicoes)}
             ORDER BY t.data_vencimento, t.id_pdv_titulo_pagar
         """, parametros)
         titulos = [dict(r) for r in cur.fetchall()]
-    finally:
-        cur.close()
-
-    hoje = date.today()
-    total_aberto = sum(float(t["valor"] or 0) - float(t["valor_baixado"] or 0)
-                       for t in titulos if t["situacao"] == "ABERTO")
-    vencidos = sum(1 for t in titulos
-                   if t["situacao"] == "ABERTO" and t["data_vencimento"] < hoje)
-
-    cur = _cursor()
-    try:
         contas = _contas_ativas(cur)
     finally:
         cur.close()
 
+    # Os três valores da tela: o que se deve, o que já se pagou e a soma do
+    # que passou pelo filtro. São calculados aqui, nunca gravados.
+    total_valor = sum(float(t["valor"] or 0) for t in titulos)
+    total_baixado = sum(float(t["valor_baixado"] or 0) for t in titulos)
+    total_aberto = total_valor - total_baixado
+    vencidos = sum(1 for t in titulos
+                   if t["situacao"] == "ABERTO" and t["data_vencimento"] < hoje)
+
     return render_template(
         "pdv/contas_pagar.html",
         nome_empresa=session.get("nome_empresa"),
-        url_voltar=url_for("pdv.menu_financeiro"),
+        url_voltar=url_for("pdv.menu_titulos_pagar"),
         titulos=titulos,
         contas=contas,
         pode_pagar=pode("BAIXAR_PAGAR"),
-        hoje_iso=date.today().isoformat(),
+        pode_caixa=pode("CAIXA"),
+        hoje_iso=hoje.isoformat(),
         situacao=situacao,
+        mes=mes,
+        ano=ano,
+        meses=list(enumerate(MESES, start=1)),
+        anos=list(range(hoje.year - 2, hoje.year + 3)),
+        total_valor=total_valor,
+        total_baixado=total_baixado,
         total_aberto=total_aberto,
         vencidos=vencidos,
         hoje=hoje,
+    )
+
+
+@pdv_bp.route("/financeiro/titulos-pagar")
+def menu_titulos_pagar():
+    """Menu das obrigações: consultar os títulos ou vê-los distribuídos no tempo."""
+    redir = _checar_acesso("CONTAS_PAGAR")
+    if redir:
+        return redir
+    return render_template(
+        "pdv/menu_titulos_pagar.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("pdv.menu_financeiro"),
+        pode_fluxo=pode("FLUXO_CAIXA_PAGAR"),
+        pode_titulos_manuais=pode("TITULOS_MANUAIS"),
+    )
+
+
+@pdv_bp.route("/financeiro/titulos-pagar/por-grupo")
+def titulos_pagar_por_grupo():
+    """
+    O Contas a Pagar visto de cima: só os totais de cada conta gerencial, com
+    subtotal por grupo. Sem lista de títulos — para isso existe a Consulta.
+    """
+    redir = _checar_acesso("CONTAS_PAGAR")
+    if redir:
+        return redir
+
+    hoje = date.today()
+    mes = str(request.args.get("mes") or "TODOS").strip().upper()
+    ano = int(_num(request.args.get("ano"), hoje.year))
+    situacao = (request.args.get("situacao") or "TODOS").strip().upper()
+
+    cur = _cursor()
+    try:
+        dados = totais_por_grupo_conta(cur, _empresa(), ano, mes, situacao)
+    finally:
+        cur.close()
+
+    return render_template(
+        "pdv/titulos_pagar_por_grupo.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("pdv.menu_titulos_pagar"),
+        dados=dados,
+        mes=mes,
+        ano=ano,
+        situacao=situacao,
+        meses=list(enumerate(MESES, start=1)),
+        anos=list(range(hoje.year - 2, hoje.year + 3)),
+    )
+
+
+@pdv_bp.route("/financeiro/titulos-pagar/fluxo-caixa")
+def fluxo_caixa_titulos_pagar():
+    """
+    Os títulos distribuídos no tempo: uma linha por compromisso, uma coluna
+    por mês. As doze parcelas de "FOLHA" viram uma linha só — é assim que se
+    lê um fluxo de caixa.
+    """
+    redir = _checar_acesso("FLUXO_CAIXA_PAGAR")
+    if redir:
+        return redir
+
+    hoje = date.today()
+    ano = int(_num(request.args.get("ano"), hoje.year))
+    mes_inicial = int(_num(request.args.get("mes_inicial"), 1))
+
+    cur = _cursor()
+    try:
+        dados = fluxo_caixa_pagar(cur, _empresa(), ano, mes_inicial=mes_inicial)
+    finally:
+        cur.close()
+
+    return render_template(
+        "pdv/fluxo_caixa_pagar.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("pdv.menu_titulos_pagar"),
+        dados=dados,
+        ano=ano,
+        mes_inicial=mes_inicial,
+        anos=list(range(hoje.year - 2, hoje.year + 3)),
+        nomes_meses=list(enumerate(MESES, start=1)),
     )
 
 
@@ -1641,6 +1771,9 @@ def menu_financeiro():
         pode_notas_prazo=pode("NOTAS_PRAZO"),
         pode_titulos=pode("TITULOS_RECEBER"),
         pode_pagar=pode("BAIXAR_PAGAR"),
+        pode_titulos_manuais=pode("TITULOS_MANUAIS"),
+        pode_orcamento=pode("ORCAMENTO_DESPESAS"),
+        pode_fluxo_pagar=pode("FLUXO_CAIXA_PAGAR"),
     )
 
 
@@ -2045,6 +2178,203 @@ def api_baixar_titulo_pagar():
     finally:
         cur.close()
     return jsonify({"ok": True})
+
+
+# ─── TÍTULOS MANUAIS E ORÇAMENTO DE DESPESAS ─────────────────────────────────
+# A despesa que não passa por nota de entrada (luz, água, telefone, aluguel).
+# Ela gera a mesma obrigação que a compra gera, então grava na mesma
+# `pdv_titulos_pagar`, marcada pela coluna `origem` — ver o cabeçalho de
+# `migrations/criar_pdv_titulos_manuais.sql`. O orçamento, esse sim, tem tabela
+# própria: previsão não é obrigação e não pode aparecer em Contas a Pagar.
+
+
+def _ano_mes():
+    hoje = date.today()
+    return (int(_num(request.args.get("ano"), hoje.year)),
+            int(_num(request.args.get("mes"), hoje.month)))
+
+
+@pdv_bp.route("/financeiro/titulos-manuais")
+def tela_titulos_manuais():
+    redir = _checar_acesso("TITULOS_MANUAIS")
+    if redir:
+        return redir
+
+    ano, mes = _ano_mes()
+    situacao = (request.args.get("situacao") or "TODOS").strip().upper()
+
+    cur = _cursor()
+    try:
+        titulos = listar_titulos(cur, _empresa(), ano, mes, situacao)
+        tipos = tipos_despesa(cur, _empresa())
+        cur.execute("""
+            SELECT id_pdv_fornecedor, nome FROM pdv_fornecedores
+            WHERE cod_empresa = %s AND ativo ORDER BY nome
+        """, (_empresa(),))
+        fornecedores = [dict(r) for r in cur.fetchall()]
+    finally:
+        cur.close()
+
+    hoje = date.today()
+    return render_template(
+        "pdv/titulos_manuais.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("pdv.menu_financeiro"),
+        titulos=titulos,
+        tipos=tipos,
+        fornecedores=fornecedores,
+        ano=ano,
+        mes=mes,
+        meses=list(enumerate(MESES, start=1)),
+        anos=list(range(hoje.year - 2, hoje.year + 3)),
+        situacao=situacao,
+        hoje=hoje,
+        total=sum(float(t["valor"] or 0) for t in titulos),
+        total_aberto=sum(float(t["valor"] or 0) - float(t["valor_baixado"] or 0)
+                         for t in titulos if t["situacao"] == "ABERTO"),
+    )
+
+
+@pdv_bp.route("/api/financeiro/titulos-manuais", methods=["POST"])
+def api_incluir_titulo_manual():
+    erro = _erro_permissao("TITULOS_MANUAIS")
+    if erro:
+        return erro
+
+    dados = request.get_json(silent=True) or {}
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        quantidade = incluir_titulo(cur, _empresa(), {
+            "id_pdv_despesa_tipo": dados.get("id_pdv_despesa_tipo") or None,
+            "id_pdv_fornecedor": dados.get("id_pdv_fornecedor") or None,
+            "descricao": dados.get("descricao"),
+            "documento": dados.get("documento"),
+            "valor": _num(dados.get("valor")),
+            "data_vencimento": dados.get("data_vencimento"),
+            "qtd_parcelas": int(_num(dados.get("qtd_parcelas"), 1)),
+            "ano": dados.get("ano"),
+            "mes": dados.get("mes"),
+            "observacao": dados.get("observacao"),
+        })
+        conn.commit()
+    except ValueError as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": f"Erro ao incluir: {e}"}), 500
+    finally:
+        cur.close()
+    return jsonify({"ok": True, "titulos": quantidade})
+
+
+@pdv_bp.route("/api/financeiro/titulos-manuais/<int:id_titulo>", methods=["DELETE"])
+def api_excluir_titulo_manual(id_titulo):
+    erro = _erro_permissao("TITULOS_MANUAIS")
+    if erro:
+        return erro
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        excluir_titulo(cur, _empresa(), id_titulo)
+        conn.commit()
+    except ValueError as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": f"Erro ao excluir: {e}"}), 500
+    finally:
+        cur.close()
+    return jsonify({"ok": True})
+
+
+@pdv_bp.route("/financeiro/orcamento")
+def tela_orcamento_despesas():
+    """Previsão de despesas do ano, por tipo. Nada aqui deve nada a ninguém."""
+    redir = _checar_acesso("ORCAMENTO_DESPESAS")
+    if redir:
+        return redir
+
+    ano = int(_num(request.args.get("ano"), date.today().year))
+    cur = _cursor()
+    try:
+        dados = orcamento_do_ano(cur, _empresa(), ano)
+    finally:
+        cur.close()
+
+    hoje = date.today()
+    return render_template(
+        "pdv/orcamento_despesas.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("pdv.menu_financeiro"),
+        dados=dados,
+        ano=ano,
+        anos=list(range(hoje.year - 2, hoje.year + 3)),
+        meses=list(enumerate(MESES, start=1)),
+        mes_atual=hoje.month,
+    )
+
+
+@pdv_bp.route("/api/financeiro/orcamento", methods=["POST"])
+def api_salvar_orcamento():
+    erro = _erro_permissao("ORCAMENTO_DESPESAS")
+    if erro:
+        return erro
+
+    dados = request.get_json(silent=True) or {}
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        id_tipo = dados.get("id_pdv_despesa_tipo")
+        ano = int(_num(dados.get("ano"), date.today().year))
+        mes = int(_num(dados.get("mes"), 1))
+        valor = round(_num(dados.get("valor")), 2)
+        if dados.get("replicar"):
+            meses = replicar_previsao(cur, _empresa(), id_tipo, ano, mes, valor)
+        else:
+            salvar_previsao(cur, _empresa(), id_tipo, ano, mes, valor)
+            meses = 1
+        conn.commit()
+    except ValueError as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": f"Erro ao gravar: {e}"}), 500
+    finally:
+        cur.close()
+    return jsonify({"ok": True, "meses": meses})
+
+
+@pdv_bp.route("/api/financeiro/orcamento/gerar-titulos", methods=["POST"])
+def api_gerar_titulos_orcamento():
+    """Transforma a previsão do mês em títulos a pagar. Rodar de novo não duplica."""
+    erro = _erro_permissao("ORCAMENTO_DESPESAS")
+    if erro:
+        return erro
+
+    dados = request.get_json(silent=True) or {}
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        quantidade = gerar_titulos_do_mes(
+            cur, _empresa(),
+            int(_num(dados.get("ano"), date.today().year)),
+            int(_num(dados.get("mes"), date.today().month)),
+        )
+        conn.commit()
+    except ValueError as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": f"Erro ao gerar: {e}"}), 500
+    finally:
+        cur.close()
+    return jsonify({"ok": True, "titulos": quantidade})
 
 
 # ─── CAIXA CENTRAL DE VENDAS ─────────────────────────────────────────────────
@@ -3539,3 +3869,182 @@ def obsoletos_da_loja():
         ocultos=ocultos,
         meses=MESES_SEM_MOVIMENTO,
     )
+
+
+# ─── CAIXA DO DIA ────────────────────────────────────────────────────────────
+# Um dia, todas as contas (ou uma), em grid. Valor positivo entra, negativo
+# sai, e cada conta mostra saldo inicial → saldo final.
+#
+# O grid mostra TUDO o que passou pela conta no dia, inclusive o que veio de
+# venda, de baixa de título ou de transferência. Mas só o lançamento MANUAL é
+# editável: alterar aqui um lançamento que nasceu de uma venda faria o caixa
+# deixar de bater com a venda que o gerou.
+
+ORIGENS_EDITAVEIS = ("MANUAL",)
+
+
+@pdv_bp.route("/financeiro/caixa")
+def caixa_do_dia():
+    redir = _checar_acesso("CAIXA")
+    if redir:
+        return redir
+
+    dia = (request.args.get("data") or date.today().isoformat()).strip()
+    filtro_conta = (request.args.get("id_conta") or "").strip()
+
+    cur = _cursor()
+    try:
+        contas = _contas_ativas(cur)
+        if not contas:
+            flash("Cadastre ao menos uma conta financeira (caixa da loja, banco…).",
+                  "error")
+            return redirect(url_for("pdv.menu_cadastros"))
+
+        escolhidas = [c for c in contas
+                      if not filtro_conta
+                      or str(c["id_pdv_conta_financeira"]) == filtro_conta]
+
+        condicao = ""
+        parametros = [_empresa(), dia]
+        if filtro_conta:
+            condicao = " AND l.id_pdv_conta_financeira = %s"
+            parametros.append(int(filtro_conta))
+
+        cur.execute(f"""
+            SELECT l.id_pdv_lancamento, l.id_pdv_conta_financeira, l.data_lancamento,
+                   l.valor, l.historico, l.tipo_origem, l.id_origem,
+                   l.id_transferencia, l.conciliado, c.nome AS nome_conta
+            FROM pdv_lancamentos_financeiros l
+            JOIN pdv_contas_financeiras c
+              ON c.id_pdv_conta_financeira = l.id_pdv_conta_financeira
+            WHERE l.cod_empresa = %s AND l.data_lancamento = %s{condicao}
+            ORDER BY c.ordem, c.nome, l.id_pdv_lancamento
+        """, parametros)
+        lancamentos = [dict(r) for r in cur.fetchall()]
+
+        # cada conta com o seu saldo inicial (o que havia antes deste dia)
+        blocos = []
+        for conta in escolhidas:
+            id_conta = conta["id_pdv_conta_financeira"]
+            do_dia = [l for l in lancamentos
+                      if l["id_pdv_conta_financeira"] == id_conta]
+            inicial = saldo_ate(cur, _empresa(), id_conta, dia)
+
+            entradas = sum(float(l["valor"]) for l in do_dia if l["valor"] > 0)
+            saidas = sum(-float(l["valor"]) for l in do_dia if l["valor"] < 0)
+
+            # o saldo corrente vai sendo calculado linha a linha, para a tela
+            # mostrar como a conta chegou ao saldo final
+            corrente = inicial
+            for l in do_dia:
+                corrente = round(corrente + float(l["valor"]), 2)
+                l["saldo"] = corrente
+                l["editavel"] = l["tipo_origem"] in ORIGENS_EDITAVEIS
+
+            blocos.append({
+                **conta,
+                "lancamentos": do_dia,
+                "saldo_inicial": inicial,
+                "entradas": round(entradas, 2),
+                "saidas": round(saidas, 2),
+                "saldo_final": round(inicial + entradas - saidas, 2),
+            })
+    finally:
+        cur.close()
+
+    total = {
+        "saldo_inicial": round(sum(b["saldo_inicial"] for b in blocos), 2),
+        "entradas": round(sum(b["entradas"] for b in blocos), 2),
+        "saidas": round(sum(b["saidas"] for b in blocos), 2),
+        "saldo_final": round(sum(b["saldo_final"] for b in blocos), 2),
+    }
+
+    return render_template(
+        "pdv/caixa_dia.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("pdv.menu_financeiro"),
+        dia=dia,
+        contas=contas,
+        filtro_conta=filtro_conta,
+        blocos=blocos,
+        total=total,
+        origens=ORIGENS_LANCAMENTO,
+        pode_lancar=pode("LANCAMENTOS"),
+    )
+
+
+@pdv_bp.route("/api/financeiro/caixa", methods=["POST"])
+@pdv_bp.route("/api/financeiro/caixa/<int:id_lancamento>",
+              methods=["PUT", "DELETE"])
+def api_caixa(id_lancamento=None):
+    """
+    Grava, altera e apaga o lançamento manual do caixa do dia.
+
+    Lançamento que nasceu de outro documento (venda, baixa, transferência) não
+    passa por aqui: ele é consequência daquele fato e só muda se o fato mudar.
+    """
+    erro = _erro_permissao("LANCAMENTOS")
+    if erro:
+        return erro
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if id_lancamento:
+            cur.execute("""
+                SELECT tipo_origem FROM pdv_lancamentos_financeiros
+                WHERE id_pdv_lancamento = %s AND cod_empresa = %s
+            """, (id_lancamento, _empresa()))
+            atual = cur.fetchone()
+            if not atual:
+                return jsonify({"ok": False, "erro": "Lançamento não encontrado."}), 404
+            if atual["tipo_origem"] not in ORIGENS_EDITAVEIS:
+                return jsonify({
+                    "ok": False,
+                    "erro": ("Este lançamento veio de outro documento (venda, baixa, "
+                             "transferência) e não se altera pelo caixa."),
+                }), 400
+
+        if request.method == "DELETE":
+            cur.execute("""
+                DELETE FROM pdv_lancamentos_financeiros
+                WHERE id_pdv_lancamento = %s AND cod_empresa = %s
+            """, (id_lancamento, _empresa()))
+            conn.commit()
+            return jsonify({"ok": True})
+
+        dados = request.get_json(silent=True) or {}
+        id_conta = dados.get("id_pdv_conta_financeira")
+        valor = round(_num(dados.get("valor")), 2)
+        historico = (dados.get("historico") or "").strip()
+        dia = (dados.get("data_lancamento") or date.today().isoformat()).strip()
+
+        if not id_conta:
+            return jsonify({"ok": False, "erro": "Informe a conta."}), 400
+        if not historico:
+            return jsonify({"ok": False, "erro": "Informe a descrição."}), 400
+        if _centavos(valor) == 0:
+            return jsonify({
+                "ok": False,
+                "erro": "Informe um valor diferente de zero (positivo entra, negativo sai).",
+            }), 400
+
+        if id_lancamento:
+            cur.execute("""
+                UPDATE pdv_lancamentos_financeiros
+                   SET id_pdv_conta_financeira = %s, valor = %s, historico = %s,
+                       atualizado_em = now()
+                 WHERE id_pdv_lancamento = %s AND cod_empresa = %s
+            """, (id_conta, valor, historico, id_lancamento, _empresa()))
+        else:
+            id_lancamento = lancar(
+                cur, _empresa(), id_conta, dia, valor, historico,
+                tipo_origem="MANUAL", id_usuario=session.get("id_usuario"))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": f"Erro ao gravar: {e}"}), 500
+    finally:
+        cur.close()
+
+    return jsonify({"ok": True, "id": id_lancamento})

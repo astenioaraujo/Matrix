@@ -1,0 +1,539 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+    html, body {
+        overflow-x: auto !important;
+        overflow-y: auto !important;
+        height: auto !important;
+        max-height: none !important;
+    }
+
+    main, .content, .content-wrapper, .container, .page-matricial {
+        overflow: visible !important;
+        overflow-y: visible !important;
+        height: auto !important;
+        max-height: none !important;
+    }
+
+    .page-matricial {
+        display: block;
+        min-width: 100%;
+        padding-bottom: 180px;
+    }
+
+    .page-topo-fixo {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background: var(--bg, #f4f4f4);
+        padding-top: 16px;
+        padding-bottom: 12px;
+    }
+
+    .table-wrapper {
+        display: block;
+        width: max-content;
+        min-width: max-content;
+        overflow: visible !important;
+        border: 1px solid #d9d9d9;
+        border-radius: 10px;
+        background: #fff;
+        margin-bottom: 60px;
+    }
+
+  .matriz-tabela {
+  border-collapse: collapse;
+  width: max-content;
+  min-width: max-content;
+  }
+
+  .matriz-tabela th,
+  .matriz-tabela td {
+    border: 1px solid #d9d9d9;
+    padding: 6px 10px;
+    white-space: nowrap;
+  }
+
+  .matriz-tabela thead th {
+    background: #f3f3f3;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    font-weight: normal;
+  }
+
+  td.num, th.num {
+    text-align: right !important;
+    padding-right: 8px;
+  }
+
+  .linha-cabecalho-grupo td {
+    background: #ececec;
+    white-space: nowrap;
+    vertical-align: middle;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .linha-cabecalho-grupo td:first-child {
+    font-weight: bold;
+    font-size: 16px;
+    text-align: left;
+  }
+
+  .linha-cabecalho-grupo td:nth-child(2) {
+    font-weight: bold;
+    text-align: right;
+  }
+
+  .linha-cabecalho-grupo td:nth-child(n+3) {
+    font-weight: normal !important;
+    font-size: 12px;
+    text-align: center !important;
+    color: #444;
+  }
+
+  .linha-total-grupo td {
+    font-weight: bold;
+    background: #f3f3f3;
+    border-top: 2px solid #9a9a9a;
+    border-bottom: 2px solid #c7c7c7;
+  }
+
+  .linha-espaco td {
+    background: #ffffff;
+    border: none !important;
+    height: 28px;
+    padding: 0;
+  }
+
+  .col-grupo { width: 70px; }
+  .col-conta { width: 70px; }
+  .col-descricao { width: 360px; }
+  .col-valor { min-width: 110px; }
+
+  .col-total-separador {
+    border-right: 3px solid #8f8f8f !important;
+  }
+
+  .matriz-tabela th:nth-child(1),
+  .matriz-tabela td:nth-child(1) {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    background: #fff;
+  }
+
+  .matriz-tabela th:nth-child(2),
+  .matriz-tabela td:nth-child(2) {
+    position: sticky;
+    left: 70px;
+    z-index: 3;
+    background: #fff;
+  }
+
+  .matriz-tabela th:nth-child(3),
+  .matriz-tabela td:nth-child(3) {
+    position: sticky;
+    left: 140px;
+    z-index: 3;
+    background: #fff;
+  }
+    .mes-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .mes-nav select {
+    min-width: 90px;
+  }
+
+  .btn-mes-nav {
+    width: 38px;
+    height: 38px;
+    border: 1px solid #c7c7c7;
+    border-radius: 9px;
+    background: #c8e6c9;
+    color: #111;
+    font-size: 18px;
+    font-weight: 900;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .btn-mes-nav:hover {
+    background: #a5d6a7;
+  }
+  .btn-acao {
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 15px;          /* 👈 FORÇA IGUALDADE */
+    font-family: inherit;     /* 👈 GARANTE PADRÃO DO SISTEMA */
+    line-height: 1.2;
+    border: 1px solid #c7c7c7;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;     /* 👈 MELHOR ALINHAMENTO */
+    align-items: center;      /* 👈 CENTRALIZA TEXTO */
+    justify-content: center;
+  }
+
+    /* VERDE - CARREGAR */
+    .btn-carregar {
+      background: #2e9b57;
+      color: #fff;
+      border: 1px solid #2e9b57;
+    }
+
+    .btn-carregar:hover {
+      background: #25834a;
+      border-color: #25834a;
+    }
+
+    /* ROXO - LIMPAR */
+    .btn-limpar {
+      background: #7b1fa2;
+      color: #fff;
+      border: 1px solid #7b1fa2;
+    }
+
+    .btn-limpar:hover {
+        background: #5e1780;
+        border-color: #5e1780;
+    }
+  .linha-cabecalho-grupo td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 5;
+    background: #ececec !important;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.08);
+  }
+
+  .linha-cabecalho-grupo td:nth-child(2) {
+    position: sticky;
+    left: 70px;
+    z-index: 5;
+    background: #ececec !important;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.06);
+  }
+
+  .filtro-grupo-wrap { position: relative; display: inline-block; }
+  .filtro-grupo-btn {
+    padding: 8px 28px 8px 12px;
+    border: 1px solid #c7c7c7;
+    border-radius: 8px;
+    background: #fff;
+    font-size: 14px;
+    cursor: pointer;
+    min-width: 160px;
+    text-align: left;
+  }
+  .filtro-grupo-btn::after { content: " ▾"; }
+  .filtro-grupo-dropdown {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 8px 0;
+    min-width: 220px;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  }
+  .filtro-grupo-dropdown.aberto { display: block; }
+  .filtro-grupo-item {
+    padding: 5px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .filtro-grupo-item:hover { background: #f0f4ff; }
+  .filtro-grupo-sep { border-top: 1px solid #eee; margin: 4px 0; }
+</style>
+
+<div class="page-matricial">
+  <h2>Matricial Anual por Posto — {{ ano_sel }} · {{ nome_filial_sel }}</h2>
+
+  <form method="get" style="margin-bottom: 20px;">
+    <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;">
+      <div>
+        <label for="ano">Ano</label><br>
+        <div class="mes-nav">
+        <button type="button" class="btn-mes-nav" onclick="mudarAno(-1)">←</button>
+        <select id="ano" name="ano">
+          {% for a in anos %}
+            <option value="{{ a }}" {% if ano_sel|string == a|string %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+        <button type="button" class="btn-mes-nav" onclick="mudarAno(1)">→</button>
+        </div>
+      </div>
+
+        <div>
+            <label for="filial">Filial</label><br>
+            <select id="filial" name="filial">
+            <option value="">(Todos os postos)</option>
+            {% for f in filiais %}
+                <option value="{{ f[0] }}" {% if f[0]|string == filial_sel %}selected{% endif %}>{{ f[1] }}</option>
+            {% endfor %}
+            </select>
+        </div>
+
+        <div>
+            <button type="submit" class="btn-acao btn-carregar">
+                Carregar
+            </button>
+        </div>
+
+        <div>
+          <label>Grupos</label><br>
+          <div class="filtro-grupo-wrap">
+            <button type="button" class="filtro-grupo-btn" id="btn-filtro-grupo" onclick="toggleFiltroGrupo()">
+              Todos os grupos
+            </button>
+            <div class="filtro-grupo-dropdown" id="dropdown-grupos">
+              <div class="filtro-grupo-item">
+                <input type="checkbox" id="chk-todos-grupos" checked onchange="toggleTodosGrupos(this)">
+                <label for="chk-todos-grupos" style="cursor:pointer;">Selecionar tudo</label>
+              </div>
+              <div class="filtro-grupo-sep"></div>
+              {% for grupo in grupos_ordenados %}
+              <div class="filtro-grupo-item">
+                <input type="checkbox" class="chk-grupo" value="{{ grupo.grupo }}" id="chk-g-{{ grupo.grupo }}" checked onchange="atualizarFiltroGrupo()">
+                <label for="chk-g-{{ grupo.grupo }}" style="cursor:pointer;">
+                  Grupo {{ grupo.grupo }}
+                  {% if grupo.grupo|string == '1' %} - Receitas Operacionais
+                  {% elif grupo.grupo|string == '2' %} - Receitas Não Operacionais
+                  {% elif grupo.grupo|string == '3' %} - Custos / Produtos
+                  {% elif grupo.grupo|string == '4' %} - Despesas
+                  {% elif grupo.grupo|string == '5' %} - Saídas Não Operacionais
+                  {% elif grupo.grupo|string == '6' %} - Dividendos
+                  {% elif grupo.grupo|string == '7' %} - Transferências
+                  {% endif %}
+                </label>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+    </div>
+  </form>
+
+  {% if linhas_matriciais|length == 0 %}
+    <p>Nenhum dado encontrado para os filtros informados.</p>
+  {% else %}
+    <div class="table-wrapper">
+      <table class="matriz-tabela" id="matriz-tabela">
+        <colgroup>
+          <col class="col-grupo">
+          <col class="col-conta">
+          <col class="col-descricao">
+          <col class="col-valor">
+          {% for mes in meses_colunas %}
+            <col class="col-valor">
+          {% endfor %}
+        </colgroup>
+
+        <thead>
+          <tr>
+            <th>Grupo</th>
+            <th>Conta</th>
+            <th>Descrição</th>
+            <th class="num col-total-separador">Total</th>
+            {% for mes in meses_colunas %}
+              <th class="num">{{ mes[1] }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+
+        <tbody>
+          {% for grupo in grupos_ordenados %}
+            <tr class="linha-cabecalho-grupo" data-grupo="{{ grupo.grupo }}">
+              <td colspan="3">
+                Grupo {{ grupo.grupo }}
+                {% if grupo.grupo == '1' or grupo.grupo == 1 %} - Receitas Operacionais{% endif %}
+                {% if grupo.grupo == '2' or grupo.grupo == 2 %} - Receitas Não Operacionais{% endif %}
+                {% if grupo.grupo == '3' or grupo.grupo == 3 %} - Custos / Produtos{% endif %}
+                {% if grupo.grupo == '4' or grupo.grupo == 4 %} - Despesas{% endif %}
+                {% if grupo.grupo == '5' or grupo.grupo == 5 %} - Saídas Não Operacionais{% endif %}
+                {% if grupo.grupo == '6' or grupo.grupo == 6 %} - Dividendos{% endif %}
+                {% if grupo.grupo == '7' or grupo.grupo == 7 %} - Transferências{% endif %}
+              </td>
+        
+              <td class="num col-total-separador">Total</td>
+        
+              {% for mes in meses_colunas %}
+                <td class="num">
+                  {{ mes[1] }}
+                </td>
+              {% endfor %}
+            </tr>
+        
+            {% for linha in grupo.linhas %}
+              <tr data-grupo="{{ linha.grupo }}" data-linha="conta">
+                <td>{{ linha.grupo }}</td>
+                <td>{{ linha.conta }}</td>
+                <td>{{ linha.descricao_conta }}</td>
+                <td class="num col-total-separador">
+                  {{ formatar_numero_br(linha.total) }}
+                </td>
+        
+                {% for valor in linha.valores %}
+                  <td class="num">
+                    {{ formatar_numero_br(valor) }}
+                  </td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+        
+            <tr class="linha-total-grupo">
+              <td colspan="3">
+                Total do Grupo {{ grupo.grupo }}
+              </td>
+              <td class="num col-total-separador">
+                {{ formatar_numero_br(grupo.total_geral) }}
+              </td>
+        
+              {% for valor in grupo.totais_meses %}
+                <td class="num">
+                  {{ formatar_numero_br(valor) }}
+                </td>
+              {% endfor %}
+            </tr>
+        
+            <tr class="linha-espaco">
+              <td colspan="{{ 4 + meses_colunas|length }}"></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</div>
+
+<script>
+    function toggleFiltroGrupo() {
+      document.getElementById("dropdown-grupos").classList.toggle("aberto");
+    }
+
+    document.addEventListener("click", function(e) {
+      if (!e.target.closest(".filtro-grupo-wrap")) {
+        document.getElementById("dropdown-grupos").classList.remove("aberto");
+      }
+    });
+
+    function toggleTodosGrupos(chk) {
+      document.querySelectorAll(".chk-grupo").forEach(c => c.checked = chk.checked);
+      atualizarFiltroGrupo();
+    }
+
+    function atualizarFiltroGrupo() {
+      const selecionados = Array.from(document.querySelectorAll(".chk-grupo:checked")).map(c => c.value);
+      const todos = document.querySelectorAll(".chk-grupo");
+      document.getElementById("chk-todos-grupos").checked = (selecionados.length === todos.length);
+
+      // Atualiza label do botão
+      const btn = document.getElementById("btn-filtro-grupo");
+      if (selecionados.length === todos.length) {
+        btn.textContent = "Todos os grupos";
+      } else if (selecionados.length === 0) {
+        btn.textContent = "Nenhum grupo";
+      } else {
+        btn.textContent = "Grupos: " + selecionados.join(", ");
+      }
+      btn.insertAdjacentText("beforeend", " ▾");
+
+      // Mostra/oculta linhas e blocos de grupo
+      document.querySelectorAll("tr[data-grupo]").forEach(tr => {
+        const g = String(tr.getAttribute("data-grupo"));
+        tr.style.display = selecionados.includes(g) ? "" : "none";
+      });
+    }
+
+    function mudarAno(delta) {
+      const selectAno = document.getElementById("ano");
+      if (!selectAno) {
+        return;
+      }
+      const ano = parseInt(selectAno.value || new Date().getFullYear(), 10) + delta;
+      const opcao = Array.from(selectAno.options).find(opt => opt.value === String(ano));
+      if (opcao) {
+        selectAno.value = String(ano);
+        selectAno.form.submit();
+      }
+    }
+  document.addEventListener("DOMContentLoaded", function () {
+    const linhas = document.querySelectorAll("#matriz-tabela tbody tr[data-linha='conta']");
+  
+    function getColorExcel(ratio) {
+      let r, g, b;
+  
+      if (ratio <= 0.5) {
+        const t = ratio / 0.5;
+        r = 248 + (255 - 248) * t;
+        g = 105 + (235 - 105) * t;
+        b = 107 + (132 - 107) * t;
+      } else {
+        const t = (ratio - 0.5) / 0.5;
+        r = 255 + (99 - 255) * t;
+        g = 235 + (190 - 235) * t;
+        b = 132 + (123 - 132) * t;
+      }
+  
+      return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+    }
+  
+    linhas.forEach((linha) => {
+      const celulasNumericas = linha.querySelectorAll("td.num");
+  
+      if (!celulasNumericas.length || celulasNumericas.length <= 1) {
+        return;
+      }
+  
+      // ignora a coluna TOTAL e pega só as filiais
+      const celulasFiliais = Array.from(celulasNumericas).slice(1);
+  
+      const valores = celulasFiliais
+        .map((celula) => {
+          const texto = celula.innerText.replace(/\./g, "").replace(",", ".").trim();
+          const numero = parseFloat(texto);
+          return isNaN(numero) ? null : numero;
+        })
+        .filter((valor) => valor !== null);
+  
+      if (!valores.length) {
+        return;
+      }
+  
+      const min = Math.min(...valores);
+      const max = Math.max(...valores);
+  
+      celulasFiliais.forEach((celula) => {
+        const texto = celula.innerText.replace(/\./g, "").replace(",", ".").trim();
+        const valor = parseFloat(texto);
+  
+        if (isNaN(valor)) {
+          return;
+        }
+  
+        let ratio = (valor - min) / ((max - min) || 1);
+  
+        // 51 faixas discretas, como no Excel
+        ratio = Math.round(ratio * 50) / 50;
+  
+        celula.style.background = getColorExcel(ratio);
+      });
+    });
+  });
+  </script>
+
+{% endblock %}

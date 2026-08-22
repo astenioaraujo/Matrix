@@ -22,6 +22,11 @@
   tr.vencido td { background:#fdecea; }
   tr.vencido td.venc { color:#c0392b; font-weight:800; }
   tr.baixado td { color:#888; }
+  .selo { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px;
+          font-weight:800; background:#eef2ff; color:#3730a3; }
+  .selo.orc { background:#f0fdf4; color:#166534; }
+  .selo.imp { background:#fff7ed; color:#9a3412; }
+  tfoot td { background:#eef2f7; font-weight:800; border-top:2px solid #b9c6d6; }
   .resumo { display:flex; flex-wrap:wrap; gap:32px; }
   .resumo-item { display:flex; flex-direction:column; }
   .resumo-rotulo { font-size:12px; font-weight:700; color:#666; }
@@ -45,17 +50,32 @@
   .status-msg { font-size:13px; margin-top:10px; min-height:18px; color:#9f2f2f; font-weight:600; }
 </style>
 
-<div class="pagina-titulo">💸 Contas a Pagar</div>
+<div class="pagina-titulo">📑 Consulta de Títulos a Pagar</div>
 <div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
 
 <div class="bloco">
   <form method="get" class="filtros">
     <div class="campo">
+      <label for="mes">Mês do vencimento</label>
+      <select id="mes" name="mes" onchange="this.form.submit()">
+        <option value="TODOS" {{ 'selected' if mes == 'TODOS' }}>Todos os meses</option>
+        {% for numero, nome in meses %}
+          <option value="{{ numero }}" {{ 'selected' if mes == numero|string }}>{{ nome }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="campo">
+      <label for="ano">Ano</label>
+      <select id="ano" name="ano" onchange="this.form.submit()">
+        {% for a in anos %}<option value="{{ a }}" {{ 'selected' if a == ano }}>{{ a }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="campo">
       <label for="situacao">Situação</label>
       <select id="situacao" name="situacao" onchange="this.form.submit()">
+        <option value="TODOS" {{ 'selected' if situacao == 'TODOS' }}>Todas</option>
         <option value="ABERTO" {{ 'selected' if situacao == 'ABERTO' }}>Em aberto</option>
-        <option value="BAIXADO" {{ 'selected' if situacao == 'BAIXADO' }}>Baixados</option>
-        <option value="TODOS" {{ 'selected' if situacao == 'TODOS' }}>Todos</option>
+        <option value="BAIXADO" {{ 'selected' if situacao == 'BAIXADO' }}>Pagos</option>
       </select>
     </div>
     <button type="submit" class="btn">Consultar</button>
@@ -65,8 +85,16 @@
 <div class="bloco">
   <div class="resumo">
     <div class="resumo-item">
-      <div class="resumo-rotulo">Total em aberto</div>
+      <div class="resumo-rotulo">Em aberto</div>
       <div class="resumo-valor">R$ {{ total_aberto|br }}</div>
+    </div>
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Já pago</div>
+      <div class="resumo-valor" style="color:#166534">R$ {{ total_baixado|br }}</div>
+    </div>
+    <div class="resumo-item">
+      <div class="resumo-rotulo">Total do filtro</div>
+      <div class="resumo-valor">R$ {{ total_valor|br }}</div>
     </div>
     <div class="resumo-item">
       <div class="resumo-rotulo">Títulos vencidos</div>
@@ -82,8 +110,10 @@
         <thead>
           <tr>
             <th style="width:120px">Vencimento</th>
-            <th>Fornecedor</th>
-            <th style="width:120px">Documento</th>
+            <th style="width:180px">Fornecedor</th>
+            <th>Descrição</th>
+            <th style="width:150px">Classificação</th>
+            <th style="width:110px">Documento</th>
             <th style="width:100px">Parcela</th>
             <th style="width:130px">Valor</th>
             <th style="width:130px">Baixado</th>
@@ -96,6 +126,14 @@
             <tr class="{{ 'baixado' if t.situacao == 'BAIXADO' }} {{ 'vencido' if t.situacao == 'ABERTO' and t.data_vencimento < hoje }}">
               <td class="venc">{{ t.data_vencimento.strftime('%d/%m/%Y') }}</td>
               <td>{{ t.nome_fornecedor or '—' }}</td>
+              <td>
+                {{ t.descricao or '—' }}
+                {% if t.origem == 'MANUAL' %}<span class="selo">manual</span>
+                {% elif t.origem == 'ORCAMENTO' %}<span class="selo orc">orçamento</span>
+                {% elif t.origem == 'IMPORTADO' %}<span class="selo imp">importado</span>{% endif %}
+              </td>
+              <td>{% if t.cod_grupo %}<small>{{ t.cod_grupo }}.{{ t.cod_conta }}</small>
+                  {{ t.nome_conta or t.nome_tipo or '—' }}{% else %}—{% endif %}</td>
               <td>
                 {% if t.id_pdv_nota_entrada %}
                   <a class="link" href="{{ url_for('pdv.detalhe_entrada', id_nota=t.id_pdv_nota_entrada) }}">
@@ -121,10 +159,19 @@
             </tr>
           {% endfor %}
         </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="6">Total ({{ titulos|length }} título(s))</td>
+            <td class="col-dir">{{ total_valor|br }}</td>
+            <td class="col-dir">{{ total_baixado|br }}</td>
+            <td></td>
+            {% if pode_pagar %}<td></td>{% endif %}
+          </tr>
+        </tfoot>
       </table>
     </div>
   {% else %}
-    <div class="vazio">Nenhum título nesta situação.</div>
+    <div class="vazio">Nenhum título com esse filtro.</div>
   {% endif %}
 
   <div class="aviso-fase">

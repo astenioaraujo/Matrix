@@ -1,0 +1,323 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+{#
+  Caixa do dia: um dia, todas as contas (ou uma), em grid.
+
+  Positivo entra, negativo sai. Cada conta mostra saldo inicial → saldo final,
+  e o rodapé consolida a empresa.
+
+  O grid mostra tudo o que passou pela conta no dia, mas só o lançamento
+  MANUAL é editável: o que veio de uma venda ou de uma baixa é consequência
+  daquele documento, e mudar aqui faria o caixa deixar de bater com ele.
+#}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+
+  .filtros { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  input, select { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+
+  .btn { padding:9px 18px; border-radius:8px; border:1px solid #1a73e8; background:#1a73e8;
+         color:#fff; font-weight:700; cursor:pointer; }
+  .btn.secundario { background:#fff; color:#1a73e8; }
+  .btn-mini { padding:5px 11px; border-radius:6px; border:1px solid #1a73e8; background:#1a73e8;
+              color:#fff; font-weight:700; font-size:12px; cursor:pointer; }
+  .btn-mini.excluir { background:#c0392b; border-color:#c0392b; }
+  .btn-novo { padding:8px 16px; border-radius:8px; border:1px solid #16a34a; background:#16a34a;
+              color:#fff; font-weight:700; cursor:pointer; }
+
+  .conta-cabecalho {
+    display:flex; flex-wrap:wrap; gap:20px; align-items:center;
+    justify-content:space-between; margin-bottom:12px;
+  }
+  .conta-nome { font-size:18px; font-weight:800; color:#1a3a63; }
+  .conta-tipo { font-size:11px; font-weight:800; background:#e6f0fd; color:#1a3a63;
+                padding:2px 9px; border-radius:20px; margin-left:6px; }
+  .conta-saldos { display:flex; flex-wrap:wrap; gap:24px; }
+  .saldo-item { display:flex; flex-direction:column; }
+  .saldo-rotulo { font-size:11px; font-weight:700; color:#666; }
+  .saldo-valor { font-size:19px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .saldo-valor.entrada { color:#16a34a; }
+  .saldo-valor.saida { color:#c0392b; }
+  .saldo-valor.negativo { color:#c0392b; }
+
+  .tabela-wrap { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { border:1px solid #ddd; padding:7px 8px; text-align:left; font-size:14px; }
+  th { background:#dbe8f4; white-space:nowrap; font-size:13px; }
+  td.col-dir { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  td.col-centro { text-align:center; white-space:nowrap; }
+  td input, td select { width:100%; box-sizing:border-box; padding:6px 8px;
+                        border-radius:6px; border:1px solid #bbb; }
+  td.valor.entrada { color:#16a34a; font-weight:700; }
+  td.valor.saida { color:#c0392b; font-weight:700; }
+  tr.travado td { background:#fafbfc; }
+  tr.travado td.origem { font-size:12px; color:#777; }
+  tfoot td { font-weight:800; background:#f5f7fa; }
+
+  .linha-inicial td { background:#eef4fb; font-style:italic; }
+  .vazio { color:#777; padding:10px 0; }
+  .status-msg { font-size:13px; margin-top:10px; min-height:18px; color:#1e6b34; font-weight:600; }
+  .status-msg.erro { color:#9f2f2f; }
+  .dica { font-size:12px; color:#666; margin-top:10px; }
+
+  .total-geral { display:flex; flex-wrap:wrap; gap:32px; }
+  .total-valor { font-size:26px; font-weight:800; font-variant-numeric:tabular-nums; }
+</style>
+
+<div class="pagina-titulo">💵 Caixa do Dia</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <form method="get" class="filtros">
+    <div class="campo">
+      <label for="data">Dia</label>
+      <input type="date" id="data" name="data" value="{{ dia }}" onchange="this.form.submit()">
+    </div>
+    <div class="campo">
+      <label for="id_conta">Conta</label>
+      <select id="id_conta" name="id_conta" onchange="this.form.submit()" style="min-width:220px">
+        <option value="">Todas as contas</option>
+        {% for c in contas %}
+          <option value="{{ c.id_pdv_conta_financeira }}"
+                  {{ 'selected' if filtro_conta == c.id_pdv_conta_financeira|string }}>
+            {{ c.nome }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn">Ver</button>
+    {% if pode_lancar %}
+      <button type="button" class="btn-novo" onclick="novaLinha()">+ Lançamento</button>
+    {% endif %}
+  </form>
+  <div class="dica">
+    Valor <strong>positivo entra</strong>, <strong>negativo sai</strong>. A data é a do dia
+    selecionado. Lançamentos que vieram de venda, baixa ou transferência aparecem aqui, mas
+    são só leitura — eles pertencem ao documento que os gerou.
+  </div>
+  <div class="status-msg" id="status"></div>
+</div>
+
+{% if contas|length > 1 %}
+<div class="bloco">
+  <div class="total-geral">
+    <div class="saldo-item">
+      <div class="saldo-rotulo">SALDO INICIAL (todas)</div>
+      <div class="total-valor">{{ total.saldo_inicial|br }}</div>
+    </div>
+    <div class="saldo-item">
+      <div class="saldo-rotulo">ENTRADAS</div>
+      <div class="total-valor" style="color:#16a34a">+{{ total.entradas|br }}</div>
+    </div>
+    <div class="saldo-item">
+      <div class="saldo-rotulo">SAÍDAS</div>
+      <div class="total-valor" style="color:#c0392b">−{{ total.saidas|br }}</div>
+    </div>
+    <div class="saldo-item">
+      <div class="saldo-rotulo">SALDO FINAL</div>
+      <div class="total-valor {{ 'negativo' if total.saldo_final < 0 }}">{{ total.saldo_final|br }}</div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% for b in blocos %}
+<div class="bloco" data-conta="{{ b.id_pdv_conta_financeira }}">
+  <div class="conta-cabecalho">
+    <div class="conta-nome">
+      {{ b.nome }}<span class="conta-tipo">{{ b.tipo }}</span>
+    </div>
+    <div class="conta-saldos">
+      <div class="saldo-item">
+        <div class="saldo-rotulo">Saldo inicial</div>
+        <div class="saldo-valor">{{ b.saldo_inicial|br }}</div>
+      </div>
+      <div class="saldo-item">
+        <div class="saldo-rotulo">Entradas</div>
+        <div class="saldo-valor entrada">+{{ b.entradas|br }}</div>
+      </div>
+      <div class="saldo-item">
+        <div class="saldo-rotulo">Saídas</div>
+        <div class="saldo-valor saida">−{{ b.saidas|br }}</div>
+      </div>
+      <div class="saldo-item">
+        <div class="saldo-rotulo">Saldo final</div>
+        <div class="saldo-valor {{ 'negativo' if b.saldo_final < 0 }}">{{ b.saldo_final|br }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:110px">Data</th>
+          <th style="width:190px">Conta</th>
+          <th>Descrição</th>
+          <th style="width:150px">Origem</th>
+          <th style="width:130px">Valor</th>
+          <th style="width:130px">Saldo</th>
+          <th style="width:140px">Ações</th>
+        </tr>
+      </thead>
+      <tbody id="corpo-{{ b.id_pdv_conta_financeira }}">
+        <tr class="linha-inicial">
+          <td colspan="5">Saldo inicial do dia</td>
+          <td class="col-dir">{{ b.saldo_inicial|br }}</td>
+          <td></td>
+        </tr>
+        {% for l in b.lancamentos %}
+          <tr class="{{ '' if l.editavel else 'travado' }}" data-id="{{ l.id_pdv_lancamento }}">
+            <td>{{ l.data_lancamento.strftime('%d/%m/%Y') }}</td>
+            {% if l.editavel %}
+              <td>
+                <select class="in-conta">
+                  {% for c in contas %}
+                    <option value="{{ c.id_pdv_conta_financeira }}"
+                            {{ 'selected' if c.id_pdv_conta_financeira == l.id_pdv_conta_financeira }}>
+                      {{ c.nome }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td><input type="text" class="in-historico" value="{{ l.historico }}"></td>
+              <td class="origem">Manual</td>
+              <td><input type="number" step="0.01" class="in-valor" value="{{ l.valor }}"></td>
+            {% else %}
+              <td>{{ l.nome_conta }}</td>
+              <td>{{ l.historico }}</td>
+              <td class="origem">{{ origens.get(l.tipo_origem, l.tipo_origem) }}</td>
+              <td class="col-dir valor {{ 'entrada' if l.valor >= 0 else 'saida' }}">
+                {{ '+' if l.valor >= 0 }}{{ l.valor|br }}
+              </td>
+            {% endif %}
+            <td class="col-dir">{{ l.saldo|br }}</td>
+            <td class="col-centro">
+              {% if l.editavel and pode_lancar %}
+                <button type="button" class="btn-mini" onclick="salvarLinha(this)">Salvar</button>
+                <button type="button" class="btn-mini excluir" onclick="excluirLinha(this)">×</button>
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="4">
+            Saldo inicial {{ b.saldo_inicial|br }} + entradas {{ b.entradas|br }}
+            − saídas {{ b.saidas|br }}
+          </td>
+          <td class="col-dir">
+            {{ ((b.entradas or 0) - (b.saidas or 0))|br }}
+          </td>
+          <td class="col-dir">{{ b.saldo_final|br }}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  {% if not b.lancamentos %}
+    <div class="vazio">Nenhuma transação nesta conta no dia.</div>
+  {% endif %}
+</div>
+{% else %}
+<div class="bloco"><div class="vazio">Nenhuma conta para mostrar.</div></div>
+{% endfor %}
+
+<script>
+  const DIA = {{ dia | tojson }};
+  const CONTAS = {{ contas | tojson }};
+
+  async function fetchJson(url, opcoes) {
+    const resp = await fetch(url, opcoes);
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+    }
+    return resp.json();
+  }
+
+  function mostrar(msg, erro) {
+    const el = document.getElementById("status");
+    el.textContent = msg || "";
+    el.classList.toggle("erro", !!erro);
+    if (!erro && msg) setTimeout(() => { el.textContent = ""; }, 2500);
+  }
+
+  function paraNumero(texto) {
+    if (!texto) return 0;
+    const n = parseFloat(String(texto).trim().replace(",", "."));
+    return isNaN(n) ? 0 : n;
+  }
+
+  /* A linha nova entra no primeiro bloco visível — o dia e a conta já vêm
+     preenchidos, e a conta pode ser trocada na própria linha. */
+  function novaLinha() {
+    const bloco = document.querySelector(".bloco[data-conta]");
+    if (!bloco) { mostrar("Cadastre uma conta financeira primeiro.", true); return; }
+    const idConta = bloco.dataset.conta;
+    const corpo = document.getElementById("corpo-" + idConta);
+
+    const opcoes = CONTAS.map(c =>
+      `<option value="${c.id_pdv_conta_financeira}" ${
+        String(c.id_pdv_conta_financeira) === idConta ? "selected" : ""
+      }>${c.nome}</option>`).join("");
+
+    const tr = document.createElement("tr");
+    tr.dataset.id = "";
+    tr.innerHTML = `
+      <td>${DIA.split("-").reverse().join("/")}</td>
+      <td><select class="in-conta">${opcoes}</select></td>
+      <td><input type="text" class="in-historico" placeholder="O que foi este dinheiro"></td>
+      <td class="origem">Manual</td>
+      <td><input type="number" step="0.01" class="in-valor" placeholder="+ entra / − sai"></td>
+      <td class="col-dir">—</td>
+      <td class="col-centro">
+        <button type="button" class="btn-mini" onclick="salvarLinha(this)">Salvar</button>
+        <button type="button" class="btn-mini excluir" onclick="this.closest('tr').remove()">×</button>
+      </td>`;
+    corpo.appendChild(tr);
+    tr.querySelector(".in-historico").focus();
+  }
+
+  async function salvarLinha(botao) {
+    const tr = botao.closest("tr");
+    const id = tr.dataset.id;
+    const payload = {
+      id_pdv_conta_financeira: Number(tr.querySelector(".in-conta").value),
+      historico: tr.querySelector(".in-historico").value,
+      valor: paraNumero(tr.querySelector(".in-valor").value),
+      data_lancamento: DIA,
+    };
+    try {
+      const data = await fetchJson(
+        id ? `/pdv/api/financeiro/caixa/${id}` : "/pdv/api/financeiro/caixa",
+        { method: id ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload) });
+      if (data.ok) { mostrar("Gravado."); location.reload(); }
+      else mostrar(data.erro || "Erro ao gravar.", true);
+    } catch (e) { mostrar(e.message, true); }
+  }
+
+  async function excluirLinha(botao) {
+    const tr = botao.closest("tr");
+    if (!confirm("Excluir este lançamento?")) return;
+    try {
+      const data = await fetchJson(`/pdv/api/financeiro/caixa/${tr.dataset.id}`,
+                                   { method: "DELETE" });
+      if (data.ok) location.reload();
+      else mostrar(data.erro || "Erro ao excluir.", true);
+    } catch (e) { mostrar(e.message, true); }
+  }
+</script>
+
+{% endblock %}

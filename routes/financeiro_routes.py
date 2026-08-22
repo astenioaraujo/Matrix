@@ -240,6 +240,164 @@ def obter_dados_matricial(cod_empresa, ano_sel="", mes_sel="", filial_sel=""):
     }
 
 
+MESES_NOMES = [
+    (1, "Jan"), (2, "Fev"), (3, "Mar"), (4, "Abr"),
+    (5, "Mai"), (6, "Jun"), (7, "Jul"), (8, "Ago"),
+    (9, "Set"), (10, "Out"), (11, "Nov"), (12, "Dez"),
+]
+
+
+def obter_dados_matricial_anual(cod_empresa, ano_sel="", filial_sel=""):
+    """Mesma matriz da Consulta Matricial, mas as colunas sao os 12 meses do
+    ano — de um posto ou de todos somados. Nada de subtotal persistido: tudo
+    e somado aqui, a partir de `lancamentos`."""
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        where = ["l.cod_empresa = %s"]
+        params = [cod_empresa]
+
+        if ano_sel:
+            where.append("CAST(l.ano AS TEXT) = %s")
+            params.append(str(ano_sel))
+
+        if filial_sel:
+            where.append("CAST(l.cod_filial AS TEXT) = %s")
+            params.append(str(filial_sel))
+
+        where_sql = " AND ".join(where)
+
+        cur.execute(f"""
+            SELECT
+                l.grupo,
+                l.conta,
+                COALESCE(NULLIF(TRIM(l.descricao_conta), ''), 'SEM DESCRIÇÃO') AS descricao_conta,
+                l.mes,
+                COALESCE(SUM(l.valor), 0) AS total_valor
+            FROM lancamentos l
+            WHERE {where_sql}
+              AND l.grupo IS NOT NULL
+              AND l.conta IS NOT NULL
+              AND l.mes IS NOT NULL
+            GROUP BY
+                l.grupo,
+                l.conta,
+                COALESCE(NULLIF(TRIM(l.descricao_conta), ''), 'SEM DESCRIÇÃO'),
+                l.mes
+        """, params)
+        dados = cur.fetchall()
+
+        cur.execute("""
+            SELECT DISTINCT ano
+            FROM lancamentos
+            WHERE cod_empresa = %s
+              AND ano IS NOT NULL
+            ORDER BY ano
+        """, (cod_empresa,))
+        anos = [r[0] for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT cod_filial, nome_filial
+            FROM filiais
+            WHERE cod_empresa = %s
+              AND ativo = TRUE
+            ORDER BY cod_filial
+        """, (cod_empresa,))
+        filiais = cur.fetchall()
+
+    finally:
+        cur.close()
+        conn.close()
+
+    meses_colunas = list(MESES_NOMES)
+    meses_ids = [m[0] for m in meses_colunas]
+
+    mapa = {}
+    for grupo, conta, descricao_conta, mes, total_valor in dados:
+        try:
+            mes_int = int(mes)
+        except (TypeError, ValueError):
+            continue
+
+        if mes_int not in meses_ids:
+            continue
+
+        chave = (grupo, conta, descricao_conta)
+
+        if chave not in mapa:
+            mapa[chave] = {
+                "grupo": grupo,
+                "conta": conta,
+                "descricao_conta": descricao_conta,
+                "por_mes": {mid: 0.0 for mid in meses_ids},
+                "total": 0.0
+            }
+
+        valor = float(total_valor or 0)
+        mapa[chave]["por_mes"][mes_int] += valor
+        mapa[chave]["total"] += valor
+
+    linhas_matriciais = []
+    for item in mapa.values():
+        linhas_matriciais.append({
+            "grupo": item["grupo"],
+            "conta": item["conta"],
+            "descricao_conta": item["descricao_conta"],
+            "valores": [item["por_mes"].get(mid, 0.0) for mid in meses_ids],
+            "total": item["total"]
+        })
+
+    linhas_matriciais.sort(
+        key=lambda x: (
+            int(x["grupo"]) if str(x["grupo"]).isdigit() else 999,
+            conta_para_ordenacao(x["conta"]),
+            str(x["descricao_conta"]).upper()
+        )
+    )
+
+    grupos_tmp = {}
+    for linha in linhas_matriciais:
+        grupo = linha["grupo"]
+
+        if grupo not in grupos_tmp:
+            grupos_tmp[grupo] = {
+                "grupo": grupo,
+                "linhas": [],
+                "totais_meses": [0.0 for _ in meses_ids],
+                "total_geral": 0.0
+            }
+
+        grupos_tmp[grupo]["linhas"].append(linha)
+        grupos_tmp[grupo]["total_geral"] += linha["total"]
+
+        for i, valor in enumerate(linha["valores"]):
+            grupos_tmp[grupo]["totais_meses"][i] += valor
+
+    grupos_ordenados = sorted(
+        grupos_tmp.values(),
+        key=lambda g: int(g["grupo"]) if str(g["grupo"]).isdigit() else 999
+    )
+
+    total_geral_meses = [0.0 for _ in meses_ids]
+    total_geral = 0.0
+
+    for grupo in grupos_ordenados:
+        for i, valor in enumerate(grupo["totais_meses"]):
+            total_geral_meses[i] += valor
+        total_geral += grupo["total_geral"]
+
+    return {
+        "meses_colunas": meses_colunas,
+        "linhas_matriciais": linhas_matriciais,
+        "grupos_ordenados": grupos_ordenados,
+        "total_geral_meses": total_geral_meses,
+        "total_geral": total_geral,
+        "anos": anos,
+        "filiais": filiais
+    }
+
+
 def validar_data_contrato(valor, nome_campo):
     if not valor:
         return None
@@ -1252,6 +1410,120 @@ def resultado_mb():
     )
 
 # =========================
+# RESULTADO MB ANUAL POR POSTO
+# =========================
+
+
+@financeiro_bp.route("/resultado_mb_anual", methods=["GET"])
+def resultado_mb_anual():
+    """Mesmo Resultado por Margem Bruta, virado de lado: as colunas sao os 12
+    meses do ano — de um posto ou de todos somados."""
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    hoje = datetime.now()
+
+    ano = request.args.get("ano", type=int)
+    filial_sel_raw = (request.args.get("filial") or "").strip()
+    filial_sel = int(filial_sel_raw) if filial_sel_raw.isdigit() else None
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        if not ano:
+            cur.execute("""
+                SELECT ano FROM lancamentos
+                WHERE cod_empresa = %s AND ano IS NOT NULL
+                ORDER BY ano DESC
+                LIMIT 1
+            """, (cod_empresa,))
+            row = cur.fetchone()
+            ano = int(row[0]) if row else hoje.year
+
+        cur.execute("""
+            SELECT cod_filial, nome_filial
+            FROM filiais
+            WHERE cod_empresa = %s AND ativo = true
+            ORDER BY cod_filial
+        """, (cod_empresa,))
+        todas_filiais = cur.fetchall()
+
+        nome_filial_sel = "Todos os postos"
+        for f in todas_filiais:
+            if f[0] == filial_sel:
+                nome_filial_sel = f"{f[0]} - {f[1]}"
+
+        def buscar_valores(tabela, filtro_extra):
+            """Soma por mes. Sem filial escolhida, soma todos os postos."""
+            params = [cod_empresa, ano]
+            where_filial = ""
+            if filial_sel is not None:
+                where_filial = "AND cod_filial = %s"
+                params.append(filial_sel)
+            campo_valor = "margem_bruta" if tabela == "vendas_mb_sintetico" else "valor"
+            cur.execute(f"""
+                SELECT mes, COALESCE(SUM({campo_valor}), 0)
+                FROM {tabela}
+                WHERE cod_empresa = %s AND ano = %s
+                  AND mes IS NOT NULL
+                {where_filial} {filtro_extra}
+                GROUP BY mes
+            """, params)
+            return {int(r[0]): float(r[1]) for r in cur.fetchall()}
+
+        mb   = buscar_valores("vendas_mb_sintetico", "")
+        desp = buscar_valores("lancamentos", "AND grupo = '4'")
+        inv  = buscar_valores("lancamentos", "AND grupo = '5'")
+        div  = buscar_valores("lancamentos", "AND grupo = '6'")
+
+        meses_colunas = list(MESES_NOMES)
+        meses_ids = [m[0] for m in meses_colunas]
+
+        def montar_linha(nome, base):
+            linha = {"nome": nome, "total": 0.0, "por_mes": {}}
+            for mes_id in meses_ids:
+                v = base.get(mes_id, 0.0)
+                linha["por_mes"][mes_id] = v
+                linha["total"] += v
+            return linha
+
+        linha_mb   = montar_linha("MB", mb)
+        linha_desp = montar_linha("DESPESAS", desp)
+        linha_res1 = montar_linha("RESULTADO 1", {
+            m: mb.get(m, 0.0) + desp.get(m, 0.0) for m in meses_ids
+        })
+        linha_inv  = montar_linha("INVESTIMENTOS / AMORTIZAÇÕES", inv)
+        linha_res2 = montar_linha("RESULTADO 2", {
+            m: linha_res1["por_mes"][m] + inv.get(m, 0.0) for m in meses_ids
+        })
+        linha_div  = montar_linha("ANTECIPAÇÃO DIVIDENDOS", div)
+        linha_res3 = montar_linha("RESULTADO 3", {
+            m: linha_res2["por_mes"][m] + div.get(m, 0.0) for m in meses_ids
+        })
+
+        linhas = [linha_mb, linha_desp, linha_res1,
+                  linha_inv, linha_res2, linha_div, linha_res3]
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "resultado_mb_anual.html",
+        todas_filiais=todas_filiais,
+        meses_colunas=meses_colunas,
+        linhas=linhas,
+        ano=ano,
+        filial_sel=filial_sel_raw,
+        nome_filial_sel=nome_filial_sel,
+        empresa_ativa=session["cod_empresa"],
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_fluxo_caixa")
+    )
+
+# =========================
 # MATRICIAL
 # =========================
 
@@ -1312,6 +1584,65 @@ def matricial():
         ano_sel=ano_sel,
         mes_sel=mes_sel,
         filial_sel=filial_sel,
+        empresa_ativa=session["cod_empresa"],
+        nome_empresa_ativa=session["nome_empresa"],
+        formatar_numero_br=formatar_numero_br,
+        url_voltar=url_for("financeiro.menu_fluxo_caixa"),
+        texto_voltar="← Voltar"
+    )
+
+# =========================
+# MATRICIAL ANUAL POR POSTO
+# =========================
+
+
+@financeiro_bp.route("/matricial-anual")
+def matricial_anual():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    hoje = datetime.now()
+
+    ano_sel = (request.args.get("ano") or "").strip()
+    filial_sel = (request.args.get("filial") or "").strip()
+
+    if not ano_sel:
+        conn_def = get_connection()
+        cur_def = conn_def.cursor()
+        try:
+            cur_def.execute("""
+                SELECT ano FROM lancamentos
+                WHERE cod_empresa = %s
+                ORDER BY ano DESC
+                LIMIT 1
+            """, (cod_empresa,))
+            row_def = cur_def.fetchone()
+        finally:
+            cur_def.close()
+            conn_def.close()
+
+        ano_sel = str(row_def[0]) if row_def else str(hoje.year)
+
+    dados = obter_dados_matricial_anual(cod_empresa, ano_sel, filial_sel)
+
+    nome_filial_sel = "Todos os postos"
+    for f in dados["filiais"]:
+        if str(f[0]) == filial_sel:
+            nome_filial_sel = f"{f[0]}-{f[1]}"
+
+    return render_template(
+        "matricial_anual.html",
+        meses_colunas=dados["meses_colunas"],
+        linhas_matriciais=dados["linhas_matriciais"],
+        grupos_ordenados=dados["grupos_ordenados"],
+        total_geral_meses=dados["total_geral_meses"],
+        total_geral=dados["total_geral"],
+        anos=dados["anos"],
+        filiais=dados["filiais"],
+        ano_sel=ano_sel,
+        filial_sel=filial_sel,
+        nome_filial_sel=nome_filial_sel,
         empresa_ativa=session["cod_empresa"],
         nome_empresa_ativa=session["nome_empresa"],
         formatar_numero_br=formatar_numero_br,
@@ -2312,20 +2643,24 @@ def menu_fluxo_caixa():
 
     if tipo_global == "superusuario":
         pode_resultado_mb = True
+        pode_resultado_mb_anual = True
         pode_lancamentos = True
         pode_importacoes = True
         pode_matricial = True
         pode_matricial_detalhado = True
+        pode_matricial_anual = True
         pode_variacoes = True
         pode_margem_bruta = True
         pode_exclusoes = True
         pode_cr_fiado = True
     else:
         pode_resultado_mb = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "RESULTADO_MB")
+        pode_resultado_mb_anual = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "RESULTADO_MB_ANUAL")
         pode_lancamentos = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "LANCAMENTOS")
         pode_importacoes = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "IMPORTACOES")
         pode_matricial = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "MATRICIAL")
         pode_matricial_detalhado = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "MATRICIAL_DETALHADO")
+        pode_matricial_anual = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "MATRICIAL_ANUAL")
         pode_variacoes = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "VARIACOES")
         pode_margem_bruta = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "MARGEM_BRUTA")
         pode_exclusoes = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "EXCLUSOES")
@@ -2343,10 +2678,12 @@ def menu_fluxo_caixa():
         url_voltar=url_for("financeiro.menu_empresa"),
 
         pode_resultado_mb=pode_resultado_mb,
+        pode_resultado_mb_anual=pode_resultado_mb_anual,
         pode_lancamentos=pode_lancamentos,
         pode_importacoes=pode_importacoes,
         pode_matricial=pode_matricial,
         pode_matricial_detalhado=pode_matricial_detalhado,
+        pode_matricial_anual=pode_matricial_anual,
         pode_variacoes=pode_variacoes,
         pode_margem_bruta=pode_margem_bruta,
         pode_exclusoes=pode_exclusoes,

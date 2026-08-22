@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+<style>
+  html, body {
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    height: auto !important;
+  }
+
+  .filtro {
+    margin-bottom: 20px;
+  }
+
+  .tabela-container {
+    margin-top: 40px;
+    border: 1px solid #ccc;
+    display: inline-block;
+    max-width: 100%;
+    overflow-x: auto;
+    background: #fff;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: auto;
+  }
+
+  th, td {
+    border: 1px solid #ccc;
+    padding: 6px 10px;
+    white-space: nowrap;
+  }
+
+  thead tr:first-child th {
+    position: sticky;
+    top: 0;
+    background: #2f6db5;
+    color: white;
+    z-index: 4;
+  }
+
+  thead tr:nth-child(2) th {
+    position: sticky;
+    top: 35px;
+    background: #2f6db5;
+    color: #dbe7f7;
+    z-index: 3;
+    border-top: none;
+    padding-top: 2px;
+  }
+
+  .col-fixa {
+    position: sticky;
+    left: 0;
+    background: #fff;
+    z-index: 2;
+    font-weight: bold;
+    min-width: 320px;
+  }
+
+  .col-total {
+    position: sticky;
+    left: 320px;
+    background: #f5f5f5;
+    z-index: 2;
+    font-weight: bold;
+    min-width: 120px;
+  }
+
+  thead .col-fixa,
+  thead .col-total {
+    z-index: 5;
+  }
+
+  .num {
+    text-align: right;
+  }
+
+  .linha-resultado td {
+    font-weight: bold;
+    border-top: 3px solid #000 !important;
+    background: #fafafa;
+  }
+
+  .linha-espaco td {
+    border: none !important;
+    height: 22px;
+    background: #ffffff;
+  }
+
+  .resultado-calor {
+    transition: background-color 0.2s ease;
+  }
+</style>
+
+<h2>Resultado MB Anual por Posto — {{ ano }} · {{ nome_filial_sel }}</h2>
+
+<style>
+  .filtro-wrap {
+    display: flex; flex-direction: column; gap: 12px;
+    margin-bottom: 20px;
+  }
+  .filtro-linha {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .filtro-linha label { font-weight: 700; font-size: 13px; color: #444; }
+  .filtro-linha input[type=number] {
+    width: 90px; height: 34px; border: 1px solid #ccc; border-radius: 7px;
+    padding: 0 8px; font-size: 13px;
+  }
+  .btn-filtrar {
+    height: 34px; padding: 0 18px; background: #14114f; color: #fff;
+    border: none; border-radius: 7px; font-size: 13px; font-weight: 700; cursor: pointer;
+  }
+  .btn-filtrar:hover { background: #131249; }
+
+</style>
+
+<form method="get" class="filtro-wrap" id="form-filtro">
+  <div class="filtro-linha">
+    <label>Ano:</label>
+    <input type="number" name="ano" value="{{ ano }}" required>
+    <label>Posto:</label>
+    <select name="filial" style="height:34px; border:1px solid #ccc; border-radius:7px; padding:0 8px; font-size:13px; min-width:220px;">
+      <option value="">(Todos os postos)</option>
+      {% for f in todas_filiais %}
+        <option value="{{ f[0] }}" {% if filial_sel == f[0]|string %}selected{% endif %}>
+          {{ f[0] }} - {{ f[1] }}
+        </option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn-filtrar">Carregar</button>
+  </div>
+</form>
+
+<div class="tabela-container">
+  <table>
+    <thead>
+      <tr>
+        <th class="col-fixa" rowspan="2">DESCRIÇÕES</th>
+        <th class="col-total" rowspan="2">TOTAL</th>
+        {% for mes in meses_colunas %}
+          <th>{{ mes[1] }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for linha in linhas %}
+
+        {% if linha.nome == "RESULTADO 1" %}
+          <tr class="linha-resultado">
+        {% elif linha.nome == "RESULTADO 2" %}
+          <tr class="linha-resultado">
+        {% elif linha.nome == "RESULTADO 3" %}
+          <tr class="linha-resultado">
+        {% else %}
+          <tr>
+        {% endif %}
+
+          <td class="col-fixa"><b>{{ linha.nome }}</b></td>
+
+          <td class="col-total num">
+            {{ "{:,.2f}".format(linha.total).replace(",", "X").replace(".", ",").replace("X", ".") }}
+          </td>
+
+          {% for mes in meses_colunas %}
+            <td class="num resultado-calor">
+              {{ "{:,.2f}".format(linha.por_mes[mes[0]]).replace(",", "X").replace(".", ",").replace("X", ".") }}
+            </td>
+          {% endfor %}
+
+        </tr>
+
+        {% if linha.nome == "RESULTADO 1" or linha.nome == "RESULTADO 2" %}
+          <tr class="linha-espaco">
+            <td colspan="{{ 2 + meses_colunas|length }}"></td>
+          </tr>
+        {% endif %}
+
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+  const escala = [
+    "#f8696b","#f3756d","#ef816f","#eb8d72","#e79974",
+    "#e3a577","#dfb179","#dbbd7c","#d7c97e","#d3d581",
+    "#cfe184","#c3da86","#b7d488","#abce8b","#9fc88d",
+    "#93c28f","#87bc92","#7bb694","#6fb096","#67b77e","#63be7b"
+  ];
+
+  document.querySelectorAll("tbody tr").forEach(row => {
+
+    const cells = row.querySelectorAll(".resultado-calor");
+    if (!cells.length) return;
+
+    const values = Array.from(cells).map(c => {
+      let v = c.innerText.replace(/\./g,'').replace(',','.');
+      return parseFloat(v) || 0;
+    });
+
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+
+    cells.forEach((c, i) => {
+      let v = values[i];
+
+      let idx = 10;
+
+      if (max !== min) {
+        let ratio = (v - min) / (max - min);
+        idx = Math.round(ratio * (escala.length - 1));
+      }
+
+      idx = Math.max(0, Math.min(idx, escala.length - 1));
+
+      c.style.backgroundColor = escala[idx];
+    });
+
+  });
+
+});
+</script>
+
+{% endblock %}

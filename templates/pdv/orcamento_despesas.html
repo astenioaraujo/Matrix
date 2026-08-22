@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:32px; font-weight:800; margin-bottom:4px; color:#111; }
+  .pagina-subtitulo { font-size:18px; margin-bottom:20px; color:#333; }
+  .bloco { background:#fff; border:1px solid #d9d9d9; border-radius:10px; padding:18px; margin-bottom:16px; }
+  .filtros { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
+  .campo { display:flex; flex-direction:column; gap:4px; }
+  .campo label { font-size:12px; font-weight:700; color:#555; }
+  select, input { padding:8px 10px; border-radius:6px; border:1px solid #bbb; font-size:14px; }
+  .btn { padding:9px 18px; border-radius:8px; border:1px solid #1a73e8; background:#1a73e8;
+         color:#fff; font-weight:700; cursor:pointer; }
+  .btn.verde { background:#16a34a; border-color:#16a34a; }
+  .tabela-wrap { overflow-x:auto; }
+  table { border-collapse:collapse; table-layout:fixed; }
+  th, td { border:1px solid #ddd; padding:6px; font-size:13px; }
+  th { background:#dbe8f4; white-space:nowrap; }
+  th.mes { width:96px; text-align:center; }
+  td.tipo { position:sticky; left:0; background:#f7f9fc; font-weight:700; width:220px; z-index:2; }
+  th.tipo { position:sticky; left:0; z-index:3; width:220px; text-align:left; }
+  td.mes { text-align:right; }
+  td.mes input { width:100%; box-sizing:border-box; border:1px solid transparent; background:transparent;
+                 text-align:right; font-variant-numeric:tabular-nums; padding:5px 4px; }
+  td.mes input:focus { border-color:#1a73e8; background:#fff; outline:none; }
+  td.mes.gerado { background:#f0fdf4; }
+  td.mes.gerado input { color:#166534; font-weight:700; }
+  tr.totais td { background:#eef2f7; font-weight:800; text-align:right;
+                 font-variant-numeric:tabular-nums; }
+  .vazio { color:#777; padding:12px 0; }
+  .nota { font-size:13px; color:#666; margin-top:12px; }
+  .status-msg { font-size:13px; margin-top:10px; min-height:18px; font-weight:600; color:#9f2f2f; }
+  .status-msg.ok { color:#166534; }
+  .acoes-mes { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
+</style>
+
+<div class="pagina-titulo">📆 Orçamento de Despesas</div>
+<div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+<div class="bloco">
+  <form method="get" class="filtros">
+    <div class="campo">
+      <label for="ano">Ano</label>
+      <select id="ano" name="ano" onchange="this.form.submit()">
+        {% for a in anos %}<option value="{{ a }}" {{ 'selected' if a == ano }}>{{ a }}</option>{% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn">Consultar</button>
+  </form>
+</div>
+
+<div class="bloco">
+  {% if dados.linhas %}
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="tipo">Tipo de despesa</th>
+            {% for numero, nome in meses %}<th class="mes">{{ nome[:3] }}</th>{% endfor %}
+            <th class="mes">Ano</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for linha in dados.linhas %}
+            <tr>
+              <td class="tipo">{{ linha.tipo.nome }}</td>
+              {% for m in linha.meses %}
+                <td class="mes {{ 'gerado' if m.titulos }}"
+                    title="{% if m.titulos %}{{ m.titulos }} título(s) gerado(s) — R$ {{ m.lancado|br }}, pago R$ {{ m.pago|br }}{% else %}sem título gerado{% endif %}">
+                  <input type="number" step="0.01" value="{{ '%.2f'|format(m.previsto) if m.previsto else '' }}"
+                         data-tipo="{{ linha.tipo.id_pdv_despesa_tipo }}" data-mes="{{ m.mes }}"
+                         onchange="salvarPrevisao(this, false)"
+                         ondblclick="salvarPrevisao(this, true)">
+                </td>
+              {% endfor %}
+              <td class="mes"><strong>{{ linha.total_previsto|br }}</strong></td>
+            </tr>
+          {% endfor %}
+          <tr class="totais">
+            <td class="tipo">Total previsto</td>
+            {% for t in dados.totais %}<td>{{ t.previsto|br }}</td>{% endfor %}
+            <td>{{ dados.total_previsto|br }}</td>
+          </tr>
+          <tr class="totais">
+            <td class="tipo">Já virou título</td>
+            {% for t in dados.totais %}<td>{{ t.lancado|br }}</td>{% endfor %}
+            <td>{{ dados.total_lancado|br }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="acoes-mes" style="margin-top:18px">
+      <div class="campo">
+        <label for="mesGerar">Gerar os títulos de</label>
+        <select id="mesGerar">
+          {% for numero, nome in meses %}
+            <option value="{{ numero }}" {{ 'selected' if numero == mes_atual }}>{{ nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="button" class="btn verde" id="btnGerar">Gerar títulos do mês</button>
+    </div>
+    <div class="status-msg" id="status"></div>
+  {% else %}
+    <div class="vazio">
+      Nenhum tipo de despesa cadastrado. Cadastre em
+      <a href="{{ url_for('pdv.cadastro', chave='despesas-tipos') }}">Cadastros → Tipos de Despesa</a>.
+    </div>
+  {% endif %}
+
+  <div class="nota">
+    Aqui é <strong>previsão</strong>: nada nesta tela deve nada a ninguém, não vence e não aparece
+    em Contas a Pagar. Digite o valor e saia do campo para gravar; <strong>duplo clique</strong>
+    repete o valor daquele mês <strong>até dezembro</strong>. A obrigação só nasce em
+    “Gerar títulos do mês”, que cria um título por previsão ainda não gerada — rodar de novo não
+    duplica. Chegando a conta com outro valor, corrija o título em
+    <a href="{{ url_for('pdv.tela_titulos_manuais') }}">Títulos Manuais</a>.
+  </div>
+</div>
+
+<script>
+  const ANO = {{ ano }};
+
+  function paraNumero(texto) {
+    if (!texto) return 0;
+    const n = parseFloat(String(texto).trim().replace(",", "."));
+    return isNaN(n) ? 0 : n;
+  }
+
+  function aviso(texto, ok) {
+    const el = document.getElementById("status");
+    el.textContent = texto;
+    el.classList.toggle("ok", !!ok);
+  }
+
+  async function enviar(url, corpo) {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(corpo),
+    });
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+    }
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.erro || "Erro.");
+    return data;
+  }
+
+  async function salvarPrevisao(campo, replicar) {
+    const valor = paraNumero(campo.value);
+    try {
+      const data = await enviar("/pdv/api/financeiro/orcamento", {
+        id_pdv_despesa_tipo: Number(campo.dataset.tipo),
+        ano: ANO,
+        mes: Number(campo.dataset.mes),
+        valor: valor,
+        replicar: !!replicar,
+      });
+      if (replicar) { location.reload(); return; }
+      campo.value = valor ? valor.toFixed(2) : "";
+      aviso("Previsão gravada.", true);
+    } catch (e) {
+      aviso(e.message || "Erro.", false);
+    }
+  }
+
+  document.getElementById("btnGerar")?.addEventListener("click", async () => {
+    const mes = Number(document.getElementById("mesGerar").value);
+    try {
+      const data = await enviar("/pdv/api/financeiro/orcamento/gerar-titulos", { ano: ANO, mes: mes });
+      if (!data.titulos) { aviso("Nada a gerar: as previsões deste mês já viraram títulos.", true); return; }
+      location.reload();
+    } catch (e) {
+      aviso(e.message || "Erro.", false);
+    }
+  });
+</script>
+
+{% endblock %}

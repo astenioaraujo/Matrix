@@ -324,9 +324,52 @@ Toda gravação passa por `lancar()`, que recebe o cursor de quem chamou e roda 
 
 **Conciliação bancária** é a coluna `conciliado` no lançamento, marcada em lote na tela de extrato. É conferência contra o extrato do banco — **não altera valor nenhum**.
 
+**Caixa do dia** (`/financeiro/caixa`, permissão `CAIXA` 1920): um dia, todas as contas ou uma, em grid. Positivo entra, negativo sai; cada conta mostra **saldo inicial → saldo final** (o inicial vem de `saldo_ate()`, que hoje dá o acumulado já que os cadastros nascem com saldo inicial zero) e o rodapé consolida a empresa.
+
+> **Não tem tabela própria** (`migrations/criar_pdv_caixa_diario.sql` só cria a permissão). É uma forma de olhar e lançar sobre `pdv_lancamentos_financeiros`. Uma `lancamentos_caixa` separada partiria a verdade do caixa em duas: venda em dinheiro, baixa de nota e pagamento de título já gravam ali, e o caixa do dia nunca fecharia com o Caixa Geral nem com o extrato.
+
+O grid mostra **tudo** o que passou na conta no dia, mas só o lançamento **`MANUAL`** é editável (`ORIGENS_EDITAVEIS`): o que veio de venda, baixa ou transferência é consequência daquele documento — alterar aqui faria o caixa deixar de bater com ele. O endpoint recusa, não só a tela.
+
+### Títulos a Pagar: menu, consulta e fluxo de caixa
+
+`Financeiro → Títulos a Pagar` abre um **menu** (`/pdv/financeiro/titulos-pagar`, `templates/pdv/menu_titulos_pagar.html`) com **Consulta de Títulos**, **Fluxo de Caixa** e a entrada de títulos manuais.
+
+- **Consulta de Títulos** (`/pdv/contas-pagar`) filtra por **mês + ano do vencimento + situação** (mês "Todos" é o padrão: quem abre quer ver o que deve). Três valores no topo — em aberto, já pago e total do filtro — e rodapé somando as colunas Valor e Baixado. Tudo calculado na consulta, nada persistido.
+- **Consulta por Grupo e Conta** (`/financeiro/titulos-pagar/por-grupo`, `totais_por_grupo_conta()`): a mesma base vista de cima — **só os totais**, uma linha por conta gerencial, subtotal por grupo e total geral, com os mesmos três filtros. Título sem tipo de despesa (o que vem de nota de entrada) entra como "Sem classificação": deixá-lo de fora faria o total não bater com o da Consulta de Títulos.
+- **Fluxo de Caixa** (`/financeiro/titulos-pagar/fluxo-caixa`, `FLUXO_CAIXA_PAGAR` 1960, `fluxo_caixa_pagar()`): uma linha por **compromisso**, uma coluna por mês. As parcelas de um mesmo pagamento ("FOLHA (2/12)", "(3/12)"…) são agrupadas por fornecedor + descrição sem o sufixo de parcela (`_identidade`, `_RE_PARCELA`) — os 182 títulos d'O Closet viram 63 compromissos em 9 blocos de conta gerencial. Recalculado a cada abertura, nada gravado.
+
+**Fornecedor e descrição são campos separados** (`migrations/pdv_titulos_descricao_fornecedor.sql`): `pdv_titulos_pagar.descricao` é sempre o que se está pagando; o fornecedor só é preenchido quando existe fornecedor mesmo. Na carga, "Contato" trazia de tudo — LIVE e RECCO, mas também nome de funcionária, de sócio e rótulo genérico ("CARTÃO", "EMPRESA", "SIMPLES NACIONAL"); só a lista `FORNECEDORES` do script vira cadastro (21 dos 43 contatos, 71 dos 182 títulos) e nos demais o contato entra na descrição, para não se perder.
+
 Telas: `/pdv/financeiro` (menu), `/financeiro/caixa-geral` (consolidado, uma linha por conta + total), `/financeiro/extrato[/<id_conta>]` (extrato + conciliação), `/financeiro/lancamentos` (lançamento manual e transferência), `/financeiro/notas-prazo` (receber e converter em títulos), `/financeiro/titulos-receber` e `/pdv/contas-pagar` (com o pagamento).
 
 Baixa parcial é aceita nos três lados: `valor_baixado` acumula e a situação só vira BAIXADO/BAIXADA quando quita. Baixar acima do saldo em aberto é recusado.
+
+## Títulos Manuais e Orçamento de Despesas
+
+A despesa que não passa por nota de entrada: luz, água, telefone, aluguel. Duas telas em `Financeiro`, serviço em `services/pdv_titulos_manuais_service.py`, migration `migrations/criar_pdv_titulos_manuais.sql`.
+
+> **O título manual não tem tabela própria — é uma `origem` em `pdv_titulos_pagar`.** Ele gera a *mesma* obrigação que a compra gera. Uma `pdv_titulos_manuais` separada partiria Contas a Pagar em duas: total em aberto, vencidos e fluxo projetado passariam a somar duas fontes, e a primeira tela que esquecesse uma delas mentiria (mesmo raciocínio de `criar_pdv_caixa_diario.sql`). Origens: `NOTA_ENTRADA` (default, e é o que os títulos antigos receberam), `MANUAL`, `ORCAMENTO`.
+>
+> **O orçamento, esse sim, é tabela separada.** Previsão não é obrigação: o valor previsto da luz de outubro não deve nada a ninguém, não vence, não é baixado e **não pode aparecer em Contas a Pagar**. `pdv_orcamento_despesas` (uma linha por tipo/ano/mês) só vira título quando alguém confirma o mês.
+
+- `pdv_despesas_tipos` — catálogo por empresa (nome, grupo, `dia_vencimento`), entrada nova no `CADASTROS` (`/pdv/cadastros/despesas-tipos`), sem template nem endpoint novo.
+- Colunas novas em `pdv_titulos_pagar`: `origem`, `id_pdv_despesa_tipo`, `id_pdv_orcamento`, `competencia`, `observacao`.
+- **`competencia` é o mês a que a despesa se refere, não o do vencimento** — a luz de agosto vence em setembro e continua sendo despesa de agosto. É por ela que as duas telas filtram o mês.
+- **Títulos Manuais** (`/pdv/financeiro/titulos-manuais`, `TITULOS_MANUAIS` 1930): filtro competência/situação, inclusão em linha nova no próprio bloco (padrão de `saldos_contas_bancarias.html`), com parcelamento via `parcelar()`. Excluir só vale para `MANUAL`/`ORCAMENTO` **e** sem nada baixado — título com baixa já virou saída de caixa e o lançamento ficaria órfão; título de nota de entrada pertence àquele documento (recusado no serviço, não só na tela).
+- **Orçamento** (`/pdv/financeiro/orcamento`, `ORCAMENTO_DESPESAS` 1940): grade tipo × 12 meses, previsto digitado célula a célula; **duplo clique replica o valor até dezembro** (`replicar_previsao` — "de agosto em diante" é o caso comum). Previsto zerado apaga a linha, salvo se ela já gerou título. "Gerar títulos do mês" (`gerar_titulos_do_mes`) cria um título por previsão que ainda não gerou nenhum — **rodar de novo não duplica** (`NOT EXISTS` sobre `id_pdv_orcamento`). Previsto × lançado × pago é recalculado a cada abertura, nunca gravado.
+- Permissão do cadastro: `DESPESAS_TIPOS` 1950.
+
+### Classificação gerencial (grupos e contas do Fluxo de Caixa)
+
+`pdv_despesas_tipos.cod_grupo` / `cod_conta` apontam para `grupos_gerenciais` + `contas_gerenciais` do Matrix (`migrations/classificar_despesas_pdv.sql`). **A classificação fica no tipo, não no título** — repeti-la na linha do título seria a mesma verdade em dois lugares, que diverge na primeira correção; reclassificar o tipo conserta de uma vez todos os títulos dele, inclusive os já pagos. Sem FK composta de propósito: `contas_gerenciais` tem triggers que bloqueiam INSERT/DELETE.
+
+### Carga do Contas a Pagar d'O Closet (13/08/2026)
+
+`carga_contas_pagar_ocloset.py` (roda com `--aplicar`; sem a flag simula). Origem `IMPORTADO` (também listada e excluível em Títulos Manuais), com `chave_origem` (vencimento + contato + descrição + valor) e índice único parcial — **rodar de novo não duplica**.
+
+- **A classificação sai do CONTATO, não da coluna "Categoria" do arquivo.** No arquivo a mesma despesa recorrente troca de categoria conforme o mês: o cartão do Sam's Club é "Despesas administrativas" em setembro, "Compra de insumos" em outubro e "Marketing" em dezembro; a SECRAN aparece com três nomes. Quem recebe é estável — a categoria do arquivo só desempata contato desconhecido (na carga real não foi preciso: 173 linhas pelo contato, 9 pela descrição, 0 pela categoria).
+- **Uma linha do arquivo = um título de parcela única**: o arquivo já vem parcela a parcela, com o vencimento de cada uma.
+- Resultado: **182 títulos, R$ 463.966,84** — 09/2026 (67, R$ 183.756,86), 10/2026 (62, R$ 155.958,69), 12/2026 (53, R$ 124.251,29). Bate com os TOTAL dos arquivos. Dois dos quatro CSVs eram **o mesmo mês baixado duas vezes** (a carga compara o conteúdo e ignora). **Novembro/2026 não veio** no que foi exportado.
 
 **Permissões** (sistema `PDV`): `MENU` 1600, `VENDER` 1610, `CONSULTAR_VENDAS` 1620, `CADASTROS` 1630, `CLIENTES` 1640, `PRODUTOS` 1650, `VENDEDORES` 1660, `CONTAS_FINANCEIRAS` 1670, `OPERADORAS_CARTAO` 1680, `LANCAMENTOS` 1690, `NOTAS_PRAZO` 1700, `CAIXA_CENTRAL` 1710, `ESTOQUE` 1720, `AJUSTE_ESTOQUE` 1730, `FORNECEDORES` 1740, `CTE` 1750, `ENTRADA_MERCADORIAS` 1760, `CONTAS_PAGAR` 1770, `FINANCEIRO_MENU` 1775, `EXTRATO` 1780, `CAIXA_GERAL` 1790, `TRANSFERENCIAS` 1800, `CONCILIACAO` 1810, `TITULOS_RECEBER` 1820, `BAIXAR_PAGAR` 1830. Nenhuma concedida a ninguém — só bypass de superusuário.
 

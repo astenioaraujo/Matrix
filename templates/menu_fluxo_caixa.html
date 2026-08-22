@@ -64,6 +64,12 @@
     </a>
   {% endif %}
 
+  {% if pode_resultado_mb_anual %}
+    <a href="{{ url_for('financeiro.resultado_mb_anual', ano=ano_atual) }}">
+      Resultado MB Anual por Posto
+    </a>
+  {% endif %}
+
   {% if pode_lancamentos %}
     <a href="{{ url_for('financeiro.listar_lancamentos') }}">
       Lançamentos
@@ -85,6 +91,12 @@
   {% if pode_matricial_detalhado %}
     <a href="{{ url_for('financeiro.dados_detalhados') }}">
       Matricial Detalhado
+    </a>
+  {% endif %}
+
+  {% if pode_matricial_anual %}
+    <a href="{{ url_for('financeiro.matricial_anual') }}">
+      Matricial Anual por Posto
     </a>
   {% endif %}
 
