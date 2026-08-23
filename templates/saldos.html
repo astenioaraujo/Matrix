@@ -627,7 +627,7 @@
     // Linha importada de Operações não se digita: primeiro "Desfazer importação".
     const soLeitura = !editavel || ehEspelho || linha.importado;
     const dica = linha.importado
-      ? ' title="Valor importado de Operações — use Desfazer importação para editar"'
+      ? ' title="Valor importado — use Desfazer importação para editar"'
       : (ehEspelho ? ' title="Espelho do lado Bancos — edite em Bancos"' : "");
     return `<td class="valor"><input type="text" class="input-valor" data-tipo="${tipo}" data-campo="${campo}" data-data="${dataStr}" data-cod-filial="${fid}" data-id-item="${linha.id_item}" value="${formatarBR(valor)}"${dica} ${soLeitura ? "readonly" : ""}></td>`;
   }
@@ -644,22 +644,33 @@
      Operações (mesmos números da Consulta de Estoques, em R$). Só aparece
      no modo Bancos, num dia ainda editável e com as movimentações daquele
      dia BLOQUEADAS em Operações — antes disso os números ainda mudam lá. */
-  function celulaImportar(linha, dataStr, bloqueioOperacoes) {
-    return `<td class="acao-importar">${botaoImportar(linha, dataStr, bloqueioOperacoes)}</td>`;
+  function celulaImportar(linha, dataStr, bloqueioOperacoes, importacaoCr) {
+    return `<td class="acao-importar">${botaoImportar(linha, dataStr, bloqueioOperacoes, importacaoCr)}</td>`;
   }
 
-  function botaoImportar(linha, dataStr, bloqueioOperacoes) {
-    if (!linha.origem_estoque) return "";
+  function botaoImportar(linha, dataStr, bloqueioOperacoes, importacaoCr) {
+    // Duas origens de importação, cada uma com a sua condição de liberação:
+    //  - estoque (Operações): tudo bloqueado lá até a data;
+    //  - CR (Fiado e Cartões): existe a importação do dia seguinte ao saldo.
+    const origemCr = linha.origem_cr;
+    if (!linha.origem_estoque && !origemCr) return "";
+
+    const fonte = origemCr ? "cr" : "estoque";
+    const origem = origemCr || linha.origem_estoque;
 
     if (linha.importado) {
-      return `<button type="button" class="btn-importar desfazer" data-origem="${linha.origem_estoque}" data-data="${dataStr}" data-acao="desfazer">↩ Desfazer importação</button>`;
+      return `<button type="button" class="btn-importar desfazer" data-fonte="${fonte}" data-origem="${origem}" data-data="${dataStr}" data-acao="desfazer">↩ Desfazer importação</button>`;
     }
 
-    if (!bloqueioOperacoes) {
-      return `<button type="button" class="btn-importar" disabled title="Só depois de bloquear em Operações tudo até esta data">Importar</button>`;
+    const liberado = origemCr ? ((importacaoCr || {})[origemCr] === true) : bloqueioOperacoes;
+    if (!liberado) {
+      const dica = origemCr
+        ? "Só depois da importação do dia seguinte em CR → " + (origemCr === "FIADO" ? "Fiado" : "Cartões")
+        : "Só depois de bloquear em Operações tudo até esta data";
+      return `<button type="button" class="btn-importar" disabled title="${dica}">Importar</button>`;
     }
 
-    return `<button type="button" class="btn-importar" data-origem="${linha.origem_estoque}" data-data="${dataStr}" data-acao="importar">Importar</button>`;
+    return `<button type="button" class="btn-importar" data-fonte="${fonte}" data-origem="${origem}" data-data="${dataStr}" data-acao="importar">Importar</button>`;
   }
 
   const LARGURA_ROTULO = 220;
@@ -681,11 +692,12 @@
     return `<colgroup>${cols}</colgroup>`;
   }
 
-  function colgroupSimples(filiais, modo) {
+  function colgroupSimples(filiais, modo, colunaImportar) {
     const largura = modo === "lado_a_lado" ? LARGURA_COL * 2 : LARGURA_COL;
     let cols = `<col style="width:${LARGURA_ROTULO}px">`;
     filiais.forEach(() => { cols += `<col style="width:${largura}px">`; });
     cols += `<col style="width:${largura}px">`;
+    if (colunaImportar) cols += `<col style="width:${LARGURA_COL_IMPORTAR}px">`;
     return `<colgroup>${cols}</colgroup>`;
   }
 
@@ -741,19 +753,19 @@
     return linha;
   }
 
-  function montarTabelaBloco(titulo, linhas, subtotal, tipo, dataStr, filiais, modo, editavel, mostrarCabecalho, totalGeral, mostrarBotaoDuplicar, bloqueioOperacoes) {
+  function montarTabelaBloco(titulo, linhas, subtotal, tipo, dataStr, filiais, modo, editavel, mostrarCabecalho, totalGeral, mostrarBotaoDuplicar, bloqueioOperacoes, importacaoCr) {
     const { cols, subhead } = theadColunas(filiais, modo);
 
     // Coluna de importação só existe quando há botão para mostrar: linha ligada
     // a uma origem de estoque, modo Bancos e dia ainda editável.
-    const colunaImportar = modo === "banco" && editavel && linhas.some(l => l.origem_estoque);
+    const colunaImportar = modo === "banco" && editavel && linhas.some(l => l.origem_estoque || l.origem_cr);
 
     let corpo = "";
     linhas.forEach(linha => {
       corpo += `<tr><td class="rotulo">${escapeHtml(linha.label)}</td>`;
       filiais.forEach(f => { corpo += celulaLinha(linha, f, tipo, dataStr, modo, editavel); });
       corpo += celulaTotalLinha(linha, modo);
-      if (colunaImportar) corpo += celulaImportar(linha, dataStr, bloqueioOperacoes);
+      if (colunaImportar) corpo += celulaImportar(linha, dataStr, bloqueioOperacoes, importacaoCr);
       corpo += "</tr>";
     });
 
@@ -811,10 +823,32 @@
     `;
   }
 
+  /* Perdas e Sobras também vem de Operações (mesma Consulta de Estoques das
+     linhas de estoque, mesmo critério de bloqueio). O botão fica na coluna de
+     ação, depois do TOTAL, e vira "Desfazer importação" quando a linha veio
+     importada. */
+  function botaoImportarInformado(campo, dia, editavel) {
+    if (!CAMPOS_INFORMADOS_IMPORTAVEIS.has(campo)) return "";
+    if (!editavel) return "";
+
+    if ((dia.informados_importados || []).includes(campo)) {
+      return `<button type="button" class="btn-importar desfazer" data-campo="${campo}" data-data="${dia.data}" data-acao="desfazer">↩ Desfazer importação</button>`;
+    }
+    if (!dia.bloqueio_operacoes) {
+      return `<button type="button" class="btn-importar" disabled title="Só depois de bloquear em Operações tudo até esta data">Importar</button>`;
+    }
+    return `<button type="button" class="btn-importar" data-campo="${campo}" data-data="${dia.data}" data-acao="importar">Importar</button>`;
+  }
+
+  const CAMPOS_INFORMADOS_IMPORTAVEIS = new Set(["perdas_sobras"]);
+
   function montarBlocoInformados(dia, filiais, modo, editavel) {
     const dataStr = dia.data;
+    const importados = dia.informados_importados || [];
+    const colunaImportar = editavel;
     const campos = [
       { campo: "perdas_sobras", label: "Perdas (+) / Sobras (−)" },
+      { campo: "aplicacoes_antecipacoes", label: "Aplicações e Antecipações (+)" },
       { campo: "extras", label: "Extras" },
       { campo: "emprestimos_devolucoes", label: "Empréstimos (+) / Devoluções (−)" },
       { campo: "despesas", label: "Despesas" },
@@ -823,6 +857,12 @@
 
     let corpo = "";
     campos.forEach(c => {
+      // Linha importada de Operações não se digita: primeiro "Desfazer importação".
+      const importado = importados.includes(c.campo);
+      const soLeitura = !editavel || importado;
+      const dica = importado
+        ? ' title="Valor importado — use Desfazer importação para editar"'
+        : "";
       corpo += `<tr><td class="rotulo">${c.label}</td>`;
       let somaLinha = 0;
       filiais.forEach(f => {
@@ -830,9 +870,10 @@
         const registro = dia.valores_informados[fid] || {};
         const valor = registro[c.campo] || 0;
         somaLinha += valor;
-        corpo += `<td class="valor"><input type="text" class="input-valor" data-tipo="informado" data-campo="${c.campo}" data-data="${dataStr}" data-cod-filial="${fid}" value="${formatarBR(valor)}" ${editavel ? "" : "readonly"}></td>`;
+        corpo += `<td class="valor"><input type="text" class="input-valor" data-tipo="informado" data-campo="${c.campo}" data-data="${dataStr}" data-cod-filial="${fid}" value="${formatarBR(valor)}"${dica} ${soLeitura ? "readonly" : ""}></td>`;
       });
       corpo += `<td class="valor total valor-total-coluna">${formatarBR(somaLinha)}</td>`;
+      if (colunaImportar) corpo += `<td class="acao-importar">${botaoImportarInformado(c.campo, dia, editavel)}</td>`;
       corpo += "</tr>";
     });
 
@@ -845,13 +886,14 @@
       corpo += `<td class="valor ${v < 0 ? "negativo" : ""}">${formatarBR(v)}</td>`;
     });
     corpo += `<td class="valor total valor-total-coluna ${somaFinal < 0 ? "negativo" : ""}">${formatarBR(somaFinal)}</td>`;
+    if (colunaImportar) corpo += `<td class="acao-importar"></td>`;
     corpo += "</tr>";
 
     return `
       <div class="bloco-titulo">Valores Informados</div>
       <div class="table-wrapper">
         <table class="tabela-saldos tabela-informados">
-          ${colgroupSimples(filiais, modo)}
+          ${colgroupSimples(filiais, modo, colunaImportar)}
           <tbody>${corpo}</tbody>
         </table>
       </div>
@@ -871,7 +913,7 @@
     // Sem Estoques e Recebíveis não há TOTAL: ele soma os dois blocos, e sozinho
     // em cima das Contas Bancárias repetiria o SUBTOTAL delas.
     const blocoRecebiveis = MOSTRAR_RECEBIVEIS
-      ? montarTabelaBloco("Estoques e Recebíveis", dia.recebiveis, dia.subtotal_recebiveis, "recebivel", dia.data, filiais, modo, editavel, false, dia.total, podeDuplicarRecebiveis, dia.bloqueio_operacoes)
+      ? montarTabelaBloco("Estoques e Recebíveis", dia.recebiveis, dia.subtotal_recebiveis, "recebivel", dia.data, filiais, modo, editavel, false, dia.total, podeDuplicarRecebiveis, dia.bloqueio_operacoes, dia.importacao_cr)
       : "";
 
     return `
@@ -992,21 +1034,28 @@
   function ligarBotoesImportar(escopo) {
     escopo.querySelectorAll(".btn-importar[data-acao]").forEach(btn => {
       btn.addEventListener("click", function () {
-        importarEstoque(this.dataset.data, this.dataset.origem, this.dataset.acao);
+        // Estoques e recebíveis vão por origem; Valores Informados, por campo.
+        if (this.dataset.campo) {
+          importarInformado(this.dataset.data, this.dataset.campo, this.dataset.acao);
+        } else if (this.dataset.fonte === "cr") {
+          importarCr(this.dataset.data, this.dataset.origem, this.dataset.acao);
+        } else {
+          importarEstoque(this.dataset.data, this.dataset.origem, this.dataset.acao);
+        }
       });
     });
   }
 
-  async function importarEstoque(dataStr, origem, acao) {
+  async function chamarImportacao(url, corpo, acao) {
     const status = document.getElementById("statusSaldos");
     status.textContent = acao === "importar" ? "Importando de Operações..." : "Desfazendo importação...";
     status.classList.remove("erro");
 
     try {
-      const dados = await fetchJson("/api/saldos/importar-estoque", {
+      const dados = await fetchJson(url, {
         method: acao === "importar" ? "POST" : "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: dataStr, id_area: Number(document.getElementById("selArea").value), origem: origem }),
+        body: JSON.stringify(corpo),
       });
       if (dados.ok) {
         status.textContent = acao === "importar" ? "Valores importados de Operações." : "Importação desfeita.";
@@ -1019,6 +1068,24 @@
       status.textContent = e.message || "Erro na importação.";
       status.classList.add("erro");
     }
+  }
+
+  function importarInformado(dataStr, campo, acao) {
+    return chamarImportacao("/api/saldos/importar-informado", {
+      data: dataStr, id_area: Number(document.getElementById("selArea").value), campo: campo,
+    }, acao);
+  }
+
+  function importarCr(dataStr, origem, acao) {
+    return chamarImportacao("/api/saldos/importar-cr", {
+      data: dataStr, id_area: Number(document.getElementById("selArea").value), origem: origem,
+    }, acao);
+  }
+
+  function importarEstoque(dataStr, origem, acao) {
+    return chamarImportacao("/api/saldos/importar-estoque", {
+      data: dataStr, id_area: Number(document.getElementById("selArea").value), origem: origem,
+    }, acao);
   }
 
   function ligarBotoesDuplicar(escopo) {
@@ -1229,11 +1296,12 @@
 
     if (tipo === "informado") {
       const registro = dia.valores_informados[codFilial] || {
-        perdas_sobras: 0, extras: 0, emprestimos_devolucoes: 0, despesas: 0, despesas_caixa: 0,
+        perdas_sobras: 0, aplicacoes_antecipacoes: 0, extras: 0, emprestimos_devolucoes: 0, despesas: 0, despesas_caixa: 0,
       };
       const lancamento = {
         cod_filial: codFilial,
         perdas_sobras: registro.perdas_sobras || 0,
+        aplicacoes_antecipacoes: registro.aplicacoes_antecipacoes || 0,
         extras: registro.extras || 0,
         emprestimos_devolucoes: registro.emprestimos_devolucoes || 0,
         despesas: registro.despesas || 0,

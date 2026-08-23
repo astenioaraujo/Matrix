@@ -357,6 +357,9 @@ COLUNA_POR_ORIGEM = {
     "COMPRA": "compras_rs",
     "TRANSITO": "transito_rs",
     "ESTOQUE": "estoque_atual_rs",
+    # Perdas e Sobras vai para o bloco Valores Informados, não para um
+    # indicador de recebível — mas sai da mesma Consulta de Estoques.
+    "PERDA_SOBRA": "perda_sobra_rs",
 }
 
 
