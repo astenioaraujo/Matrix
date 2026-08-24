@@ -181,6 +181,7 @@ def salvar_atalhos_empresas():
     session["atalhos_empresas"] = escolhidas
     flash("Atalhos de empresa atualizados.", "sucesso")
 
+    # Volta com o painel fechado: salvou, acabou a configuração.
     return redirect(url_for("auth.escolher_empresa"))
 
 

@@ -2,19 +2,52 @@
 {% block content %}
 
 <style>
-  .box {
-    max-width: 520px;
+  .area-escolha {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 16px;
     margin: 40px auto;
+    flex-wrap: wrap;
+  }
+
+  .box {
+    width: 520px;
+    max-width: 100%;
     background: #fff;
     border: 1px solid #d9d9d9;
     border-radius: 12px;
     padding: 24px;
+    box-sizing: border-box;
+  }
+
+  .box-topo {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 18px;
   }
 
   .titulo {
     font-size: 28px;
     font-weight: 700;
-    margin-bottom: 18px;
+  }
+
+  .btn-config-atalhos {
+    background: none;
+    border: none;
+    color: #777;
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+
+  .btn-config-atalhos:hover {
+    background: #f2f2f2;
+    color: #333;
   }
 
   .linha-form {
@@ -36,9 +69,17 @@
   }
 
   .atalhos {
-    margin-top: 22px;
-    padding-top: 18px;
-    border-top: 1px solid #ececec;
+    width: 320px;
+    max-width: 100%;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 12px;
+    padding: 18px 20px;
+    box-sizing: border-box;
+  }
+
+  .atalhos[hidden] {
+    display: none;
   }
 
   .atalhos-titulo {
@@ -87,30 +128,41 @@
   }
 </style>
 
-<div class="box">
-  <div class="titulo">Escolher empresa</div>
+{% set tem_atalhos = empresas|length > 1 %}
+{% set abrir_atalhos = tem_atalhos and request.args.get('atalhos') %}
 
-  {% with mensagens = get_flashed_messages(with_categories=true) %}
-    {% for categoria, texto in mensagens %}
-      <div class="flash {{ 'error' if categoria == 'error' else '' }}">{{ texto }}</div>
-    {% endfor %}
-  {% endwith %}
-
-  <form method="post">
-    <div class="linha-form">
-      <label for="cod_empresa">Empresa</label>
-      <select id="cod_empresa" name="cod_empresa" required>
-        {% for e in empresas %}
-          <option value="{{ e.cod_empresa }}">{{ e.cod_empresa }} - {{ e.nome_fantasia }}</option>
-        {% endfor %}
-      </select>
+<div class="area-escolha">
+  <div class="box">
+    <div class="box-topo">
+      <div class="titulo">Escolher empresa</div>
+      {% if tem_atalhos %}
+        <button type="button" class="btn-config-atalhos" id="btn-config-atalhos"
+                onclick="alternarAtalhos()">⚙ Configurar atalhos da barra do topo</button>
+      {% endif %}
     </div>
 
-    <button type="submit" class="btn">Continuar</button>
-  </form>
+    {% with mensagens = get_flashed_messages(with_categories=true) %}
+      {% for categoria, texto in mensagens %}
+        <div class="flash {{ 'error' if categoria == 'error' else '' }}">{{ texto }}</div>
+      {% endfor %}
+    {% endwith %}
 
-  {% if empresas|length > 1 %}
-  <div class="atalhos">
+    <form method="post">
+      <div class="linha-form">
+        <label for="cod_empresa">Empresa</label>
+        <select id="cod_empresa" name="cod_empresa" required>
+          {% for e in empresas %}
+            <option value="{{ e.cod_empresa }}">{{ e.cod_empresa }} - {{ e.nome_fantasia }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <button type="submit" class="btn">Continuar</button>
+    </form>
+  </div>
+
+  {% if tem_atalhos %}
+  <div class="atalhos" id="painel-atalhos" {% if not abrir_atalhos %}hidden{% endif %}>
     <div class="atalhos-titulo">Atalhos na barra do topo</div>
     <div class="atalhos-ajuda">
       As empresas marcadas viram ícone ao lado do botão "Trocar empresa", para
@@ -131,6 +183,13 @@
       <button type="submit" class="btn" style="margin-top:10px;">Salvar atalhos</button>
     </form>
   </div>
+
+  <script>
+    function alternarAtalhos() {
+      var painel = document.getElementById('painel-atalhos');
+      painel.hidden = !painel.hidden;
+    }
+  </script>
   {% endif %}
 </div>
 
