@@ -7925,12 +7925,25 @@ def _contexto_importacao_estoque(cur, cod_empresa, dados):
 
 
 # Fiado e Cartões vêm do CR (Contas a Receber): cada origem tem a tabela de
-# importações e a de saldos por filial. O saldo do dia D confere com a
-# importação do dia D+1 — o arquivo é gerado na manhã seguinte.
+# importações, a de saldos por filial e o DESLOCAMENTO entre o dia do saldo e a
+# data_referencia da importação que o confere — os dois arquivos não são datados
+# do mesmo jeito:
+#
+#   FIADO   (+1): é a posição da carteira no momento em que se importa. O
+#                 arquivo é subido na manhã seguinte e datado com o dia da
+#                 importação, então o de D+1 é o que fecha o dia D.
+#   CARTOES  (0): é o movimento de um dia. Também é subido na manhã seguinte,
+#                 mas datado com o dia do MOVIMENTO — o de D fecha o dia D. O
+#                 de hoje só existiria amanhã.
 ORIGENS_CR = {
-    "FIADO": ("fiado_importacoes", "fiado_filiais"),
-    "CARTOES": ("cartoes_importacoes", "cartoes_filiais"),
+    "FIADO": ("fiado_importacoes", "fiado_filiais", 1),
+    "CARTOES": ("cartoes_importacoes", "cartoes_filiais", 0),
 }
+
+
+def data_importacao_cr(origem, data_saldo):
+    """data_referencia da importação do CR que confere o saldo daquele dia."""
+    return data_saldo + timedelta(days=ORIGENS_CR[origem][2])
 
 
 def importacao_cr_do_saldo(cur, cod_empresa, origem, data_saldo):
@@ -7939,7 +7952,7 @@ def importacao_cr_do_saldo(cur, cod_empresa, origem, data_saldo):
     cur.execute(f"""
         SELECT id FROM {tabela_imp}
          WHERE cod_empresa = %s AND data_referencia = %s
-    """, (cod_empresa, data_saldo + timedelta(days=1)))
+    """, (cod_empresa, data_importacao_cr(origem, data_saldo)))
     linha = cur.fetchone()
     if not linha:
         return None
@@ -8000,7 +8013,7 @@ def areas_com_importacao_cr(cur, cod_empresa, origem, data_referencia):
             ON a.id_area = i.id_area AND a.cod_empresa = i.cod_empresa
          WHERE i.cod_empresa = %s AND i.data = %s AND ir.origem_cr = %s
          ORDER BY a.nome_area
-    """, (cod_empresa, data_referencia - timedelta(days=1), origem))
+    """, (cod_empresa, data_referencia - timedelta(days=ORIGENS_CR[origem][2]), origem))
     return [r["nome_area"] if isinstance(r, dict) else r[0] for r in cur.fetchall()]
 
 
@@ -8173,7 +8186,7 @@ def api_importar_cr_saldos():
         if not id_importacao:
             raise ErroConsulta(
                 "Não há importação no CR de "
-                f"{(data_ref + timedelta(days=1)).strftime('%d/%m/%Y')} para conferir o saldo de "
+                f"{data_importacao_cr(ctx['origem'], data_ref).strftime('%d/%m/%Y')} para conferir o saldo de "
                 f"{data_ref.strftime('%d/%m/%Y')}.", 409)
 
         cur.execute("""
