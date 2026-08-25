@@ -1938,8 +1938,10 @@ def dados_detalhados():
         """, (cod_empresa,))
         grupos_disp = cur.fetchall()   # [(num, descricao), ...]
 
+        # sem filtro, abre no grupo 4 (despesas); se a empresa não tiver, no primeiro
         if grupo is None and grupos_disp:
-            grupo = grupos_disp[0][0]
+            nums = [g[0] for g in grupos_disp]
+            grupo = 4 if 4 in nums else nums[0]
 
         # contas disponíveis para o grupo selecionado
         cur.execute("""
