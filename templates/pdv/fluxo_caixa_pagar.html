@@ -28,11 +28,17 @@
      title, em vez de esticar a coluna */
   td.desc .corta, th.desc .corta { display:block; overflow:hidden;
                                    text-overflow:ellipsis; white-space:nowrap; }
-  tr.conta td { background:#eaf0f7; font-weight:800; }
+  tr.espaco td { background:transparent; border:none; padding:0; height:42px; }
+  tr.cabecalho td { background:#eaf0f7; font-weight:800; border-top:2px solid #9aa9bb; }
+  tr.cabecalho td.desc { background:#eaf0f7; }
+  tr.conta td { background:#eaf0f7; font-weight:800; border-top:2px solid #9aa9bb; }
   tr.conta td.desc { background:#eaf0f7; }
   tr.linha td.desc { padding-left:20px; color:#333; }
   tr.linha td.desc small { color:#777; font-weight:600; font-size:11px; }
-  tr.total td { background:#dfe7ef; font-weight:800; border-top:2px solid #b9c6d6; }
+  /* linha grossa separando os totais do resto: a coluna Total das colunas de
+     mês, e a linha TOTAL A PAGAR dos compromissos */
+  th.tot, td.tot { border-left:3px solid #7a8ba0; }
+  tr.total td { background:#dfe7ef; font-weight:800; border-top:3px solid #7a8ba0; }
   tr.total td.desc { background:#dfe7ef; }
   td.zero { color:#c9c9c9; }
   .vazio { color:#777; padding:12px 0; }
@@ -81,15 +87,13 @@
         </thead>
         <tbody>
           {% for bloco in dados.blocos %}
-            <tr class="conta">
-              <td class="desc" title="{{ bloco.nome_conta }}">
-                {% if bloco.chave[0] %}<span class="grupo-selo corta">{{ bloco.nome_grupo }} · {{ bloco.chave[0] }}.{{ bloco.chave[1] }}</span>{% endif %}
-                <span class="corta">{{ bloco.nome_conta }}</span>
+            {# cabeçalho do grupo em cima, sem valores: o total dele fecha o bloco embaixo #}
+            <tr class="cabecalho">
+              <td class="desc" title="{% if bloco.chave[0] %}{{ bloco.chave[0] }}.{{ bloco.chave[1] }} - {% endif %}{{ bloco.nome_conta }}">
+                <span class="corta">{% if bloco.chave[0] %}{{ bloco.chave[0] }}.{{ bloco.chave[1] }} - {% endif %}{{ bloco.nome_conta }}</span>
               </td>
-              {% for m in dados.meses %}
-                <td class="mes {{ 'zero' if not bloco.valores[m] }}">{{ bloco.valores[m]|br if bloco.valores[m] else '—' }}</td>
-              {% endfor %}
-              <td class="tot">{{ bloco.total|br }}</td>
+              {% for m in dados.meses %}<td class="mes"></td>{% endfor %}
+              <td class="tot"></td>
             </tr>
             {% for linha in bloco.linhas %}
               <tr class="linha">
@@ -106,6 +110,19 @@
                 <td class="tot">{{ linha.total|br }}</td>
               </tr>
             {% endfor %}
+            {# o total do grupo fecha o bloco, embaixo das suas linhas #}
+            <tr class="conta">
+              <td class="desc" title="TOTAL DE {{ bloco.nome_conta }}">
+                <span class="corta">TOTAL DE {{ bloco.nome_conta }}</span>
+              </td>
+              {% for m in dados.meses %}
+                <td class="mes {{ 'zero' if not bloco.valores[m] }}">{{ bloco.valores[m]|br if bloco.valores[m] else '—' }}</td>
+              {% endfor %}
+              <td class="tot">{{ bloco.total|br }}</td>
+            </tr>
+            {# respiro entre um bloco e o próximo: sem borda nenhuma, para a
+               linha grossa da coluna Total não atravessar o intervalo #}
+            {% if not loop.last %}<tr class="espaco"><td colspan="{{ dados.meses|length + 2 }}"></td></tr>{% endif %}
           {% endfor %}
           <tr class="total">
             <td class="desc"><span class="corta">TOTAL A PAGAR</span></td>
@@ -129,5 +146,78 @@
     títulos de <a href="{{ url_for('pdv.contas_pagar') }}">Consulta de Títulos</a>.
   </div>
 </div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  // Mapa de calor: mesma escala de cores do matricial (51 faixas discretas).
+  // Uma barra de calor só para a grade inteira, sobre as linhas de compromisso —
+  // as linhas de conta e o TOTAL A PAGAR ficam de fora por serem totais, e a
+  // coluna Total também, senão ela puxaria a escala sozinha.
+  function corExcel(ratio) {
+    let r, g, b;
+    if (ratio <= 0.5) {
+      const t = ratio / 0.5;
+      r = 248 + (255 - 248) * t;
+      g = 105 + (235 - 105) * t;
+      b = 107 + (132 - 107) * t;
+    } else {
+      const t = (ratio - 0.5) / 0.5;
+      r = 255 + (99 - 255) * t;
+      g = 235 + (190 - 235) * t;
+      b = 132 + (123 - 132) * t;
+    }
+    return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+  }
+
+  function coletar(nos) {
+    const pares = [];
+    nos.forEach((celula) => {
+      if (celula.classList.contains("zero")) return;
+      const texto = celula.innerText.replace(/\./g, "").replace(",", ".").trim();
+      const valor = parseFloat(texto);
+      if (isNaN(valor)) return;
+      pares.push([celula, valor]);
+    });
+    return pares;
+  }
+
+  function pintar(pares) {
+    if (!pares.length) return;
+    const valores = pares.map((p) => p[1]);
+    const min = Math.min(...valores);
+    const max = Math.max(...valores);
+    pares.forEach(([celula, valor]) => {
+      // invertido: é despesa — valor alto vai para o vermelho, baixo para o verde
+      let ratio = 1 - (valor - min) / ((max - min) || 1);
+      ratio = Math.round(ratio * 50) / 50;   // 51 faixas discretas, como no Excel
+      celula.style.background = corExcel(ratio);
+      celula.style.color = "#1a1a1a";
+    });
+  }
+
+  // Uma escala por grupo (bloco de conta gerencial), não uma só para a grade
+  // inteira: dentro de Fornecedores as cores se comparam com Fornecedores,
+  // dentro de Impostos com Impostos. Com escala única um bloco grande
+  // achatava todos os outros.
+  let bloco = [];
+  function fecharBloco() {
+    if (!bloco.length) return;
+    pintar(coletar(bloco.flatMap((tr) => Array.from(tr.querySelectorAll("td.mes")))));
+    pintar(coletar(bloco.flatMap((tr) => Array.from(tr.querySelectorAll("td.tot")))));
+    bloco = [];
+  }
+
+  document.querySelectorAll("tbody tr").forEach((tr) => {
+    if (tr.classList.contains("linha")) {
+      bloco.push(tr);
+    } else {
+      fecharBloco();   // tr.cabecalho/tr.conta delimitam o grupo; tr.total encerra a grade
+    }
+  });
+  fecharBloco();
+
+  pintar(coletar(document.querySelectorAll("tbody tr.total td.mes")));
+});
+</script>
 
 {% endblock %}

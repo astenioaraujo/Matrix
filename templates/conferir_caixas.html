@@ -1024,7 +1024,7 @@
       <div class="pv-titulo" id="pv-titulo">Visualizar</div>
       <div class="pv-filtro">
         <label class="pv-switch">
-          <input type="checkbox" id="pv-chk-so-detalhados" checked
+          <input type="checkbox" id="pv-chk-so-detalhados"
                  onchange="alternarFiltroVisualizar(this.checked)">
           <span class="pv-switch-trilho"></span>
         </label>
@@ -1583,16 +1583,19 @@
   }
 
   /* ── PAINEL DE VISUALIZAÇÃO ──────────────────────────────────────────────
-     Só leitura: lista formas/controles que tiveram valor naquele dia (pula
-     os zerados). Quando o item tem detalhamento, mostra as linhas
-     (observação + valor); quando não tem, mostra só o valor total.
-     A chave "só com detalhamento" filtra pra só os itens com MAIS DE UMA
-     linha lançada (a soma delas é que forma o total) — não é o mesmo que
-     "tem observação", um item pode ter uma linha só com observação e não
-     conta como soma. */
+     Só leitura, e só do que foi digitado no detalhamento (✎): cada item
+     aparece com as suas linhas (observação + valor) e o total delas.
+     Item com UMA linha só entra igual — foi digitado no ✎. Valor digitado
+     direto na célula da grade NÃO entra: o painel lê o detalhamento, não
+     repete o grid.
+     A chave "só com detalhamento (soma)" estreita ainda mais, para os itens
+     com MAIS DE UMA linha. */
   let pvItens = null; // { formas:[{nome,total,linhas}], controles:[...] }
   let pvObsDia = '';  // observação livre do dia, mostrada no rodapé do painel
-  let pvSoDetalhados = true; // a tela abre já filtrando só os que são soma
+  /* Abre mostrando todo o detalhamento do dia. Abria filtrado em "soma", e
+     item com uma linha só (ex.: "Ticket Prime") não aparecia — lançamento
+     feito no ✎ que sumia da visualização. */
+  let pvSoDetalhados = false;
 
   function pvLinhaHtml(nome, total, linhas) {
     const temSublinhas = linhas && linhas.length > 0;
@@ -1631,7 +1634,7 @@
       : '';
 
     if (!formasVisiveis.length && !controlesVisiveis.length) {
-      cont.innerHTML = `<div class="pv-vazio">${pvSoDetalhados ? 'Nenhum item com detalhamento (soma) neste dia.' : 'Nenhum valor preenchido neste dia.'}</div>` + htmlObs;
+      cont.innerHTML = `<div class="pv-vazio">${pvSoDetalhados ? 'Nenhum item com mais de um lançamento neste dia.' : 'Nada foi digitado no detalhamento (✎) neste dia.'}</div>` + htmlObs;
       return;
     }
 
@@ -1653,28 +1656,19 @@
       const j = await resp.json();
       if (!j.ok) { cont.innerHTML = '<div class="pv-vazio">Erro ao carregar.</div>'; return; }
 
-      const tr = document.querySelector(`tr[data-data="${dataStr}"]`);
-
-      /* Item sem detalhamento não vem da API: o total sai da própria grade.
-         No modo editável a célula é um <input>; para quem só consulta é o
-         texto da <td>. */
-      const montarItens = (lista, mapaLinhas, seletor, atributo) => lista.map(x => {
+      /* Só entra no painel o que foi digitado no detalhamento (✎). Valor
+         digitado direto na célula da grade não tem linha e fica de fora —
+         o painel é a leitura do detalhamento, não uma cópia do grid. Uma
+         linha só também conta: é lançamento do ✎ como qualquer outro. */
+      const montarItens = (lista, mapaLinhas) => lista.map(x => {
         const linhas = mapaLinhas[x.id] || [];
-        let total = linhas.reduce((s,l)=>s+l.valor,0);
-        if (!linhas.length && tr) {
-          const cel = tr.querySelector(`[${atributo}="${x.id}"]`);
-          if (cel) {
-            const inp = cel.matches(seletor) ? cel : cel.querySelector(seletor);
-            total = inp ? parseBR(inp.value) : parseBR(cel.textContent.trim());
-          }
-        }
-        return { nome: x.nome, total, linhas };
-      }).filter(it => it.total);
+        return { nome: x.nome, total: linhas.reduce((s,l)=>s+l.valor,0), linhas };
+      }).filter(it => it.linhas.length);
 
       pvObsDia = j.observacao_dia || '';
       pvItens = {
-        formas:    montarItens(FORMAS_JS,    j.forma,    'input.cel-forma', 'data-col'),
-        controles: montarItens(CONTROLES_JS, j.controle, 'input.cel-ctrl',  'data-col-ctrl'),
+        formas:    montarItens(FORMAS_JS,    j.forma),
+        controles: montarItens(CONTROLES_JS, j.controle),
       };
       renderizarVisualizar();
     } catch (e) {

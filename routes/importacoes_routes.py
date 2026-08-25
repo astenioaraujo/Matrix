@@ -52,6 +52,7 @@ def listar_importacoes():
 
         cur.execute(f"""
             SELECT
+                id_lancamento,
                 cod_filial,
                 nome_filial,
                 ano,
@@ -70,7 +71,27 @@ def listar_importacoes():
         """, params)
 
         rows = cur.fetchall()
-        colnames = [d[0] for d in cur.description]
+        colnames = [d[0] for d in cur.description if d[0] != "id_lancamento"]
+
+        # seletores do modal "criar classificação automática" (só no filtro de pendentes)
+        opcoes_grupos = []
+        opcoes_contas = []
+
+        if somente_pendentes:
+            cur.execute("""
+                SELECT cod_grupo, COALESCE(descricao, abreviatura) AS descricao
+                FROM grupos_gerenciais
+                ORDER BY cod_grupo
+            """)
+            opcoes_grupos = cur.fetchall()
+
+            cur.execute("""
+                SELECT cod_grupo, cod_conta, COALESCE(descricao, '') AS descricao
+                FROM contas_gerenciais
+                WHERE cod_empresa = %s
+                ORDER BY cod_grupo, cod_conta
+            """, (session["cod_empresa"],))
+            opcoes_contas = cur.fetchall()
 
         total_valor_importacoes = Decimal("0")
         totais_filial = {}
@@ -108,6 +129,8 @@ def listar_importacoes():
         total_registros=total_registros,
         total_pendentes=total_pendentes,
         somente_pendentes=somente_pendentes,
+        opcoes_grupos=opcoes_grupos,
+        opcoes_contas=opcoes_contas,
         mensagem=mensagem,
         erro=erro,
         empresa_ativa=session["cod_empresa"],
@@ -268,6 +291,104 @@ def reclassificar_importacoes():
         conn.close()
 
     return redirect(url_for("importacoes.listar_importacoes"))
+
+
+@importacoes_bp.route("/importacoes/classificacao-automatica", methods=["POST"])
+def criar_classificacao_automatica():
+    """Cria uma classificação automática a partir de um lançamento pendente da
+    importação e já a aplica (o mesmo classificador da importação, para não
+    existir uma segunda regra de casamento)."""
+    if "cod_empresa" not in session:
+        return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    dados = request.get_json(silent=True) or {}
+
+    texto = (dados.get("texto") or "").strip()
+    complemento = (dados.get("complemento") or "").strip()
+
+    try:
+        cod_grupo = int(str(dados.get("cod_grupo") or "").strip())
+        cod_conta = int(str(dados.get("cod_conta") or "").strip())
+    except ValueError:
+        return jsonify({"ok": False, "erro": "Informe o grupo e a conta."}), 400
+
+    if not texto:
+        return jsonify({"ok": False, "erro": "Informe o texto da classificação."}), 400
+
+    if cod_grupo < 1 or cod_grupo > 7:
+        return jsonify({"ok": False, "erro": "Grupo inválido."}), 400
+
+    if cod_conta < 1 or cod_conta > 15:
+        return jsonify({"ok": False, "erro": "Conta inválida."}), 400
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            SELECT cod_conta
+            FROM contas_gerenciais
+            WHERE cod_empresa = %s
+              AND cod_grupo = %s
+              AND cod_conta = %s
+        """, (cod_empresa, cod_grupo, cod_conta))
+
+        if cur.fetchone() is None:
+            return jsonify({"ok": False, "erro": "Essa conta não existe no grupo informado."}), 400
+
+        cur.execute("""
+            SELECT id_classificacao
+            FROM classificacoes_automaticas
+            WHERE cod_empresa = %s
+              AND LOWER(TRIM(texto)) = LOWER(TRIM(%s))
+        """, (cod_empresa, texto))
+
+        if cur.fetchone() is not None:
+            return jsonify({"ok": False, "erro": "Já existe uma classificação automática com esse texto."}), 400
+
+        cur.execute("""
+            INSERT INTO classificacoes_automaticas
+                (cod_empresa, texto, cod_grupo, cod_conta, complemento)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (cod_empresa, texto, cod_grupo, cod_conta, complemento or None))
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        cur.close()
+        conn.close()
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+    cur.close()
+
+    try:
+        total = classificar_lancamentos_importados(cod_empresa, conn)
+
+        if complemento:
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE importacoes
+                   SET complemento = %s
+                 WHERE cod_empresa = %s
+                   AND grupo = %s
+                   AND conta = %s
+                   AND COALESCE(complemento, '') = ''
+                   AND LOWER(REGEXP_REPLACE(COALESCE(historico, ''), '\\s+', ' ', 'g'))
+                       LIKE '%%' || LOWER(TRIM(%s)) || '%%'
+            """, (complemento, cod_empresa, cod_grupo, cod_conta, texto))
+            conn.commit()
+            cur.close()
+
+        session["mensagem_importacoes"] = (
+            f"Classificação automática criada. {total} lançamento(s) classificado(s)."
+        )
+        return jsonify({"ok": True, "classificados": total})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 500
+    finally:
+        conn.close()
 
 
 @importacoes_bp.route("/importacoes/limpar", methods=["POST"])

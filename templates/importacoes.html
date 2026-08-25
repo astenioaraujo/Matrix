@@ -17,6 +17,57 @@
         margin-bottom: 18px;
     }
 
+    .celula-historico {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+    }
+
+    .btn-classificar {
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        font-size: 16px;
+        line-height: 1;
+        padding: 2px 4px;
+        border-radius: 6px;
+        opacity: 0.65;
+    }
+
+    .btn-classificar:hover {
+        opacity: 1;
+        background: #ffe08a;
+    }
+
+    .modal-campo {
+        display: block;
+        font-weight: 800;
+        font-size: 13px;
+        color: #333;
+        margin-bottom: 6px;
+    }
+
+    .modal-input {
+        width: 100%;
+        height: 40px;
+        padding: 0 12px;
+        margin-bottom: 14px;
+        border: 1px solid #c7c7c7;
+        border-radius: 10px;
+        font-size: 14px;
+        background: #fff;
+        color: #111;
+    }
+
+    .modal-erro {
+        display: none;
+        margin-bottom: 12px;
+        color: #b91c1c;
+        font-weight: 700;
+        font-size: 13px;
+    }
+
     tbody tr.linha-pendente td {
         background-color: #fff3cd !important;
     }
@@ -319,6 +370,19 @@
                             <td class="td-valor">
                                 {{ "{:,.2f}".format((cell or 0)|float).replace(",", "X").replace(".", ",").replace("X", ".") }}
                             </td>
+                        {% elif col == 'historico' and somente_pendentes and (row['grupo'] is none or row['conta'] is none) %}
+                            <td>
+                                <div class="celula-historico">
+                                    <span>{{ cell if cell is not none else "" }}</span>
+                                    <button
+                                        type="button"
+                                        class="btn-classificar"
+                                        title="Criar classificação automática"
+                                        onclick="abrirModalClassificacao(this)"
+                                        data-historico="{{ cell if cell is not none else "" }}"
+                                    >🏷</button>
+                                </div>
+                            </td>
                         {% else %}
                             <td>{{ cell if cell is not none else "" }}</td>
                         {% endif %}
@@ -554,5 +618,132 @@
         </div>
     </div>
 </div>
+
+{% if somente_pendentes %}
+<div class="modal-overlay" id="modalClassificacao" style="display:none;">
+    <div class="modal-confirmacao">
+        <div class="modal-titulo">Criar Classificação Automática</div>
+
+        <div class="modal-erro" id="erroClassificacao"></div>
+
+        <label class="modal-campo" for="clsTexto">Texto (histórico)</label>
+        <input type="text" class="modal-input" id="clsTexto">
+
+        <label class="modal-campo" for="clsGrupo">Grupo</label>
+        <select class="modal-input" id="clsGrupo" onchange="atualizarContasClassificacao()">
+            <option value="">Selecione o grupo…</option>
+            {% for g in opcoes_grupos %}
+                <option value="{{ g['cod_grupo'] }}">{{ g['cod_grupo'] }} - {{ g['descricao'] }}</option>
+            {% endfor %}
+        </select>
+
+        <label class="modal-campo" for="clsConta">Conta</label>
+        <select class="modal-input" id="clsConta">
+            <option value="">Selecione o grupo primeiro…</option>
+        </select>
+
+        <label class="modal-campo" for="clsComplemento">Complemento</label>
+        <input type="text" class="modal-input" id="clsComplemento">
+
+        <div class="modal-botoes">
+            <button type="button" class="modal-btn modal-btn-cancelar" onclick="fecharModalClassificacao()">Cancelar</button>
+            <button type="button" class="modal-btn modal-btn-confirmar" id="clsSalvar" onclick="salvarClassificacao()">Salvar</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const CONTAS_CLASSIFICACAO = [
+        {% for c in opcoes_contas %}
+            { grupo: {{ c['cod_grupo'] }}, conta: {{ c['cod_conta'] }}, descricao: {{ c['descricao']|tojson }} }{{ "," if not loop.last }}
+        {% endfor %}
+    ];
+
+    function abrirModalClassificacao(botao) {
+        document.getElementById("clsTexto").value = botao.dataset.historico || "";
+        document.getElementById("clsGrupo").value = "";
+        document.getElementById("clsComplemento").value = "";
+        atualizarContasClassificacao();
+        mostrarErroClassificacao("");
+        document.getElementById("modalClassificacao").style.display = "flex";
+    }
+
+    function fecharModalClassificacao() {
+        document.getElementById("modalClassificacao").style.display = "none";
+    }
+
+    function mostrarErroClassificacao(texto) {
+        const div = document.getElementById("erroClassificacao");
+        div.textContent = texto || "";
+        div.style.display = texto ? "block" : "none";
+    }
+
+    function atualizarContasClassificacao() {
+        const grupo = document.getElementById("clsGrupo").value;
+        const seletor = document.getElementById("clsConta");
+
+        seletor.innerHTML = "";
+
+        if (!grupo) {
+            seletor.innerHTML = '<option value="">Selecione o grupo primeiro…</option>';
+            return;
+        }
+
+        const vazia = document.createElement("option");
+        vazia.value = "";
+        vazia.textContent = "Selecione a conta…";
+        seletor.appendChild(vazia);
+
+        CONTAS_CLASSIFICACAO
+            .filter(c => String(c.grupo) === String(grupo))
+            .forEach(c => {
+                const op = document.createElement("option");
+                op.value = c.conta;
+                op.textContent = c.conta + " - " + c.descricao;
+                seletor.appendChild(op);
+            });
+    }
+
+    function salvarClassificacao() {
+        const botao = document.getElementById("clsSalvar");
+        const dados = {
+            texto: document.getElementById("clsTexto").value,
+            cod_grupo: document.getElementById("clsGrupo").value,
+            cod_conta: document.getElementById("clsConta").value,
+            complemento: document.getElementById("clsComplemento").value
+        };
+
+        if (!dados.texto.trim()) return mostrarErroClassificacao("Informe o texto da classificação.");
+        if (!dados.cod_grupo) return mostrarErroClassificacao("Selecione o grupo.");
+        if (!dados.cod_conta) return mostrarErroClassificacao("Selecione a conta.");
+
+        botao.disabled = true;
+        mostrarErroClassificacao("");
+
+        fetch("{{ url_for('importacoes.criar_classificacao_automatica') }}", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(dados)
+        })
+        .then(r => r.json())
+        .then(resp => {
+            if (resp.ok) {
+                window.location.reload();
+            } else {
+                botao.disabled = false;
+                mostrarErroClassificacao(resp.erro || "Não foi possível salvar.");
+            }
+        })
+        .catch(() => {
+            botao.disabled = false;
+            mostrarErroClassificacao("Falha de comunicação com o servidor.");
+        });
+    }
+
+    window.addEventListener("click", function(e) {
+        if (e.target === document.getElementById("modalClassificacao")) fecharModalClassificacao();
+    });
+</script>
+{% endif %}
 
 {% endblock %}
