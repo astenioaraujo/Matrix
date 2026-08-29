@@ -471,12 +471,82 @@ def selecionar_diretorio():
     return redirect(url_for("importacoes.importar_web_postos"))
 
 
+def conflitos_transferencia(cur, cod_empresa):
+    """Lançamentos já gravados para as mesmas (filial, ano, mês) que estão em importacoes.
+
+    A tela de importação do fluxo é exclusiva do WebPostos, que traz o mês fechado da
+    filial — por isso a substituição é por filial + mês/ano, e não por lançamento.
+    """
+    cur.execute("""
+        SELECT i.cod_filial,
+               MAX(i.nome_filial) AS nome_filial,
+               i.ano,
+               i.mes,
+               (SELECT COUNT(*)
+                  FROM lancamentos l
+                 WHERE l.cod_empresa = i.cod_empresa
+                   AND l.cod_filial = i.cod_filial
+                   AND l.ano = i.ano
+                   AND l.mes = i.mes) AS qtd
+          FROM importacoes i
+         WHERE i.cod_empresa = %s
+           AND i.ano IS NOT NULL
+           AND i.mes IS NOT NULL
+         GROUP BY i.cod_empresa, i.cod_filial, i.ano, i.mes
+         ORDER BY i.cod_filial, i.ano, i.mes
+    """, (cod_empresa,))
+
+    conflitos = []
+    for cod_filial, nome_filial, ano, mes, qtd in cur.fetchall():
+        if qtd and qtd > 0:
+            conflitos.append({
+                "cod_filial": cod_filial,
+                "nome_filial": nome_filial or "",
+                "ano": ano,
+                "mes": mes,
+                "qtd": qtd,
+                "periodo": f"{str(mes).zfill(2)}/{ano}",
+            })
+    return conflitos
+
+
+def resumo_conflitos(conflitos):
+    return ", ".join(
+        f"{c['nome_filial'] or c['cod_filial']} — {c['periodo']} ({c['qtd']})"
+        for c in conflitos
+    )
+
+
+@importacoes_bp.route("/importacoes/transferir/previa")
+def previa_transferencia():
+    if "cod_empresa" not in session:
+        return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        conflitos = conflitos_transferencia(cur, cod_empresa)
+        return jsonify({
+            "ok": True,
+            "conflitos": conflitos,
+            "total": sum(c["qtd"] for c in conflitos),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "erro": str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
+
+
 @importacoes_bp.route("/importacoes/transferir", methods=["POST"])
 def transferir_importacoes():
     if "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
 
     cod_empresa = str(session["cod_empresa"]).strip()
+    confirmado = (request.form.get("confirmado") or "").strip() == "1"
 
     conn = get_connection()
     cur = conn.cursor()
@@ -510,36 +580,28 @@ def transferir_importacoes():
             )
             return redirect(url_for("importacoes.listar_importacoes"))
 
-        # Verificar se já existem lançamentos para os mesmos períodos (ano/mês) em importacoes
-        cur.execute("""
-            SELECT DISTINCT ano, mes
-            FROM importacoes
-            WHERE cod_empresa = %s
-              AND ano IS NOT NULL AND mes IS NOT NULL
-            ORDER BY ano, mes
-        """, (cod_empresa,))
-        periodos_importacao = cur.fetchall()
+        # Lançamentos já existentes para a mesma filial/ano/mês são substituídos pela
+        # importação (a tela é exclusiva do WebPostos, que traz o mês inteiro da filial).
+        conflitos = conflitos_transferencia(cur, cod_empresa)
 
-        periodos_com_dados = []
-        for ano_imp, mes_imp in periodos_importacao:
-            cur.execute("""
-                SELECT COUNT(*)
-                FROM lancamentos
-                WHERE cod_empresa = %s
-                  AND ano = %s
-                  AND mes = %s
-            """, (cod_empresa, ano_imp, mes_imp))
-            qtd = cur.fetchone()[0]
-            if qtd > 0:
-                periodos_com_dados.append(f"{str(mes_imp).zfill(2)}/{ano_imp}")
-
-        if periodos_com_dados:
+        if conflitos and not confirmado:
             session["erro_importacoes"] = (
-                "Transferência bloqueada. Já existem lançamentos nos seguintes períodos: "
-                + ", ".join(periodos_com_dados)
-                + ". Exclua os lançamentos existentes antes de importar."
+                "Transferência não confirmada. Já existem lançamentos para: "
+                + resumo_conflitos(conflitos)
+                + "."
             )
             return redirect(url_for("importacoes.listar_importacoes"))
+
+        total_substituidos = 0
+        for c in conflitos:
+            cur.execute("""
+                DELETE FROM lancamentos
+                WHERE cod_empresa = %s
+                  AND cod_filial = %s
+                  AND ano = %s
+                  AND mes = %s
+            """, (cod_empresa, c["cod_filial"], c["ano"], c["mes"]))
+            total_substituidos += cur.rowcount
 
         cur.execute("""
             INSERT INTO lancamentos (
@@ -582,9 +644,16 @@ def transferir_importacoes():
 
         conn.commit()
 
-        session["mensagem_importacoes"] = (
-            f"Transferência concluída com sucesso. {total_transferidos} lançamento(s) foram enviados para a tabela de lançamentos."
+        msg = (
+            f"Transferência concluída com sucesso. {total_transferidos} lançamento(s) "
+            f"foram enviados para a tabela de lançamentos."
         )
+        if total_substituidos:
+            msg += (
+                f" {total_substituidos} lançamento(s) anteriores de "
+                f"{resumo_conflitos(conflitos)} foram excluídos e substituídos."
+            )
+        session["mensagem_importacoes"] = msg
 
     except Exception as e:
         conn.rollback()

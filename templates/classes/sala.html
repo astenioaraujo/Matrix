@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aula ao vivo</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; height:100vh; overflow:hidden; background:#000; color:#e8eefc;
+         font-family:system-ui, -apple-system, sans-serif; }
+
+  /* O palco ocupa a tela inteira — é o ponto do produto. */
+  #palco { position:fixed; inset:0; background:#000; }
+  #palco video { width:100%; height:100%; object-fit:contain; background:#000; }
+
+  #aviso { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+           color:#6f83a8; font-size:15px; text-align:center; padding:24px; }
+
+  /* Participantes: só iniciais discretas na borda. */
+  #pessoas { position:fixed; right:14px; top:14px; display:flex; flex-direction:column; gap:8px; }
+  .pessoa { width:38px; height:38px; border-radius:50%; background:rgba(255,255,255,.10);
+            backdrop-filter:blur(6px); display:flex; align-items:center; justify-content:center;
+            font-size:13px; font-weight:600; color:#dbe6ff; }
+  .pessoa.no-palco { background:#2f6df6; }
+
+  #barra { position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+           display:flex; gap:8px; opacity:.18; transition:opacity .2s; }
+  #barra:hover { opacity:1; }
+  #barra button { padding:10px 16px; border:0; border-radius:999px; font-size:14px;
+                  background:rgba(255,255,255,.14); color:#fff; cursor:pointer;
+                  backdrop-filter:blur(6px); }
+  #barra button.ativo { background:#2f6df6; }
+</style>
+</head>
+<body>
+  <div id="palco"></div>
+  <div id="aviso">Conectando…</div>
+  <div id="pessoas"></div>
+  <div id="barra"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+<script>
+const SALA  = {{ sala|tojson }};
+const NOME  = {{ nome|tojson }};
+const PAPEL = {{ papel|tojson }};
+
+const palco   = document.getElementById('palco');
+const aviso   = document.getElementById('aviso');
+const pessoas = document.getElementById('pessoas');
+const barra   = document.getElementById('barra');
+
+let sala = null;
+
+function iniciais(nome) {
+  const p = (nome || '?').trim().split(/\s+/);
+  return ((p[0]||'')[0] + (p.length > 1 ? p[p.length-1][0] : '')).toUpperCase();
+}
+
+function ehApresentador(participante) {
+  return (participante.identity || '').startsWith('prof-');
+}
+
+/* O palco mostra uma faixa só: a do apresentador (tela compartilhada tem
+   preferência sobre a câmera — quando ele apresenta, é isso que importa). */
+function redesenharPalco() {
+  if (!sala) return;
+  const todos = [sala.localParticipant, ...sala.remoteParticipants.values()];
+  let escolhida = null;
+
+  for (const p of todos) {
+    if (!ehApresentador(p)) continue;
+    for (const pub of p.trackPublications.values()) {
+      if (pub.kind !== 'video' || !pub.track) continue;
+      if (pub.source === 'screen_share') { escolhida = pub.track; break; }
+      if (!escolhida) escolhida = pub.track;
+    }
+    if (escolhida) break;
+  }
+
+  palco.innerHTML = '';
+  if (escolhida) {
+    const v = escolhida.attach();
+    v.autoplay = true; v.playsInline = true;
+    if (escolhida.participant === sala.localParticipant) v.muted = true;
+    palco.appendChild(v);
+    aviso.style.display = 'none';
+  } else {
+    aviso.textContent = 'Aguardando o apresentador…';
+    aviso.style.display = 'flex';
+  }
+}
+
+function redesenharPessoas() {
+  if (!sala) return;
+  pessoas.innerHTML = '';
+  for (const p of [sala.localParticipant, ...sala.remoteParticipants.values()]) {
+    const el = document.createElement('div');
+    el.className = 'pessoa' + (ehApresentador(p) ? ' no-palco' : '');
+    el.title = p.name || p.identity;
+    el.textContent = iniciais(p.name || p.identity);
+    pessoas.appendChild(el);
+  }
+}
+
+function botao(rotulo, aoClicar) {
+  const b = document.createElement('button');
+  b.textContent = rotulo;
+  b.onclick = () => aoClicar(b);
+  barra.appendChild(b);
+  return b;
+}
+
+async function conectar() {
+  const resp = await fetch('{{ url_for("classes.api_token") }}', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sala: SALA, nome: NOME, papel: PAPEL }),
+  });
+  const dados = await resp.json();
+  if (!resp.ok) { aviso.textContent = dados.erro || 'Falha ao entrar.'; return; }
+
+  sala = new LivekitClient.Room({ adaptiveStream: true, dynacast: true });
+
+  sala.on(LivekitClient.RoomEvent.TrackSubscribed, redesenharPalco)
+      .on(LivekitClient.RoomEvent.TrackUnsubscribed, redesenharPalco)
+      .on(LivekitClient.RoomEvent.LocalTrackPublished, redesenharPalco)
+      .on(LivekitClient.RoomEvent.LocalTrackUnpublished, redesenharPalco)
+      .on(LivekitClient.RoomEvent.ParticipantConnected, redesenharPessoas)
+      .on(LivekitClient.RoomEvent.ParticipantDisconnected, () => { redesenharPessoas(); redesenharPalco(); })
+      .on(LivekitClient.RoomEvent.Disconnected, () => {
+        aviso.textContent = 'Você saiu da aula.'; aviso.style.display = 'flex';
+      });
+
+  await sala.connect(dados.url, dados.token);
+  redesenharPessoas();
+  redesenharPalco();
+
+  if (dados.apresentador) {
+    await sala.localParticipant.setCameraEnabled(true);
+    await sala.localParticipant.setMicrophoneEnabled(true);
+    montarControles();
+  } else {
+    aviso.textContent = 'Aguardando o apresentador…';
+  }
+}
+
+function montarControles() {
+  const lp = sala.localParticipant;
+
+  const bCam = botao('Câmera', async (b) => {
+    const ligada = lp.isCameraEnabled;
+    await lp.setCameraEnabled(!ligada);
+    b.classList.toggle('ativo', !ligada);
+  });
+  bCam.classList.add('ativo');
+
+  const bMic = botao('Microfone', async (b) => {
+    const ligado = lp.isMicrophoneEnabled;
+    await lp.setMicrophoneEnabled(!ligado);
+    b.classList.toggle('ativo', !ligado);
+  });
+  bMic.classList.add('ativo');
+
+  botao('Apresentar tela', async (b) => {
+    const ligada = lp.isScreenShareEnabled;
+    await lp.setScreenShareEnabled(!ligada);
+    b.classList.toggle('ativo', !ligada);
+    redesenharPalco();
+  });
+
+  botao('Tela cheia', () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen();
+  });
+
+  botao('Sair', () => sala.disconnect());
+}
+
+conectar().catch((e) => { aviso.textContent = 'Erro: ' + e.message; });
+</script>
+</body>
+</html>

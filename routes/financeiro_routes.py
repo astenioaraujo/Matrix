@@ -6965,26 +6965,31 @@ def api_listar_antecipacao_dividendos():
         lancamentos = []
         if codigos:
             cur.execute("""
-                SELECT data, cod_filial, valor
+                SELECT data, observacao, cod_filial, valor
                   FROM antecipacao_dividendos
                  WHERE cod_empresa = %s AND cod_filial = ANY(%s)
-                 ORDER BY data DESC
+                 ORDER BY data DESC, observacao
             """, (cod_empresa, codigos))
             lancamentos = cur.fetchall()
     finally:
         cur.close()
         conn.close()
 
-    # Uma linha por data, com o valor de cada filial.
-    por_data = OrderedDict()
+    # Uma linha por data + observação, com o valor de cada filial: a mesma data
+    # repete quando as observações são diferentes.
+    por_linha = OrderedDict()
     for r in lancamentos:
-        linha = por_data.setdefault(r["data"], {})
+        chave = (r["data"], r["observacao"] or "")
+        linha = por_linha.setdefault(chave, {})
         linha[str(int(r["cod_filial"]))] = float(r["valor"] or 0)
 
     return jsonify({
         "ok": True,
         "areas": areas,
-        "linhas": [{"data": d.isoformat(), "valores": v} for d, v in por_data.items()],
+        "linhas": [
+            {"data": d.isoformat(), "observacao": obs, "valores": v}
+            for (d, obs), v in por_linha.items()
+        ],
     })
 
 
@@ -6996,6 +7001,10 @@ def api_salvar_antecipacao_dividendos():
 
     data_str = (dados.get("data") or "").strip()
     valores = dados.get("valores") or {}
+    observacao = (dados.get("observacao") or "").strip()
+    # Observação faz parte da identidade da linha; quando ela é editada, é
+    # preciso saber qual linha renomear em vez de criar outra.
+    observacao_anterior = (dados.get("observacao_anterior") or observacao).strip()
 
     try:
         data = datetime.strptime(data_str, "%Y-%m-%d").date()
@@ -7007,6 +7016,15 @@ def api_salvar_antecipacao_dividendos():
     try:
         areas = _areas_com_filiais(cur, cod_empresa)
         permitidas = {f["cod_filial"] for a in areas for f in a["filiais"]}
+        codigos = sorted(permitidas)
+
+        if observacao_anterior != observacao:
+            cur.execute("""
+                UPDATE antecipacao_dividendos
+                   SET observacao = %s, atualizado_em = NOW()
+                 WHERE cod_empresa = %s AND data = %s AND observacao = %s
+                   AND cod_filial = ANY(%s)
+            """, (observacao, cod_empresa, data, observacao_anterior, codigos))
 
         for cod_filial, valor in valores.items():
             cod_filial = int(cod_filial)
@@ -7016,13 +7034,14 @@ def api_salvar_antecipacao_dividendos():
 
             cur.execute("""
                 INSERT INTO antecipacao_dividendos
-                    (cod_empresa, cod_filial, data, valor, usuario_lancamento)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (cod_empresa, cod_filial, data)
+                    (cod_empresa, cod_filial, data, observacao, valor, usuario_lancamento)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (cod_empresa, cod_filial, data, observacao)
                 DO UPDATE SET valor = EXCLUDED.valor,
                               usuario_lancamento = EXCLUDED.usuario_lancamento,
                               atualizado_em = NOW()
-            """, (cod_empresa, cod_filial, data, float(valor or 0), session["id_usuario"]))
+            """, (cod_empresa, cod_filial, data, observacao,
+                  float(valor or 0), session["id_usuario"]))
 
         conn.commit()
     except Exception as e:
@@ -7040,6 +7059,7 @@ def api_salvar_antecipacao_dividendos():
 def api_excluir_antecipacao_dividendos():
     cod_empresa = str(session["cod_empresa"]).strip()
     data_str = (request.args.get("data") or "").strip()
+    observacao = (request.args.get("observacao") or "").strip()
 
     try:
         data = datetime.strptime(data_str, "%Y-%m-%d").date()
@@ -7051,10 +7071,12 @@ def api_excluir_antecipacao_dividendos():
     try:
         areas = _areas_com_filiais(cur, cod_empresa)
         codigos = [f["cod_filial"] for a in areas for f in a["filiais"]]
+        # Apaga só a linha daquela observação — a mesma data pode ter outras.
         cur.execute("""
             DELETE FROM antecipacao_dividendos
-             WHERE cod_empresa = %s AND data = %s AND cod_filial = ANY(%s)
-        """, (cod_empresa, data, codigos))
+             WHERE cod_empresa = %s AND data = %s AND observacao = %s
+               AND cod_filial = ANY(%s)
+        """, (cod_empresa, data, observacao, codigos))
         conn.commit()
     except Exception as e:
         conn.rollback()

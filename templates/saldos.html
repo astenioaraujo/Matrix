@@ -359,6 +359,25 @@
     border-top: 2px solid #9a9a9a;
   }
 
+  /* Rodapé com o nome das filiais: quem rola a tela para baixo perde o cabeçalho
+     e não sabe mais de qual filial é cada coluna. Bem apagado, para não competir
+     com os números. */
+  table.tabela-saldos tr.linha-nomes-filiais td {
+    border: none;
+    color: #a6a6a6;
+    font-size: 11px;
+    font-weight: normal;
+    text-align: center;
+    background: #fff;
+    padding-top: 2px;
+    white-space: normal;
+  }
+
+  table.tabela-saldos tr.linha-nomes-filiais td.rotulo {
+    background: #fff;
+    font-weight: normal;
+  }
+
   .input-valor {
     width: 100%;
     min-width: 90px;
@@ -772,6 +791,7 @@
     corpo += construirLinhaResumo("SUBTOTAL", subtotal, filiais, modo, false, colunaImportar);
     if (totalGeral) {
       corpo += construirLinhaResumo("TOTAL", totalGeral, filiais, modo, true, colunaImportar);
+      corpo += linhaNomesFiliais(filiais, colunaImportar, modo);
     }
 
     const botaoDuplicar = mostrarBotaoDuplicar
@@ -812,6 +832,8 @@
       corpo += "</tr>";
     });
 
+    corpo += linhaNomesFiliais(filiais, false);
+
     return `
       <div class="bloco-titulo">Variação (dia a dia)</div>
       <div class="table-wrapper">
@@ -841,6 +863,16 @@
   }
 
   const CAMPOS_INFORMADOS_IMPORTAVEIS = new Set(["perdas_sobras"]);
+
+  function linhaNomesFiliais(filiais, colunaImportar, modo) {
+    // No modo Lado a lado cada filial ocupa duas colunas (Banco e Sistema).
+    const span = modo === "lado_a_lado" ? ' colspan="2"' : "";
+    let linha = '<tr class="linha-nomes-filiais"><td class="rotulo"></td>';
+    filiais.forEach(f => { linha += `<td${span}>${escapeHtml(f.nome_filial)}</td>`; });
+    linha += `<td${span}></td>`;
+    if (colunaImportar) linha += "<td></td>";
+    return linha + "</tr>";
+  }
 
   function montarBlocoInformados(dia, filiais, modo, editavel) {
     const dataStr = dia.data;
@@ -888,6 +920,8 @@
     corpo += `<td class="valor total valor-total-coluna ${somaFinal < 0 ? "negativo" : ""}">${formatarBR(somaFinal)}</td>`;
     if (colunaImportar) corpo += `<td class="acao-importar"></td>`;
     corpo += "</tr>";
+
+    corpo += linhaNomesFiliais(filiais, colunaImportar);
 
     return `
       <div class="bloco-titulo">Valores Informados</div>

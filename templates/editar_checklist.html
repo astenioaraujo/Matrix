@@ -107,6 +107,16 @@
     margin-top: 15px;
   }
 
+  .status-auto {
+    margin-left: 12px;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .status-auto.salvando { color: #6b7280; }
+  .status-auto.ok       { color: #15803d; }
+  .status-auto.erro     { color: #b91c1c; }
+
   .btn {
     padding: 10px 16px;
     border-radius: 10px;
@@ -184,6 +194,7 @@
   <div class="painel">
     <div class="acoes" style="margin-top: 0; margin-bottom: 15px;">
         <button class="btn btn-salvar">💾 Salvar Alterações</button>
+        <span id="status-auto" class="status-auto"></span>
     </div>
     
     <table>
@@ -258,13 +269,125 @@
 <script>
   const lista = document.getElementById("lista-itens");
 
+  // Cada linha salva sozinha; o id entra no lugar do 0.
+  const URL_SALVAR_ITEM = "{{ url_for('vistorias.salvar_item_checklist_ajax', id_checklist=checklist.id_checklist, id_item=0) }}";
+
+  const statusAuto = document.getElementById("status-auto");
+  const timers = {};
+
+  function mostrarStatus(texto, classe) {
+    if (!statusAuto) return;
+    statusAuto.textContent = texto;
+    statusAuto.className = "status-auto " + (classe || "");
+  }
+
+  function dadosDaLinha(linha) {
+    const campo = function (prefixo) {
+      return linha.querySelector('[name^="' + prefixo + '_"]');
+    };
+
+    const seq = linha.querySelector(".campo-sequencia");
+    const tipo = campo("tipo_linha");
+    const codigo = campo("codigo_item");
+    const descricao = campo("descricao");
+    const pontos = campo("pontos_possiveis");
+
+    return {
+      sequencia: seq ? seq.value : "0",
+      tipo_linha: tipo ? tipo.value : "ITEM",
+      codigo_item: codigo ? codigo.value : "",
+      descricao: descricao ? descricao.value : "",
+      pontos_possiveis: pontos ? pontos.value : "0"
+    };
+  }
+
+  // O que está gravado no banco, linha a linha. É a comparação com isto
+  // que decide se há o que salvar — sem ela, arrastar uma linha mandaria
+  // o checklist inteiro de volta ao banco a cada movimento.
+  const gravado = {};
+
+  function memorizar(linha) {
+    const idItem = linha.dataset.idItem;
+    if (idItem) gravado[idItem] = JSON.stringify(dadosDaLinha(linha));
+  }
+
+  function linhaAlterada(linha) {
+    const idItem = linha.dataset.idItem;
+    if (!idItem) return false;
+    return gravado[idItem] !== JSON.stringify(dadosDaLinha(linha));
+  }
+
+  async function salvarLinha(linha) {
+    const idItem = linha.dataset.idItem;
+    if (!idItem) return true;
+
+    if (!linhaAlterada(linha)) return true;
+
+    const enviado = JSON.stringify(dadosDaLinha(linha));
+
+    mostrarStatus("Salvando…", "salvando");
+
+    try {
+      const resposta = await fetch(URL_SALVAR_ITEM.replace("/itens/0/", "/itens/" + idItem + "/"), {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest"
+        },
+        body: JSON.stringify(dadosDaLinha(linha))
+      });
+
+      const retorno = await resposta.json();
+
+      if (!resposta.ok || !retorno.ok) {
+        mostrarStatus("Erro ao salvar: " + (retorno.erro || "erro desconhecido"), "erro");
+        return false;
+      }
+
+      gravado[idItem] = enviado;
+      mostrarStatus("Salvo automaticamente", "ok");
+      return true;
+
+    } catch (erro) {
+      mostrarStatus("Erro de conexão ao salvar.", "erro");
+      console.error(erro);
+      return false;
+    }
+  }
+
+  function agendarSalvamento(linha, atraso) {
+    const idItem = linha.dataset.idItem;
+    if (!idItem) return;
+
+    if (!linhaAlterada(linha)) return;
+
+    clearTimeout(timers[idItem]);
+    timers[idItem] = setTimeout(function () {
+      salvarLinha(linha);
+    }, atraso);
+  }
+
   if (lista) {
+    lista.addEventListener("input", function (evento) {
+      const linha = evento.target.closest("tr");
+      if (linha) agendarSalvamento(linha, 700);
+    });
+
+    // change cobre o <select> e o campo numérico mexido pelas setas.
+    lista.addEventListener("change", function (evento) {
+      const linha = evento.target.closest("tr");
+      if (linha) agendarSalvamento(linha, 0);
+    });
+
+    lista.querySelectorAll("tr").forEach(memorizar);
+
     new Sortable(lista, {
       handle: ".drag-handle",
       animation: 150,
       ghostClass: "sortable-ghost",
-      onEnd: function () {
-        const linhas = lista.querySelectorAll("tr");
+      onEnd: async function () {
+        const linhas = Array.from(lista.querySelectorAll("tr"));
 
         linhas.forEach(function (linha, index) {
           const campoSeq = linha.querySelector(".campo-sequencia");
@@ -272,6 +395,19 @@
             campoSeq.value = index + 1;
           }
         });
+
+        // Arrastar renumera todo mundo, mas só vai ao banco a linha cuja
+        // sequência de fato mudou (a movida e as que ela empurrou).
+        const alteradas = linhas.filter(linhaAlterada);
+
+        if (!alteradas.length) return;
+
+        mostrarStatus("Salvando…", "salvando");
+        for (const linha of alteradas) {
+          const ok = await salvarLinha(linha);
+          if (!ok) return;
+        }
+        mostrarStatus("Ordem salva automaticamente", "ok");
       }
     });
   }

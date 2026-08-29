@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<title>Classes</title>
+<style>
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+         background:#0b1220; color:#e8eefc; font-family:system-ui, -apple-system, sans-serif; }
+  .caixa { width:min(560px, 90vw); }
+  h1 { font-size:24px; margin:0 0 4px; }
+  p.sub { color:#8fa3c8; margin:0 0 26px; font-size:14px; }
+  label { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.06em;
+          color:#8fa3c8; margin-bottom:6px; }
+  .link { display:flex; gap:8px; }
+  input { flex:1; padding:12px; border-radius:10px; border:1px solid #24365c;
+          background:#111c33; color:#e8eefc; font-size:14px; }
+  button { padding:12px 18px; border:0; border-radius:10px; background:#1e2c4a;
+           color:#e8eefc; cursor:pointer; font-size:14px; }
+  a.palco { display:block; margin-top:24px; text-align:center; padding:15px;
+            background:#2f6df6; color:#fff; text-decoration:none; border-radius:10px;
+            font-size:16px; font-weight:600; }
+</style>
+</head>
+<body>
+  <div class="caixa">
+    <h1>Classes</h1>
+    <p class="sub">Sala <strong>{{ sala }}</strong></p>
+
+    <label>Link do convite</label>
+    <div class="link">
+      <input id="link" value="{{ link_convite }}" readonly>
+      <button onclick="navigator.clipboard.writeText(document.getElementById('link').value); this.textContent='Copiado'">Copiar</button>
+    </div>
+
+    <a class="palco" href="{{ url_for('classes.palco', sala=sala) }}">Entrar no palco</a>
+  </div>
+</body>
+</html>

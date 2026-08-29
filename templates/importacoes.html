@@ -255,6 +255,7 @@
         action="{{ url_for('importacoes.transferir_importacoes') }}"
         id="form-transferir"
     >
+        <input type="hidden" name="confirmado" value="1">
         <button
             type="button"
             class="btn-transferir"
@@ -528,7 +529,7 @@
             Confirmar Transferência
         </div>
 
-        <div class="modal-texto">
+        <div class="modal-texto" id="modalTransferenciaTexto">
             Deseja realmente transferir os lançamentos importados para a tabela definitiva de lançamentos?
             <br><br>
             Esta operação concluirá a importação atual.
@@ -555,8 +556,36 @@
 </div>
 
 <script>
+    const TEXTO_TRANSFERENCIA_PADRAO =
+        "Deseja realmente transferir os lançamentos importados para a tabela definitiva de lançamentos?" +
+        "<br><br>Esta operação concluirá a importação atual.";
+
     function abrirModalTransferencia() {
+        const texto = document.getElementById("modalTransferenciaTexto");
+        texto.innerHTML = TEXTO_TRANSFERENCIA_PADRAO;
         document.getElementById("modalTransferencia").style.display = "flex";
+
+        // Lançamentos já existentes na mesma filial/mês serão excluídos e substituídos
+        // pela importação — o usuário precisa ver o que será apagado antes de confirmar.
+        fetch("{{ url_for('importacoes.previa_transferencia') }}")
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok || !d.conflitos || d.conflitos.length === 0) return;
+
+                const linhas = d.conflitos.map(c =>
+                    "&bull; " + (c.nome_filial || c.cod_filial) +
+                    " — " + c.periodo + ": " + c.qtd + " lançamento(s)"
+                ).join("<br>");
+
+                texto.innerHTML =
+                    "<strong>Atenção:</strong> já existem lançamentos para as filiais e " +
+                    "períodos abaixo. Eles serão <strong>excluídos</strong> e substituídos " +
+                    "pelos lançamentos importados." +
+                    "<br><br>" + linhas +
+                    "<br><br>Total a excluir: " + d.total + " lançamento(s)." +
+                    "<br><br>Deseja continuar?";
+            })
+            .catch(() => {});
     }
 
     function fecharModalTransferencia() {

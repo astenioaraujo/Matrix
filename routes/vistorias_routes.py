@@ -362,6 +362,105 @@ def salvar_itens_checklist(id_checklist):
 
 
 # ---------------------------------------
+# SALVAR ITEM (AUTOMÁTICO, VIA AJAX)
+# ---------------------------------------
+@vistorias_bp.route("/checklists/<int:id_checklist>/itens/<int:id_item>/salvar-ajax", methods=["POST"])
+def salvar_item_checklist_ajax(id_checklist, id_item):
+    """Grava uma linha do checklist sozinha, sem recarregar a tela.
+
+    A tela de edição salva a cada alteração de campo; o botão "Salvar
+    Alterações" continua existindo e grava tudo de uma vez pelo caminho
+    de sempre. As regras (código só em GRUPO, pontos com vírgula) são as
+    mesmas de `salvar_itens_checklist` — se divergirem, o mesmo campo
+    passa a valer coisas diferentes conforme quem gravou.
+    """
+    if "id_usuario" not in session:
+        return jsonify({"ok": False, "erro": "Sessão expirada"}), 401
+
+    if "cod_empresa" not in session:
+        return jsonify({"ok": False, "erro": "Empresa não selecionada"}), 401
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    if str(session.get("tipo_global") or "").strip().lower() != "superusuario":
+        if not usuario_tem_permissao(session["id_usuario"], cod_empresa, "VISTORIAS", "CONFIGURAR_CHECKLISTS"):
+            return jsonify({"ok": False, "erro": "Sem permissão para configurar checklists"}), 403
+
+    dados = request.get_json(silent=True) or {}
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        # O checklist tem que ser da empresa da sessão, e o item, dele.
+        cur.execute("""
+            SELECT i.id_item, i.tipo_linha
+            FROM vistorias_checklist_itens i
+            JOIN vistorias_checklists c
+              ON c.id_checklist = i.id_checklist
+            WHERE i.id_item = %s
+              AND i.id_checklist = %s
+              AND i.ativo = TRUE
+              AND c.cod_empresa = %s
+        """, (id_item, id_checklist, cod_empresa))
+        item = cur.fetchone()
+
+        if not item:
+            return jsonify({"ok": False, "erro": "Item não encontrado"}), 404
+
+        tipo_linha = (dados.get("tipo_linha") or item["tipo_linha"] or "ITEM").strip().upper()
+        if tipo_linha not in ("ITEM", "GRUPO"):
+            tipo_linha = "ITEM"
+
+        sequencia = dados.get("sequencia")
+        try:
+            sequencia = int(sequencia)
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "erro": "Sequência inválida"}), 400
+
+        descricao = (dados.get("descricao") or "").strip()
+
+        pontos = str(dados.get("pontos_possiveis") or "0").replace(",", ".").strip() or "0"
+        try:
+            pontos = float(pontos)
+        except ValueError:
+            return jsonify({"ok": False, "erro": "Pontos inválidos"}), 400
+
+        # Mesma regra do salvamento em lote: código só existe em GRUPO.
+        codigo_item = (dados.get("codigo_item") or "").strip() if tipo_linha == "GRUPO" else ""
+
+        cur.execute("""
+            UPDATE vistorias_checklist_itens
+            SET
+                sequencia = %s,
+                tipo_linha = %s,
+                codigo_item = %s,
+                descricao = %s,
+                pontos_possiveis = %s,
+                atualizado_em = NOW()
+            WHERE id_item = %s
+              AND id_checklist = %s
+        """, (sequencia, tipo_linha, codigo_item, descricao, pontos, id_item, id_checklist))
+
+        conn.commit()
+
+        return jsonify({
+            "ok": True,
+            "id_item": id_item,
+            "codigo_item": codigo_item,
+            "pontos_possiveis": pontos,
+        })
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+# ---------------------------------------
 # EXECUTAR VISTORIAS - INÍCIO
 # ---------------------------------------
 def cod_filiais_vistorias_usuario(cur, cod_empresa):

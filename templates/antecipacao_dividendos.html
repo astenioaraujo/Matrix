@@ -23,11 +23,15 @@
   .total-geral { background: #e6efe6; font-weight: 700; }
 
   td input.valor { width: 105px; padding: 4px; border: 1px solid #cfd8dc; border-radius: 5px; text-align: right; font-size: 13px; }
+  td input.obs { width: 220px; padding: 4px; border: 1px solid #cfd8dc; border-radius: 5px; font-size: 13px; }
   td input.data { padding: 4px; border: 1px solid #cfd8dc; border-radius: 5px; font-size: 13px; }
 
   .btn-mini { border: none; border-radius: 6px; padding: 5px 9px; font-size: 12px; font-weight: 600; cursor: pointer; margin-right: 5px; }
-  .btn-salvar { background: #1e7a34; color: #fff; }
   .btn-excluir { background: #b3261e; color: #fff; }
+
+  .selo { font-size: 12px; margin-right: 8px; color: #1e7a34; }
+  .selo.salvando { color: #8a6d1f; }
+  .selo.erro { color: #b3261e; }
 
   .status-msg { margin-top: 10px; font-size: 14px; min-height: 20px; }
   .status-msg.erro { color: #b3261e; }
@@ -42,7 +46,7 @@
 
 <div class="topo">
   <button type="button" class="btn-novo" id="btnNovaData">+ Nova Data</button>
-  <span style="color:#666; font-size:14px">Valores retirados das contas, por filial e data.</span>
+  <span style="color:#666; font-size:14px">Valores retirados das contas, por filial e data. O que você digitar é salvo automaticamente.</span>
 </div>
 
 <div class="rolagem">
@@ -85,8 +89,8 @@
   }
 
   function montarCabecalho() {
-    let linhaAreas = '<th class="col-data"></th>';
-    let linhaFiliais = '<th class="col-data">Data</th>';
+    let linhaAreas = '<th class="col-data"></th><th></th>';
+    let linhaFiliais = '<th class="col-data">Data</th><th>Observação</th>';
 
     AREAS.forEach(a => {
       linhaAreas += `<th class="area" colspan="${a.filiais.length + 1}">${a.nome_area}</th>`;
@@ -117,7 +121,7 @@
 
   function recalcularRodape() {
     const linhas = [...document.querySelectorAll("#corpo tr")];
-    let html = '<tr class="total-geral"><td class="col-data total-geral">Total do quadro</td>';
+    let html = '<tr class="total-geral"><td class="col-data total-geral">Total do quadro</td><td class="total-geral"></td>';
     let totalGeral = 0;
 
     AREAS.forEach(a => {
@@ -143,7 +147,9 @@
     const valores = dados.valores || {};
     const salvo = !!dados.data && !dados.nova;
 
-    let html = `<td class="col-data"><input type="date" class="data" value="${dados.data || hojeISO()}" ${salvo ? "disabled" : ""}></td>`;
+    const obs = (dados.observacao || "").replace(/"/g, "&quot;");
+    let html = `<td class="col-data"><input type="date" class="data" value="${dados.data || hojeISO()}" ${salvo ? "disabled" : ""}></td>
+                <td><input type="text" class="obs" placeholder="Observação" value="${obs}"></td>`;
 
     AREAS.forEach(a => {
       a.filiais.forEach(f => {
@@ -156,14 +162,45 @@
 
     html += `<td class="num tot total-geral">0,00</td>
              <td>
-               <button type="button" class="btn-mini btn-salvar">Salvar</button>
+               <span class="selo"></span>
                <button type="button" class="btn-mini btn-excluir">Excluir</button>
              </td>`;
 
     tr.innerHTML = html;
-    tr.querySelectorAll(".valor").forEach(i => i.addEventListener("input", () => recalcular(tr)));
-    tr.querySelector(".btn-salvar").addEventListener("click", () => salvar(tr));
+    tr.querySelectorAll(".valor").forEach(i => {
+      i.addEventListener("input", () => { recalcular(tr); agendarSalvamento(tr); });
+      // Ao sair do campo, formata e grava na hora (sem esperar o debounce).
+      i.addEventListener("blur", () => {
+        formatarCampo(i);
+        salvarAgora(tr);
+      });
+      // Enter grava na hora e passa para o próximo valor da mesma linha.
+      i.addEventListener("keydown", ev => {
+        if (ev.key !== "Enter") return;
+        ev.preventDefault();
+        formatarCampo(i);
+        salvarAgora(tr);
+        const campos = [...tr.querySelectorAll(".valor")];
+        const proximo = campos[campos.indexOf(i) + 1];
+        if (proximo) { proximo.focus(); proximo.select(); }
+        else { i.blur(); }
+      });
+    });
+    tr._obsSalva = dados.observacao || "";
+    const campoObs = tr.querySelector(".obs");
+    campoObs.addEventListener("input", () => agendarSalvamento(tr));
+    campoObs.addEventListener("blur", () => salvarAgora(tr));
+    campoObs.addEventListener("keydown", ev => {
+      if (ev.key !== "Enter") return;
+      ev.preventDefault();
+      salvarAgora(tr);
+      const primeiro = tr.querySelector(".valor");
+      if (primeiro) { primeiro.focus(); primeiro.select(); }
+    });
+    tr.querySelector(".data").addEventListener("change", () => salvarAgora(tr));
     tr.querySelector(".btn-excluir").addEventListener("click", () => excluir(tr));
+    // Linha que veio do banco já está gravada — não regrava só por ter perdido o foco.
+    if (salvo) { tr._ultimoSalvo = assinaturaLinha(tr); selo(tr, "salvo", ""); }
     return tr;
   }
 
@@ -185,26 +222,71 @@
     }
   }
 
-  async function salvar(tr) {
+  const ESPERA_SALVAR = 800;   // ms de silêncio na digitação antes de gravar
+
+  function selo(tr, texto, classe) {
+    const el = tr.querySelector(".selo");
+    if (!el) return;
+    el.textContent = texto;
+    el.className = "selo " + (classe || "");
+  }
+
+  function formatarCampo(i) {
+    i.value = i.value.trim() === "" ? "" : formatarValor(paraNumero(i.value));
+  }
+
+  function assinaturaLinha(tr) {
+    const valores = {};
+    tr.querySelectorAll(".valor").forEach(i => { valores[i.dataset.filial] = paraNumero(i.value); });
+    return JSON.stringify([tr.querySelector(".data").value, tr.querySelector(".obs").value.trim(), valores]);
+  }
+
+  function agendarSalvamento(tr) {
+    clearTimeout(tr._timerSalvar);
+    selo(tr, "digitando…", "salvando");
+    tr._timerSalvar = setTimeout(() => salvarAgora(tr), ESPERA_SALVAR);
+  }
+
+  // Grava a linha inteira. Não recarrega a tela: redesenhar durante a digitação
+  // é o que causava os valores instáveis na tela de Saldos.
+  async function salvarAgora(tr) {
+    clearTimeout(tr._timerSalvar);
+
     const data = tr.querySelector(".data").value;
-    if (!data) { mostrarStatus("Informe a data.", true); return; }
+    if (!data) { selo(tr, "informe a data", "erro"); return; }
 
     const valores = {};
     tr.querySelectorAll(".valor").forEach(i => {
       valores[i.dataset.filial] = paraNumero(i.value);
     });
 
+    const assinatura = assinaturaLinha(tr);
+    if (assinatura === tr._ultimoSalvo) { selo(tr, "salvo", ""); return; }
+
+    selo(tr, "salvando…", "salvando");
     try {
       const resp = await fetch("/api/antecipacao-dividendos", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data, valores }),
+        body: JSON.stringify({
+          data, valores,
+          observacao: tr.querySelector(".obs").value.trim(),
+          observacao_anterior: tr._obsSalva,
+        }),
       });
       const dados = await resp.json();
       if (!resp.ok || !dados.ok) throw new Error(dados.erro || "Erro ao salvar.");
-      await carregar();
-      mostrarStatus("Salvo com sucesso.", false);
+      tr._ultimoSalvo = assinatura;
+      tr._obsSalva = tr.querySelector(".obs").value.trim();
+      // A data de uma linha nova só fica livre até o primeiro save.
+      if (tr.dataset.nova === "1") {
+        tr.dataset.nova = "0";
+        tr.querySelector(".data").disabled = true;
+      }
+      selo(tr, "salvo", "");
+      mostrarStatus("", false);
     } catch (e) {
+      selo(tr, "não salvou", "erro");
       mostrarStatus(e.message || "Erro ao salvar.", true);
     }
   }
@@ -214,7 +296,9 @@
     if (tr.dataset.nova === "1" || !data) { tr.remove(); recalcularRodape(); return; }
     if (!confirm("Excluir os lançamentos desta data?")) return;
     try {
-      const resp = await fetch(`/api/antecipacao-dividendos?data=${data}`, { method: "DELETE" });
+      const resp = await fetch(
+        `/api/antecipacao-dividendos?data=${data}&observacao=${encodeURIComponent(tr._obsSalva || "")}`,
+        { method: "DELETE" });
       const dados = await resp.json();
       if (!resp.ok || !dados.ok) throw new Error(dados.erro || "Erro ao excluir.");
       await carregar();
@@ -225,7 +309,7 @@
   }
 
   document.getElementById("btnNovaData").addEventListener("click", () => {
-    const tr = linha({ data: hojeISO(), valores: {}, nova: true });
+    const tr = linha({ data: hojeISO(), observacao: "", valores: {}, nova: true });
     tr.dataset.nova = "1";
     document.getElementById("corpo").prepend(tr);
     recalcular(tr);

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Entrar na aula</title>
+<style>
+  body { margin:0; height:100vh; display:flex; align-items:center; justify-content:center;
+         background:#0b1220; color:#e8eefc; font-family:system-ui, -apple-system, sans-serif; }
+  .caixa { width:min(360px, 88vw); text-align:center; }
+  h1 { font-size:22px; font-weight:600; margin:0 0 6px; }
+  p  { color:#8fa3c8; margin:0 0 22px; font-size:14px; }
+  input { width:100%; box-sizing:border-box; padding:13px 14px; font-size:16px; border-radius:10px;
+          border:1px solid #24365c; background:#111c33; color:#e8eefc; }
+  button { width:100%; margin-top:12px; padding:13px; font-size:16px; font-weight:600;
+           border:0; border-radius:10px; background:#2f6df6; color:#fff; cursor:pointer; }
+</style>
+</head>
+<body>
+  <form class="caixa" method="get" action="{{ url_for('classes.entrar', sala=sala) }}">
+    <h1>Aula ao vivo</h1>
+    <p>Digite seu nome para entrar</p>
+    <input name="nome" placeholder="Seu nome" autofocus required maxlength="40">
+    <button type="submit">Entrar</button>
+  </form>
+</body>
+</html>

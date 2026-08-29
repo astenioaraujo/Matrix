@@ -25,6 +25,7 @@ from routes.canivete_routes import canivete_bp
 from routes.projetos_routes import projetos_bp
 from routes.mercado_routes import mercado_bp
 from routes.pdv_routes import pdv_bp
+from routes.classes_routes import classes_bp
 
 
 def formatar_numero_br(valor):
@@ -98,6 +99,7 @@ app.register_blueprint(canivete_bp)
 app.register_blueprint(projetos_bp)
 app.register_blueprint(mercado_bp)
 app.register_blueprint(pdv_bp)
+app.register_blueprint(classes_bp)
 
 
 from db import fechar_conexao_da_requisicao
