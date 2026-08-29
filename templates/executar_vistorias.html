@@ -19,7 +19,7 @@
 
   .grid-filtro {
     display: grid;
-    grid-template-columns: 110px 110px auto;
+    grid-template-columns: 110px 110px 150px 240px auto;
     gap: 12px;
     align-items: end;
     margin-bottom: 22px;   /* o espaçamento que vinha do .bloco */
@@ -124,6 +124,28 @@
   <div>
     <label>Mês</label>
     <input type="number" name="mes" min="1" max="12" value="{{ mes_sel }}">
+  </div>
+
+  <div>
+    <label>Status</label>
+    <select name="status">
+      <option value="TODAS" {% if status_sel == 'TODAS' %}selected{% endif %}>Todas</option>
+      <option value="ABERTA" {% if status_sel == 'ABERTA' %}selected{% endif %}>Só abertas</option>
+      <option value="FINALIZADA" {% if status_sel == 'FINALIZADA' %}selected{% endif %}>Só finalizadas</option>
+    </select>
+  </div>
+
+  <div>
+    <label>Filial</label>
+    <select name="cod_filial">
+      <option value="">Todas as filiais</option>
+      {% for f in filiais %}
+        <option value="{{ f.cod_filial }}"
+          {% if filial_sel|string == f.cod_filial|string %}selected{% endif %}>
+          {{ f.cod_filial }} - {{ f.nome_filial }}
+        </option>
+      {% endfor %}
+    </select>
   </div>
 
   <div>

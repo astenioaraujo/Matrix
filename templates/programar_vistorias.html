@@ -27,8 +27,69 @@
 
   .acao-nova { margin-bottom: 14px; }
 
-  .select-filiais { height: auto; padding: 4px; }
   .dica { font-size: 11px; color: #777; margin-top: 4px; }
+
+  /* Seletor de filiais estilo filtro do Excel */
+  .filtro-filiais { position: relative; }
+
+  .filtro-botao {
+    width: 100%;
+    text-align: left;
+    padding: 8px 26px 8px 10px;
+    border-radius: 6px;
+    border: 1px solid #bbb;
+    background: #fff;
+    font-size: 14px;
+    cursor: pointer;
+    box-sizing: border-box;
+  }
+
+  .filtro-botao::after {
+    content: "▾";
+    position: absolute;
+    right: 10px;
+    color: #666;
+  }
+
+  .filtro-painel {
+    position: absolute;
+    z-index: 30;
+    top: 100%;
+    left: 0;
+    min-width: 260px;
+    background: #fff;
+    border: 1px solid #bbb;
+    border-radius: 6px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.18);
+    padding: 8px;
+    margin-top: 4px;
+  }
+
+  .filtro-painel input[type="search"] { margin-bottom: 6px; }
+
+  .filtro-lista { max-height: 210px; overflow-y: auto; }
+
+  .filtro-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    font-weight: 400;
+    font-size: 13px;
+    margin: 0;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+
+  .filtro-item:hover { background: #eef4fe; }
+
+  .filtro-item input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+    flex: none;
+  }
+
+  .filtro-todas { border-bottom: 1px solid #e2e2e2; font-weight: 700; }
 
   label { display: block; font-weight: 700; margin-bottom: 6px; font-size: 13px; }
 
@@ -140,13 +201,26 @@
           <td class="col-centro">novo</td>
           <td><input type="date" name="data_vistoria" value="{{ hoje }}"></td>
           <td>
-            <select name="cod_filial" multiple size="6" class="select-filiais">
-              <option value="TODAS">Todas as filiais</option>
-              {% for f in filiais %}
-                <option value="{{ f.cod_filial }}">{{ f.cod_filial }} - {{ f.nome_filial }}</option>
-              {% endfor %}
-            </select>
-            <div class="dica">Ctrl/Cmd para marcar mais de uma.</div>
+            <div class="filtro-filiais" id="filtroFiliais">
+              <button type="button" class="filtro-botao" id="filtroBotao"
+                      aria-expanded="false">Selecione as filiais</button>
+              <div class="filtro-painel" id="filtroPainel" style="display:none;">
+                <input type="search" id="filtroBusca" placeholder="Buscar filial...">
+                <label class="filtro-item filtro-todas">
+                  <input type="checkbox" id="filtroTodas">
+                  <span>(Selecionar tudo)</span>
+                </label>
+                <div class="filtro-lista" id="filtroLista">
+                  {% for f in filiais %}
+                    <label class="filtro-item">
+                      <input type="checkbox" name="cod_filial" value="{{ f.cod_filial }}">
+                      <span>{{ f.cod_filial }} - {{ f.nome_filial }}</span>
+                    </label>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+            <div class="dica">Marque uma, várias ou todas as filiais.</div>
           </td>
           <td>
             <select name="id_checklist">
@@ -219,9 +293,79 @@
     const linha = document.getElementById("linhaNova");
     linha.style.display = linha.style.display === "none" ? "" : "none";
     if (linha.style.display === "") {
-      linha.querySelector("select[name='cod_filial']").focus();
+      document.getElementById("filtroBotao").focus();
     }
   });
+
+  // Seletor de filiais no estilo do filtro do Excel: marca/desmarca todas
+  // ou cada uma individualmente, com busca por nome.
+  (function () {
+    const caixa   = document.getElementById("filtroFiliais");
+    const botao   = document.getElementById("filtroBotao");
+    const painel  = document.getElementById("filtroPainel");
+    const busca   = document.getElementById("filtroBusca");
+    const todas   = document.getElementById("filtroTodas");
+    const itens   = Array.from(
+      document.querySelectorAll("#filtroLista input[name='cod_filial']")
+    );
+
+    function rotulo(chk) {
+      return chk.closest("label").querySelector("span").textContent.trim();
+    }
+
+    function atualizarBotao() {
+      const marcados = itens.filter(function (c) { return c.checked; });
+      if (marcados.length === 0) {
+        botao.textContent = "Selecione as filiais";
+      } else if (marcados.length === 1) {
+        botao.textContent = rotulo(marcados[0]);
+      } else if (marcados.length === itens.length) {
+        botao.textContent = "Todas as filiais (" + itens.length + ")";
+      } else {
+        botao.textContent = marcados.length + " filiais selecionadas";
+      }
+      todas.checked = marcados.length === itens.length && itens.length > 0;
+      todas.indeterminate = marcados.length > 0 && marcados.length < itens.length;
+    }
+
+    function abrir(mostrar) {
+      painel.style.display = mostrar ? "" : "none";
+      botao.setAttribute("aria-expanded", mostrar ? "true" : "false");
+      if (mostrar) { busca.focus(); }
+    }
+
+    botao.addEventListener("click", function () {
+      abrir(painel.style.display === "none");
+    });
+
+    document.addEventListener("click", function (ev) {
+      if (!caixa.contains(ev.target)) { abrir(false); }
+    });
+
+    painel.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape") { abrir(false); botao.focus(); }
+    });
+
+    todas.addEventListener("change", function () {
+      // "Selecionar tudo" respeita a busca: só mexe no que está visível.
+      itens.forEach(function (c) {
+        if (c.closest("label").style.display !== "none") { c.checked = todas.checked; }
+      });
+      atualizarBotao();
+    });
+
+    itens.forEach(function (c) { c.addEventListener("change", atualizarBotao); });
+
+    busca.addEventListener("input", function () {
+      const termo = busca.value.trim().toLowerCase();
+      itens.forEach(function (c) {
+        const label = c.closest("label");
+        label.style.display = rotulo(c).toLowerCase().indexOf(termo) >= 0 ? "" : "none";
+      });
+    });
+
+    atualizarBotao();
+  })();
 
   function excluirVistoria(id, data, filial) {
     mostrarConfirmacaoGlobal(

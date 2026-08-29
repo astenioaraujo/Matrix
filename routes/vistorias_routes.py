@@ -5,6 +5,33 @@ from datetime import date
 from db import get_connection
 from security_helpers import permissao_obrigatoria, usuario_tem_permissao
 
+# Combos de período das telas de vistoria (ano e mês são escolha, não digitação).
+NOMES_MESES = [
+    (1, "Janeiro"), (2, "Fevereiro"), (3, "Março"), (4, "Abril"),
+    (5, "Maio"), (6, "Junho"), (7, "Julho"), (8, "Agosto"),
+    (9, "Setembro"), (10, "Outubro"), (11, "Novembro"), (12, "Dezembro"),
+]
+
+
+def anos_com_vistorias(cur, cod_empresa, ano_sel):
+    """Anos que o combo oferece: os que têm vistoria, mais o ano corrente
+    e o que estiver selecionado — senão o filtro do usuário sumiria da lista."""
+    cur.execute("""
+        SELECT DISTINCT EXTRACT(YEAR FROM data_vistoria)::int AS ano
+        FROM vistorias_execucoes
+        WHERE cod_empresa = %s
+    """, (cod_empresa,))
+
+    anos = {int(r["ano"]) for r in cur.fetchall() or []}
+    anos.add(date.today().year)
+
+    try:
+        anos.add(int(ano_sel))
+    except (TypeError, ValueError):
+        pass
+
+    return sorted(anos, reverse=True)
+
 vistorias_bp = Blueprint("vistorias", __name__)
 
 
@@ -538,16 +565,13 @@ def programar_vistorias():
         checklists = cur.fetchall() or []
 
         if request.method == "POST":
-            # A filial é escolha múltipla: "TODAS" programa a mesma vistoria
-            # para todas as filiais ativas de uma vez.
+            # A filial é escolha múltipla (checkboxes no estilo do filtro do
+            # Excel): a mesma vistoria é programada para cada filial marcada.
             escolhidas = request.form.getlist("cod_filial")
             id_checklist = int(request.form.get("id_checklist") or 0)
             data_vistoria = request.form.get("data_vistoria")
 
-            if "TODAS" in escolhidas:
-                cod_filiais = [int(f["cod_filial"]) for f in filiais]
-            else:
-                cod_filiais = [int(f) for f in escolhidas if str(f).strip()]
+            cod_filiais = [int(f) for f in escolhidas if str(f).strip()]
 
             if not cod_filiais or not id_checklist or not data_vistoria:
                 flash("Informe filial, checklist e data.", "error")
@@ -721,11 +745,38 @@ def executar_vistorias():
     else:
         data_fim = f"{ano_sel}-{str(int(mes_sel) + 1).zfill(2)}-01"
 
+    # A tela mostra o mês inteiro; estes dois filtros só recortam a lista.
+    status_sel = (request.args.get("status") or "TODAS").strip().upper()
+
+    if status_sel not in ("TODAS", "ABERTA", "FINALIZADA"):
+        status_sel = "TODAS"
+
+    filial_sel = (request.args.get("cod_filial") or "").strip()
+
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
         cod_filiais = cod_filiais_vistorias_usuario(cur, cod_empresa)
+
+        # O combo de filial só oferece as filiais que o usuário enxerga.
+        if cod_filiais:
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s
+                  AND cod_filial = ANY(%s)
+                ORDER BY cod_filial
+            """, (cod_empresa, list(cod_filiais)))
+            filiais = cur.fetchall() or []
+        else:
+            filiais = []
+
+        if filial_sel and int(filial_sel) in cod_filiais:
+            cod_filiais_consulta = [int(filial_sel)]
+        else:
+            filial_sel = ""
+            cod_filiais_consulta = list(cod_filiais)
 
         if not cod_filiais:
             vistorias_mes = []
@@ -752,8 +803,10 @@ def executar_vistorias():
                   AND e.data_vistoria >= %s
                   AND e.data_vistoria < %s
                   AND e.cod_filial = ANY(%s)
+                  AND (%s = 'TODAS' OR e.status = %s)
                 ORDER BY e.data_vistoria DESC, e.id_execucao DESC
-            """, (cod_empresa, data_ini, data_fim, list(cod_filiais)))
+            """, (cod_empresa, data_ini, data_fim,
+                  cod_filiais_consulta, status_sel, status_sel))
 
             vistorias_mes = cur.fetchall() or []
 
@@ -774,6 +827,9 @@ def executar_vistorias():
         vistorias_mes=vistorias_mes,
         ano_sel=ano_sel,
         mes_sel=mes_sel,
+        status_sel=status_sel,
+        filial_sel=filial_sel,
+        filiais=filiais,
         sem_filial=not cod_filiais,
         url_voltar=url_for("vistorias.menu_vistorias"),
         texto_voltar="← Voltar",
@@ -1118,6 +1174,7 @@ def consultar_vistorias():
     try:
         # Consulta enxerga só as filiais do usuário, igual a Executar.
         cod_filiais = cod_filiais_vistorias_usuario(cur, cod_empresa)
+        anos = anos_com_vistorias(cur, cod_empresa, ano_sel)
 
         if not cod_filiais:
             vistorias = []
@@ -1159,6 +1216,8 @@ def consultar_vistorias():
         sem_filial=not cod_filiais,
         ano_sel=ano_sel,
         mes_sel=mes_sel,
+        anos=anos,
+        nomes_meses=NOMES_MESES,
         url_voltar=url_for("vistorias.menu_vistorias"),
         texto_voltar="← Voltar",
     )

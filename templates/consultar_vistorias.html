@@ -17,7 +17,7 @@
 
   .linha-filtros {
     display: grid;
-    grid-template-columns: 110px 110px auto;
+    grid-template-columns: 130px 170px auto;
     gap: 14px;
     align-items: end;
     margin-bottom: 22px;
@@ -32,7 +32,7 @@
     font-size: 13px;
   }
 
-  input {
+  input, select {
     width: 100%;
     padding: 8px 10px;
     border-radius: 6px;
@@ -124,12 +124,22 @@
 <form method="get" class="linha-filtros">
   <div>
     <label for="ano">Ano</label>
-    <input type="number" id="ano" name="ano" value="{{ ano_sel }}">
+    <select id="ano" name="ano">
+      {% for a in anos %}
+        <option value="{{ a }}" {% if ano_sel|string == a|string %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
   </div>
 
   <div>
     <label for="mes">Mês</label>
-    <input type="number" id="mes" name="mes" value="{{ mes_sel }}" min="1" max="12" placeholder="Todos">
+    <select id="mes" name="mes">
+      <option value="">Todos os meses</option>
+      {% for num, nome in nomes_meses %}
+        <option value="{{ num }}"
+          {% if mes_sel and mes_sel|int == num %}selected{% endif %}>{{ nome }}</option>
+      {% endfor %}
+    </select>
   </div>
 
   <div class="acoes">
