@@ -291,6 +291,11 @@
   flex: 1; min-width: 0;
   font-size: 13px; font-weight: 600; color: #1e3a8a;
 }
+/* marca-texto: clique no nome da tarefa realça a linha (uma por bloco) */
+.ag-proj-linha.marcado .ag-proj-txt,
+.ag-proj-linha.marcado .ag-proj-rec-txt {
+  background: #fde047; border-radius: 3px; padding-left: 3px; padding-right: 3px;
+}
 .ag-proj-add {
   display: block; width: 100%; text-align: center;
   font-size: 11px; background: none; border: none;
@@ -2093,6 +2098,69 @@ function mandarParaOFim(btn, tipo) {
   marcarPrimeiras(card);
   post(URL_PROJ_ITEM_FIM, {tipo, id});
 }
+
+/* ── marca-texto nas tarefas do projeto ─────────────────────────────
+   Clicar no nome realça a linha. Só uma marcação por bloco (Metas,
+   Recorrências, Eventuais) de cada projeto — marcar outra apaga a
+   anterior; clicar na já marcada desmarca. Guardado no navegador. */
+const MARCA_CHAVE = 'agenda-marca-texto';
+
+function _blocoChave(bloco) {
+  const card = bloco.closest('.ag-proj-card');
+  const blocos = Array.from(card.querySelectorAll('.ag-proj-bloco'));
+  return card.dataset.id + ':' + blocos.indexOf(bloco);
+}
+
+function _linhaChave(linha) {
+  return linha.dataset.id || ('exec-' + (linha.dataset.exec || ''));
+}
+
+function _lerMarcas() {
+  try { return JSON.parse(localStorage.getItem(MARCA_CHAVE) || '{}'); }
+  catch (e) { return {}; }
+}
+
+function _gravarMarcas(marcas) {
+  try { localStorage.setItem(MARCA_CHAVE, JSON.stringify(marcas)); }
+  catch (e) { /* navegador sem storage: a marca vale só nesta tela */ }
+}
+
+function alternarMarcaTexto(linha) {
+  const bloco = linha.closest('.ag-proj-bloco');
+  if (!bloco) return;
+  const jaMarcada = linha.classList.contains('marcado');
+  bloco.querySelectorAll('.ag-proj-linha.marcado')
+       .forEach(l => l.classList.remove('marcado'));
+  const marcas = _lerMarcas();
+  const chave = _blocoChave(bloco);
+  if (jaMarcada) {
+    delete marcas[chave];
+  } else {
+    linha.classList.add('marcado');
+    marcas[chave] = _linhaChave(linha);
+  }
+  _gravarMarcas(marcas);
+}
+
+function restaurarMarcaTexto() {
+  const marcas = _lerMarcas();
+  document.querySelectorAll('.ag-proj-bloco').forEach(bloco => {
+    const alvo = marcas[_blocoChave(bloco)];
+    if (!alvo) return;
+    bloco.querySelectorAll('.ag-proj-linha').forEach(linha => {
+      if (_linhaChave(linha) === alvo) linha.classList.add('marcado');
+    });
+  });
+}
+
+document.addEventListener('click', ev => {
+  const txt = ev.target.closest('.ag-proj-txt, .ag-proj-rec-txt');
+  if (!txt) return;
+  const linha = txt.closest('.ag-proj-linha');
+  if (linha) alternarMarcaTexto(linha);
+});
+
+document.addEventListener('DOMContentLoaded', restaurarMarcaTexto);
 
 /* ── metas e eventuais ── */
 function salvarProjTarefa(campo) {

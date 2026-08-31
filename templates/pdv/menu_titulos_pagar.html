@@ -10,7 +10,6 @@
                min-height:84px; padding:14px 18px; border-radius:14px; color:#fff; text-decoration:none;
                font-size:16px; font-weight:800; text-align:center; line-height:1.2;
                box-shadow:0 4px 10px rgba(0,0,0,0.14); transition:0.18s ease; }
-  .menu-card small { font-weight:600; font-size:12px; opacity:0.9; margin-top:6px; }
   .menu-card:hover { transform:translateY(-3px); filter:brightness(0.96); }
   @media (max-width:700px) { .menu-botoes { grid-template-columns:1fr; } }
 </style>
@@ -21,22 +20,18 @@
 <div class="menu-botoes">
   <a class="menu-card" style="background:#b02a37;" href="{{ url_for('pdv.contas_pagar') }}">
     📑 Consulta de Títulos
-    <small>o que se deve, título a título</small>
   </a>
   <a class="menu-card" style="background:#8c3b46;" href="{{ url_for('pdv.titulos_pagar_por_grupo') }}">
     🗂️ Consulta por Grupo e Conta
-    <small>só os totais de cada classificação</small>
   </a>
   {% if pode_fluxo %}
     <a class="menu-card" style="background:#7c2d3a;" href="{{ url_for('pdv.fluxo_caixa_titulos_pagar') }}">
       📈 Fluxo de Caixa
-      <small>um compromisso por linha, mês a mês</small>
     </a>
   {% endif %}
   {% if pode_titulos_manuais %}
     <a class="menu-card" style="background:#9333ea;" href="{{ url_for('pdv.tela_titulos_manuais') }}">
       🧾 Entrada de Títulos Manuais
-      <small>luz, água, telefone, aluguel</small>
     </a>
   {% endif %}
 </div>
