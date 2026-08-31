@@ -94,8 +94,8 @@
   }
   /* A pizza é um <svg> com o nome de cada fatia desenhado do lado de fora
      dela mesma — não tem legenda separada, o rótulo já é a legenda. */
-  .resumo-pizza-bloco { flex:0 0 auto; margin-left:24px; }
-  .resumo-pizza-bloco svg { display:block; overflow:visible; }
+  .resumo-pizza-bloco { flex:1 1 460px; min-width:0; max-width:780px; }
+  .resumo-pizza-bloco svg { display:block; overflow:visible; width:100%; height:auto; }
   /* width:max-content, e não min-width:100%: com min-width:100% a tabela se
      esticava até a largura da tela e o espaço sobrando era repartido entre as
      colunas, engordando todas elas e anulando qualquer min-width menor. */
@@ -1198,23 +1198,33 @@
     return { x: cx + r * Math.sin(rad), y: cy - r * Math.cos(rad) };
   }
 
-  /* Pizza em SVG com o nome de cada fatia do lado de fora — igual ao
-     estilo "Rótulos de Dados Fora da Extremidade" do Excel. Fatia pequena
-     (< 3%) empurra o rótulo mais pra fora e ganha uma linha guia fina até
-     a borda, senão o texto ficaria emaranhado nas fatias vizinhas. Sem
-     legenda separada: o nome já está grudado na fatia. */
+  /* Pizza em SVG com o nome de cada fatia do lado de fora — estilo
+     "Rótulos de Dados Fora da Extremidade" do Excel.
+
+     O rótulo NÃO fica solto no ângulo da fatia: fatias pequenas ficam
+     coladas umas nas outras (na EMP010, "DESPESA ABAST CARRETAS",
+     "DESPESAS" e "PRE PAGO" somam 1,3% e nascem quase no mesmo ângulo),
+     e o texto saía um por cima do outro. Aqui os rótulos são jogados em
+     duas colunas fixas (esquerda/direita), ordenados por altura e
+     afastados verticalmente até respeitarem ESPACO_ROTULO — cada um
+     ligado à sua fatia por uma linha guia em cotovelo. Fatia grande
+     mantém o rótulo na altura natural; quem se desloca é sempre a
+     pequena, que tem folga de sobra em volta. */
   function montarPizzaSVG(itens) {
-    const cx = 210, cy = 190, r = 120;
-    const LIMIAR_PEQUENA = 3; // %
+    const cx = 380, cy = 200, r = 115;
+    const LARGURA = 780, ALTURA = 400;
+    const ESPACO_ROTULO = 17;   // altura mínima entre dois textos
+    const COLUNA = 62;          // distância da borda até a coluna de texto
+    const MARGEM_V = 14;        // respiro no topo e no rodapé
+    const LIMIAR_PEQUENA = 3;   // % abaixo do qual a fatia é "continha"
+    const LIMIAR_MIUDA = 2;     // % abaixo do qual o rótulo sai em fonte menor
+    const FONTE = 12, FONTE_MIUDA = 6;
+    // o rótulo miúdo ocupa menos altura, então pede menos afastamento
+    const espaco = l => (l.fonte < FONTE ? ESPACO_ROTULO - 6 : ESPACO_ROTULO);
 
     let anguloAtual = 0;
     let fatiasSvg = '';
-    let rotulosSvg = '';
-
-    // fatias pequenas adjacentes (tipicamente as últimas, já vem ordenado
-    // do maior pro menor) recebem raios de rótulo alternados, pra não
-    // sobrepor texto quando ficam coladas uma na outra no gráfico
-    let indicePequena = 0;
+    const rotulos = [];
 
     itens.forEach((it, i) => {
       const anguloInicio = anguloAtual;
@@ -1230,27 +1240,81 @@
         + `A${r},${r} 0 ${largeArc} 1 ${p2.x.toFixed(2)},${p2.y.toFixed(2)} Z" `
         + `fill="${cor}" stroke="#fff" stroke-width="1.5"></path>`;
 
-      const pequena = it.percentual < LIMIAR_PEQUENA;
-      const raioRotulo = pequena ? r + 46 + (indicePequena % 2) * 20 : r + 22;
-      if (pequena) indicePequena++;
-
       const pBorda = pontoNoCirculo(cx, cy, r, anguloMeio);
-      const pRotulo = pontoNoCirculo(cx, cy, raioRotulo, anguloMeio);
-      const aDireita = pRotulo.x >= cx;
-      const anchor = aDireita ? 'start' : 'end';
-      const deslocaTexto = aDireita ? 6 : -6;
-
-      if (pequena) {
-        rotulosSvg += `<line x1="${pBorda.x.toFixed(2)}" y1="${pBorda.y.toFixed(2)}" `
-          + `x2="${pRotulo.x.toFixed(2)}" y2="${pRotulo.y.toFixed(2)}" `
-          + `stroke="${cor}" stroke-width="1"></line>`;
-      }
-      rotulosSvg += `<text x="${(pRotulo.x + deslocaTexto).toFixed(2)}" y="${pRotulo.y.toFixed(2)}" `
-        + `text-anchor="${anchor}" dominant-baseline="middle" `
-        + `font-size="12" font-weight="700" fill="${cor}">${escapeHtmlResumo(it.rotulo)}</text>`;
+      const pCotovelo = pontoNoCirculo(cx, cy, r + 16, anguloMeio);
+      rotulos.push({
+        cor, rotulo: it.rotulo, percentual: it.percentual,
+        pBorda, pCotovelo,
+        direita: pCotovelo.x >= cx,
+        y: pCotovelo.y,            // altura desejada; pode ser empurrada
+        pequena: it.percentual < LIMIAR_PEQUENA,
+        // rótulo do mesmo tamanho para 30% e para 0,0% faz a continha
+        // parecer da mesma ordem de grandeza da maior fatia do gráfico
+        fonte: it.percentual < LIMIAR_MIUDA ? FONTE_MIUDA : FONTE,
+      });
     });
 
-    return `<svg viewBox="0 0 420 380" width="420" height="380">${fatiasSvg}${rotulosSvg}</svg>`;
+    /* As fatias pequenas nascem todas no mesmo cantinho e, se ficarem no
+       lado geométrico delas, entopem aquela coluna e se misturam com as
+       fatias de verdade — na EMP010, DÉBITO (6,2%) e CARTÃO FROTA (7,1%)
+       apareciam empilhados entre as continhas de 0%, com as guias se
+       cruzando. Então elas são mandadas em bloco para a coluna mais vazia:
+       ficam juntas, longe das grandes, e cada guia atravessa sozinha. */
+    const grandes = rotulos.filter(l => !l.pequena);
+    const pequenas = rotulos.filter(l => l.pequena);
+    if (pequenas.length) {
+      const naDireita = grandes.filter(l => l.direita).length;
+      const ladoVazio = naDireita <= grandes.length - naDireita;
+      pequenas.forEach(l => { l.direita = ladoVazio; });
+    }
+
+    /* Desempilha uma coluna: ordena por altura e vai empurrando pra baixo
+       quem estiver perto demais do vizinho de cima; no fim, se estourou o
+       rodapé, empurra o bloco inteiro pra cima e reacomoda de baixo pra
+       cima. Duas passadas bastam porque a lista é pequena. */
+    function acomodar(lista) {
+      lista.sort((a, b) => a.y - b.y);
+      let limite = MARGEM_V;
+      lista.forEach(l => {
+        if (l.y < limite) l.y = limite;
+        limite = l.y + espaco(l);
+      });
+      const excesso = limite - (ALTURA - MARGEM_V);
+      if (excesso > 0) {
+        let teto = ALTURA - MARGEM_V;
+        for (let i = lista.length - 1; i >= 0; i--) {
+          if (lista[i].y > teto) lista[i].y = teto;
+          teto = lista[i].y - espaco(lista[i]);
+        }
+      }
+      return lista;
+    }
+
+    /* Cada lado é acomodado com as pequenas em bloco no topo: elas todas
+       vêm do mesmo ângulo, então manter a ordem natural delas e deixar as
+       grandes na altura da própria fatia é o que mantém as guias sem
+       cruzamento. */
+    acomodar(rotulos.filter(l => l.direita));
+    acomodar(rotulos.filter(l => !l.direita));
+
+    let rotulosSvg = '';
+    rotulos.forEach(l => {
+      const xColuna = l.direita ? cx + r + COLUNA : cx - r - COLUNA;
+      const anchor = l.direita ? 'start' : 'end';
+      const desloca = l.direita ? 6 : -6;
+      // guia em três pernas: borda da fatia → cotovelo → horizontal até o texto
+      rotulosSvg += `<polyline points="${l.pBorda.x.toFixed(2)},${l.pBorda.y.toFixed(2)} `
+        + `${l.pCotovelo.x.toFixed(2)},${l.pCotovelo.y.toFixed(2)} `
+        + `${xColuna},${l.y.toFixed(2)}" fill="none" stroke="${l.cor}" `
+        + `stroke-width="1" stroke-linejoin="round"></polyline>`;
+      rotulosSvg += `<text x="${xColuna + desloca}" y="${l.y.toFixed(2)}" `
+        + `text-anchor="${anchor}" dominant-baseline="middle" `
+        + `font-size="${l.fonte}" font-weight="700" fill="${l.cor}">`
+        + `${escapeHtmlResumo(l.rotulo)} `
+        + `<tspan font-weight="600" fill="#6b7280">${l.percentual.toFixed(1)}%</tspan></text>`;
+    });
+
+    return `<svg viewBox="0 0 ${LARGURA} ${ALTURA}" width="${LARGURA}" height="${ALTURA}">${fatiasSvg}${rotulosSvg}</svg>`;
   }
 
   function renderResumoAgrupamento(itens, elId) {
