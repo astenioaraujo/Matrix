@@ -66,33 +66,47 @@
 
   <div class="menu-botoes">
 
+    {% if pode_vendas.CONSULTAR_PAINEL %}
     <a class="btn-painel" href="{{ url_for('vendas.vendas_painel') }}">
       Consultar Painel
     </a>
+    {% endif %}
 
+    {% if pode_vendas.IMPORTAR_PAINEL %}
     <a class="btn-importar-painel" href="{{ url_for('vendas.vendas_importar_painel') }}">
       Importar Painel
     </a>
+    {% endif %}
 
+    {% if pode_vendas.CONSULTAR_VENDAS_DIARIAS %}
     <a class="btn-diarias" href="{{ url_for('vendas.vendas_diarias') }}">
       Consultar Vendas Diárias
     </a>
+    {% endif %}
 
+    {% if pode_vendas.IMPORTAR_VENDAS_DIARIAS %}
     <a class="btn-importar-diarias" href="{{ url_for('vendas.vendas_importar_diarias') }}">
       Importar Vendas Diárias
     </a>
+    {% endif %}
 
+    {% if pode_vendas.CONSULTAS %}
     <a class="btn-consultas" href="{{ url_for('vendas.vendas_consultas') }}">
       Consultas
     </a>
+    {% endif %}
 
+    {% if pode_vendas.CONSULTA_POR_PRODUTO %}
     <a class="btn-produto" href="{{ url_for('vendas.vendas_consulta_produto') }}">
       Consulta por Produto
     </a>
+    {% endif %}
 
+    {% if pode_vendas.PARAMETROS %}
     <a class="btn-parametros" href="{{ url_for('vendas.vendas_parametros') }}">
       Parâmetros
     </a>
+    {% endif %}
 
   </div>
 

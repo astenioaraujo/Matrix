@@ -132,10 +132,30 @@ def menu_vendas():
             flash("Você não tem permissão para acessar o menu de Vendas.", "error")
             return redirect(url_for("sistema.selecionar_sistema"))
 
+    # Cada botão do menu aparece só para quem tem a opção correspondente.
+    # Superusuário vê tudo.
+    opcoes_vendas = [
+        "CONSULTAR_PAINEL",
+        "IMPORTAR_PAINEL",
+        "CONSULTAR_VENDAS_DIARIAS",
+        "IMPORTAR_VENDAS_DIARIAS",
+        "CONSULTAS",
+        "CONSULTA_POR_PRODUTO",
+        "PARAMETROS",
+    ]
+    if tipo_global == "superusuario":
+        pode_vendas = {opcao: True for opcao in opcoes_vendas}
+    else:
+        pode_vendas = {
+            opcao: usuario_tem_permissao(id_usuario, cod_empresa, "VENDAS", opcao)
+            for opcao in opcoes_vendas
+        }
+
     return render_template(
         "menu_vendas.html",
         nome_empresa=session.get("nome_empresa"),
         empresa_ativa=session.get("cod_empresa"),
+        pode_vendas=pode_vendas,
         url_voltar=url_for("sistema.selecionar_sistema")
     )
 

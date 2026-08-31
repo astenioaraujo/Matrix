@@ -911,6 +911,12 @@ def agenda():
     """, ([t["id"] for t in tarefas_dia] or [-1], hoje))
     execs_dia = {e["id_tarefa"]: e["concluido"] for e in cur.fetchall()}
 
+    cur.execute("""
+        SELECT data FROM agenda_dias_especiais
+         WHERE id_usuario=%s AND data BETWEEN %s AND %s
+    """, (id_usuario, inicio, fim))
+    especiais = {e["data"].isoformat() for e in cur.fetchall()}
+
     # projetos (3ª coluna) — pode carregar as recorrências do mês sozinho
     projetos, competencia = _dados_projetos(cur, id_usuario, hoje)
 
@@ -1006,6 +1012,7 @@ def agenda():
         hoje_ref=hoje.isoformat(),
         dias_pt=DIAS_PT, meses_pt=MESES_PT,
         feriados=feriados,
+        especiais=especiais,
         recorrentes=recorrentes,
         indice_semana=indice_semana,
         programacao_hoje=programacao_hoje,
@@ -1344,6 +1351,38 @@ def agenda_dia_salvar():
     cur.close(); conn.close()
     return jsonify({"ok": True, "codigo": codigo,
                     "recarregar": mudou_codigo, "novo_id": novo_id})
+
+
+@canivete_bp.route("/agenda/dia-especial/alternar", methods=["POST"])
+def agenda_dia_especial_alternar():
+    """
+    Liga/desliga o dia especial (o fundo rosa) clicando no número na grade.
+
+    Feriado nacional continua vindo de `_feriados`, calculado; aqui é a marcação
+    do próprio usuário — ponte, folga, viagem. Marcado = linha existe;
+    desmarcar apaga a linha.
+    """
+    r = _checar_login()
+    if r:
+        return jsonify({"ok": False}), 401
+    id_usuario = session["id_usuario"]
+    data = (request.form.get("data") or "").strip()
+    try:
+        data = date.fromisoformat(data)
+    except ValueError:
+        return jsonify({"ok": False}), 400
+
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("DELETE FROM agenda_dias_especiais WHERE id_usuario=%s AND data=%s",
+                (id_usuario, data))
+    ligado = cur.rowcount == 0
+    if ligado:
+        cur.execute("INSERT INTO agenda_dias_especiais (id_usuario, data) VALUES (%s,%s)",
+                    (id_usuario, data))
+    conn.commit()
+    cur.close(); conn.close()
+    return jsonify({"ok": True, "especial": ligado})
 
 
 @canivete_bp.route("/agenda/dia/mover-fim", methods=["POST"])

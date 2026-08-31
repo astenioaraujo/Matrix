@@ -1197,7 +1197,7 @@ def atualizar_job_importacao(
 # PAINEL
 # =========================
 @vendas_bp.route("/painel")
-@permissao_obrigatoria("VENDAS", "CONSULTAR_PAINEL", redirecionar_para="vendas.menu_vendas")
+@permissao_obrigatoria("VENDAS", "CONSULTAR_PAINEL", redirecionar_para="sistema.menu_vendas")
 def vendas_painel():
     if "id_usuario" not in session:
         return redirect(url_for("auth.index"))
@@ -1564,7 +1564,7 @@ def importar_painel_ocloset(cod_empresa, nome_empresa, padrao):
 # IMPORTAÇÃO DO PAINEL
 # =========================
 @vendas_bp.route("/painel/importar", methods=["GET", "POST"])
-@permissao_obrigatoria("VENDAS", "IMPORTAR_PAINEL", redirecionar_para="vendas.menu_vendas")
+@permissao_obrigatoria("VENDAS", "IMPORTAR_PAINEL", redirecionar_para="sistema.menu_vendas")
 def vendas_importar_painel():
     if "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
@@ -1870,6 +1870,7 @@ def vendas_importar_painel():
 # VENDAS DIÁRIAS
 # =========================
 @vendas_bp.route("/diarias")
+@permissao_obrigatoria("VENDAS", "CONSULTAR_VENDAS_DIARIAS", redirecionar_para="sistema.menu_vendas")
 def vendas_diarias():
     if "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
@@ -2085,6 +2086,7 @@ def importar_diarias_ocloset(cod_empresa, nome_empresa):
 
 
 @vendas_bp.route("/diarias/importar", methods=["GET", "POST"])
+@permissao_obrigatoria("VENDAS", "IMPORTAR_VENDAS_DIARIAS", redirecionar_para="sistema.menu_vendas")
 def vendas_importar_diarias():
 
     if "cod_empresa" not in session:
@@ -2491,6 +2493,7 @@ def vendas_importar_diarias():
 # CONSULTAS
 # =========================
 @vendas_bp.route("/consultas")
+@permissao_obrigatoria("VENDAS", "CONSULTAS", redirecionar_para="sistema.menu_vendas")
 def vendas_consultas():
     if "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
@@ -2621,6 +2624,7 @@ def vendas_consultas():
 # --------------------------------------------------------
 
 @vendas_bp.route("/diarias/importar/progresso/<job_id>")
+@permissao_obrigatoria("VENDAS", "IMPORTAR_VENDAS_DIARIAS", redirecionar_para="sistema.menu_vendas")
 def vendas_importar_diarias_progresso(job_id):
     if "cod_empresa" not in session:
         return {"ok": False, "erro": "sessao_expirada"}, 401
@@ -2676,6 +2680,7 @@ def vendas_importar_diarias_progresso(job_id):
 # ------------------------------------------
 
 @vendas_bp.route("/consulta_produto")
+@permissao_obrigatoria("VENDAS", "CONSULTA_POR_PRODUTO", redirecionar_para="sistema.menu_vendas")
 def vendas_consulta_produto():
     if "cod_empresa" not in session:
         return redirect(url_for("auth.index"))

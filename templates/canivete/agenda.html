@@ -561,7 +561,11 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
 .ag-num {
   position: absolute; top: 3px; right: 6px; z-index: 1;
   font-size: 12px; font-weight: 700; color: #dc2626;
-  pointer-events: none;       /* é só rótulo: não rouba o clique dos ícones */
+  /* clicável: é por ele que se marca/desmarca o dia especial (fundo rosa).
+     A área é só a do número, no canto de cima; os ícones dos turnos ficam
+     abaixo e continuam recebendo o clique deles. */
+  cursor: pointer;
+  padding: 0 2px;
 }
 .ag-cell.fim-semana-cell .ag-num { color: #94a3b8; }
 
@@ -833,14 +837,15 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
 
         {% set ambos_conc = manha.concluido and tarde.concluido %}
         {% set nome_feriado = feriados.get(d, '') %}
-        {% set e_feriado = (nome_feriado != '') and not e_hoje and not ambos_conc %}
+        {% set e_feriado = (nome_feriado != '' or d in especiais) and not e_hoje and not ambos_conc %}
         <td class="ag-cell {{ 'hoje-cell' if e_hoje else '' }} {{ 'fim-semana-cell' if fim_sem else '' }} {{ 'dia-concluido' if ambos_conc else '' }} {{ 'manha-concluida' if manha.concluido and not ambos_conc else '' }} {{ 'feriado' if e_feriado else '' }} {{ 'inicio-mes' if dia.day == 1 else '' }}"
             id="dia-{{ d }}">
 
           {% if nome_feriado %}
           <div class="ag-feriado-tag">{{ nome_feriado }}</div>
           {% endif %}
-          <span class="ag-num">{{ dia.day }}</span>
+          <span class="ag-num" title="Clique para marcar/desmarcar dia especial"
+                onclick="alternarEspecial('{{ d }}', this)">{{ dia.day }}</span>
 
           <!-- MANHÃ -->
           <div class="ag-turno turno-manha {{ 'concluido' if manha.concluido else '' }}"
@@ -1616,6 +1621,7 @@ document.addEventListener('DOMContentLoaded', atualizarSeparadorDia);
 
 const URL_SALVAR = "{{ url_for('canivete.agenda_salvar') }}";
 const URL_CONCLUIR = "{{ url_for('canivete.agenda_concluir') }}";
+const URL_DIA_ESPECIAL = "{{ url_for('canivete.agenda_dia_especial_alternar') }}";
 const URL_SLOTS  = "{{ url_for('canivete.agenda_salvar_slots') }}";
 const TURNOS_PT  = {manha:'Manhã', tarde:'Tarde', noturno:'Noturno'};
 
@@ -1651,6 +1657,14 @@ function toggleConc(data, turno, btn) {
   cell?.classList.toggle('dia-concluido', ambos);
   cell?.classList.toggle('manha-concluida', mConc && !ambos);
   post(URL_CONCLUIR, {data, turno, concluido: on ? '1' : '0'});
+}
+
+function alternarEspecial(data, el) {
+  // o rosa é só a cor do dia especial; feriado nacional já vem marcado do servidor
+  const cell = document.getElementById('dia-' + data);
+  const on   = !cell.classList.contains('feriado');
+  cell.classList.toggle('feriado', on);
+  post(URL_DIA_ESPECIAL, {data});
 }
 
 function addNoturno(data) {
