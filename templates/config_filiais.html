@@ -204,7 +204,7 @@
               type="submit"
               class="btn-excluir"
               {% if (filial.qt_lancamentos or 0) > 0 %}disabled{% endif %}
-              onclick="return confirm('Excluir esta filial?');">
+              onclick="return confirmarEnvio(this, 'Excluir esta filial?');">
               Excluir
             </button>
           </form>

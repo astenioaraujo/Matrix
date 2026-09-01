@@ -164,7 +164,7 @@
   }
 
   async function excluirIndicador(tr) {
-    if (!confirm("Excluir este indicador?")) return;
+    if (!await confirmarGlobal("Excluir este indicador?")) return;
     try {
       const data = await fetchJson(`/api/indicadores-recebiveis/${tr.dataset.id}`, { method: "DELETE" });
       if (data.ok) {

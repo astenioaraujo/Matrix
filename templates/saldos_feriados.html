@@ -143,7 +143,7 @@
   }
 
   async function excluirFeriado(feriado) {
-    if (!confirm(`Excluir o feriado de ${rotuloDataFeriado(feriado.data)}?`)) return;
+    if (!await confirmarGlobal(`Excluir o feriado de ${rotuloDataFeriado(feriado.data)}?`)) return;
     try {
       await fetchJson(`/api/saldos/feriados/${feriado.id_feriado}`, { method: "DELETE" });
       statusFeriados("Feriado excluído.", false);

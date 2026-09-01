@@ -190,7 +190,7 @@
             <form
               method="POST"
               action="{{ url_for('configuracoes.config_areas_filiais_excluir') }}"
-              onsubmit="return confirm('Deseja excluir esta filial da área?')"
+              onsubmit="return confirmarEnvio(this, 'Deseja excluir esta filial da área?')"
             >
               <input
                 type="hidden"

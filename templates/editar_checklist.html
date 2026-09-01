@@ -251,7 +251,7 @@
                 class="btn-excluir"
                 formaction="{{ url_for('vistorias.excluir_item_checklist', id_checklist=checklist.id_checklist, id_item=i.id_item) }}"
                 formmethod="post"
-                onclick="return confirm('Excluir esta linha do checklist?');">
+                onclick="return confirmarEnvio(this, 'Excluir esta linha do checklist?');">
                 Excluir
               </button>
             </td>

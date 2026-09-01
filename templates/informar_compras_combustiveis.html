@@ -286,7 +286,7 @@
       class="btn-excluir"
       formaction="{{ url_for('operacoes.excluir_compra_combustivel', id_compra=c.id_compra) }}"
       formmethod="post"
-      onclick="return confirm('Excluir esta compra?');">
+      onclick="return confirmarEnvio(this, 'Excluir esta compra?');">
       Excluir
     </button>
   </form>

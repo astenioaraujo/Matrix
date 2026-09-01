@@ -29,6 +29,12 @@
 
   tr.linha-total td { border-top: 2px solid #333; border-bottom: none; color: #c62828; font-weight: 700; }
   tr.linha-dividendos td { border-top: 1px solid #333; font-weight: 700; }
+  /* Bloco das antecipações: recuado e mais leve, para se ler como detalhe do
+     Total Antecipações, e não como mais uma linha de saldo. */
+  tr.linha-antecipacao td { color: #555; }
+  tr.linha-antecipacao td.col-rotulo { color: #555; padding-left: 22px; font-style: italic; }
+  tr.linha-antecipacao-inicio td { border-top: 1px solid #cfd8dc; }
+  tr.linha-antecipacoes-total td { font-weight: 700; border-top: 1px solid #cfd8dc; }
   tr.linha-projecao td { font-weight: 700; }
   tr.linha-projecao td.num { color: #c62828; }
   .neg { color: #c62828; }
@@ -168,7 +174,14 @@
       { classe: "linha-total", calor: ehVariacao });
 
     if (ehVariacao) {
-      html += montarLinha(dados, dados.antecipacao, "variacao", { classe: "" });
+      // Uma linha por explicação lançada em Antecipação de Dividendos,
+      // fechando no Total Antecipações que entra no Total com Dividendos.
+      (dados.antecipacoes || []).forEach((l, i) => {
+        html += montarLinha(dados, l, "variacao",
+          { classe: "linha-antecipacao" + (i === 0 ? " linha-antecipacao-inicio" : "") });
+      });
+      html += montarLinha(dados, dados.antecipacao, "variacao",
+        { classe: "linha-antecipacoes-total" });
       html += montarLinha(dados, dados.total_com_dividendos, "variacao", { classe: "linha-dividendos" });
       html += montarLinha(dados, dados.projecao, "variacao", { classe: "linha-projecao" });
     }

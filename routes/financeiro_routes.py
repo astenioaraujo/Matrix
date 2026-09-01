@@ -7077,6 +7077,9 @@ def api_excluir_antecipacao_dividendos():
              WHERE cod_empresa = %s AND data = %s AND observacao = %s
                AND cod_filial = ANY(%s)
         """, (cod_empresa, data, observacao, codigos))
+        # A tela avisa quando nada foi removido: responder "ok" para uma linha
+        # que não existe mais faz a linha sumir da tela sem sumir do banco.
+        removidos = cur.rowcount
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -7085,7 +7088,12 @@ def api_excluir_antecipacao_dividendos():
         cur.close()
         conn.close()
 
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "removidos": removidos})
+
+
+# Rótulo das antecipações lançadas sem explicação: a linha precisa aparecer
+# (é dinheiro que saiu), e sem rótulo ela ficaria em branco na tela.
+SEM_OBSERVACAO = "Sem observação"
 
 
 def _arredondar_linhas(*grupos):
@@ -7238,11 +7246,11 @@ def _coletar_variacoes(cod_empresa, id_competencia, recuo=0):
         antecipacoes = []
         if data_final:
             cur.execute("""
-                SELECT cod_filial, SUM(valor) AS valor
+                SELECT cod_filial, observacao, SUM(valor) AS valor
                   FROM antecipacao_dividendos
                  WHERE cod_empresa = %s AND cod_filial = ANY(%s)
                    AND data > %s AND data <= %s
-                 GROUP BY cod_filial
+                 GROUP BY cod_filial, observacao
             """, (cod_empresa, codigos_filiais, data_inicial_efetiva, data_final))
             antecipacoes = cur.fetchall()
     finally:
@@ -7327,20 +7335,45 @@ def api_consultar_variacoes():
         for coluna in [str(a) for a in ids_areas] + ["total"]:
             total[momento][coluna] = sum(l[momento][coluna] for l in linhas)
 
-    # A antecipação não é saldo: entra como linha própria, somada ao total.
-    antecipacao_por_area = defaultdict(float)
+    # A antecipação não é saldo: entra como bloco próprio, somado ao total.
+    # Uma linha por observação — é ela que explica a saída ("Aplicação CDB DI",
+    # "Bloqueio judicial - ITAÚ"); o total de uma linha só dizia o quanto saiu,
+    # nunca o porquê.
+    antecipacao_por_obs = defaultdict(lambda: defaultdict(float))
     for r in antecipacoes:
         id_area = area_da_filial.get(int(r["cod_filial"]))
-        antecipacao_por_area[id_area] += float(r["valor"] or 0)
+        rotulo = (r["observacao"] or "").strip() or SEM_OBSERVACAO
+        antecipacao_por_obs[rotulo][id_area] += float(r["valor"] or 0)
 
-    antecipacao = {"rotulo": "Antecipação Dividendos", "inicio": {}, "fim": {}, "variacao": {}}
+    colunas_areas = [str(a) for a in ids_areas] + ["total"]
+
+    def montar_antecipacao(rotulo, por_area):
+        # Não é saldo em nenhuma das pontas: começa em zero e a variação é o
+        # próprio valor retirado no intervalo.
+        linha = {"rotulo": rotulo, "inicio": {}, "fim": {}, "variacao": {}}
+        for coluna in colunas_areas:
+            valor = (sum(por_area.values()) if coluna == "total"
+                     else por_area.get(int(coluna), 0.0))
+            linha["inicio"][coluna] = 0.0
+            linha["fim"][coluna] = valor
+            linha["variacao"][coluna] = valor
+        return linha
+
+    # Linha zerada continua aparecendo: é o que denuncia a explicação que
+    # perdeu o valor. Sem observação vai para o fim da lista.
+    antecipacoes_linhas = [
+        montar_antecipacao(rotulo, antecipacao_por_obs[rotulo])
+        for rotulo in sorted(antecipacao_por_obs, key=lambda r: (r == SEM_OBSERVACAO, r.lower()))
+    ]
+
+    antecipacao = montar_antecipacao(
+        "Total Antecipações",
+        {id_area: sum(por_area.get(id_area, 0.0) for por_area in antecipacao_por_obs.values())
+         for id_area in ids_areas})
+
     com_dividendos = {"rotulo": "Total com Dividendos", "inicio": {}, "fim": {}, "variacao": {}}
-    for coluna in [str(a) for a in ids_areas] + ["total"]:
-        valor = (sum(antecipacao_por_area.values()) if coluna == "total"
-                 else antecipacao_por_area.get(int(coluna), 0.0))
-        antecipacao["inicio"][coluna] = 0.0
-        antecipacao["fim"][coluna] = valor
-        antecipacao["variacao"][coluna] = valor
+    for coluna in colunas_areas:
+        valor = antecipacao["variacao"][coluna]
         com_dividendos["inicio"][coluna] = total["inicio"][coluna]
         com_dividendos["fim"][coluna] = total["fim"][coluna] + valor
         com_dividendos["variacao"][coluna] = total["variacao"][coluna] + valor
@@ -7357,7 +7390,7 @@ def api_consultar_variacoes():
             if dias_decorridos else 0.0
         )
 
-    _arredondar_linhas(linhas, total, antecipacao, com_dividendos, projecao)
+    _arredondar_linhas(linhas, antecipacoes_linhas, total, antecipacao, com_dividendos, projecao)
 
     return jsonify({
         "ok": True,
@@ -7374,6 +7407,7 @@ def api_consultar_variacoes():
         "areas": [{"id_area": a["id_area"], "nome_area": a["nome_area"]} for a in areas],
         "linhas": linhas,
         "total": total,
+        "antecipacoes": antecipacoes_linhas,
         "antecipacao": antecipacao,
         "total_com_dividendos": com_dividendos,
         "projecao": projecao,
@@ -7458,14 +7492,36 @@ def api_consultar_variacoes_filial():
         for coluna in colunas:
             total[momento][coluna] = sum(l[momento][coluna] for l in linhas)
 
-    antecipacao_por_filial = defaultdict(float)
+    # Mesmo bloco da tela por área, aberto filial a filial: uma linha por
+    # observação e o Total Antecipações fechando o bloco. É a observação que
+    # explica a saída — o total sozinho só dizia o quanto.
+    antecipacao_por_obs = defaultdict(lambda: defaultdict(float))
     for r in dados["antecipacoes"]:
-        antecipacao_por_filial[int(r["cod_filial"])] += float(r["valor"] or 0)
+        rotulo = (r["observacao"] or "").strip() or SEM_OBSERVACAO
+        antecipacao_por_obs[rotulo][int(r["cod_filial"])] += float(r["valor"] or 0)
 
-    antecipacao = {"rotulo": "Antecipação Dividendos", "inicio": {}, "fim": {}, "variacao": {}}
-    preencher(antecipacao["inicio"], lambda c: 0.0)
-    preencher(antecipacao["fim"], lambda c: antecipacao_por_filial.get(c, 0.0))
-    preencher(antecipacao["variacao"], lambda c: antecipacao_por_filial.get(c, 0.0))
+    def montar_antecipacao(rotulo, por_filial):
+        # Não é saldo em nenhuma das pontas: começa em zero e a variação é o
+        # próprio valor retirado no intervalo.
+        linha = {"rotulo": rotulo, "inicio": {}, "fim": {}, "variacao": {}}
+        preencher(linha["inicio"], lambda c: 0.0)
+        preencher(linha["fim"], lambda c: por_filial.get(c, 0.0))
+        preencher(linha["variacao"], lambda c: por_filial.get(c, 0.0))
+        return linha
+
+    # Linha zerada continua aparecendo: é o que denuncia a explicação que
+    # perdeu o valor. Sem observação vai para o fim da lista.
+    antecipacoes_linhas = [
+        montar_antecipacao(rotulo, antecipacao_por_obs[rotulo])
+        for rotulo in sorted(antecipacao_por_obs, key=lambda r: (r == SEM_OBSERVACAO, r.lower()))
+    ]
+
+    antecipacao_por_filial = defaultdict(float)
+    for por_filial in antecipacao_por_obs.values():
+        for cod_filial, valor in por_filial.items():
+            antecipacao_por_filial[cod_filial] += valor
+
+    antecipacao = montar_antecipacao("Total Antecipações", antecipacao_por_filial)
 
     com_dividendos = {"rotulo": "Total com Dividendos", "inicio": {}, "fim": {}, "variacao": {}}
     for momento in ("inicio", "fim", "variacao"):
@@ -7482,7 +7538,7 @@ def api_consultar_variacoes_filial():
             if dias_decorridos else 0.0
         )
 
-    _arredondar_linhas(linhas, total, antecipacao, com_dividendos, projecao)
+    _arredondar_linhas(linhas, antecipacoes_linhas, total, antecipacao, com_dividendos, projecao)
 
     return jsonify({
         "ok": True,
@@ -7498,6 +7554,7 @@ def api_consultar_variacoes_filial():
         "colunas": colunas,
         "linhas": linhas,
         "total": total,
+        "antecipacoes": antecipacoes_linhas,
         "antecipacao": antecipacao,
         "total_com_dividendos": com_dividendos,
         "projecao": projecao,

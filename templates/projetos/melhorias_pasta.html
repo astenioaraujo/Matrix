@@ -299,14 +299,14 @@
     });
   }
 
-  function excluirItem(id, btn) {
-    if (!confirm('Excluir esta melhoria?')) return;
+  async function excluirItem(id, btn) {
+    if (!await confirmarGlobal('Excluir esta melhoria?')) return;
     const fd = new FormData();
     fd.append('acao','excluir'); fd.append('id',id);
     post(fd).then(j => { if (j && j.ok) { btn.closest('tr').remove(); renumerar(); } });
   }
-  function excluirItemConc(id, btn) {
-    if (!confirm('Excluir esta melhoria concluída?')) return;
+  async function excluirItemConc(id, btn) {
+    if (!await confirmarGlobal('Excluir esta melhoria concluída?')) return;
     const fd = new FormData();
     fd.append('acao','excluir'); fd.append('id',id);
     post(fd).then(j => { if (j && j.ok) btn.closest('tr').remove(); });

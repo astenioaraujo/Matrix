@@ -310,7 +310,7 @@
 
   async function excluirLinha(botao) {
     const tr = botao.closest("tr");
-    if (!confirm("Excluir este lançamento?")) return;
+    if (!await confirmarGlobal("Excluir este lançamento?")) return;
     try {
       const data = await fetchJson(`/pdv/api/financeiro/caixa/${tr.dataset.id}`,
                                    { method: "DELETE" });

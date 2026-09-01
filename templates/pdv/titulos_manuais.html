@@ -244,7 +244,7 @@
   async function excluirTitulo(id) {
     const el = document.getElementById("statusTitulo");
     el.textContent = "";
-    if (!confirm("Excluir este título?")) return;
+    if (!await confirmarGlobal("Excluir este título?")) return;
     try {
       await enviar(`/pdv/api/financeiro/titulos-manuais/${id}`, { method: "DELETE" }, el);
       location.reload();

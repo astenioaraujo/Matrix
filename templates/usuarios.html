@@ -161,12 +161,12 @@
 
 <script>
 document.querySelectorAll(".btn-excluir-usuario").forEach(function(btn) {
-  btn.addEventListener("click", function(e) {
+  btn.addEventListener("click", async function(e) {
     e.preventDefault();
 
     const idUsuario = this.dataset.id;
 
-    if (!confirm("Deseja realmente excluir este usuário?")) {
+    if (!await confirmarGlobal("Deseja realmente excluir este usuário?")) {
       return;
     }
 

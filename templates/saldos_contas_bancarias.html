@@ -168,7 +168,7 @@
   }
 
   async function excluirConta(tr) {
-    if (!confirm("Excluir esta conta bancária?")) return;
+    if (!await confirmarGlobal("Excluir esta conta bancária?")) return;
     try {
       const data = await fetchJson(`/api/contas-bancarias/${tr.dataset.id}`, { method: "DELETE" });
       if (data.ok) {

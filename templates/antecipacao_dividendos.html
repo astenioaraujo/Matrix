@@ -188,14 +188,16 @@
     });
     tr._obsSalva = dados.observacao || "";
     const campoObs = tr.querySelector(".obs");
-    campoObs.addEventListener("input", () => agendarSalvamento(tr));
+    // A observação NÃO grava a cada tecla: cada prefixo digitado ("Baixa",
+    // "Baixa Fi", "Baixa Fiado"…) virava uma linha nova no banco.
     campoObs.addEventListener("blur", () => salvarAgora(tr));
     campoObs.addEventListener("keydown", ev => {
       if (ev.key !== "Enter") return;
       ev.preventDefault();
-      salvarAgora(tr);
       const primeiro = tr.querySelector(".valor");
       if (primeiro) { primeiro.focus(); primeiro.select(); }
+      else { campoObs.blur(); }
+      salvarAgora(tr);
     });
     tr.querySelector(".data").addEventListener("change", () => salvarAgora(tr));
     tr.querySelector(".btn-excluir").addEventListener("click", () => excluir(tr));
@@ -235,10 +237,17 @@
     i.value = i.value.trim() === "" ? "" : formatarValor(paraNumero(i.value));
   }
 
+  // Enquanto o campo de observação está em foco, a linha continua sendo a que
+  // já está no banco — é o texto final (no blur/Enter) que renomeia a linha.
+  function obsParaGravar(tr) {
+    const campo = tr.querySelector(".obs");
+    return document.activeElement === campo ? (tr._obsSalva || "") : campo.value.trim();
+  }
+
   function assinaturaLinha(tr) {
     const valores = {};
     tr.querySelectorAll(".valor").forEach(i => { valores[i.dataset.filial] = paraNumero(i.value); });
-    return JSON.stringify([tr.querySelector(".data").value, tr.querySelector(".obs").value.trim(), valores]);
+    return JSON.stringify([tr.querySelector(".data").value, obsParaGravar(tr), valores]);
   }
 
   function agendarSalvamento(tr) {
@@ -249,9 +258,19 @@
 
   // Grava a linha inteira. Não recarrega a tela: redesenhar durante a digitação
   // é o que causava os valores instáveis na tela de Saldos.
-  async function salvarAgora(tr) {
+  // Uma gravação de cada vez por linha: com duas em voo (debounce + blur, por
+  // exemplo) as duas liam a mesma observação anterior e a segunda inseria uma
+  // linha nova em vez de renomear a primeira.
+  function salvarAgora(tr) {
     clearTimeout(tr._timerSalvar);
+    tr._fila = (tr._fila || Promise.resolve()).then(() => enviarLinha(tr)).catch(() => {});
+    return tr._fila;
+  }
 
+  async function enviarLinha(tr) {
+    // A observação é lida uma vez só, antes do envio: depois do await o foco
+    // pode ter mudado e _obsSalva passaria a valer outro texto.
+    const obsEnviada = obsParaGravar(tr);
     const data = tr.querySelector(".data").value;
     if (!data) { selo(tr, "informe a data", "erro"); return; }
 
@@ -270,14 +289,14 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           data, valores,
-          observacao: tr.querySelector(".obs").value.trim(),
+          observacao: obsEnviada,
           observacao_anterior: tr._obsSalva,
         }),
       });
       const dados = await resp.json();
       if (!resp.ok || !dados.ok) throw new Error(dados.erro || "Erro ao salvar.");
       tr._ultimoSalvo = assinatura;
-      tr._obsSalva = tr.querySelector(".obs").value.trim();
+      tr._obsSalva = obsEnviada;
       // A data de uma linha nova só fica livre até o primeiro save.
       if (tr.dataset.nova === "1") {
         tr.dataset.nova = "0";
@@ -291,10 +310,17 @@
     }
   }
 
-  async function excluir(tr) {
+  function excluir(tr) {
     const data = tr.querySelector(".data").value;
     if (tr.dataset.nova === "1" || !data) { tr.remove(); recalcularRodape(); return; }
-    if (!confirm("Excluir os lançamentos desta data?")) return;
+    const obs = tr._obsSalva || "(sem observação)";
+    mostrarConfirmacaoGlobal(
+      "EXCLUIR LANÇAMENTO",
+      `Excluir os lançamentos de <strong>${data.split("-").reverse().join("/")}</strong> — ${obs}?`,
+      () => excluirConfirmado(tr, data));
+  }
+
+  async function excluirConfirmado(tr, data) {
     try {
       const resp = await fetch(
         `/api/antecipacao-dividendos?data=${data}&observacao=${encodeURIComponent(tr._obsSalva || "")}`,
@@ -302,7 +328,11 @@
       const dados = await resp.json();
       if (!resp.ok || !dados.ok) throw new Error(dados.erro || "Erro ao excluir.");
       await carregar();
-      mostrarStatus("Data excluída.", false);
+      // Zero removidos é linha que não existia mais no banco — dizer "excluído"
+      // aqui seria mentir para quem está olhando a tela.
+      mostrarStatus(dados.removidos ? "Lançamento excluído." :
+                    "Nada foi excluído: a linha não existe mais no banco.",
+                    !dados.removidos);
     } catch (e) {
       mostrarStatus(e.message || "Erro ao excluir.", true);
     }

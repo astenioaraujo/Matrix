@@ -315,7 +315,7 @@
                         <form method="POST"
                                 action="{{ url_for('financeiro.excluir_emprestimo_financiamento',
                                                 id_emprestimo=c.id_emprestimo) }}"
-                                onsubmit="return confirm('Confirma a exclusão deste contrato?');">
+                                onsubmit="return confirmarEnvio(this, 'Confirma a exclusão deste contrato?');">
 
                             <button type="submit" class="btn-excluir">
                             Excluir

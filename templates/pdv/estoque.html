@@ -239,8 +239,8 @@
 
   async function alternarOculto(botao, ocultar) {
     const tr = botao.closest("tr");
-    if (ocultar && !confirm("Ocultar este produto desta loja? Ele some das telas, mas continua " +
-                            "no histórico de vendas.")) return;
+    if (ocultar && !await confirmarGlobal("Ocultar este produto desta loja? Ele some das telas, " +
+                                         "mas continua no histórico de vendas.")) return;
     try {
       const data = await postJson("/pdv/api/estoque/ocultar", {
         id_pdv_produto: Number(tr.dataset.produto), ocultar: ocultar,

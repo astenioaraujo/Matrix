@@ -196,7 +196,7 @@
           <form method="post"
                 action="{{ url_for('operacoes.excluir_descarrego_combustivel', id_descarrego=d.id_descarrego) }}"
                 style="display:inline;"
-                onsubmit="return confirm('Excluir este descarrego?');">
+                onsubmit="return confirmarEnvio(this, 'Excluir este descarrego?');">
             <input type="hidden" name="data" value="{{ data_sel }}">
             {% if not bloqueada %}<button type="submit" class="btn btn-excluir">Excluir</button>{% endif %}
           </form>

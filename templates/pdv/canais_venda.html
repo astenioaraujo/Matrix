@@ -173,7 +173,7 @@
 
   async function excluirCanal(botao) {
     const tr = botao.closest("tr");
-    if (!confirm("Excluir este canal?")) return;
+    if (!await confirmarGlobal("Excluir este canal?")) return;
     try {
       const data = await fetchJson(`/pdv/api/canais/${tr.dataset.id}`, { method: "DELETE" });
       if (data.ok) { location.reload(); }

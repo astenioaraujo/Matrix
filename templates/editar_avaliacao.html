@@ -221,8 +221,8 @@
       btn.className = "btn btn-excluir";
       btn.textContent = "Excluir";
 
-      btn.onclick = function () {
-        if (confirm("Confirma excluir esta pergunta?")) {
+      btn.onclick = async function () {
+        if (await confirmarGlobal("Confirma excluir esta pergunta?")) {
           document.getElementById("form-excluir-" + idItem).submit();
         }
       };

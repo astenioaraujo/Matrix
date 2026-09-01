@@ -548,27 +548,61 @@
     </div>
 
     <script>
+        // Confirmação padrão do sistema. Nenhuma tela deve usar o confirm() do
+        // navegador: ele mostra o endereço do servidor no cabeçalho do diálogo
+        // e não segue a identidade visual do Matrix.
         let acaoConfirmacaoGlobal = null;
+        let cancelamentoConfirmacaoGlobal = null;
 
-        function mostrarConfirmacaoGlobal(titulo, mensagem, acaoConfirmar) {
+        function mostrarConfirmacaoGlobal(titulo, mensagem, acaoConfirmar, acaoCancelar) {
             document.getElementById("modalConfirmacaoTitulo").innerHTML = titulo || "ATENÇÃO";
             document.getElementById("modalConfirmacaoTexto").innerHTML = mensagem || "";
             acaoConfirmacaoGlobal = acaoConfirmar;
+            cancelamentoConfirmacaoGlobal = acaoCancelar;
             document.getElementById("modalConfirmacaoGlobal").style.display = "flex";
         }
 
         function fecharConfirmacaoGlobal() {
             document.getElementById("modalConfirmacaoGlobal").style.display = "none";
+            // Fechar é cancelar: quem espera resposta precisa receber o "não".
+            const cancelar = cancelamentoConfirmacaoGlobal;
             acaoConfirmacaoGlobal = null;
+            cancelamentoConfirmacaoGlobal = null;
+            if (cancelar) cancelar();
         }
 
         document.getElementById("modalConfirmacaoBotao").addEventListener("click", function() {
-            if (acaoConfirmacaoGlobal) {
             const acao = acaoConfirmacaoGlobal;
+            cancelamentoConfirmacaoGlobal = null;
             fecharConfirmacaoGlobal();
-            acao();
-            }
+            if (acao) acao();
         });
+
+        // Substitui o confirm() do navegador em código assíncrono:
+        //     if (!await confirmarGlobal("Excluir este registro?")) return;
+        function confirmarGlobal(mensagem, titulo) {
+            return new Promise(function (resolve) {
+                mostrarConfirmacaoGlobal(titulo, mensagem,
+                    function () { resolve(true); },
+                    function () { resolve(false); });
+            });
+        }
+
+        // Substitui onsubmit="return confirm(...)" / onclick="return confirm(...)":
+        //     onsubmit="return confirmarEnvio(this, 'Excluir este feriado?')"
+        // Barra a ação, pergunta e, no "Confirmar", refaz o envio.
+        function confirmarEnvio(elemento, mensagem, titulo) {
+            if (elemento._confirmado) { elemento._confirmado = false; return true; }
+            confirmarGlobal(mensagem, titulo).then(function (ok) {
+                if (!ok) return;
+                elemento._confirmado = true;
+                // form.submit() não dispara o onsubmit de novo; nos demais
+                // elementos o clique refeito passa direto pela trava acima.
+                if (elemento.tagName === "FORM") elemento.submit();
+                else elemento.click();
+            });
+            return false;
+        }
     </script>
     
 

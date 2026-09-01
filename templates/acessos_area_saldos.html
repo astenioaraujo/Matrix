@@ -205,7 +205,7 @@
   }
 
   async function excluirAcessoArea(id) {
-    if (!confirm("Remover este acesso?")) return;
+    if (!await confirmarGlobal("Remover este acesso?")) return;
     try {
       const data = await fetchJson(`/api/usuarios-areas-saldos/${id}`, { method: "DELETE" });
       if (data.ok) {

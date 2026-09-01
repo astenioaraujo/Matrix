@@ -25,6 +25,12 @@
 
   tr.linha-total td { border-top: 2px solid #333; border-bottom: none; color: #c62828; font-weight: 700; }
   tr.linha-dividendos td { border-top: 1px solid #333; font-weight: 700; }
+  /* Bloco das antecipações: recuado e mais leve, para se ler como detalhe do
+     Total Antecipações, e não como mais uma linha de saldo. */
+  tr.linha-antecipacao td { color: #555; }
+  tr.linha-antecipacao td.rotulo { color: #555; padding-left: 22px; font-style: italic; }
+  tr.linha-antecipacao-inicio td { border-top: 1px solid #cfd8dc; }
+  tr.linha-antecipacoes-total td { font-weight: 700; border-top: 1px solid #cfd8dc; }
   tr.linha-projecao td { font-weight: 700; border-bottom: none; }
   tr.linha-projecao td.variacao { color: #c62828; }
   .neg { color: #c62828; }
@@ -123,17 +129,25 @@
   }
 
   function montarCorpo(dados, momento, comVariacao) {
-    // Antecipação e total com dividendos só fazem sentido no bloco final.
+    // Antecipações e total com dividendos só fazem sentido no bloco final.
+    // Cada explicação lançada em Antecipação de Dividendos vira uma linha,
+    // fechando no Total Antecipações que entra no Total com Dividendos.
+    const antecipacoes = (dados.antecipacoes || []).map((l, i) => (
+      { ...l, _classe: "linha-antecipacao" + (i === 0 ? " linha-antecipacao-inicio" : "") }));
     const linhas = comVariacao
-      ? dados.linhas.concat([dados.total, dados.antecipacao, dados.total_com_dividendos])
+      ? dados.linhas.concat([dados.total], antecipacoes,
+                            [dados.antecipacao, dados.total_com_dividendos])
       : dados.linhas.concat([dados.total]);
     const corpo = linhas.map(l => {
       const ehTotal = l.rotulo === "Total";
       const ehDividendos = l.rotulo === "Total com Dividendos";
+      const ehTotalAntecipacoes = l === dados.antecipacao;
       const areas = dados.areas.map(a =>
         celulaValor(l[momento][String(a.id_area)], "por-area")).join("");
       const variacao = comVariacao ? celulaValor(l.variacao.total, "variacao") : "<td></td>";
-      const classe = ehTotal ? "linha-total" : (ehDividendos ? "linha-dividendos" : "");
+      const classe = l._classe || (ehTotal ? "linha-total"
+        : ehTotalAntecipacoes ? "linha-antecipacoes-total"
+        : ehDividendos ? "linha-dividendos" : "");
       return `<tr class="${classe}">
         <td class="rotulo">${l.rotulo}</td>
         ${celulaValor(l[momento].total, "total-emp")}

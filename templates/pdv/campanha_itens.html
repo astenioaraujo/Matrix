@@ -211,7 +211,7 @@
       const marca = document.getElementById("selMarca").value;
       const categoria = document.getElementById("selCategoria").value;
       if (!marca && !categoria &&
-          !confirm("Sem filtro, TODOS os produtos ativos entram na campanha. Continuar?")) return;
+          !await confirmarGlobal("Sem filtro, TODOS os produtos ativos entram na campanha. Continuar?")) return;
 
       btnCarregar.disabled = true;
       mostrar("Carregando…");
@@ -236,7 +236,7 @@
   const btnLimpar = document.getElementById("btnLimpar");
   if (btnLimpar) {
     btnLimpar.addEventListener("click", async () => {
-      if (!confirm("Remover todos os itens desta campanha?")) return;
+      if (!await confirmarGlobal("Remover todos os itens desta campanha?")) return;
       try {
         const data = await fetchJson(`/pdv/api/campanhas/${ID_CAMPANHA}/itens`, { method: "DELETE" });
         if (data.ok) { location.reload(); } else { mostrar(data.erro); }

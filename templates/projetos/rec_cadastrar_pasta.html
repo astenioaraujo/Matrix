@@ -164,8 +164,8 @@
     fd.append('acao','editar'); fd.append('id',id); fd.append('campo',campo); fd.append('valor',valor);
     post(fd);
   }
-  function excluirModelo(id, btn) {
-    if (!confirm('Excluir esta recorrência?')) return;
+  async function excluirModelo(id, btn) {
+    if (!await confirmarGlobal('Excluir esta recorrência?')) return;
     const fd = new FormData();
     fd.append('acao','excluir'); fd.append('id',id);
     post(fd).then(j => { if (j && j.ok) { btn.closest('tr').remove(); renumerar(); } });

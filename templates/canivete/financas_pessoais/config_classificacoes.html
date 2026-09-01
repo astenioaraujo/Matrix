@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  h2 { font-size: 26px; font-weight: 800; margin-bottom: 6px; }
+  .empresa { font-size: 17px; margin-bottom: 20px; color: #444; }
+  .msg-ok  { background:#eef9d2; color:#2f4f00; border:1px solid #d7ef98; padding:10px 14px; border-radius:8px; margin-bottom:14px; }
+  .msg-err { background:#ffe6e6; color:#8b0000; border:1px solid #f2b6b6; padding:10px 14px; border-radius:8px; margin-bottom:14px; }
+  .card { background:#fff; border:1px solid #ddd; border-radius:12px; padding:24px; margin-bottom:24px; }
+  .table-wrapper { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { background:#f1f5f9; font-weight:700; padding:10px 12px; text-align:left; border-bottom:2px solid #ddd; }
+  td { padding:9px 12px; border-bottom:1px solid #eee; vertical-align:middle; }
+  tr:hover td { background:#f9fafb; }
+  input[type=text] { height:34px; border-radius:7px; border:1px solid #ccc; padding:0 10px; font-size:14px; width:100%; }
+  .btn-incluir { background:#16a34a; color:#fff; font-weight:700; border:none; border-radius:8px; padding:8px 20px; cursor:pointer; }
+  .btn-incluir:hover { background:#15803d; }
+  .btn-salvar { background:#1d4ed8; color:#fff; font-weight:700; border:none; border-radius:6px; padding:5px 14px; cursor:pointer; font-size:13px; }
+  .btn-salvar:hover { background:#1e40af; }
+  .btn-excluir { background:#dc2626; color:#fff; font-weight:700; border:none; border-radius:6px; padding:5px 12px; cursor:pointer; font-size:13px; }
+  .btn-excluir:hover { background:#b91c1c; }
+  .btn-inativar { background:#b45309; color:#fff; font-weight:700; border:none; border-radius:6px; padding:5px 12px; cursor:pointer; font-size:13px; }
+  .btn-inativar:hover { background:#92400e; }
+  .btn-ativar { background:#0f766e; color:#fff; font-weight:700; border:none; border-radius:6px; padding:5px 12px; cursor:pointer; font-size:13px; }
+  .btn-ativar:hover { background:#115e59; }
+  .nova-linha { background:#f0fdf4; }
+  .linha-inativa td { background:#fafafa; }
+  .linha-inativa input[type=text] { color:#777; }
+  .badge-inativo { font-size:11px; background:#fee2e2; color:#b91c1c; border-radius:4px; padding:2px 6px; font-weight:700; white-space:nowrap; }
+  .nota { color:#64748b; font-size:13px; margin-bottom:14px; }
+</style>
+
+<h2>🏷️ Classificações</h2>
+<div class="empresa">Usuário: <strong>{{ nome_usuario }}</strong></div>
+
+{% with msgs = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in msgs %}
+    <div class="{{ 'msg-ok' if cat == 'success' else 'msg-err' }}">{{ msg }}</div>
+  {% endfor %}
+{% endwith %}
+
+<div class="card">
+  <div class="nota">
+    Inativar tira a classificação das telas de lançamento e do orçamento, sem apagar nada:
+    nos meses em que ela teve lançamento, continua aparecendo na consulta.
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr><th>Nome</th><th style="width:290px;"></th></tr>
+      </thead>
+      <tbody>
+        {% for c in classificacoes %}
+        <tr class="{{ 'linha-inativa' if not c.ativo else '' }}">
+          <td>
+            <form method="post" id="form-editar-{{ c.id }}" style="margin:0; display:flex; gap:8px; align-items:center;">
+              <input type="hidden" name="acao" value="editar">
+              <input type="hidden" name="id_editar" value="{{ c.id }}">
+              <input type="text" name="nome_editar" value="{{ c.nome }}" required>
+              {% if not c.ativo %}<span class="badge-inativo">Inativa</span>{% endif %}
+            </form>
+          </td>
+          <td style="display:flex; gap:8px;">
+            <button type="submit" form="form-editar-{{ c.id }}" class="btn-salvar">Salvar</button>
+            <form method="post" style="margin:0;">
+              <input type="hidden" name="acao" value="alternar_ativo">
+              <input type="hidden" name="id_alternar" value="{{ c.id }}">
+              <button type="submit" class="{{ 'btn-ativar' if not c.ativo else 'btn-inativar' }}">
+                {{ 'Ativar' if not c.ativo else 'Inativar' }}
+              </button>
+            </form>
+            {% if not c.tem_lancamento %}
+            <form method="post" style="margin:0;" id="form-excluir-{{ c.id }}">
+              <input type="hidden" name="acao" value="excluir">
+              <input type="hidden" name="id_excluir" value="{{ c.id }}">
+              <button type="button" class="btn-excluir" onclick="confirmarExclusao({{ c.id }})">Excluir</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="2" style="color:#888; font-style:italic; text-align:center; padding:18px;">Nenhuma classificação cadastrada.</td></tr>
+        {% endfor %}
+        <tr class="nova-linha">
+          <td>
+            <form method="post" id="form-nova" style="margin:0;">
+              <input type="hidden" name="acao" value="incluir">
+              <input type="text" name="nome" placeholder="Nova classificação..." required>
+          </td>
+          <td>
+              <button type="submit" class="btn-incluir">Incluir</button>
+            </form>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
+<div id="modal-excluir" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:#fff; border-radius:14px; padding:32px 28px; max-width:400px; width:90%; text-align:center; box-shadow:0 8px 32px rgba(0,0,0,0.18);">
+    <div style="font-size:20px; font-weight:800; color:#b91c1c; margin-bottom:10px;">Confirmar Exclusão</div>
+    <div style="color:#444; margin-bottom:24px;">Deseja excluir esta classificação?</div>
+    <div style="display:flex; gap:12px; justify-content:center;">
+      <button onclick="fecharModal()" style="padding:9px 22px; border-radius:8px; border:1px solid #bbb; background:#f5f5f5; font-weight:700; cursor:pointer;">Cancelar</button>
+      <button id="btn-confirmar" style="padding:9px 22px; border-radius:8px; border:none; background:#dc2626; color:#fff; font-weight:700; cursor:pointer;">Excluir</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let idExcluir = null;
+  const modal = document.getElementById("modal-excluir");
+  function confirmarExclusao(id) { idExcluir = id; modal.style.display = "flex"; }
+  function fecharModal() { modal.style.display = "none"; idExcluir = null; }
+  document.getElementById("btn-confirmar").onclick = function () {
+    if (!idExcluir) return;
+    document.getElementById("form-excluir-" + idExcluir).submit();
+  };
+  modal.addEventListener("click", e => { if (e.target === modal) fecharModal(); });
+</script>
+{% endblock %}

@@ -204,12 +204,18 @@ def fp_lancar():
         """, (id_usuario, mes_sel, ano_sel))
         lancamentos = cur.fetchall() or []
 
-        # Classificações ativas
+        # Ativas + as inativas que já foram usadas no mês exibido: sem isso,
+        # editar um lançamento antigo perderia a classificação dele
         cur.execute("""
             SELECT id, nome FROM fp_classificacoes
-            WHERE id_usuario = %s AND ativo = TRUE
+            WHERE id_usuario = %s
+              AND (ativo = TRUE
+                   OR EXISTS (SELECT 1 FROM fp_lancamentos l
+                               WHERE l.id_classificacao = fp_classificacoes.id
+                                 AND EXTRACT(MONTH FROM l.data) = %s
+                                 AND EXTRACT(YEAR  FROM l.data) = %s))
             ORDER BY nome
-        """, (id_usuario,))
+        """, (id_usuario, mes_sel, ano_sel))
         classificacoes = cur.fetchall() or []
 
         # Contas bancárias ativas
@@ -302,9 +308,14 @@ def fp_consultar():
 
         cur.execute("""
             SELECT id, nome FROM fp_classificacoes
-            WHERE id_usuario = %s AND ativo = TRUE
+            WHERE id_usuario = %s
+              AND (ativo = TRUE
+                   OR EXISTS (SELECT 1 FROM fp_lancamentos l
+                               WHERE l.id_classificacao = fp_classificacoes.id
+                                 AND EXTRACT(MONTH FROM l.data) = %s
+                                 AND EXTRACT(YEAR  FROM l.data) = %s))
             ORDER BY nome
-        """, (id_usuario,))
+        """, (id_usuario, mes_sel, ano_sel))
         classificacoes_consulta = cur.fetchall() or []
 
         cur.execute("""
@@ -329,8 +340,10 @@ def fp_consultar():
                AND EXTRACT(MONTH FROM l.data) = %s
                AND EXTRACT(YEAR  FROM l.data) = %s
             WHERE c.id_usuario = %s
-              AND c.ativo = TRUE
-            GROUP BY c.id, c.nome, c.valor_orcado, c.ajustar_ao_real
+            GROUP BY c.id, c.nome, c.valor_orcado, c.ajustar_ao_real, c.ativo
+            -- inativa não some do passado: no mês em que houve lançamento ela
+            -- continua na tela, para o realizado daquele mês não mudar
+            HAVING c.ativo = TRUE OR COALESCE(SUM(l.valor), 0) <> 0
 
             UNION ALL
 
@@ -457,106 +470,198 @@ def fp_pagar():
 # FINANÇAS PESSOAIS — CONFIGURAÇÕES (classificações)
 # -----------------------------------------------------------
 
-@canivete_bp.route("/financas-pessoais/configuracoes", methods=["GET", "POST"])
-def fp_configuracoes():
+def _guarda_config_fp():
+    """Login + permissão de Configurações. Devolve resposta de redirect ou None."""
     r = _checar_login()
     if r:
         return r
-
-    id_usuario = session["id_usuario"]
+    id_usuario  = session["id_usuario"]
     cod_empresa = str(session["cod_empresa"]).strip()
-
     if not _tem_perm(id_usuario, cod_empresa, "FINANCAS_PESSOAIS_CONFIGURACOES"):
         flash("Sem permissão.", "error")
         return redirect(url_for("canivete.menu_financas_pessoais"))
+    return None
 
-    conn = get_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    try:
-        if request.method == "POST":
-            acao = request.form.get("acao")
-            tabela = request.form.get("tabela", "classificacoes")
-
-            if tabela == "classificacoes":
-                if acao == "incluir":
-                    nome = (request.form.get("nome") or "").strip()
-                    if nome:
-                        cur.execute("INSERT INTO fp_classificacoes (id_usuario, nome) VALUES (%s, %s)", (id_usuario, nome))
-                        conn.commit()
-                        flash("Classificação incluída.", "success")
-                elif acao == "excluir":
-                    id_excluir = request.form.get("id_excluir")
-                    if id_excluir:
-                        cur.execute("DELETE FROM fp_classificacoes WHERE id = %s AND id_usuario = %s", (id_excluir, id_usuario))
-                        conn.commit()
-                        flash("Classificação excluída.", "success")
-                elif acao == "editar":
-                    id_editar = request.form.get("id_editar")
-                    nome = (request.form.get("nome_editar") or "").strip()
-                    if id_editar and nome:
-                        cur.execute("UPDATE fp_classificacoes SET nome = %s, atualizado_em = NOW() WHERE id = %s AND id_usuario = %s", (nome, id_editar, id_usuario))
-                        conn.commit()
-                        flash("Classificação atualizada.", "success")
-
-            elif tabela == "orcamento":
-                is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
-                for key, val in request.form.items():
-                    if key.startswith("orcado_"):
-                        id_class = key.replace("orcado_", "")
-                        try:
-                            valor = float((val or "0").replace(".", "").replace(",", "."))
-                        except ValueError:
-                            valor = 0.0
-                        ajustar = request.form.get(f"ajustar_{id_class}") == "1"
-                        cur.execute("""
-                            UPDATE fp_classificacoes SET valor_orcado = %s, ajustar_ao_real = %s
-                            WHERE id = %s AND id_usuario = %s
-                        """, (valor, ajustar, id_class, id_usuario))
-                conn.commit()
-                if is_ajax:
-                    cur.close()
-                    conn.close()
-                    return jsonify({"ok": True})
-                flash("Orçamento salvo.", "success")
-
-            elif tabela == "contas":
-                if acao == "incluir":
-                    nome = (request.form.get("nome") or "").strip()
-                    if nome:
-                        cur.execute("INSERT INTO fp_contas_bancarias (id_usuario, nome) VALUES (%s, %s)", (id_usuario, nome))
-                        conn.commit()
-                        flash("Conta bancária incluída.", "success")
-                elif acao == "excluir":
-                    id_excluir = request.form.get("id_excluir")
-                    if id_excluir:
-                        cur.execute("DELETE FROM fp_contas_bancarias WHERE id = %s AND id_usuario = %s", (id_excluir, id_usuario))
-                        conn.commit()
-                        flash("Conta bancária excluída.", "success")
-                elif acao == "editar":
-                    id_editar = request.form.get("id_editar")
-                    nome = (request.form.get("nome_editar") or "").strip()
-                    if id_editar and nome:
-                        cur.execute("UPDATE fp_contas_bancarias SET nome = %s, atualizado_em = NOW() WHERE id = %s AND id_usuario = %s", (nome, id_editar, id_usuario))
-                        conn.commit()
-                        flash("Conta bancária atualizada.", "success")
-
-        cur.execute("SELECT id, nome, ativo, valor_orcado, ajustar_ao_real FROM fp_classificacoes WHERE id_usuario = %s ORDER BY nome", (id_usuario,))
-        classificacoes = cur.fetchall() or []
-
-        cur.execute("SELECT id, nome, ativo FROM fp_contas_bancarias WHERE id_usuario = %s ORDER BY nome", (id_usuario,))
-        contas_bancarias = cur.fetchall() or []
-
-    finally:
-        cur.close()
-        conn.close()
-
+@canivete_bp.route("/financas-pessoais/configuracoes")
+def fp_configuracoes():
+    """Menu de Configurações: um bloco por assunto, uma página cada."""
+    r = _guarda_config_fp()
+    if r:
+        return r
     return render_template(
         "canivete/financas_pessoais/configuracoes.html",
         nome_usuario=session.get("nome_usuario"),
         url_voltar=url_for("canivete.menu_financas_pessoais"),
-        classificacoes=classificacoes,
+    )
+
+
+@canivete_bp.route("/financas-pessoais/configuracoes/contas", methods=["GET", "POST"])
+def fp_config_contas():
+    r = _guarda_config_fp()
+    if r:
+        return r
+    id_usuario = session["id_usuario"]
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if request.method == "POST":
+            acao = request.form.get("acao")
+            if acao == "incluir":
+                nome = (request.form.get("nome") or "").strip()
+                if nome:
+                    cur.execute("INSERT INTO fp_contas_bancarias (id_usuario, nome) VALUES (%s, %s)",
+                                (id_usuario, nome))
+                    conn.commit()
+                    flash("Conta bancária incluída.", "success")
+            elif acao == "excluir":
+                id_excluir = request.form.get("id_excluir")
+                if id_excluir:
+                    cur.execute("DELETE FROM fp_contas_bancarias WHERE id = %s AND id_usuario = %s",
+                                (id_excluir, id_usuario))
+                    conn.commit()
+                    flash("Conta bancária excluída.", "success")
+            elif acao == "editar":
+                id_editar = request.form.get("id_editar")
+                nome = (request.form.get("nome_editar") or "").strip()
+                if id_editar and nome:
+                    cur.execute("""UPDATE fp_contas_bancarias SET nome = %s, atualizado_em = NOW()
+                                    WHERE id = %s AND id_usuario = %s""", (nome, id_editar, id_usuario))
+                    conn.commit()
+                    flash("Conta bancária atualizada.", "success")
+            return redirect(url_for("canivete.fp_config_contas"))
+
+        cur.execute("SELECT id, nome, ativo FROM fp_contas_bancarias WHERE id_usuario = %s ORDER BY nome",
+                    (id_usuario,))
+        contas_bancarias = cur.fetchall() or []
+    finally:
+        cur.close(); conn.close()
+
+    return render_template(
+        "canivete/financas_pessoais/config_contas.html",
+        nome_usuario=session.get("nome_usuario"),
+        url_voltar=url_for("canivete.fp_configuracoes"),
         contas_bancarias=contas_bancarias,
+    )
+
+
+@canivete_bp.route("/financas-pessoais/configuracoes/classificacoes", methods=["GET", "POST"])
+def fp_config_classificacoes():
+    r = _guarda_config_fp()
+    if r:
+        return r
+    id_usuario = session["id_usuario"]
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if request.method == "POST":
+            acao = request.form.get("acao")
+            if acao == "incluir":
+                nome = (request.form.get("nome") or "").strip()
+                if nome:
+                    cur.execute("INSERT INTO fp_classificacoes (id_usuario, nome) VALUES (%s, %s)",
+                                (id_usuario, nome))
+                    conn.commit()
+                    flash("Classificação incluída.", "success")
+            elif acao == "excluir":
+                id_excluir = request.form.get("id_excluir")
+                if id_excluir:
+                    cur.execute("DELETE FROM fp_classificacoes WHERE id = %s AND id_usuario = %s",
+                                (id_excluir, id_usuario))
+                    conn.commit()
+                    flash("Classificação excluída.", "success")
+            elif acao == "editar":
+                id_editar = request.form.get("id_editar")
+                nome = (request.form.get("nome_editar") or "").strip()
+                if id_editar and nome:
+                    cur.execute("""UPDATE fp_classificacoes SET nome = %s, atualizado_em = NOW()
+                                    WHERE id = %s AND id_usuario = %s""", (nome, id_editar, id_usuario))
+                    conn.commit()
+                    flash("Classificação atualizada.", "success")
+            elif acao == "alternar_ativo":
+                # inativar não apaga nada: o histórico dos meses em que ela foi
+                # usada continua mostrando a classificação (ver fp_consultar)
+                id_alt = request.form.get("id_alternar")
+                if id_alt:
+                    cur.execute("""UPDATE fp_classificacoes SET ativo = NOT ativo, atualizado_em = NOW()
+                                    WHERE id = %s AND id_usuario = %s RETURNING ativo""",
+                                (id_alt, id_usuario))
+                    linha = cur.fetchone()
+                    conn.commit()
+                    if linha:
+                        flash("Classificação reativada." if linha["ativo"] else
+                              "Classificação inativada — some das telas, mas os meses com lançamento continuam mostrando.",
+                              "success")
+            return redirect(url_for("canivete.fp_config_classificacoes"))
+
+        cur.execute("""
+            SELECT c.id, c.nome, c.ativo,
+                   EXISTS (SELECT 1 FROM fp_lancamentos l WHERE l.id_classificacao = c.id) AS tem_lancamento
+            FROM fp_classificacoes c
+            WHERE c.id_usuario = %s
+            ORDER BY c.ativo DESC, c.nome
+        """, (id_usuario,))
+        classificacoes = cur.fetchall() or []
+    finally:
+        cur.close(); conn.close()
+
+    return render_template(
+        "canivete/financas_pessoais/config_classificacoes.html",
+        nome_usuario=session.get("nome_usuario"),
+        url_voltar=url_for("canivete.fp_configuracoes"),
+        classificacoes=classificacoes,
+    )
+
+
+@canivete_bp.route("/financas-pessoais/configuracoes/orcamento", methods=["GET", "POST"])
+def fp_config_orcamento():
+    r = _guarda_config_fp()
+    if r:
+        return r
+    id_usuario = session["id_usuario"]
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if request.method == "POST":
+            is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+            for key, val in request.form.items():
+                if key.startswith("orcado_"):
+                    id_class = key.replace("orcado_", "")
+                    try:
+                        valor = float((val or "0").replace(".", "").replace(",", "."))
+                    except ValueError:
+                        valor = 0.0
+                    ajustar = request.form.get(f"ajustar_{id_class}") == "1"
+                    cur.execute("""
+                        UPDATE fp_classificacoes SET valor_orcado = %s, ajustar_ao_real = %s
+                        WHERE id = %s AND id_usuario = %s
+                    """, (valor, ajustar, id_class, id_usuario))
+            conn.commit()
+            if is_ajax:
+                cur.close(); conn.close()
+                return jsonify({"ok": True})
+            flash("Orçamento salvo.", "success")
+            return redirect(url_for("canivete.fp_config_orcamento"))
+
+        # só as ativas: orçar uma classificação que saiu de uso não faz sentido
+        cur.execute("""
+            SELECT id, nome, valor_orcado, ajustar_ao_real
+            FROM fp_classificacoes
+            WHERE id_usuario = %s AND ativo = TRUE
+            ORDER BY nome
+        """, (id_usuario,))
+        classificacoes = cur.fetchall() or []
+    finally:
+        cur.close(); conn.close()
+
+    return render_template(
+        "canivete/financas_pessoais/config_orcamento.html",
+        nome_usuario=session.get("nome_usuario"),
+        url_voltar=url_for("canivete.fp_configuracoes"),
+        classificacoes=classificacoes,
     )
 
 
@@ -579,6 +684,25 @@ FUSO_BR = ZoneInfo("America/Recife")
 def _hoje_br() -> date:
     """A data de hoje no fuso do usuário, não no do servidor."""
     return _datetime_agenda.now(FUSO_BR).date()
+
+def _agora_br():
+    """Data e hora de agora no fuso do usuário — o servidor roda em UTC."""
+    return _datetime_agenda.now(FUSO_BR)
+
+
+# Hora a partir da qual cada turno pode ser dado por concluído no PRÓPRIO dia.
+# Antes disso o turno ainda está acontecendo: marcar seria dizer que terminou
+# o que nem começou. Dia passado libera os três; dia futuro não libera nenhum.
+HORA_MINIMA_CONCLUIR = {"manha": 12, "tarde": 18, "noturno": 19}
+
+
+def _pode_concluir(data: date, turno: str, hoje: date, hora: int) -> bool:
+    if data > hoje:
+        return False
+    if data < hoje:
+        return True
+    return hora >= HORA_MINIMA_CONCLUIR.get(turno, 0)
+
 
 DIAS_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
 MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
@@ -1013,6 +1137,7 @@ def agenda():
         dias_pt=DIAS_PT, meses_pt=MESES_PT,
         feriados=feriados,
         especiais=especiais,
+        hora_agora=_agora_br().hour,
         recorrentes=recorrentes,
         indice_semana=indice_semana,
         programacao_hoje=programacao_hoje,
@@ -1497,6 +1622,15 @@ def agenda_concluir():
 
     if turno not in ("manha", "tarde", "noturno") or not data_str:
         return jsonify({"ok": False})
+
+    # a trava é aqui, não só no botão que a tela deixa de mostrar
+    agora = _agora_br()
+    try:
+        data_conc = date.fromisoformat(data_str)
+    except ValueError:
+        return jsonify({"ok": False}), 400
+    if concluido and not _pode_concluir(data_conc, turno, agora.date(), agora.hour):
+        return jsonify({"ok": False, "erro": "Este turno ainda não pode ser concluído."}), 403
 
     conn = get_connection()
     cur  = conn.cursor()

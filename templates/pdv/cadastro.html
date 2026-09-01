@@ -229,7 +229,7 @@
   }
 
   async function excluir(tr) {
-    if (!confirm("Excluir este registro?")) return;
+    if (!await confirmarGlobal("Excluir este registro?")) return;
     try {
       const data = await fetchJson(`${API}/${tr.dataset.id}`, { method: "DELETE" });
       if (data.ok) {

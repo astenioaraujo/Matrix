@@ -141,7 +141,7 @@
               Editar
             </button>
             <form method="POST" style="display:inline"
-              onsubmit="return confirm('Excluir este registro?')">
+              onsubmit="return confirmarEnvio(this, 'Excluir este registro?')">
               <input type="hidden" name="acao" value="excluir">
               <input type="hidden" name="id"   value="{{ r.id }}">
               <button type="submit" class="btn-del">✕</button>

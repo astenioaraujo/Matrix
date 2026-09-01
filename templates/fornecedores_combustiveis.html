@@ -152,7 +152,7 @@
               <form method="post"
                     action="{{ url_for('operacoes.excluir_fornecedor_combustivel', id_fornecedor=f.id_fornecedor) }}"
                     style="display:inline;"
-                    onsubmit="return confirm('Confirma excluir este fornecedor?');">
+                    onsubmit="return confirmarEnvio(this, 'Confirma excluir este fornecedor?');">
                 <button type="submit" class="btn-excluir">Excluir</button>
               </form>
             </td>

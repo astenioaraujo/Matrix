@@ -841,6 +841,13 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
         {% set noturno = blocos.get((d,'noturno'), None) %}
 
         {% set ambos_conc = manha.concluido and tarde.concluido %}
+        {# turno só se conclui depois de acontecer: dia passado libera os três,
+           dia futuro nenhum, e hoje cada um na sua hora (12h / 18h / 19h) #}
+        {% set passado  = d < hoje %}
+        {% set pode_m   = passado or (e_hoje and hora_agora >= 12) %}
+        {% set pode_t   = passado or (e_hoje and hora_agora >= 18) %}
+        {% set pode_n   = (passado or (e_hoje and hora_agora >= 19))
+                          and noturno and (noturno.conteudo or noturno.slots) %}
         {% set nome_feriado = feriados.get(d, '') %}
         {% set e_feriado = (nome_feriado != '' or d in especiais) and not e_hoje and not ambos_conc %}
         <td class="ag-cell {{ 'hoje-cell' if e_hoje else '' }} {{ 'fim-semana-cell' if fim_sem else '' }} {{ 'dia-concluido' if ambos_conc else '' }} {{ 'manha-concluida' if manha.concluido and not ambos_conc else '' }} {{ 'feriado' if e_feriado else '' }} {{ 'inicio-mes' if dia.day == 1 else '' }}"
@@ -858,9 +865,9 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
             <div class="ag-turno-label">
               <span class="ag-acoes">
                 <button class="ag-ac-btn" title="Horários" onclick="abrirModal('{{ d }}','manha')">⚙</button>
-                <button class="ag-ac-btn {{ 'on' if manha.concluido else '' }}"
+{% if pode_m or manha.concluido %}                <button class="ag-ac-btn {{ 'on' if manha.concluido else '' }}"
                   id="chk-{{ d }}-manha"
-                  onclick="toggleConc('{{ d }}','manha',this)">✔</button>
+                  onclick="toggleConc('{{ d }}','manha',this)">✔</button>{% endif %}
               </span>
             </div>
             {% if manha.slots %}
@@ -882,9 +889,9 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
             <div class="ag-turno-label">
               <span class="ag-acoes">
                 <button class="ag-ac-btn" title="Horários" onclick="abrirModal('{{ d }}','tarde')">⚙</button>
-                <button class="ag-ac-btn {{ 'on' if tarde.concluido else '' }}"
+{% if pode_t or tarde.concluido %}                <button class="ag-ac-btn {{ 'on' if tarde.concluido else '' }}"
                   id="chk-{{ d }}-tarde"
-                  onclick="toggleConc('{{ d }}','tarde',this)">✔</button>
+                  onclick="toggleConc('{{ d }}','tarde',this)">✔</button>{% endif %}
               </span>
             </div>
             {% if tarde.slots %}
@@ -908,9 +915,9 @@ tr.sep-mes-spacer td.fim-semana { color: #cbd5e1; }
               <span class="lbl-ico">🌙</span><span>N</span>
               <span class="ag-acoes">
                 <button class="ag-ac-btn" onclick="abrirModal('{{ d }}','noturno')">⚙</button>
-                <button class="ag-ac-btn {{ 'on' if noturno.concluido else '' }}"
+{% if pode_n or noturno.concluido %}                <button class="ag-ac-btn {{ 'on' if noturno.concluido else '' }}"
                   id="chk-{{ d }}-noturno"
-                  onclick="toggleConc('{{ d }}','noturno',this)">✔</button>
+                  onclick="toggleConc('{{ d }}','noturno',this)">✔</button>{% endif %}
               </span>
             </div>
             {% if noturno.slots %}
@@ -1653,10 +1660,14 @@ function toggleConc(data, turno, btn) {
   btn.classList.toggle('on', on);
   document.getElementById('turno-' + data + '-' + turno)
     .classList.toggle('concluido', on);
-  const chkM = document.getElementById('chk-' + data + '-manha');
-  const chkT = document.getElementById('chk-' + data + '-tarde');
-  const mConc = chkM?.classList.contains('on');
-  const tConc = chkT?.classList.contains('on');
+  // o estado sai do próprio turno, não do botão ✔: fora da janela de horário
+  // o botão nem é renderizado, e ler um elemento ausente devolvia undefined —
+  // `classList.toggle(cls, undefined)` INVERTE em vez de desligar, e era isso
+  // que marcava o dia inteiro ao concluir só a manhã.
+  const conc = (t) => !!document.getElementById('turno-' + data + '-' + t)
+                        ?.classList.contains('concluido');
+  const mConc = conc('manha');
+  const tConc = conc('tarde');
   const ambos = mConc && tConc;
   const cell  = document.getElementById('dia-' + data);
   cell?.classList.toggle('dia-concluido', ambos);
@@ -1680,8 +1691,8 @@ function addNoturno(data) {
         <span class="lbl-ico">🌙</span><span>N</span>
         <span class="ag-acoes">
           <button class="ag-ac-btn" onclick="abrirModal('${data}','noturno')">⚙</button>
-          <button class="ag-ac-btn" id="chk-${data}-noturno"
-            onclick="toggleConc('${data}','noturno',this)">✔</button>
+          <!-- sem o ✔: o noturno acabado de criar ainda não tem tarefa; o check
+               aparece na próxima abertura, quando houver tarefa e passar das 19h -->
         </span>
       </div>
       <textarea class="ag-inp" id="txt-${data}-noturno" rows="1"
@@ -2044,8 +2055,8 @@ function journalKeydown(ev, txt) {
   }
 }
 
-function excluirJournal(box, id) {
-  if (!confirm('Excluir esta ocorrência?')) return;
+async function excluirJournal(box, id) {
+  if (!await confirmarGlobal('Excluir esta ocorrência?')) return;
   if (box.dataset.editando === String(id)) limparFormJournal(box);
   chamarJournal(box, box.dataset.urlExcluir, { id: id });
 }
@@ -2200,12 +2211,12 @@ function toggleProjTarefa(btn) {
 
 /* ✖ da meta / tarefa eventual: cancela sem apagar (o 👁 mostra de volta).
    Clicando de novo numa cancelada, ela volta para a lista. */
-function cancelarProjTarefa(btn) {
+async function cancelarProjTarefa(btn) {
   const linha = btn.closest('.ag-proj-linha');
   const id    = linha.dataset.id;
   if (!id) { linha.remove(); return; }       // linha nova, ainda sem texto
   const jaCancelada = linha.dataset.cancelado === '1';
-  if (!jaCancelada && !confirm('Cancelar esta tarefa?')) return;
+  if (!jaCancelada && !await confirmarGlobal('Cancelar esta tarefa?')) return;
 
   linha.dataset.cancelado = jaCancelada ? '' : '1';
   linha.dataset.quando = jaCancelada ? '' : new Date().toISOString().slice(0, 10);
@@ -2277,13 +2288,13 @@ function toggleProjRec(btn) {
     .then(() => { if (on) recarregarJournalSeAberto(card); });
 }
 
-function cancelarProjRec(btn) {
+async function cancelarProjRec(btn) {
   const linha = btn.closest('.ag-proj-linha');
   const id    = linha.dataset.exec;
   if (!id) return;
   const cancelada = linha.dataset.situacao === 'cancelada';
   const situacao  = cancelada ? 'pendente' : 'cancelada';
-  if (!cancelada && !confirm('Cancelar esta recorrência no mês?')) return;
+  if (!cancelada && !await confirmarGlobal('Cancelar esta recorrência no mês?')) return;
   linha.dataset.situacao = situacao;
   linha.classList.toggle('cancelada', !cancelada);
   linha.classList.remove('feito');

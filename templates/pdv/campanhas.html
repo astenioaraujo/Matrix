@@ -202,8 +202,8 @@
     } catch (e) { erro("status", e.message); }
   }
 
-  function encerrar(botao) {
-    if (!confirm("Encerrar esta campanha agora? O término passa a ser hoje e não há como reativá-la.")) return;
+  async function encerrar(botao) {
+    if (!await confirmarGlobal("Encerrar esta campanha agora? O término passa a ser hoje e não há como reativá-la.")) return;
     situacao(botao, "ENCERRADA");
   }
 </script>

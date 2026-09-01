@@ -277,7 +277,7 @@
     const pergunta = cancelando
       ? `Devolver TUDO e cancelar a venda nº {{ venda.numero_venda }} (R$ ${formatarBR(total)})?`
       : `Confirmar a devolução de R$ ${formatarBR(total)}?`;
-    if (!confirm(pergunta)) return;
+    if (!await confirmarGlobal(pergunta)) return;
 
     const itens = [];
     LINHAS.forEach(tr => {

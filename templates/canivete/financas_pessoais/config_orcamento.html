@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  h2 { font-size: 26px; font-weight: 800; margin-bottom: 6px; }
+  .empresa { font-size: 17px; margin-bottom: 20px; color: #444; }
+  .msg-ok  { background:#eef9d2; color:#2f4f00; border:1px solid #d7ef98; padding:10px 14px; border-radius:8px; margin-bottom:14px; }
+  .msg-err { background:#ffe6e6; color:#8b0000; border:1px solid #f2b6b6; padding:10px 14px; border-radius:8px; margin-bottom:14px; }
+  .card { background:#fff; border:1px solid #ddd; border-radius:12px; padding:24px; margin-bottom:24px; }
+  .table-wrapper { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { background:#f1f5f9; font-weight:700; padding:10px 12px; text-align:left; border-bottom:2px solid #ddd; }
+  td { padding:9px 12px; border-bottom:1px solid #eee; vertical-align:middle; }
+  tr:hover td { background:#f9fafb; }
+  input[type=text] { height:34px; border-radius:7px; border:1px solid #ccc; padding:0 10px; font-size:14px; width:100%; }
+  .btn-incluir { background:#16a34a; color:#fff; font-weight:700; border:none; border-radius:8px; padding:8px 20px; cursor:pointer; }
+  .btn-incluir:hover { background:#15803d; }
+  .btn-salvar { background:#1d4ed8; color:#fff; font-weight:700; border:none; border-radius:6px; padding:5px 14px; cursor:pointer; font-size:13px; }
+  .btn-salvar:hover { background:#1e40af; }
+  .btn-excluir { background:#dc2626; color:#fff; font-weight:700; border:none; border-radius:6px; padding:5px 12px; cursor:pointer; font-size:13px; }
+  .btn-excluir:hover { background:#b91c1c; }
+  .btn-inativar { background:#b45309; color:#fff; font-weight:700; border:none; border-radius:6px; padding:5px 12px; cursor:pointer; font-size:13px; }
+  .btn-inativar:hover { background:#92400e; }
+  .btn-ativar { background:#0f766e; color:#fff; font-weight:700; border:none; border-radius:6px; padding:5px 12px; cursor:pointer; font-size:13px; }
+  .btn-ativar:hover { background:#115e59; }
+  .nova-linha { background:#f0fdf4; }
+  .linha-inativa td { background:#fafafa; }
+  .linha-inativa input[type=text] { color:#777; }
+  .badge-inativo { font-size:11px; background:#fee2e2; color:#b91c1c; border-radius:4px; padding:2px 6px; font-weight:700; white-space:nowrap; }
+  .nota { color:#64748b; font-size:13px; margin-bottom:14px; }
+</style>
+
+<h2>🎯 Orçamento por Classificação</h2>
+<div class="empresa">Usuário: <strong>{{ nome_usuario }}</strong></div>
+
+{% with msgs = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in msgs %}
+    <div class="{{ 'msg-ok' if cat == 'success' else 'msg-err' }}">{{ msg }}</div>
+  {% endfor %}
+{% endwith %}
+
+<div class="card">
+  <div class="nota">Só as classificações ativas entram aqui.</div>
+  <form method="post" id="form-orcamento">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Classificação</th>
+            <th style="width:180px;">Valor Orçado (R$)</th>
+            <th style="width:160px; text-align:center;">Ajustar ao real</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in classificacoes %}
+          <tr>
+            <td>{{ c.nome }}</td>
+            <td>
+              <input type="text" name="orcado_{{ c.id }}"
+                     value="{{ '{:,.2f}'.format(c.valor_orcado or 0).replace(',','X').replace('.',',').replace('X','.') }}"
+                     style="text-align:right;" onblur="autoSalvarOrcamento()">
+            </td>
+            <td style="text-align:center;">
+              <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:13px; color:#555;">
+                <input type="checkbox" name="ajustar_{{ c.id }}" value="1"
+                       {% if c.ajustar_ao_real %}checked{% endif %}
+                       style="width:16px; height:16px; cursor:pointer; accent-color:#0f766e;"
+                       onchange="autoSalvarOrcamento()">
+                Ajustar
+              </label>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" style="color:#888; font-style:italic; text-align:center; padding:18px;">Nenhuma classificação ativa.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:16px;">
+      <button type="submit" class="btn-incluir">Salvar Orçamento</button>
+    </div>
+  </form>
+</div>
+
+
+<script>
+  function autoSalvarOrcamento() {
+    const fd = new FormData(document.getElementById("form-orcamento"));
+    fetch(window.location.pathname, {
+      method: "POST",
+      headers: { "X-Requested-With": "XMLHttpRequest" },
+      body: fd
+    });
+  }
+</script>
+{% endblock %}
