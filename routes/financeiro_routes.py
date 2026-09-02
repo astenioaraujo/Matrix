@@ -5920,16 +5920,16 @@ def filiais_da_area(cur, cod_empresa, id_area):
 
 
 def _areas_do_usuario(cur, cod_empresa, id_usuario, coluna):
-    """Áreas concedidas ao usuário em caixas_acessos.
+    """Áreas concedidas ao usuário em usuarios_areas_saldos.
 
-    Saldos usa a MESMA tabela de Caixas: quem consulta a área no caixa
-    consulta em saldos, quem altera altera. A linha de resumo (id_area NULL)
-    é ignorada aqui — saldos não tem aba de todas as áreas.
+    Saldos tem acesso PRÓPRIO, separado do de Caixas (caixas_acessos): a mesma
+    pessoa mexe com saldos numa empresa e com caixa em outra, então um acesso
+    não pode arrastar o outro. Concedido em Saldos → Acessos por Área.
     """
     cur.execute(f"""
-        SELECT id_area FROM caixas_acessos
+        SELECT id_area FROM usuarios_areas_saldos
          WHERE cod_empresa = %s AND id_usuario = %s
-           AND id_area IS NOT NULL AND {coluna} = TRUE
+           AND ativo = TRUE AND {coluna} = TRUE
     """, (cod_empresa, id_usuario))
     linhas = cur.fetchall()
     if not linhas:
@@ -6619,7 +6619,7 @@ def api_listar_usuarios_areas_saldos():
     try:
         cur.execute("""
             SELECT uas.id_usuario_area_saldo, uas.id_usuario, u.nome AS nome_usuario,
-                   uas.id_area, a.nome_area
+                   uas.id_area, a.nome_area, uas.pode_consultar, uas.pode_alterar
             FROM usuarios_areas_saldos uas
             JOIN usuarios u ON u.id_usuario = uas.id_usuario
             JOIN areas a ON a.id_area = uas.id_area
@@ -6646,16 +6646,28 @@ def api_conceder_acesso_area_saldos():
     if not id_usuario or not id_area:
         return jsonify({"ok": False, "erro": "Informe id_usuario e id_area."}), 400
 
+    # Consultar é o mínimo de um acesso: sem ele a área não aparece na tela e a
+    # linha não teria efeito nenhum. Quem não deve mais ver a área é removido.
+    pode_consultar = bool(dados.get("pode_consultar", True))
+    pode_alterar = bool(dados.get("pode_alterar", False))
+    if not pode_consultar:
+        return jsonify({"ok": False, "erro": "Acesso sem consulta não tem efeito. Remova o acesso."}), 400
+
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
         cur.execute("""
-            INSERT INTO usuarios_areas_saldos (cod_empresa, id_usuario, id_area)
-            VALUES (%s, %s, %s)
+            INSERT INTO usuarios_areas_saldos
+                   (cod_empresa, id_usuario, id_area, pode_consultar, pode_alterar)
+            VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT (cod_empresa, id_usuario, id_area)
-            DO UPDATE SET ativo = TRUE, atualizado_em = NOW()
-            RETURNING id_usuario_area_saldo, id_usuario, id_area
-        """, (cod_empresa, id_usuario, id_area))
+            DO UPDATE SET ativo = TRUE,
+                          pode_consultar = EXCLUDED.pode_consultar,
+                          pode_alterar = EXCLUDED.pode_alterar,
+                          atualizado_em = NOW()
+            RETURNING id_usuario_area_saldo, id_usuario, id_area,
+                      pode_consultar, pode_alterar
+        """, (cod_empresa, id_usuario, id_area, pode_consultar, pode_alterar))
         acesso = cur.fetchone()
         conn.commit()
     except Exception as e:

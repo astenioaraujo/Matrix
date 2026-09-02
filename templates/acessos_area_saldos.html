@@ -110,6 +110,7 @@
 <div class="painel">
   <div class="topo-painel">
     Quem pode ver e lançar saldos de cada área. Sem acesso concedido aqui, o usuário não vê a área na tela de Saldos.
+    Este acesso é só de Saldos — não se confunde com o de Caixas, que é concedido na tela própria dele.
   </div>
   <div class="linha-form-acesso">
     <select id="selUsuarioAcesso">
@@ -122,11 +123,14 @@
         <option value="{{ a.id_area }}">{{ a.nome_area }}</option>
       {% endfor %}
     </select>
+    <label style="display:flex;align-items:center;gap:6px;font-weight:600;color:#333">
+      <input type="checkbox" id="chkPodeAlterarNovo"> Pode lançar
+    </label>
     <button type="button" class="btn-novo" id="btnConcederAcesso">+ Conceder Acesso</button>
   </div>
   <table>
     <thead>
-      <tr><th>Usuário</th><th>Área</th><th style="width:150px">Ações</th></tr>
+      <tr><th>Usuário</th><th>Área</th><th style="width:120px">Pode lançar</th><th style="width:150px">Ações</th></tr>
     </thead>
     <tbody id="corpoAcessoArea"></tbody>
   </table>
@@ -161,9 +165,12 @@
     tr.innerHTML = `
       <td>${escapeHtml(acesso.nome_usuario)}</td>
       <td>${escapeHtml(acesso.nome_area)}</td>
+      <td class="col-acoes"><input type="checkbox" class="chk-alterar" ${acesso.pode_alterar ? "checked" : ""}></td>
       <td class="col-acoes"><button type="button" class="btn-mini">Remover</button></td>
     `;
     tr.querySelector(".btn-mini").addEventListener("click", () => excluirAcessoArea(acesso.id_usuario_area_saldo));
+    tr.querySelector(".chk-alterar").addEventListener("change", (ev) =>
+      salvarAcessoArea(acesso.id_usuario, acesso.id_area, ev.target.checked));
     return tr;
   }
 
@@ -178,9 +185,29 @@
     }
   }
 
+  async function salvarAcessoArea(id_usuario, id_area, pode_alterar) {
+    try {
+      const data = await fetchJson("/api/usuarios-areas-saldos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id_usuario, id_area, pode_consultar: true, pode_alterar }),
+      });
+      if (data.ok) {
+        mostrarStatus("statusAcessoArea", "Acesso atualizado com sucesso.", false);
+      } else {
+        mostrarStatus("statusAcessoArea", data.erro || "Erro ao atualizar acesso.", true);
+      }
+      carregarAcessoArea();
+    } catch (e) {
+      mostrarStatus("statusAcessoArea", e.message || "Erro ao atualizar acesso.", true);
+      carregarAcessoArea();
+    }
+  }
+
   async function concederAcessoArea() {
     const id_usuario = Number(document.getElementById("selUsuarioAcesso").value);
     const id_area = Number(document.getElementById("selAreaAcesso").value);
+    const pode_alterar = document.getElementById("chkPodeAlterarNovo").checked;
 
     if (!id_usuario || !id_area) {
       mostrarStatus("statusAcessoArea", "Selecione usuário e área.", true);
@@ -191,7 +218,7 @@
       const data = await fetchJson("/api/usuarios-areas-saldos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id_usuario, id_area }),
+        body: JSON.stringify({ id_usuario, id_area, pode_consultar: true, pode_alterar }),
       });
       if (data.ok) {
         mostrarStatus("statusAcessoArea", "Acesso concedido com sucesso.", false);

@@ -296,6 +296,13 @@
 .ag-proj-linha.marcado .ag-proj-rec-txt {
   background: #fde047; border-radius: 3px; padding-left: 3px; padding-right: 3px;
 }
+/* o mesmo marca-texto na Programação do Dia e nas Recorrentes. Aqui o texto é
+   um <input> (dá para editar), então quem realça é o DUPLO clique — o simples
+   precisa continuar levando o cursor para dentro do campo. */
+.ag-rec-linha.marcado .ag-rec-txt,
+.ag-dia-linha.marcado .ag-dia-txt {
+  background: #fde047 !important; color: #1f2937 !important; border-radius: 3px;
+}
 .ag-proj-add {
   display: block; width: 100%; text-align: center;
   font-size: 11px; background: none; border: none;
@@ -2171,7 +2178,51 @@ document.addEventListener('click', ev => {
   if (linha) alternarMarcaTexto(linha);
 });
 
+/* ── o mesmo marca-texto na Programação do Dia e nas Recorrentes ──
+   Bloco aqui é a caixa: a Programação do Dia inteira, e cada semana da
+   coluna Recorrentes — uma marcação em cada, como nos projetos. */
+function _blocoSimples(linha) {
+  const dia = linha.closest('.ag-dia');
+  if (dia) return {el: dia, chave: 'dia', linhas: '.ag-dia-linha'};
+  const rec = linha.closest('.ag-rec');
+  if (rec) return {el: rec, chave: 'rec:' + rec.dataset.semana, linhas: '.ag-rec-linha'};
+  return null;
+}
+
+function alternarMarcaSimples(linha) {
+  const bloco = _blocoSimples(linha);
+  if (!bloco) return;
+  const jaMarcada = linha.classList.contains('marcado');
+  bloco.el.querySelectorAll(bloco.linhas + '.marcado')
+         .forEach(l => l.classList.remove('marcado'));
+  const marcas = _lerMarcas();
+  if (jaMarcada) {
+    delete marcas[bloco.chave];
+  } else {
+    linha.classList.add('marcado');
+    marcas[bloco.chave] = linha.dataset.id || '';
+  }
+  _gravarMarcas(marcas);
+}
+
+function restaurarMarcaSimples() {
+  const marcas = _lerMarcas();
+  document.querySelectorAll('.ag-dia-linha, .ag-rec-linha').forEach(linha => {
+    const bloco = _blocoSimples(linha);
+    if (bloco && marcas[bloco.chave] && marcas[bloco.chave] === (linha.dataset.id || ''))
+      linha.classList.add('marcado');
+  });
+}
+
+document.addEventListener('dblclick', ev => {
+  const txt = ev.target.closest('.ag-dia-txt, .ag-rec-txt');
+  if (!txt) return;
+  const linha = txt.closest('.ag-dia-linha, .ag-rec-linha');
+  if (linha) alternarMarcaSimples(linha);
+});
+
 document.addEventListener('DOMContentLoaded', restaurarMarcaTexto);
+document.addEventListener('DOMContentLoaded', restaurarMarcaSimples);
 
 /* ── metas e eventuais ── */
 function salvarProjTarefa(campo) {
