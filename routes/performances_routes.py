@@ -72,13 +72,11 @@ def menu_performances():
             "PERFORMANCE_GERENTES",
         )
 
-        # Abastecimentos veio do módulo de RH e continua com as permissões de
-        # lá — só o lugar no menu mudou.
         pode_importar_abastecimentos = usuario_tem_permissao(
-            id_usuario, cod_empresa, "RH", "IMPORTAR_ABASTECIMENTOS"
+            id_usuario, cod_empresa, "PERFORMANCES", "IMPORTAR_ABASTECIMENTOS"
         )
         pode_consultar_abastecimentos = usuario_tem_permissao(
-            id_usuario, cod_empresa, "RH", "CONSULTAR_ABASTECIMENTOS"
+            id_usuario, cod_empresa, "PERFORMANCES", "CONSULTAR_ABASTECIMENTOS"
         )
 
     pode_avaliacoes = (
@@ -121,18 +119,27 @@ def menu_performance_abastecimentos():
     tipo_global = str(session.get("tipo_global") or "").strip().lower()
 
     if tipo_global == "superusuario":
+        pode_menu_abastecimentos = True
         pode_importar_abastecimentos = True
         pode_consultar_abastecimentos = True
     else:
+        pode_menu_abastecimentos = usuario_tem_permissao(
+            id_usuario, cod_empresa, "PERFORMANCES", "MENU_ABASTECIMENTOS"
+        )
         pode_importar_abastecimentos = usuario_tem_permissao(
-            id_usuario, cod_empresa, "RH", "IMPORTAR_ABASTECIMENTOS"
+            id_usuario, cod_empresa, "PERFORMANCES", "IMPORTAR_ABASTECIMENTOS"
         )
         pode_consultar_abastecimentos = usuario_tem_permissao(
-            id_usuario, cod_empresa, "RH", "CONSULTAR_ABASTECIMENTOS"
+            id_usuario, cod_empresa, "PERFORMANCES", "CONSULTAR_ABASTECIMENTOS"
         )
 
-    # O menu abre com qualquer uma das duas.
-    if not (pode_importar_abastecimentos or pode_consultar_abastecimentos):
+    # O menu abre com a opção do próprio submenu ou com qualquer uma das duas
+    # de dentro — quem já tinha acesso às telas não precisa da permissão nova.
+    if not (
+        pode_menu_abastecimentos
+        or pode_importar_abastecimentos
+        or pode_consultar_abastecimentos
+    ):
         flash("Você não tem acesso à performance em abastecimentos.", "erro")
         return redirect(url_for("performances.menu_performances"))
 

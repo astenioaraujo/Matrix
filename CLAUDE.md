@@ -177,7 +177,13 @@ Menu com quatro opções: **Programar Vistorias**, **Executar Vistorias**, **Con
 
 Importar e Consultar Abastecimentos saíram do menu de RH e viraram o submenu **Performance em Abastecimentos** (`GET /performances/abastecimentos/menu`, `templates/menu_performance_abastecimentos.html`), ao lado de Avaliações de Funcionários e Performance de Gerentes.
 
-As telas continuam nas mesmas URLs (`/rh/abastecimentos/importar` e `/consultar`, em `routes/rh_routes.py`) e nas **mesmas permissões** `RH/IMPORTAR_ABASTECIMENTOS` e `RH/CONSULTAR_ABASTECIMENTOS` — só o lugar no menu mudou, ninguém precisou receber acesso de novo. O "← Voltar" e o redirect por falta de permissão apontam para o menu novo.
+As telas continuam nas mesmas URLs (`/rh/abastecimentos/importar` e `/consultar`, em `routes/rh_routes.py`). O "← Voltar" e o redirect por falta de permissão apontam para o menu novo.
+
+**As permissões acompanharam o menu em 02/09/2026** (`migrations/mover_abastecimentos_para_performances.sql`): saíram de `RH` e viraram `PERFORMANCES/MENU_ABASTECIMENTOS` 1160, `PERFORMANCES/IMPORTAR_ABASTECIMENTOS` 1170 e `PERFORMANCES/CONSULTAR_ABASTECIMENTOS` 1180. Ficavam listadas em RH, onde ninguém mais as procurava. `usuarios_permissoes` guarda `sistema`/`opcao` como **texto**, então a migration atualiza as 13 concessões junto — sem isso todo mundo perderia o acesso. O submenu abre com `MENU_ABASTECIMENTOS` **ou** com qualquer uma das duas de dentro, para quem já tinha acesso às telas não precisar da permissão nova.
+
+**Importação: um mês por arquivo.** O relatório de origem vem com linhas soltas de outros meses (datas quebradas, lançamentos atrasados). Como a gravação apaga o mês antes de inserir, meia dúzia de linhas perdidas de julho dentro do arquivo de agosto apagava **julho inteiro** — foi o que aconteceu em 02/09/2026 na EMP010 (6.639 registros perdidos). Agora a importação conta as linhas por competência, elege o **mês predominante**, e quando o arquivo tem mais de um mês pede confirmação antes de gravar qualquer coisa, dizendo o que será desprezado. Confirmado, só o mês predominante é apagado e reinserido; as demais linhas são descartadas. Entre a pergunta e a confirmação o arquivo fica guardado num temporário (`PASTA_TMP_ABASTECIMENTOS` + token), para não pedir o upload de novo.
+
+**Dias trabalhados** na consulta: datas distintas com abastecimento (`COUNT(DISTINCT data_abastecimento)`), por funcionário. Nos totais de filial e geral **não é a soma** dos dias dos funcionários — é a contagem de datas distintas, porque todos trabalham nos mesmos dias. Calculado na consulta, nunca persistido.
 
 ## Funções (descrição livre)
 

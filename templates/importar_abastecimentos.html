@@ -52,6 +52,32 @@
   .resumo strong {
     color: #333;
   }
+
+  .card-confirmar {
+    border-left: 6px solid #d97706;
+    background: #fffbeb;
+  }
+
+  .card-confirmar h3 {
+    color: #92400e;
+    margin-bottom: 12px;
+  }
+
+  .card-confirmar ul {
+    margin: 10px 0 18px 20px;
+    font-size: 15px;
+  }
+
+  .btn-cancelar {
+    background: #fff;
+    color: #555;
+    border: 1px solid #ccc;
+    padding: 12px 18px;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-left: 8px;
+  }
 </style>
 
 <div class="pagina-titulo">Importar Abastecimentos</div>
@@ -75,7 +101,47 @@
   </form>
 </div>
 
-<!-- ✅ AQUI ESTAVA FALTANDO -->
+{% if confirmacao %}
+<div class="card card-confirmar">
+  <h3>Confirme o mês da importação</h3>
+
+  <p><strong>Arquivo:</strong> {{ confirmacao.nome_arquivo }}</p>
+
+  <p>
+    A maioria dos registros é de <strong>{{ confirmacao.competencia }}</strong>
+    ({{ confirmacao.qtd_predominante }} linhas). O arquivo deve conter um mês só,
+    então as <strong>{{ confirmacao.qtd_ignoradas }}</strong> linhas de outras
+    datas serão desprezadas:
+  </p>
+
+  <ul>
+    {% for m in confirmacao.outros_meses %}
+      <li>{{ m.competencia }} — {{ m.linhas }} linha(s)</li>
+    {% endfor %}
+  </ul>
+
+  <p>
+    Ao confirmar, os lançamentos de <strong>{{ confirmacao.competencia }}</strong>
+    já existentes nesta empresa serão substituídos. Os demais meses não são tocados.
+  </p>
+
+  <form method="POST" style="margin-top: 18px;">
+    <input type="hidden" name="token" value="{{ confirmacao.token }}">
+    <input type="hidden" name="nome_arquivo" value="{{ confirmacao.nome_arquivo }}">
+    <input type="hidden" name="confirmar_ano" value="{{ confirmacao.ano }}">
+    <input type="hidden" name="confirmar_mes" value="{{ confirmacao.mes }}">
+
+    <button type="submit" class="btn-upload">
+      Importar {{ confirmacao.competencia }}
+    </button>
+
+    <a href="{{ url_for('rh.importar_abastecimentos') }}">
+      <button type="button" class="btn-cancelar">Cancelar</button>
+    </a>
+  </form>
+</div>
+{% endif %}
+
 {% if resumo %}
 <div class="card resumo">
   <h3 style="margin-bottom: 12px;">Resumo da Importação</h3>
@@ -85,6 +151,10 @@
   <p><strong>Mês(es) importado(s):</strong> {{ resumo.meses_importados }}</p>
 
   <p><strong>Registros importados:</strong> {{ resumo.linhas }}</p>
+
+  {% if resumo.linhas_ignoradas %}
+  <p><strong>Linhas de outros meses desprezadas:</strong> {{ resumo.linhas_ignoradas }}</p>
+  {% endif %}
 
   <p><strong>Total de Litros:</strong>
     {{ "{:,.2f}".format(resumo.total_quantidade).replace(",", "X").replace(".", ",").replace("X", ".") }}

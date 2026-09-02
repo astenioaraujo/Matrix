@@ -1,3 +1,6 @@
+import os
+import tempfile
+
 from flask import Blueprint, render_template, session, redirect, url_for, request, flash
 from db import get_connection
 from security_helpers import (
@@ -6,6 +9,10 @@ from security_helpers import (
 )
 
 rh_bp = Blueprint("rh", __name__)
+
+# Arquivo de abastecimentos guardado entre o envio e a confirmacao do mes
+# predominante, para que o usuario nao precise selecioná-lo duas vezes.
+PASTA_TMP_ABASTECIMENTOS = os.path.join(tempfile.gettempdir(), "matrix_abastecimentos")
 
 
 # ------------------------------------------
@@ -97,15 +104,16 @@ def avaliacoes():
 # ------------------------------------------
 @rh_bp.route("/abastecimentos/importar", methods=["GET", "POST"])
 @permissao_obrigatoria(
-    "RH",
+    "PERFORMANCES",
     "IMPORTAR_ABASTECIMENTOS",
     redirecionar_para="performances.menu_performance_abastecimentos",
 )
 def importar_abastecimentos():
     from openpyxl import load_workbook
-    import tempfile
     import os
     import re
+    from collections import Counter
+    from uuid import uuid4
     import unicodedata
     from datetime import datetime, date
     from psycopg2.extras import execute_batch
@@ -171,21 +179,43 @@ def importar_abastecimentos():
     resumo = None
 
     if request.method == "POST":
-        arquivo = request.files.get("arquivo")
-
-        if not arquivo or arquivo.filename == "":
-            flash("Selecione um arquivo.", "error")
-            return redirect(url_for("rh.importar_abastecimentos"))
-
+        # O arquivo chega de duas formas: no envio normal, e de volta pelo
+        # "token" quando o usuario confirma o mes predominante. Guardar o
+        # arquivo entre as duas requisicoes evita pedir o upload de novo.
+        token = (request.form.get("token") or "").strip()
         caminho_tmp = None
+        manter_tmp = False
+
+        if token:
+            if not re.fullmatch(r"[A-Za-z0-9_-]+\.xlsx", token):
+                flash("Arquivo da confirmacao invalido. Envie o arquivo de novo.", "error")
+                return redirect(url_for("rh.importar_abastecimentos"))
+
+            caminho_tmp = os.path.join(PASTA_TMP_ABASTECIMENTOS, token)
+
+            if not os.path.exists(caminho_tmp):
+                flash("O arquivo enviado expirou. Envie o arquivo de novo.", "error")
+                return redirect(url_for("rh.importar_abastecimentos"))
+
+            nome_arquivo = (request.form.get("nome_arquivo") or token).strip()
+        else:
+            arquivo = request.files.get("arquivo")
+
+            if not arquivo or arquivo.filename == "":
+                flash("Selecione um arquivo.", "error")
+                return redirect(url_for("rh.importar_abastecimentos"))
+
+            nome_arquivo = arquivo.filename
+
+            os.makedirs(PASTA_TMP_ABASTECIMENTOS, exist_ok=True)
+            token = f"{uuid4().hex}.xlsx"
+            caminho_tmp = os.path.join(PASTA_TMP_ABASTECIMENTOS, token)
+            arquivo.save(caminho_tmp)
+
         conn = get_connection()
         cur = conn.cursor()
 
         try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-                caminho_tmp = tmp.name
-                arquivo.save(caminho_tmp)
-
             wb = load_workbook(caminho_tmp, data_only=True)
             ws = wb.active
 
@@ -330,7 +360,7 @@ def importar_abastecimentos():
                     "quantidade": quantidade,
                     "preco_unitario": preco,
                     "valor_total": valor,
-                    "arquivo_origem": arquivo.filename,
+                    "arquivo_origem": nome_arquivo,
                     "numero_abastecimentos": 0,
                 })
 
@@ -350,18 +380,67 @@ def importar_abastecimentos():
                 )
                 return redirect(url_for("rh.importar_abastecimentos"))
 
-            meses_importados = sorted(set(
+            # ------------------------------------------
+            # MES PREDOMINANTE
+            # O arquivo e de um mes so. Datas soltas de outros meses
+            # (linhas residuais do relatorio de origem) sao desprezadas:
+            # importar todas faria o DELETE por mes apagar a carga inteira
+            # de um mes por causa de meia duzia de linhas perdidas.
+            # ------------------------------------------
+            contagem_meses = Counter(
                 (l["data_abastecimento"].year, l["data_abastecimento"].month)
                 for l in linhas
-            ))
+            )
 
-            for ano, mes in meses_importados:
-                cur.execute("""
-                    DELETE FROM abastecimentos
-                    WHERE cod_empresa = %s
-                      AND EXTRACT(YEAR FROM data_abastecimento) = %s
-                      AND EXTRACT(MONTH FROM data_abastecimento) = %s
-                """, (cod_empresa, ano, mes))
+            (ano_pred, mes_pred), qtd_pred = contagem_meses.most_common(1)[0]
+
+            confirmado = (
+                request.form.get("confirmar_ano") == str(ano_pred)
+                and request.form.get("confirmar_mes") == str(mes_pred)
+            )
+
+            if len(contagem_meses) > 1 and not confirmado:
+                manter_tmp = True
+
+                confirmacao = {
+                    "token": token,
+                    "nome_arquivo": nome_arquivo,
+                    "ano": ano_pred,
+                    "mes": mes_pred,
+                    "competencia": f"{mes_pred:02d}/{ano_pred}",
+                    "qtd_predominante": qtd_pred,
+                    "qtd_ignoradas": len(linhas) - qtd_pred,
+                    "outros_meses": [
+                        {"competencia": f"{m:02d}/{a}", "linhas": q}
+                        for (a, m), q in sorted(contagem_meses.items())
+                        if (a, m) != (ano_pred, mes_pred)
+                    ],
+                }
+
+                return render_template(
+                    "importar_abastecimentos.html",
+                    cod_empresa=cod_empresa,
+                    nome_empresa=nome_empresa,
+                    resumo=None,
+                    confirmacao=confirmacao,
+                    url_voltar=url_for("performances.menu_performance_abastecimentos"),
+                    texto_voltar="\u2190 Voltar",
+                )
+
+            linhas = [
+                l for l in linhas
+                if (l["data_abastecimento"].year, l["data_abastecimento"].month)
+                == (ano_pred, mes_pred)
+            ]
+
+            meses_importados = [(ano_pred, mes_pred)]
+
+            cur.execute("""
+                DELETE FROM abastecimentos
+                WHERE cod_empresa = %s
+                  AND EXTRACT(YEAR FROM data_abastecimento) = %s
+                  AND EXTRACT(MONTH FROM data_abastecimento) = %s
+            """, (cod_empresa, ano_pred, mes_pred))
 
             linhas_insert = [
                 (
@@ -398,12 +477,16 @@ def importar_abastecimentos():
             conn.commit()
 
             resumo = {
-                "arquivo": arquivo.filename,
+                "arquivo": nome_arquivo,
                 "linhas": len(linhas),
                 "total_quantidade": float(sum(l["quantidade"] or 0 for l in linhas)),
                 "total_valor": float(sum(l["valor_total"] or 0 for l in linhas)),
                 "total_abastecimentos": int(sum(l["numero_abastecimentos"] or 0 for l in linhas)),
                 "meses_importados": ", ".join([f"{mes:02d}/{ano}" for ano, mes in meses_importados]),
+                "linhas_ignoradas": len(contagem_meses) > 1 and sum(
+                    q for (a, m), q in contagem_meses.items()
+                    if (a, m) != (ano_pred, mes_pred)
+                ) or 0,
             }
 
             flash(f"{len(linhas)} registros importados com sucesso.", "success")
@@ -416,7 +499,7 @@ def importar_abastecimentos():
             cur.close()
             conn.close()
 
-            if caminho_tmp and os.path.exists(caminho_tmp):
+            if not manter_tmp and caminho_tmp and os.path.exists(caminho_tmp):
                 os.remove(caminho_tmp)
 
     return render_template(
@@ -424,6 +507,7 @@ def importar_abastecimentos():
         cod_empresa=cod_empresa,
         nome_empresa=nome_empresa,
         resumo=resumo,
+        confirmacao=None,
         url_voltar=url_for("performances.menu_performance_abastecimentos"),
         texto_voltar="← Voltar",
     )
@@ -432,7 +516,7 @@ def importar_abastecimentos():
 # ------------------------------------------
 @rh_bp.route("/abastecimentos/consultar")
 @permissao_obrigatoria(
-    "RH",
+    "PERFORMANCES",
     "CONSULTAR_ABASTECIMENTOS",
     redirecionar_para="performances.menu_performance_abastecimentos",
 )
@@ -466,6 +550,7 @@ def consultar_abastecimentos():
 
     ordens_sql = {
         "qtd": "qtd_abastecimentos DESC",
+        "dias": "dias_trabalhados DESC",
         "volume": "total_litros DESC",
         "valor": "total_valor DESC",
         "ticket": "ticket_medio DESC",
@@ -513,6 +598,7 @@ def consultar_abastecimentos():
                 COALESCE(a.cod_filial, 0) AS cod_filial,
                 COALESCE(f.nome_filial, 'Sem filial informada') AS nome_filial,
                 a.funcionario,
+                COUNT(DISTINCT a.data_abastecimento) AS dias_trabalhados,
                 COALESCE(SUM(a.numero_abastecimentos), 0) AS qtd_abastecimentos,
                 COALESCE(SUM(a.quantidade), 0) AS total_litros,
                 COALESCE(SUM(a.valor_total), 0) AS total_valor,
@@ -550,6 +636,7 @@ def consultar_abastecimentos():
 
             if cod not in heatmap:
                 heatmap[cod] = {
+                    "dias": {"min": l["dias_trabalhados"] or 0, "max": l["dias_trabalhados"] or 0},
                     "qtd": {"min": l["qtd_abastecimentos"] or 0, "max": l["qtd_abastecimentos"] or 0},
                     "litros": {"min": l["total_litros"] or 0, "max": l["total_litros"] or 0},
                     "valor": {"min": l["total_valor"] or 0, "max": l["total_valor"] or 0},
@@ -557,6 +644,9 @@ def consultar_abastecimentos():
                     "litros_abast": {"min": l["litros_por_abastecimento"] or 0, "max": l["litros_por_abastecimento"] or 0},
                 }
             else:
+                heatmap[cod]["dias"]["min"] = min(heatmap[cod]["dias"]["min"], l["dias_trabalhados"] or 0)
+                heatmap[cod]["dias"]["max"] = max(heatmap[cod]["dias"]["max"], l["dias_trabalhados"] or 0)
+
                 heatmap[cod]["qtd"]["min"] = min(heatmap[cod]["qtd"]["min"], l["qtd_abastecimentos"] or 0)
                 heatmap[cod]["qtd"]["max"] = max(heatmap[cod]["qtd"]["max"], l["qtd_abastecimentos"] or 0)
 
@@ -579,6 +669,7 @@ def consultar_abastecimentos():
 
             if cod not in totais_filiais:
                 totais_filiais[cod] = {
+                    "dias_trabalhados": 0,
                     "qtd_abastecimentos": 0,
                     "total_litros": 0,
                     "total_valor": 0,
@@ -590,6 +681,21 @@ def consultar_abastecimentos():
             totais_filiais[cod]["total_litros"] += l["total_litros"] or 0
             totais_filiais[cod]["total_valor"] += l["total_valor"] or 0
 
+        # Dias com abastecimento na filial: datas distintas, nunca a soma
+        # dos dias dos funcionarios (todos trabalham nos mesmos dias).
+        cur.execute(f"""
+            SELECT
+                COALESCE(a.cod_filial, 0) AS cod_filial,
+                COUNT(DISTINCT a.data_abastecimento) AS dias_trabalhados
+            FROM abastecimentos a
+            WHERE {where_sql}
+            GROUP BY COALESCE(a.cod_filial, 0)
+        """, params)
+
+        for d in cur.fetchall() or []:
+            if d["cod_filial"] in totais_filiais:
+                totais_filiais[d["cod_filial"]]["dias_trabalhados"] = d["dias_trabalhados"] or 0
+
         for cod, t in totais_filiais.items():
             qtd = t["qtd_abastecimentos"] or 0
             if qtd > 0:
@@ -598,6 +704,7 @@ def consultar_abastecimentos():
 
         cur.execute(f"""
             SELECT
+                COUNT(DISTINCT a.data_abastecimento) AS dias_trabalhados,
                 COALESCE(SUM(a.numero_abastecimentos), 0) AS qtd_abastecimentos,
                 COALESCE(SUM(a.quantidade), 0) AS total_litros,
                 COALESCE(SUM(a.valor_total), 0) AS total_valor,

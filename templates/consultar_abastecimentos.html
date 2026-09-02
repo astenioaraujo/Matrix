@@ -212,6 +212,7 @@
       <label>Ordenar por</label>
       <select name="ordem">
         <option value="qtd" {% if ordem_sel == "qtd" %}selected{% endif %}>Abastecimentos</option>
+        <option value="dias" {% if ordem_sel == "dias" %}selected{% endif %}>Dias Trabalhados</option>
         <option value="volume" {% if ordem_sel == "volume" %}selected{% endif %}>Volume</option>
         <option value="valor" {% if ordem_sel == "valor" %}selected{% endif %}>Valor</option>
         <option value="ticket" {% if ordem_sel == "ticket" %}selected{% endif %}>Ticket Médio</option>
@@ -242,6 +243,7 @@
               {% set tf = totais_filiais[ns.filial_atual] %}
               <tr class="total-filial">
                 <td>Total da Filial</td>
+                <td class="num">{{ "{:,.0f}".format(tf.dias_trabalhados or 0).replace(",", ".") }}</td>
                 <td class="num">{{ "{:,.0f}".format(tf.qtd_abastecimentos or 0).replace(",", ".") }}</td>
                 <td class="num">{{ "{:,.2f}".format(tf.total_litros or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
                 <td class="num">{{ "{:,.2f}".format(tf.total_valor or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
@@ -250,18 +252,19 @@
               </tr>
 
               <tr class="espaco-filial">
-                <td colspan="6"></td>
+                <td colspan="7"></td>
               </tr>
             {% endif %}
 
             {% set ns.filial_atual = cod_filial %}
 
             <tr class="filial-linha">
-              <td colspan="6">{{ cod_filial }} - {{ nome_filial }}</td>
+              <td colspan="7">{{ cod_filial }} - {{ nome_filial }}</td>
             </tr>
 
             <tr class="cabecalho-filial">
               <td class="col-func">Funcionário</td>
+              <td class="col-num">Dias</td>
               <td class="col-num">Abast.</td>
               <td class="col-num">Volume</td>
               <td class="col-num">Valor</td>
@@ -273,6 +276,10 @@
 
           <tr>
             <td>{{ l.funcionario }}</td>
+
+            <td class="num heat-cell" style="background: {{ cor_heat(l.dias_trabalhados, h.dias.min, h.dias.max) }};">
+              {{ "{:,.0f}".format(l.dias_trabalhados or 0).replace(",", ".") }}
+            </td>
 
             <td class="num heat-cell" style="background: {{ cor_heat(l.qtd_abastecimentos, h.qtd.min, h.qtd.max) }};">
               {{ "{:,.0f}".format(l.qtd_abastecimentos or 0).replace(",", ".") }}
@@ -301,6 +308,7 @@
           {% set tf = totais_filiais[ns.filial_atual] %}
           <tr class="total-filial">
             <td>Total da Filial</td>
+            <td class="num">{{ "{:,.0f}".format(tf.dias_trabalhados or 0).replace(",", ".") }}</td>
             <td class="num">{{ "{:,.0f}".format(tf.qtd_abastecimentos or 0).replace(",", ".") }}</td>
             <td class="num">{{ "{:,.2f}".format(tf.total_litros or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
             <td class="num">{{ "{:,.2f}".format(tf.total_valor or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
@@ -311,7 +319,7 @@
 
       {% else %}
         <tr>
-          <td colspan="6" class="sem-dados">
+          <td colspan="7" class="sem-dados">
             Nenhum abastecimento encontrado para o período selecionado.
           </td>
         </tr>
@@ -319,6 +327,7 @@
 
       <tr class="total">
         <td>Total Geral</td>
+        <td class="num">{{ "{:,.0f}".format(totais.dias_trabalhados or 0).replace(",", ".") }}</td>
         <td class="num">{{ "{:,.0f}".format(totais.qtd_abastecimentos or 0).replace(",", ".") }}</td>
         <td class="num">{{ "{:,.2f}".format(totais.total_litros or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
         <td class="num">{{ "{:,.2f}".format(totais.total_valor or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
