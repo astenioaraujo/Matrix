@@ -334,6 +334,8 @@ def Importa_CSV_OCloset(
 
         if limpar_antes:
             cur.execute("DELETE FROM importacoes WHERE cod_empresa = %s", (cod_empresa,))
+            # o detalhamento analitico anda junto com a sintetica
+            cur.execute("DELETE FROM importacoes_detalhamento WHERE cod_empresa = %s", (cod_empresa,))
 
         total_importado = inserir_registros_ocloset(cur, registros)
         conn.commit()

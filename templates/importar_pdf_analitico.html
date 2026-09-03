@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+{% macro brl(v) -%}
+{{ "{:,.2f}".format((v or 0)|float).replace(",", "X").replace(".", ",").replace("X", ".") }}
+{%- endmacro %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 20px; }
+
+  .painel {
+    max-width: 1200px; background: #fff; border: 1px solid #d9d9d9;
+    border-radius: 16px; padding: 24px; box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+
+  .mensagem { margin-bottom: 16px; font-weight: 600; }
+  .mensagem.sucesso { color: #1f7a1f; }
+  .mensagem.erro { color: #c62828; }
+
+  .linha-form { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+
+  .btn {
+    padding: 10px 18px; border-radius: 10px; border: 1px solid #c7c7c7;
+    background: #f5f5f5; cursor: pointer; font-weight: 700;
+  }
+  .btn:hover { background: #eaeaea; }
+
+  .aviso-tela {
+    background: #f4f7ff; border: 1px solid #c9d8ff; border-radius: 10px;
+    padding: 12px 14px; font-size: 13px; color: #26418f; margin-bottom: 18px;
+  }
+
+  .painel-auditoria { margin-top: 30px; border-top: 1px solid #e1e1e1; padding-top: 24px; }
+  .titulo-auditoria { font-size: 22px; font-weight: 800; margin-bottom: 14px; }
+
+  .cartoes { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 22px; }
+  .cartao {
+    border: 1px solid #e0e0e0; border-radius: 12px; padding: 12px 16px;
+    min-width: 190px; background: #fafafa;
+  }
+  .cartao .rotulo { font-size: 12px; color: #666; text-transform: uppercase; }
+  .cartao .valor { font-size: 22px; font-weight: 800; margin-top: 4px; }
+
+  .table-auditoria { width: 100%; border-collapse: collapse; font-size: 14px; background: #fff; }
+  .table-auditoria th, .table-auditoria td { border: 1px solid #d9d9d9; padding: 8px 10px; }
+  .table-auditoria th { background: #f2f2f2; text-align: left; }
+
+  .td-num { text-align: right; font-family: Consolas, Menlo, monospace; font-weight: 700; }
+  .ok { color: #1f7a1f; font-weight: 800; }
+  .erro-auditoria { color: #c62828; font-weight: 800; }
+  .linha-total { background: #fafafa; font-weight: 800; }
+  .selo-ok { background: #e8f5e9; color: #1f7a1f; }
+  .selo-erro { background: #ffebee; color: #c62828; }
+  .selo-ok, .selo-erro {
+    display: inline-block; padding: 6px 12px; border-radius: 8px; font-weight: 800;
+  }
+</style>
+
+<div class="pagina-titulo">Importar PDF Analítico - WebPostos</div>
+
+<div class="painel">
+
+  {% if mensagem %}<div class="mensagem sucesso">{{ mensagem }}</div>{% endif %}
+  {% if erro %}<div class="mensagem erro">{{ erro }}</div>{% endif %}
+
+  <div class="aviso-tela">
+    O relatório analítico traz as contas <strong>e</strong> os lançamentos que as compõem.
+    A importação grava os dois níveis: as contas em <em>Importações</em> e os lançamentos na
+    tabela de detalhamento. As duas trabalham sincronizadas — importar de novo (analítico,
+    sintético ou CSV) limpa as duas.
+  </div>
+
+  <form method="post" enctype="multipart/form-data">
+    <div class="linha-form">
+      <input type="file" name="arquivo" accept="application/pdf" required>
+      <button type="submit" class="btn">Importar PDF Analítico</button>
+    </div>
+  </form>
+
+  {% if resultado_pdf %}
+    {% set det = resultado_pdf["auditoria_detalhe"] %}
+
+    <div class="painel-auditoria">
+
+      <div class="cartoes">
+        <div class="cartao">
+          <div class="rotulo">Contas importadas</div>
+          <div class="valor">{{ det["total_contas"] }}</div>
+        </div>
+        <div class="cartao">
+          <div class="rotulo">Linhas de detalhamento</div>
+          <div class="valor">{{ resultado_pdf["total_detalhes"] }}</div>
+        </div>
+        <div class="cartao">
+          <div class="rotulo">Soma das contas</div>
+          <div class="valor">{{ brl(resultado_pdf["soma_importada"]) }}</div>
+        </div>
+        <div class="cartao">
+          <div class="rotulo">Soma do detalhamento</div>
+          <div class="valor">{{ brl(det["total_detalhes"]) }}</div>
+        </div>
+        <div class="cartao">
+          <div class="rotulo">Conferência</div>
+          <div class="valor">
+            {% if det["status"] == "OK" %}
+              <span class="selo-ok">FECHOU</span>
+            {% else %}
+              <span class="selo-erro">{{ det["divergencias"]|length }} DIVERGÊNCIA(S)</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      {% if det["divergencias"] %}
+        <div class="titulo-auditoria">Contas cujo detalhamento não fecha</div>
+        <table class="table-auditoria">
+          <thead>
+            <tr>
+              <th>Filial</th><th>Mês/Ano</th><th>Conta</th>
+              <th class="td-num">Valor da conta</th>
+              <th class="td-num">Soma dos detalhes</th>
+              <th class="td-num">Diferença</th>
+              <th class="td-num">Linhas</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for d in det["divergencias"] %}
+              <tr>
+                <td>{{ d["cod_filial"] }} - {{ d["nome_filial"] }}</td>
+                <td>{{ "%02d"|format(d["mes"]) }}/{{ d["ano"] }}</td>
+                <td>{{ d["historico"] }}</td>
+                <td class="td-num">{{ brl(d["valor"]) }}</td>
+                <td class="td-num">{{ brl(d["soma_detalhes"]) }}</td>
+                <td class="td-num erro-auditoria">{{ brl(d["diferenca"]) }}</td>
+                <td class="td-num">{{ d["qtd_detalhes"] }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="mensagem erro">
+          A transferência para os lançamentos definitivos fica bloqueada enquanto houver
+          divergência.
+        </p>
+      {% endif %}
+
+      {% if det["sem_detalhe"] %}
+        <div class="titulo-auditoria">
+          Contas sem nenhum lançamento detalhado ({{ det["sem_detalhe"]|length }})
+        </div>
+        <table class="table-auditoria">
+          <thead>
+            <tr>
+              <th>Filial</th><th>Mês/Ano</th><th>Conta</th><th class="td-num">Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for d in det["sem_detalhe"] %}
+              <tr>
+                <td>{{ d["cod_filial"] }} - {{ d["nome_filial"] }}</td>
+                <td>{{ "%02d"|format(d["mes"]) }}/{{ d["ano"] }}</td>
+                <td>{{ d["historico"] }}</td>
+                <td class="td-num">{{ brl(d["valor"]) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+
+      <div class="titulo-auditoria">Movimento por filial (PDF × contas analíticas)</div>
+      <table class="table-auditoria">
+        <thead>
+          <tr>
+            <th>Filial</th><th>Mês/Ano</th>
+            <th class="td-num">PDF (Receb. + Pagto.)</th>
+            <th class="td-num">Contas analíticas</th>
+            <th class="td-num">Diferença</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in resultado_pdf["auditoria_movimento"] %}
+            {% set diferenca = (item["diferenca"] or 0)|float %}
+            <tr>
+              <td>{{ item["cod_filial"] }} - {{ item["nome_filial"] }}</td>
+              <td>{{ "%02d"|format(item["mes"]) }}/{{ item["ano"] }}</td>
+              <td class="td-num">{{ brl(item["movimento_pdf"]) }}</td>
+              <td class="td-num">{{ brl(item["movimento_sistema"]) }}</td>
+              <td class="td-num">{{ brl(diferenca) }}</td>
+              <td>
+                {% if diferenca == 0 %}
+                  <span class="ok">OK</span>
+                {% else %}
+                  <span class="erro-auditoria">DIFERENÇA</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          <tr class="linha-total">
+            <td colspan="2">TOTAL GERAL</td>
+            <td class="td-num">{{ brl(resultado_pdf["total_pdf"]) }}</td>
+            <td class="td-num">{{ brl(resultado_pdf["total_sistema"]) }}</td>
+            <td class="td-num">{{ brl(resultado_pdf["diferenca_total"]) }}</td>
+            <td>
+              {% if (resultado_pdf["diferenca_total"] or 0)|float == 0 %}
+                <span class="ok">IMPORTAÇÃO VALIDADA</span>
+              {% else %}
+                <span class="erro-auditoria">VERIFICAR DIFERENÇAS</span>
+              {% endif %}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {% if resultado_pdf["linhas_ignoradas"] %}
+        <div class="titulo-auditoria">
+          Linhas do PDF que não foram reconhecidas ({{ resultado_pdf["linhas_ignoradas"]|length }})
+        </div>
+        <table class="table-auditoria">
+          <thead>
+            <tr><th>Filial</th><th>Última conta lida</th><th>Linha</th></tr>
+          </thead>
+          <tbody>
+            {% for l in resultado_pdf["linhas_ignoradas"] %}
+              <tr>
+                <td>{{ l["nome_filial"] or "-" }}</td>
+                <td>{{ l["conta"] or "-" }}</td>
+                <td>{{ l["linha"] }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+
+    </div>
+  {% endif %}
+
+</div>
+
+{% endblock %}

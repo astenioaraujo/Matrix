@@ -235,6 +235,7 @@
     <form method="get" id="form-importacao">
         <select id="tipo_importacao">
             <option value="/importacoes/pdf">Importar PDF WebPostos</option>
+            <option value="{{ url_for('importacoes.importar_pdf_fluxo_caixa_analitico') }}">Importar PDF WebPostos Analítico</option>
             <option value="{{ url_for('importacoes.importar_web_postos') }}">Importar Excel WebPostos</option>
             <option value="{{ url_for('importacoes.importar_csv_ocloset') }}">Importar CSV O Closet</option>
         </select>
@@ -639,6 +640,8 @@
         <div class="modal-titulo" style="color:#b91c1c;">Confirmar Limpeza</div>
         <div class="modal-texto">
             Deseja realmente excluir <strong>todos</strong> os lançamentos importados desta empresa?<br><br>
+            O <strong>detalhamento analítico</strong> sai junto: ele explica estes lançamentos
+            e sozinho não tem como ser conferido.<br><br>
             Esta ação não pode ser desfeita.
         </div>
         <div class="modal-botoes">

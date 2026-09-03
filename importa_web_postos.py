@@ -553,6 +553,10 @@ def Importa_Fluxo_Caixa_PDF(
             WHERE cod_empresa = %s
         """, (cod_empresa,))
 
+        # O detalhamento anda junto com a sintetica: importar o sintetico
+        # sozinho invalida o analitico que estava na tela.
+        limpar_detalhamento_importacao(cur, cod_empresa)
+
         filiais_importacao = carregar_filiais_importacao(cur, cod_empresa)
 
         filial_atual = None
@@ -727,3 +731,471 @@ def Importa_Web_Postos(*args, **kwargs):
 
 def Importa_Web_Postos_Arquivos(*args, **kwargs):
     raise ValueError("Importação Excel desativada. Use Importa_Fluxo_Caixa_PDF.")
+
+# ===============================================================
+# IMPORTACAO DO PDF ANALITICO (WebPostos - Tipo: Analitico)
+# ===============================================================
+#
+# O relatorio analitico traz as MESMAS contas do sintetico e, embaixo de
+# cada conta analitica, os lancamentos que a compoem:
+#
+#     1.01.03 - RECEBIMENTO CARTAO CREDITO                    14.395,57
+#     REC REM 006072 CAR MASTER CREDITO      03/08/2026           160,00
+#
+# Por isso a importacao analitica alimenta os DOIS niveis na mesma
+# transacao: as contas vao para `importacoes` (exatamente como o sintetico
+# faria, mesmo `historico`, para a classificacao automatica continuar
+# valendo) e os lancamentos vao para `importacoes_detalhamento`.
+#
+# As duas tabelas sao sincronas: quem apaga uma apaga a outra.
+
+_RE_VALOR_ANALITICO = r"-?\d{1,3}(?:\.\d{3})*,\d{2}|-?\d+,\d{2}"
+
+_RE_CONTA_ANALITICA = re.compile(
+    r"^(\d+(?:\.\d+)*)\s*[-–_]\s*(.*?)\s+(" + _RE_VALOR_ANALITICO + r")$"
+)
+
+_RE_DETALHE_ANALITICO = re.compile(
+    r"^(.*?)\s+(\d{2}/\d{2}/\d{4})\s+(" + _RE_VALOR_ANALITICO + r")$"
+)
+
+_RE_MES_ANALITICO = re.compile(r"^m[eê]s:\s*(\d{1,2})")
+_RE_ANO_ANALITICO = re.compile(r"^ano:\s*(\d{4})")
+_RE_RODAPE_ANALITICO = re.compile(r"^usu[aá]rio:.*p[aá]gina\s+\d+\s+de\s+\d+$")
+_RE_CARIMBO_ANALITICO = re.compile(r"^\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2}\b")
+
+# Cabecalho/rodape que se repetem em toda pagina e nao sao lancamento.
+_PREFIXOS_IGNORADOS_ANALITICO = (
+    "fluxo de caixa",
+    "tipo:",
+    "filiais:",
+    "totais valor",
+    "saldo inicial",
+    "saldo final",
+    "saldo ",
+    "descrição data valor",
+    "descricao data valor",
+    "apurar sem plano",
+    "planos de contas",
+    "resultados",
+)
+
+
+def limpar_historico_analitico(codigo, descricao):
+    """Monta o historico no mesmo formato que o sintetico grava."""
+    descricao = re.sub(r"#\s*\d+\s*,\s*\d+", "", descricao or "")
+    descricao = re.sub(r"\s+", " ", descricao).strip()
+    return f"{codigo} - {descricao}".strip()
+
+
+def limpar_detalhamento_importacao(cur, cod_empresa):
+    cur.execute("""
+        DELETE FROM importacoes_detalhamento
+        WHERE cod_empresa = %s
+    """, (str(cod_empresa).strip(),))
+    return cur.rowcount
+
+
+def inserir_detalhamento_em_lote(cur, registros):
+    if not registros:
+        return 0
+
+    valores = [
+        (
+            r["cod_empresa"],
+            r["cod_filial"],
+            r["nome_filial"],
+            r["ano"],
+            r["mes"],
+            r["data"],
+            r["codigo_conta"],
+            r["historico_conta"],
+            r["descricao"],
+            r["valor"],
+            r["complemento"],
+        )
+        for r in registros
+    ]
+
+    execute_values(cur, """
+        INSERT INTO importacoes_detalhamento (
+            cod_empresa,
+            cod_filial,
+            nome_filial,
+            ano,
+            mes,
+            data,
+            codigo_conta,
+            historico_conta,
+            descricao,
+            valor,
+            complemento
+        )
+        VALUES %s
+    """, valores)
+
+    return len(registros)
+
+
+def propagar_classificacao_detalhamento(conn, cod_empresa):
+    """Copia grupo/conta da conta sintetica para os seus detalhes.
+
+    A ligacao e por (filial, ano, mes, historico) - o mesmo texto que a
+    conta gerou em `importacoes`. Sem isso a celula do matricial, que e
+    lida por (grupo, conta), nao acharia o detalhamento.
+    """
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            UPDATE importacoes_detalhamento d
+            SET grupo = i.grupo,
+                conta = i.conta,
+                descricao_conta = i.descricao_conta,
+                atualizado_em = now()
+            FROM importacoes i
+            WHERE d.cod_empresa = %s
+              AND i.cod_empresa = d.cod_empresa
+              AND i.cod_filial = d.cod_filial
+              AND i.ano = d.ano
+              AND i.mes = d.mes
+              AND i.historico = d.historico_conta
+        """, (str(cod_empresa).strip(),))
+
+        return cur.rowcount
+
+    finally:
+        cur.close()
+
+
+def auditoria_detalhamento(conn, cod_empresa):
+    """Confere, conta a conta, se a soma dos detalhes bate com a conta.
+
+    Só as contas ANALITICAS entram: as sinteticas ja foram removidas de
+    `importacoes` por remover_contas_sinteticas_importadas, e detalhe
+    nenhum pendura nelas.
+    """
+    cod_empresa = str(cod_empresa).strip()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            SELECT
+                i.cod_filial,
+                i.nome_filial,
+                i.ano,
+                i.mes,
+                i.historico,
+                i.valor,
+                COALESCE(d.soma, 0)   AS soma_detalhes,
+                COALESCE(d.qtd, 0)    AS qtd_detalhes
+            FROM importacoes i
+            LEFT JOIN (
+                SELECT
+                    cod_filial,
+                    ano,
+                    mes,
+                    historico_conta,
+                    SUM(valor) AS soma,
+                    COUNT(*)   AS qtd
+                FROM importacoes_detalhamento
+                WHERE cod_empresa = %s
+                GROUP BY cod_filial, ano, mes, historico_conta
+            ) d
+              ON d.cod_filial = i.cod_filial
+             AND d.ano = i.ano
+             AND d.mes = i.mes
+             AND d.historico_conta = i.historico
+            WHERE i.cod_empresa = %s
+            ORDER BY i.cod_filial, i.ano, i.mes, i.historico
+        """, (cod_empresa, cod_empresa))
+
+        linhas = cur.fetchall() or []
+
+    finally:
+        cur.close()
+
+    divergencias = []
+    sem_detalhe = []
+    total_contas = 0
+    total_detalhes = Decimal("0")
+
+    for cod_filial, nome_filial, ano, mes, historico, valor, soma, qtd in linhas:
+        total_contas += 1
+        valor = Decimal(str(valor or 0))
+        soma = Decimal(str(soma or 0))
+        total_detalhes += soma
+
+        if int(qtd or 0) == 0:
+            sem_detalhe.append({
+                "cod_filial": cod_filial,
+                "nome_filial": nome_filial,
+                "ano": ano,
+                "mes": mes,
+                "historico": historico,
+                "valor": valor,
+            })
+            continue
+
+        if abs(soma - valor) >= Decimal("0.01"):
+            divergencias.append({
+                "cod_filial": cod_filial,
+                "nome_filial": nome_filial,
+                "ano": ano,
+                "mes": mes,
+                "historico": historico,
+                "valor": valor,
+                "soma_detalhes": soma,
+                "qtd_detalhes": int(qtd or 0),
+                "diferenca": soma - valor,
+            })
+
+    return {
+        "total_contas": total_contas,
+        "total_detalhes": total_detalhes,
+        "divergencias": divergencias,
+        "sem_detalhe": sem_detalhe,
+        "status": "OK" if not divergencias else "DIVERGENTE",
+    }
+
+
+def Importa_Fluxo_Caixa_PDF_Analitico(arquivo_pdf, cod_empresa_fixo):
+    if not cod_empresa_fixo:
+        raise ValueError("Cod_empresa da sessão não foi informado.")
+
+    cod_empresa = str(cod_empresa_fixo).strip()
+
+    nome_original = arquivo_pdf.filename or "fluxo_caixa_analitico.pdf"
+    nome_seguro = re.sub(r"[^a-zA-Z0-9_.-]", "_", nome_original)
+
+    caminho_temp = None
+    conn = None
+    cur = None
+
+    total_contas = 0
+    total_detalhes = 0
+    contas_pendentes = []
+    detalhes_pendentes = []
+    linhas_ignoradas = []
+    tamanho_lote = 300
+
+    def flush_contas():
+        nonlocal total_contas, contas_pendentes
+        if contas_pendentes:
+            total_contas += inserir_importacoes_em_lote(cur, contas_pendentes)
+            contas_pendentes = []
+
+    def flush_detalhes():
+        nonlocal total_detalhes, detalhes_pendentes
+        if detalhes_pendentes:
+            total_detalhes += inserir_detalhamento_em_lote(cur, detalhes_pendentes)
+            detalhes_pendentes = []
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix="fluxo_caixa_analitico_",
+            suffix=f"_{nome_seguro}",
+            delete=False
+        ) as tmp:
+            caminho_temp = tmp.name
+            arquivo_pdf.stream.seek(0)
+            shutil.copyfileobj(arquivo_pdf.stream, tmp, 1024 * 1024)
+
+        conn = get_connection()
+        cur = conn.cursor()
+
+        # As duas tabelas sao apagadas juntas: elas trabalham sincronizadas.
+        cur.execute("""
+            DELETE FROM importacoes
+            WHERE cod_empresa = %s
+        """, (cod_empresa,))
+
+        limpar_detalhamento_importacao(cur, cod_empresa)
+
+        filiais_importacao = carregar_filiais_importacao(cur, cod_empresa)
+
+        mes_atual = None
+        ano_atual = None
+        cod_filial_atual = None
+        nome_filial_atual = None
+        conta_atual = None
+        historico_conta_atual = None
+
+        with pdfplumber.open(caminho_temp) as pdf:
+            for pagina in pdf.pages:
+                texto = pagina.extract_text(x_tolerance=1, y_tolerance=3) or ""
+
+                # pdfplumber guarda cache por pagina; num PDF grande isso
+                # estoura a memoria da instancia. O texto ja saiu daqui.
+                pagina.close()
+
+                for linha_original in texto.splitlines():
+                    linha = re.sub(r"\s+", " ", (linha_original or "").strip())
+
+                    if not linha:
+                        continue
+
+                    linha_norm = normalizar_texto(linha)
+
+                    m = _RE_MES_ANALITICO.match(linha_norm)
+                    if m:
+                        mes_atual = int(m.group(1))
+                        continue
+
+                    a = _RE_ANO_ANALITICO.match(linha_norm)
+                    if a:
+                        ano_atual = int(a.group(1))
+                        continue
+
+                    if linha_norm.startswith("filial:"):
+                        cod_filial_detectada, nome_filial_detectada = \
+                            detectar_filial_na_linha(linha, filiais_importacao)
+
+                        if cod_filial_detectada != cod_filial_atual:
+                            conta_atual = None
+                            historico_conta_atual = None
+
+                        cod_filial_atual = cod_filial_detectada
+                        nome_filial_atual = nome_filial_detectada
+                        continue
+
+                    if _RE_RODAPE_ANALITICO.match(linha_norm):
+                        continue
+
+                    if _RE_CARIMBO_ANALITICO.match(linha):
+                        continue
+
+                    if any(linha_norm.startswith(p)
+                           for p in _PREFIXOS_IGNORADOS_ANALITICO):
+                        continue
+
+                    if cod_filial_atual is None or not mes_atual or not ano_atual:
+                        continue
+
+                    conta = _RE_CONTA_ANALITICA.match(linha)
+
+                    if conta:
+                        codigo = conta.group(1)
+                        historico = limpar_historico_analitico(codigo, conta.group(2))
+                        valor = converter_decimal(conta.group(3))
+
+                        conta_atual = codigo
+                        historico_conta_atual = historico
+
+                        contas_pendentes.append({
+                            "cod_empresa": cod_empresa,
+                            "cod_filial": cod_filial_atual,
+                            "nome_filial": nome_filial_atual,
+                            "data": datetime(ano_atual, mes_atual, 1).date().isoformat(),
+                            "ano": ano_atual,
+                            "mes": mes_atual,
+                            "historico": historico,
+                            "valor": valor,
+                            "grupo": None,
+                            "conta": None,
+                            "descricao_conta": None,
+                            "complemento": "Importado de PDF analítico",
+                        })
+
+                        if len(contas_pendentes) >= tamanho_lote:
+                            flush_contas()
+
+                        continue
+
+                    detalhe = _RE_DETALHE_ANALITICO.match(linha)
+
+                    if detalhe and conta_atual:
+                        descricao = re.sub(r"\s+", " ", detalhe.group(1)).strip()
+                        data_txt = detalhe.group(2)
+                        valor = converter_decimal(detalhe.group(3))
+
+                        try:
+                            data_det = datetime.strptime(data_txt, "%d/%m/%Y").date()
+                        except ValueError:
+                            data_det = datetime(ano_atual, mes_atual, 1).date()
+
+                        detalhes_pendentes.append({
+                            "cod_empresa": cod_empresa,
+                            "cod_filial": cod_filial_atual,
+                            "nome_filial": nome_filial_atual,
+                            "ano": ano_atual,
+                            "mes": mes_atual,
+                            "data": data_det.isoformat(),
+                            "codigo_conta": conta_atual,
+                            "historico_conta": historico_conta_atual,
+                            "descricao": descricao,
+                            "valor": valor,
+                            "complemento": "Importado de PDF analítico",
+                        })
+
+                        if len(detalhes_pendentes) >= tamanho_lote:
+                            flush_detalhes()
+
+                        continue
+
+                    # Nada casou: linha guardada para aparecer na auditoria,
+                    # em vez de sumir calada.
+                    if len(linhas_ignoradas) < 50:
+                        linhas_ignoradas.append({
+                            "cod_filial": cod_filial_atual,
+                            "nome_filial": nome_filial_atual,
+                            "conta": conta_atual,
+                            "linha": linha,
+                        })
+
+        flush_contas()
+        flush_detalhes()
+
+        # Auditoria do sintetico: 1 - RECEBIMENTO / 2 - PAGAMENTOS do PDF
+        # contra a soma das contas analiticas. Precisa rodar ANTES da
+        # remocao das sinteticas, que sao justamente essas duas linhas.
+        auditoria_movimento = calcular_auditoria_movimento_pdf(conn, cod_empresa)
+
+        qtd_sinteticas_removidas = remover_contas_sinteticas_importadas(
+            conn,
+            cod_empresa
+        )
+
+        total_classificado = classificar_lancamentos_importados(
+            cod_empresa_fixo=cod_empresa,
+            conn=conn
+        )
+
+        total_propagado = propagar_classificacao_detalhamento(conn, cod_empresa)
+
+        auditoria_detalhe = auditoria_detalhamento(conn, cod_empresa)
+
+        soma_importada = somar_importacoes_empresa(conn, cod_empresa)
+
+        conn.commit()
+
+        return {
+            "total_importado": total_contas,
+            "total_detalhes": total_detalhes,
+            "total_sinteticas_removidas": qtd_sinteticas_removidas,
+            "total_classificado": total_classificado,
+            "total_propagado": total_propagado,
+            "auditoria_movimento": auditoria_movimento["linhas"],
+            "total_pdf": auditoria_movimento["total_pdf"],
+            "total_sistema": auditoria_movimento["total_sistema"],
+            "diferenca_total": auditoria_movimento["diferenca_total"],
+            "soma_importada": soma_importada,
+            "diferenca_saldo": auditoria_movimento["diferenca_total"],
+            "auditoria_detalhe": auditoria_detalhe,
+            "linhas_ignoradas": linhas_ignoradas,
+        }
+
+    except Exception:
+        if conn:
+            conn.rollback()
+        raise
+
+    finally:
+        if cur:
+            cur.close()
+
+        if conn:
+            conn.close()
+
+        if caminho_temp and os.path.exists(caminho_temp):
+            os.remove(caminho_temp)

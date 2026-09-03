@@ -257,6 +257,119 @@
   }
   .filtro-grupo-item:hover { background: #f0f4ff; }
   .filtro-grupo-sep { border-top: 1px solid #eee; margin: 4px 0; }
+  .celula-detalhavel { cursor: pointer; }
+  .celula-detalhavel:hover { outline: 2px solid #26418f; outline-offset: -2px; }
+
+  #modal-detalhamento {
+    display: none; position: fixed; inset: 0; z-index: 9000;
+    background: rgba(0,0,0,0.45); align-items: center; justify-content: center;
+  }
+  #modal-detalhamento.aberto { display: flex; }
+  .det-caixa {
+    background: #fff; border-radius: 14px; width: min(980px, 94vw);
+    max-height: 88vh; display: flex; flex-direction: column;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.3);
+  }
+  .det-topo {
+    padding: 16px 20px; border-bottom: 1px solid #e3e3e3;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+  }
+  .det-titulo { font-size: 18px; font-weight: 800; }
+  .det-sub { font-size: 13px; color: #666; margin-top: 4px; }
+  .det-fechar {
+    border: none; background: transparent; font-size: 24px; cursor: pointer;
+    line-height: 1; color: #666;
+  }
+  .det-corpo { overflow: auto; padding: 12px 20px 20px; }
+  .det-conta {
+    border: 1px solid #e0e0e0; border-radius: 10px; margin-bottom: 10px; overflow: hidden;
+  }
+  .det-conta-topo {
+    display: flex; justify-content: space-between; gap: 12px; align-items: center;
+    background: #f5f7fb; padding: 10px 14px; cursor: pointer; font-weight: 700;
+  }
+  .det-conta-total { font-family: Consolas, Menlo, monospace; }
+  .det-lancamentos { display: none; }
+  .det-conta.aberta .det-lancamentos { display: block; }
+  .det-lancamentos table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .det-lancamentos td { border-top: 1px solid #eee; padding: 6px 14px; }
+  .det-lancamentos td.v {
+    text-align: right; font-family: Consolas, Menlo, monospace; white-space: nowrap;
+  }
+  .det-lancamentos td.d { white-space: nowrap; width: 90px; color: #666; }
+  .det-vazio { padding: 20px; color: #666; }
+  .det-rodape {
+    padding: 12px 20px; border-top: 1px solid #e3e3e3; display: flex;
+    justify-content: space-between; font-weight: 800;
+  }
+  .titulo-detalhavel { cursor: pointer; }
+  .titulo-detalhavel:hover { text-decoration: underline; }
+
+  /* O modal largo e a mesma leitura do matricial: ocupa a tela toda, a
+     coluna do rotulo fica congelada e o resto desliza para o lado. */
+  .det-caixa.larga {
+    width: 98vw; max-width: none; height: 94vh; max-height: 94vh;
+  }
+  /* Sem padding lateral: a coluna congelada gruda em left:0 do container
+     de rolagem, e o padding deixaria uma faixa da coluna vizinha aparecendo
+     por baixo dela. */
+  .det-caixa.larga .det-corpo { flex: 1; overflow: auto; padding-left: 0; padding-right: 0; }
+  .det-grade { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .det-grade th, .det-grade td { border: 1px solid #ddd; padding: 5px 8px; white-space: nowrap; }
+  .det-grade thead th {
+    background: #f2f2f2; position: sticky; top: 0; z-index: 2; text-align: right;
+  }
+  .det-grade thead th:first-child { text-align: left; z-index: 3; left: 0; }
+  /* z-index explicito nas duas colunas congeladas: sem ele as celulas
+     comuns, que vem depois no DOM, passam por cima delas ao rolar. */
+  .det-grade td.rot, .det-grade th:first-child {
+    position: sticky; left: 0; background: #fff; text-align: left; z-index: 2;
+    min-width: 300px; max-width: 380px; overflow: hidden; text-overflow: ellipsis;
+  }
+  .det-grade td.tot, .det-grade th.tot {
+    position: sticky; left: 300px; background: #fff; z-index: 2;
+    box-shadow: 2px 0 0 #999;
+  }
+  .det-grade thead th.tot { background: #f2f2f2; z-index: 4; }
+  .det-grade tr.bloco td.tot { background: #eef2fb; }
+  .det-grade tr.subtotal td.tot { background: #fafafa; }
+  .det-grade td.n {
+    text-align: right; font-family: Consolas, Menlo, monospace; cursor: pointer;
+  }
+  /* Mesmo desenho de bloco do matricial: barra cinza com o nome da conta e
+     os nomes das filiais, as linhas, o total EMBAIXO e um respiro antes do
+     bloco seguinte. */
+  .det-grade tr.cab-bloco td {
+    background: #ececec !important; padding-top: 12px; padding-bottom: 12px;
+    vertical-align: middle;
+  }
+  .det-grade tr.cab-bloco td.rot { font-weight: bold; font-size: 15px; text-align: left; }
+  .det-grade tr.cab-bloco td.tot { font-weight: bold; text-align: right; }
+  .det-grade tr.cab-bloco td.fil {
+    font-weight: normal; font-size: 12px; text-align: center; color: #444;
+  }
+
+  .det-grade tr.tot-bloco td {
+    font-weight: bold; background: #f3f3f3 !important;
+    border-top: 2px solid #9a9a9a; border-bottom: 2px solid #c7c7c7;
+  }
+
+  .det-grade tr.espaco td {
+    background: #fff !important; border: none !important; height: 28px; padding: 0;
+  }
+
+  .det-grade tr.tot-geral td {
+    font-weight: 800; font-size: 14px; background: #fff3cd !important;
+    border-top: 2px solid #d6b656; border-bottom: 2px solid #d6b656;
+  }
+
+  .det-grade td.tot { border-right: 3px solid #8f8f8f; font-weight: 800; }
+  .det-grade th.tot { border-right: 3px solid #8f8f8f; }
+  .det-voltar {
+    border: 1px solid #c7c7c7; background: #f5f5f5; border-radius: 8px;
+    padding: 6px 12px; cursor: pointer; font-weight: 700;
+  }
+  .det-voltar:hover { background: #eaeaea; }
 </style>
 
 <div class="page-matricial">
@@ -371,7 +484,11 @@
         <tbody>
           {% for grupo in grupos_ordenados %}
             <tr class="linha-cabecalho-grupo" data-grupo="{{ grupo.grupo }}">
-              <td colspan="3">
+              <td colspan="3"
+                  class="titulo-detalhavel"
+                  data-grupo="{{ grupo.grupo }}"
+                  onclick="abrirDetalhamentoLargo(this, 'grupo')"
+                  title="Ver o grupo inteiro em todas as filiais">
                 Grupo {{ grupo.grupo }}
                 {% if grupo.grupo == '1' or grupo.grupo == 1 %} - Receitas Operacionais{% endif %}
                 {% if grupo.grupo == '2' or grupo.grupo == 2 %} - Receitas Não Operacionais{% endif %}
@@ -395,13 +512,24 @@
               <tr data-grupo="{{ linha.grupo }}" data-linha="conta">
                 <td>{{ linha.grupo }}</td>
                 <td>{{ linha.conta }}</td>
-                <td>{{ linha.descricao_conta }}</td>
+                <td class="titulo-detalhavel"
+                    data-grupo="{{ linha.grupo }}"
+                    data-conta="{{ linha.conta }}"
+                    data-descricao="{{ linha.descricao_conta }}"
+                    onclick="abrirDetalhamentoLargo(this, 'conta')"
+                    title="Ver esta conta em todas as filiais">{{ linha.descricao_conta }}</td>
                 <td class="num col-total-separador">
                   {{ formatar_numero_br(linha.total) }}
                 </td>
         
                 {% for valor in linha.valores %}
-                  <td class="num">
+                  <td class="num celula-detalhavel"
+                      data-grupo="{{ linha.grupo }}"
+                      data-conta="{{ linha.conta }}"
+                      data-descricao="{{ linha.descricao_conta }}"
+                      data-filial="{{ filiais_colunas[loop.index0][0] }}"
+                      data-nome-filial="{{ filiais_colunas[loop.index0][1] }}"
+                      onclick="abrirDetalhamento(this)">
                     {{ formatar_numero_br(valor) }}
                   </td>
                 {% endfor %}
@@ -572,5 +700,302 @@
     });
   });
   </script>
+
+
+<div id="modal-detalhamento" onclick="if (event.target === this) fecharDetalhamento()">
+  <div class="det-caixa">
+    <div class="det-topo">
+      <div>
+        <div class="det-titulo" id="det-titulo">Detalhamento</div>
+        <div class="det-sub" id="det-sub"></div>
+      </div>
+      <button type="button" class="det-fechar" onclick="fecharDetalhamento()">&times;</button>
+    </div>
+    <div class="det-corpo" id="det-corpo"></div>
+    <div class="det-rodape">
+      <span>Total do detalhamento</span>
+      <span id="det-total"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+  const DET_ANO = "{{ ano_sel }}";
+  const DET_MES = "{{ mes_sel }}";
+
+  function detBRL(v) {
+    return (v || 0).toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+
+  function fecharDetalhamento() {
+    document.getElementById("modal-detalhamento").classList.remove("aberto");
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") fecharDetalhamento();
+  });
+
+  async function abrirDetalhamento(celula) {
+    const grupo = celula.dataset.grupo;
+    const conta = celula.dataset.conta;
+    const filial = celula.dataset.filial;
+
+    const modal = document.getElementById("modal-detalhamento");
+    const corpo = document.getElementById("det-corpo");
+
+    modal.querySelector(".det-caixa").classList.remove("larga");
+
+    document.getElementById("det-titulo").textContent =
+      grupo + "." + conta + " - " + celula.dataset.descricao;
+    document.getElementById("det-sub").textContent =
+      celula.dataset.filial + " - " + celula.dataset.nomeFilial +
+      (DET_MES ? "  |  " + DET_MES.padStart(2, "0") + "/" + DET_ANO : "");
+    document.getElementById("det-total").textContent = "";
+
+    corpo.innerHTML = '<div class="det-vazio">Carregando...</div>';
+    modal.classList.add("aberto");
+
+    const params = new URLSearchParams({ grupo, conta, filial });
+    if (DET_ANO) params.set("ano", DET_ANO);
+    if (DET_MES) params.set("mes", DET_MES);
+
+    try {
+      const resp = await fetch("/api/matricial/detalhamento?" + params.toString());
+      const dados = await resp.json();
+
+      if (!resp.ok) {
+        corpo.innerHTML = '<div class="det-vazio">' + (dados.erro || "Erro ao consultar.") + "</div>";
+        return;
+      }
+
+      if (!dados.contas.length) {
+        corpo.innerHTML =
+          '<div class="det-vazio">Sem detalhamento analítico para esta célula. ' +
+          'Ele existe apenas nos meses importados pelo PDF analítico do WebPostos.</div>';
+        return;
+      }
+
+      corpo.innerHTML = montarBlocosDeConta(dados.contas);
+
+      document.getElementById("det-total").textContent =
+        detBRL(dados.total) + "  (" + dados.qtd_lancamentos + " lançamento(s))";
+
+    } catch (e) {
+      corpo.innerHTML = '<div class="det-vazio">Erro ao consultar o detalhamento.</div>';
+    }
+  }
+
+  async function abrirDetalhamentoLargo(elemento, escopo) {
+    const grupo = elemento.dataset.grupo;
+    const conta = elemento.dataset.conta || "";
+
+    const modal = document.getElementById("modal-detalhamento");
+    const caixa = modal.querySelector(".det-caixa");
+    const corpo = document.getElementById("det-corpo");
+
+    caixa.classList.add("larga");
+
+    document.getElementById("det-titulo").textContent =
+      escopo === "grupo"
+        ? "Grupo " + grupo + " - todas as filiais"
+        : grupo + "." + conta + " - " + elemento.dataset.descricao;
+
+    document.getElementById("det-sub").textContent =
+      "Todas as filiais" + (DET_MES ? "  |  " + DET_MES.padStart(2, "0") + "/" + DET_ANO : "");
+
+    document.getElementById("det-total").textContent = "";
+    corpo.innerHTML = '<div class="det-vazio">Carregando...</div>';
+    modal.classList.add("aberto");
+
+    const params = new URLSearchParams({ escopo, grupo });
+    if (conta) params.set("conta", conta);
+    if (DET_ANO) params.set("ano", DET_ANO);
+    if (DET_MES) params.set("mes", DET_MES);
+
+    try {
+      const resp = await fetch("/api/matricial/detalhamento?" + params.toString());
+      const dados = await resp.json();
+
+      if (!resp.ok) {
+        corpo.innerHTML = '<div class="det-vazio">' + (dados.erro || "Erro ao consultar.") + "</div>";
+        return;
+      }
+
+      if (!dados.blocos.length) {
+        corpo.innerHTML =
+          '<div class="det-vazio">Sem detalhamento analítico para este trecho. ' +
+          'Ele existe apenas nos meses importados pelo PDF analítico do WebPostos.</div>';
+        return;
+      }
+
+      const filiais = dados.filiais;
+      const nCols = filiais.length + 2;
+
+      // Sem <thead> proprio: cada bloco traz a sua barra cinza com os nomes
+      // das filiais, como no matricial - assim a leitura nao depende de um
+      // cabecalho que ficou dez linhas acima.
+      let html = '<table class="det-grade"><tbody>';
+
+      dados.blocos.forEach((bloco) => {
+        const nome = bloco.grupo + "." + bloco.conta + " - " + bloco.descricao_conta;
+
+        html += "<tr class='cab-bloco'><td class='rot'>" + nome + "</td>" +
+          "<td class='tot'>Total</td>" +
+          filiais.map((f) => "<td class='fil'>" + f.cod_filial + "-" + f.nome_filial + "</td>").join("") +
+          "</tr>";
+
+        bloco.linhas.forEach((linha) => {
+          html += "<tr data-linha-det='1'><td class='rot' title='" + linha.historico_conta + "'>" +
+            linha.historico_conta + "</td>" +
+            "<td class='n tot'>" + detBRL(linha.total) + "</td>" +
+            linha.valores.map((v, i) =>
+              "<td class='n' data-grupo='" + bloco.grupo + "' data-conta='" + bloco.conta +
+              "' data-codigo='" + linha.codigo_conta + "' data-filial='" + filiais[i].cod_filial +
+              "' data-nome-filial='" + filiais[i].nome_filial +
+              "' onclick='abrirLancamentosDaGrade(this)'>" + detBRL(v) + "</td>"
+            ).join("") + "</tr>";
+        });
+
+        html += "<tr class='tot-bloco'><td class='rot'>Total " + nome + "</td>" +
+          "<td class='n tot'>" + detBRL(bloco.total) + "</td>" +
+          bloco.totais.map((v) => "<td class='n'>" + detBRL(v) + "</td>").join("") +
+          "</tr>";
+
+        html += "<tr class='espaco'><td colspan='" + nCols + "'></td></tr>";
+      });
+
+      // Com um bloco so, o total geral repetiria o total do bloco.
+      if (dados.blocos.length > 1) {
+        html += "<tr class='tot-geral'><td class='rot'>TOTAL GERAL</td>" +
+          "<td class='n tot'>" + detBRL(dados.total) + "</td>" +
+          dados.totais_gerais.map((v) => "<td class='n'>" + detBRL(v) + "</td>").join("") +
+          "</tr>";
+      }
+
+      html += "</tbody></table>";
+      corpo.innerHTML = html;
+
+      pintarMapaCalorDetalhe(corpo);
+
+      document.getElementById("det-total").textContent = detBRL(dados.total);
+
+    } catch (e) {
+      corpo.innerHTML = '<div class="det-vazio">Erro ao consultar o detalhamento.</div>';
+    }
+  }
+
+  // Mesmo mapa de calor do matricial: cada linha se compara de filial a
+  // filial, e a coluna TOTAL fica de fora da escala.
+  function pintarMapaCalorDetalhe(corpo) {
+    corpo.querySelectorAll("tr[data-linha-det]").forEach((tr) => {
+      const celulas = Array.from(tr.querySelectorAll("td.n")).slice(1);
+
+      const valores = celulas
+        .map((c) => parseFloat(c.innerText.replace(/\./g, "").replace(",", ".").trim()))
+        .filter((v) => !isNaN(v));
+
+      if (valores.length < 2) return;
+
+      const min = Math.min(...valores);
+      const max = Math.max(...valores);
+
+      celulas.forEach((celula) => {
+        const valor = parseFloat(celula.innerText.replace(/\./g, "").replace(",", ".").trim());
+        if (isNaN(valor)) return;
+        const ratio = (valor - min) / ((max - min) || 1);
+        celula.style.backgroundColor = corDetalheExcel(ratio);
+      });
+    });
+  }
+
+  function corDetalheExcel(ratio) {
+    let r, g, b;
+    if (ratio <= 0.5) {
+      const t = ratio / 0.5;
+      r = 248 + (255 - 248) * t;
+      g = 105 + (235 - 105) * t;
+      b = 107 + (132 - 107) * t;
+    } else {
+      const t = (ratio - 0.5) / 0.5;
+      r = 255 + (99 - 255) * t;
+      g = 235 + (190 - 235) * t;
+      b = 132 + (123 - 132) * t;
+    }
+    return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+  }
+
+  // Da grade larga, um clique numa celula desce ate os lancamentos daquela
+  // conta do WebPostos naquela filial.
+  async function abrirLancamentosDaGrade(celula) {
+    const corpo = document.getElementById("det-corpo");
+    const volta = corpo.innerHTML;
+    const tituloAnterior = document.getElementById("det-titulo").textContent;
+    const subAnterior = document.getElementById("det-sub").textContent;
+
+    corpo.innerHTML = '<div class="det-vazio">Carregando...</div>';
+
+    const params = new URLSearchParams({
+      escopo: "celula",
+      grupo: celula.dataset.grupo,
+      conta: celula.dataset.conta,
+      filial: celula.dataset.filial,
+      codigo_conta: celula.dataset.codigo,
+    });
+    if (DET_ANO) params.set("ano", DET_ANO);
+    if (DET_MES) params.set("mes", DET_MES);
+
+    try {
+      const resp = await fetch("/api/matricial/detalhamento?" + params.toString());
+      const dados = await resp.json();
+
+      document.getElementById("det-sub").textContent =
+        celula.dataset.filial + " - " + celula.dataset.nomeFilial +
+        (DET_MES ? "  |  " + DET_MES.padStart(2, "0") + "/" + DET_ANO : "");
+
+      if (!dados.contas || !dados.contas.length) {
+        corpo.innerHTML = '<div class="det-vazio">Sem lançamentos nesta filial.</div>';
+      } else {
+        corpo.innerHTML =
+          "<p><button type='button' class='det-voltar'>&larr; Voltar à grade</button></p>" +
+          montarBlocosDeConta(dados.contas, true);
+      }
+
+      const botao = corpo.querySelector(".det-voltar");
+      if (botao) {
+        botao.onclick = () => {
+          corpo.innerHTML = volta;
+          pintarMapaCalorDetalhe(corpo);
+          document.getElementById("det-titulo").textContent = tituloAnterior;
+          document.getElementById("det-sub").textContent = subAnterior;
+        };
+      }
+
+    } catch (e) {
+      corpo.innerHTML = '<div class="det-vazio">Erro ao consultar os lançamentos.</div>';
+    }
+  }
+
+  function montarBlocosDeConta(contas, abertos) {
+    return contas.map((c) => {
+      const linhas = c.lancamentos.map((l) =>
+        "<tr><td class='d'>" + l.data + "</td><td>" + l.descricao +
+        "</td><td class='v'>" + detBRL(l.valor) + "</td></tr>"
+      ).join("");
+
+      return (
+        "<div class='det-conta" + (abertos ? " aberta" : "") + "'>" +
+          "<div class='det-conta-topo' onclick='this.parentNode.classList.toggle(\"aberta\")'>" +
+            "<span>" + c.historico_conta + " (" + c.lancamentos.length + ")</span>" +
+            "<span class='det-conta-total'>" + detBRL(c.total) + "</span>" +
+          "</div>" +
+          "<div class='det-lancamentos'><table>" + linhas + "</table></div>" +
+        "</div>"
+      );
+    }).join("");
+  }
+</script>
 
 {% endblock %}

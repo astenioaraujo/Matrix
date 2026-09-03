@@ -2807,3 +2807,243 @@ def vendas_filiais():
     if "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
     return render_template("vendas_filiais.html")
+
+# ------------------------------------------
+# MARGEM UNITÁRIA POR DIA
+# ------------------------------------------
+# Grid produto x posto de um dia só: preço de compra, preço de venda e margem
+# unitária, lidos de vendas_diarias.
+#
+# vendas_diarias traz várias linhas por filial/produto/dia (uma por preço
+# praticado), então os três números são médias ponderadas pela quantidade —
+# nada é persistido.
+#
+# A sequência dos produtos é a do cadastro de combustíveis (o mesmo dos
+# tanques, em Operações), com os adicionais logo depois.
+#
+# vendas_diarias guarda a descrição do sistema de origem ("GASOLINA C COMUM",
+# "DIESEL COMUM", "DIESEL S10 FROTA."), então cada descrição é encostada no
+# produto pela MESMA regra de palavra-chave da Consulta de Estoques
+# (services/estoques_service.py) — mudar uma sem a outra faria as duas telas
+# divergirem.
+
+BLOCOS_MARGEM_UNITARIA = [
+    ("compra", "Compra"),
+    ("venda", "Venda"),
+    ("margem", "Margem"),
+]
+
+# Produtos que aparecem no grid mas NÃO estão em `combustiveis`: são vendidos,
+# só não têm tanque. Entram depois dos do cadastro, na ordem daqui.
+PRODUTOS_ADICIONAIS_MARGEM = [
+    {"cod_produto": "GN", "descricao": "Gás Natural"},
+]
+
+# Ordem importa: a primeira palavra encontrada decide. É a ordem do CASE de
+# estoques_service, mais o gás natural (antes de GASOL, que "GAS NATURAL" não
+# alcança, mas a intenção fica explícita) e o diesel sem sufixo, que no sistema
+# de origem vem como "DIESEL COMUM" e é o S500.
+# Vendido no posto, mas não é combustível: fica fora do grid e não vale nem
+# aviso — a ausência dele não é uma diferença a explicar.
+PRODUTOS_IGNORADOS_MARGEM = ("ARLA",)
+
+PALAVRAS_PRODUTO_MARGEM = [
+    ("NATURAL", "GN"),
+    ("GNV", "GN"),
+    ("S10", "C5"),
+    ("S500", "C4"),
+    ("ADIT", "C2"),
+    ("ETAN", "C3"),
+    ("PODIUM", "C6"),
+    ("GASOL", "C1"),
+    ("DIESEL", "C4"),
+]
+
+
+def _cod_produto_das_vendas(descricao_venda):
+    """Código do produto para uma descrição vinda de vendas_diarias, pela mesma
+    regra de palavra-chave da Consulta de Estoques. Devolve None para o que não
+    é combustível (ARLA, por exemplo)."""
+    txt = re.sub(r"[^A-Z0-9]", "", str(descricao_venda or "").upper())
+    if not txt:
+        return None
+
+    if any(palavra in txt for palavra in PRODUTOS_IGNORADOS_MARGEM):
+        return None
+
+    for palavra, cod_produto in PALAVRAS_PRODUTO_MARGEM:
+        if palavra in txt:
+            return cod_produto
+
+    return None
+
+
+@vendas_bp.route("/margem_unitaria")
+@permissao_obrigatoria("VENDAS", "MARGEM_UNITARIA", redirecionar_para="sistema.menu_vendas")
+def vendas_margem_unitaria():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+
+    data_txt = (request.args.get("data") or "").strip()
+    data_sel = para_data_excel(data_txt) if data_txt else None
+
+    # Os checkboxes só valem quando o formulário foi enviado; na primeira
+    # abertura os três vêm marcados.
+    if request.args.get("filtrado"):
+        mostrar = {
+            "compra": request.args.get("mostrar_compra") == "1",
+            "venda": request.args.get("mostrar_venda") == "1",
+            "margem": request.args.get("mostrar_margem") == "1",
+        }
+        if not any(mostrar.values()):
+            mostrar = {"compra": True, "venda": True, "margem": True}
+    else:
+        mostrar = {"compra": True, "venda": True, "margem": True}
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    filiais = []
+    linhas = []
+    sem_cadastro = []
+
+    try:
+        if not data_sel:
+            cur.execute("""
+                SELECT MAX(data) AS ultima
+                FROM vendas_diarias
+                WHERE cod_empresa = %s
+            """, (cod_empresa,))
+            row = cur.fetchone() or {}
+            hoje = datetime.now(ZoneInfo("America/Recife")).date()
+            data_sel = row.get("ultima") or (hoje - timedelta(days=1))
+
+        filiais = obter_filiais_ativas(cur, cod_empresa)
+
+        cur.execute("""
+            SELECT cod_produto, descricao
+            FROM combustiveis
+            WHERE cod_empresa = %s
+            ORDER BY cod_produto
+        """, (cod_empresa,))
+        produtos = list(cur.fetchall() or []) + PRODUTOS_ADICIONAIS_MARGEM
+
+        cur.execute("""
+            SELECT
+                cod_filial,
+                descricao,
+                SUM(quantidade) AS quantidade,
+                SUM(valor) AS valor,
+                SUM(margem_bruta) AS margem_bruta,
+                SUM(COALESCE(custo, 0) * quantidade) AS custo_total
+            FROM vendas_diarias
+            WHERE cod_empresa = %s
+              AND data = %s
+            GROUP BY cod_filial, descricao
+        """, (cod_empresa, data_sel))
+        registros = cur.fetchall() or []
+
+    finally:
+        cur.close()
+        conn.close()
+
+    # (cod_produto, cod_filial) -> somatórios
+    acumulado = defaultdict(lambda: {"quantidade": 0.0, "valor": 0.0,
+                                     "margem_bruta": 0.0, "custo_total": 0.0})
+    nao_casados = set()
+
+    for registro in registros:
+        descricao = str(registro["descricao"] or "").strip()
+        cod_produto = _cod_produto_das_vendas(descricao)
+        if not cod_produto:
+            txt = re.sub(r"[^A-Z0-9]", "", descricao.upper())
+            if not any(p in txt for p in PRODUTOS_IGNORADOS_MARGEM):
+                nao_casados.add(descricao)
+            continue
+
+        chave = (cod_produto, int(registro["cod_filial"]))
+        acumulado[chave]["quantidade"] += float(registro["quantidade"] or 0)
+        acumulado[chave]["valor"] += float(registro["valor"] or 0)
+        acumulado[chave]["margem_bruta"] += float(registro["margem_bruta"] or 0)
+        acumulado[chave]["custo_total"] += float(registro["custo_total"] or 0)
+
+    sem_cadastro = sorted(nao_casados)
+    codigos_filiais = [int(f["cod_filial"]) for f in filiais]
+
+    for produto in produtos:
+        cod_produto = str(produto["cod_produto"]).strip()
+
+        # Produto sem venda no dia não vira linha: a empresa que não trabalha
+        # Gasolina Especial não precisa ver a faixa vazia dela.
+        vendeu = any(
+            float(acumulado[(cod_produto, cod_filial)]["quantidade"]) > 0
+            for cod_filial in codigos_filiais
+            if (cod_produto, cod_filial) in acumulado
+        )
+        if not vendeu:
+            continue
+
+        blocos = []
+        for chave, rotulo in BLOCOS_MARGEM_UNITARIA:
+            if not mostrar[chave]:
+                continue
+
+            valores = []
+            for cod_filial in codigos_filiais:
+                dados = acumulado.get((cod_produto, cod_filial))
+                qtd = float(dados["quantidade"]) if dados else 0.0
+
+                if not dados or qtd <= 0:
+                    valores.append(None)
+                    continue
+
+                if chave == "compra":
+                    valores.append(dados["custo_total"] / qtd)
+                elif chave == "venda":
+                    valores.append(dados["valor"] / qtd)
+                else:
+                    valores.append(dados["margem_bruta"] / qtd)
+
+            # Mapa de calor por linha, como no matricial: cada linha se compara
+            # com ela mesma, de posto a posto.
+            preenchidos = [v for v in valores if v is not None]
+            minimo = min(preenchidos) if preenchidos else None
+            maximo = max(preenchidos) if preenchidos else None
+
+            celulas = []
+            for valor in valores:
+                if valor is None or minimo is None:
+                    celulas.append({"valor": None, "cor": ""})
+                else:
+                    # Na compra a escala é invertida: comprar caro é o ruim,
+                    # então o preço alto vai para o vermelho.
+                    referencia = (minimo + maximo - valor) if chave == "compra" else valor
+                    celulas.append({
+                        "valor": valor,
+                        "cor": cor_excel_51(referencia, minimo, maximo),
+                    })
+
+            blocos.append({"chave": chave, "rotulo": rotulo, "celulas": celulas})
+
+        if blocos:
+            linhas.append({
+                "cod_produto": cod_produto,
+                "descricao": produto["descricao"],
+                "blocos": blocos,
+            })
+
+    return render_template(
+        "vendas_margem_unitaria.html",
+        nome_empresa=nome_empresa,
+        filiais=filiais,
+        linhas=linhas,
+        mostrar=mostrar,
+        sem_cadastro=sem_cadastro,
+        data_sel=data_sel.strftime("%Y-%m-%d"),
+        formatar_numero_br=formatar_numero_br,
+        url_voltar=url_for("sistema.menu_vendas"),
+        texto_voltar="← Voltar",
+    )

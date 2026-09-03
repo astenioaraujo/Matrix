@@ -114,6 +114,81 @@ Botão vinho no menu do Financeiro, ao lado do CR (`GET /credito/menu`). Duas op
 - Rotas em `routes/financeiro_routes.py`, seção "CRÉDITO"; as listas de opção ficam em `CREDITO_OPCOES` (tela e gravação leem a mesma lista; no banco são `character varying` livres). Templates: `menu_credito.html`, `credito_analises.html`, `credito_analise_form.html`, `credito_aprovacoes.html`, `credito_decisao.html`.
 - `base.html` **não** renderiza flash — cada tela renderiza o seu bloco `get_flashed_messages`. Sem isso, `flash()` some sem aviso.
 
+## Importação Analítica do Fluxo de Caixa (WebPostos)
+
+`Financeiro → Fluxo de Caixa → Importações → Importar PDF WebPostos Analítico`
+(`GET/POST /importacoes/pdf-analitico`, `Importa_Fluxo_Caixa_PDF_Analitico` em `importa_web_postos.py`).
+
+O relatório "Tipo: Analítico" traz as **mesmas contas** do sintético e, embaixo de cada conta,
+os lançamentos que a compõem:
+
+    1.01.03 - RECEBIMENTO CARTÃO CREDITO                     14.395,57
+    REC REM 006072 CAR MASTER CREDITO       03/08/2026            160,00
+
+Por isso a importação analítica alimenta os **dois níveis na mesma transação**: as contas vão
+para `importacoes` com o `historico` no formato exato que o sintético gravaria (é o que faz a
+classificação automática, a remoção de sintéticas e a auditoria continuarem valendo sem
+duplicar código), e os lançamentos vão para `importacoes_detalhamento`.
+
+**Duas tabelas, espelhando o par `importacoes` → `lancamentos`**
+(`migrations/criar_tabelas_fluxo_caixa_detalhamento.sql`, RLS habilitado):
+
+| | |
+|---|---|
+| `importacoes_detalhamento` | temporária — a importação enche |
+| `lancamentos_detalhamento` | definitiva — só recebe na transferência |
+
+> **As duas andam sempre juntas.** Detalhamento sem a sintética correspondente não tem como
+> ser conferido, e sintética sem detalhamento faz a célula do matricial abrir vazia. Por isso
+> **os quatro** pontos que apagam `importacoes` apagam o detalhamento na mesma transação:
+> PDF sintético, PDF analítico, CSV O Closet (`importa_ocloset.py`) e "Limpar Importações".
+> A transferência move os dois e apaga os dois.
+
+**Conferência**: `auditoria_detalhamento` compara, conta a conta, a soma dos detalhes com o
+valor da conta. A tela mostra as divergentes e as sem detalhe, e a **transferência é negada**
+(no endpoint, não só na tela) enquanto alguma conta não fechar — detalhamento que não explica
+o valor da célula é pior que detalhamento nenhum. As linhas do PDF que não casaram com nenhum
+padrão são listadas na auditoria, para a diferença não sumir calada.
+
+`propagar_classificacao_detalhamento` copia grupo/conta da conta sintética para os seus
+detalhes, ligando por `(filial, ano, mês, historico)`. Sem isso a célula do matricial, que é
+lida por `(grupo, conta)`, não acharia o detalhamento.
+
+**Drill-down no matricial** (`GET /api/matricial/detalhamento`, parâmetro `escopo`): o que
+se clica define o alcance — **clicar no título alarga**.
+
+| Clique | `escopo` | O que abre |
+|---|---|---|
+| célula de valor | `celula` | as contas do WebPostos que compuseram aquele valor **naquela filial**, cada uma expansível nos seus lançamentos |
+| descrição da conta | `conta` | a mesma conta gerencial em **todas as filiais**, em grade (contas do WebPostos × filiais) |
+| cabeçalho do grupo | `grupo` | o grupo inteiro em todas as filiais, um bloco por conta gerencial |
+
+Os dois escopos largos **ignoram o filtro de filial da tela** de propósito: o sentido de clicar
+no título é justamente ver todas. A janela larga ocupa 98vw × 94vh e **não encolhe as colunas
+para caber**: como em `matricial.html`, a coluna do rótulo e a de TOTAL ficam congeladas
+(`position: sticky`) e as filiais deslizam para o lado. Duas armadilhas já corrigidas nela: o
+`padding` lateral do corpo deixava uma faixa da coluna vizinha aparecer por baixo da coluna
+congelada (por isso `padding-left/right: 0` só no modo largo), e sem `z-index` explícito as
+células comuns — que vêm depois no DOM — passavam por cima das congeladas ao rolar. A grade repete o **desenho de bloco** do matricial: barra cinza com o nome da conta gerencial e
+os nomes das filiais, as contas do WebPostos, o **total embaixo** (não em cima) e um respiro de
+28px antes do bloco seguinte, fechando num **TOTAL GERAL amarelo**. Cada bloco carrega a sua
+própria faixa de nomes de filial — um `<thead>` único ficaria dez linhas acima e a leitura se
+perderia. O total geral só aparece com mais de um bloco: com um só, repetiria o total do bloco.
+A grade usa o **mesmo mapa de calor** do matricial
+(`corDetalheExcel`, a curva de `getColorExcel`), **só nas linhas de conta do WebPostos** (as
+barras e os totais ficam de fora, como no matricial), por linha e com a coluna TOTAL fora da
+escala — cada conta se compara de filial a filial. Da grade, um clique numa célula desce até os
+lançamentos daquela conta naquela filial, com "← Voltar à grade" (que repinta o mapa de calor,
+senão a grade voltaria cinza).
+
+Tudo vem de `lancamentos_detalhamento`, logo só existe nos meses importados pelo PDF analítico;
+trecho sem detalhamento abre com o aviso, não com uma janela vazia.
+
+**Carga de 03/09/2026 (EMP010, 08/2026)**: 1.171 contas e 11.475 lançamentos, 23 filiais,
+262 sintéticas removidas, 909 contas analíticas — **zero divergência**, soma dos detalhes
+igual à soma das contas (−178.422,41) e igual ao movimento do PDF. Leva ~3 min (229 páginas
++ gravação no banco remoto).
+
 ## Exclusões de lançamentos
 
 `GET/POST /exclusoes`. No primeiro acesso, sugere o **último** período com dados (`ORDER BY ano DESC, mes DESC LIMIT 1`) — mesmo critério da consulta matricial. Antes não marcava nada e o navegador exibia a primeira `<option>`, que no combo de meses (crescente) era o mês **mais antigo**; além disso a grade não vinha filtrada. A sugestão só entra quando ano e mês vêm ambos vazios.
@@ -157,6 +232,17 @@ O arquivo é o CSV "vendas item por pagamento" (`;`, uma linha por item). Lido p
 - **dias** = datas distintas no arquivo (não o intervalo do calendário)
 
 Sem filtro de Status — todas as linhas entram. A projeção do mês é a média diária × dias do mês informado; `dia_base` gravado em `vendas_painel_importacoes` é a quantidade de dias lidos. EMP013 tem uma filial só (cod_filial 1); com mais de uma, tudo vai para a primeira e a tela avisa.
+
+## Margem Unitária por Dia
+
+`GET /vendas/margem_unitaria` (permissão `VENDAS/MARGEM_UNITARIA` 780, `migrations/permissao_margem_unitaria_vendas.sql`, sem conceder a ninguém). Grid de **um dia**: linhas = combustível × (Compra / Venda / Margem), colunas = os postos. A data sugerida é o **último dia com venda** em `vendas_diarias`. Três checkboxes no cabeçalho escolhem quais dos três blocos aparecem (desmarcar todos volta aos três).
+
+- A sequência dos combustíveis é a do cadastro `combustiveis` (o mesmo dos tanques, em Operações), não a das vendas, com os **adicionais** de `PRODUTOS_ADICIONAIS_MARGEM` logo depois — hoje só **Gás Natural**, que é vendido (filiais 4 e 5 da EMP011) mas não tem tanque, e por isso **não entra em `combustiveis`**.
+- `vendas_diarias` traz **várias linhas por filial/produto/dia** (uma por preço praticado), então os três números são **médias ponderadas pela quantidade** — compra = `Σ(custo×qtd)/Σqtd`, venda = `Σvalor/Σqtd`, margem = `Σmargem_bruta/Σqtd`. Nada persistido.
+- A descrição do sistema de origem ("GASOLINA C COMUM", "DIESEL COMUM", "DIESEL S10 FROTA.") é encostada no produto pela **mesma regra de palavra-chave da Consulta de Estoques** (o `CASE` de `services/estoques_service.py`), em `PALAVRAS_PRODUTO_MARGEM` / `_cod_produto_das_vendas`: a primeira palavra encontrada decide, e a ordem importa. Mudar uma sem a outra faria as duas telas divergirem. Além do `CASE` de estoques: `NATURAL`/`GNV` → Gás Natural e **`DIESEL` sem sufixo → S500** ("DIESEL COMUM" é o S500). O que não casa fica **de fora do grid** e é listado num aviso amarelo, para a diferença não sumir calada — exceto o que está em `PRODUTOS_IGNORADOS_MARGEM` (hoje **ARLA**), que sai calado por não ser combustível.
+- **Produto sem venda no dia não vira linha** (a EMP011 não trabalha Gasolina Especial, e a faixa vazia dela só ocupava espaço). A lista de linhas é, portanto, a do dia consultado, não a do cadastro inteiro.
+- Valores com **2 casas** e centralizados; os rótulos (combustível e Compra/Venda/Margem) à esquerda.
+- Mapa de calor de 51 faixas (`cor_excel_51`, o mesmo do matricial) **por linha**: cada linha se compara de posto a posto. Na linha de **Compra a escala é invertida** (`minimo + maximo - valor`) — comprar caro é o ruim, então o preço alto vai para o vermelho e o baixo para o verde; em Venda e Margem, alto é verde.
 
 ---
 

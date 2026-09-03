@@ -185,6 +185,53 @@ def importar_pdf_fluxo_caixa():
 
 
 # ---------------------------------------------------------------
+# IMPORTACAO DO PDF ANALITICO
+# ---------------------------------------------------------------
+
+@importacoes_bp.route("/importacoes/pdf-analitico", methods=["GET", "POST"])
+def importar_pdf_fluxo_caixa_analitico():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    mensagem = ""
+    erro = ""
+    resultado_pdf = None
+
+    if request.method == "POST":
+        try:
+            arquivo = request.files.get("arquivo")
+
+            if not arquivo:
+                raise ValueError("Selecione um arquivo PDF.")
+
+            from importa_web_postos import Importa_Fluxo_Caixa_PDF_Analitico
+
+            resultado_pdf = Importa_Fluxo_Caixa_PDF_Analitico(
+                arquivo_pdf=arquivo,
+                cod_empresa_fixo=session["cod_empresa"]
+            )
+
+            mensagem = (
+                "Importação do PDF analítico concluída. "
+                "Confira abaixo a conferência do detalhamento."
+            )
+
+        except Exception as e:
+            erro = str(e)
+
+    return render_template(
+        "importar_pdf_analitico.html",
+        mensagem=mensagem,
+        erro=erro,
+        resultado_pdf=resultado_pdf,
+        empresa_ativa=session["cod_empresa"],
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("importacoes.listar_importacoes"),
+        texto_voltar="← Voltar",
+    )
+
+
+# ---------------------------------------------------------------
 # IMPORTACAO DO CSV O CLOSET
 # ---------------------------------------------------------------
 
@@ -406,8 +453,26 @@ def limpar_importacoes():
         """, (session["cod_empresa"],))
 
         qtd = cur.rowcount
+
+        # As duas tabelas trabalham sincronizadas: detalhamento sem a
+        # sintetica correspondente nao tem como ser conferido.
+        cur.execute("""
+            DELETE FROM importacoes_detalhamento
+            WHERE cod_empresa = %s
+        """, (session["cod_empresa"],))
+
+        qtd_detalhes = cur.rowcount
         conn.commit()
-        session["mensagem_importacoes"] = f"{qtd} lançamento(s) importado(s) foram excluído(s)."
+
+        msg = f"{qtd} lançamento(s) importado(s) foram excluído(s)."
+
+        if qtd_detalhes:
+            msg += (
+                f" {qtd_detalhes} linha(s) de detalhamento analítico foram "
+                f"excluídas junto."
+            )
+
+        session["mensagem_importacoes"] = msg
 
     except Exception as e:
         conn.rollback()
@@ -580,6 +645,40 @@ def transferir_importacoes():
             )
             return redirect(url_for("importacoes.listar_importacoes"))
 
+        # O detalhamento analítico só vira definitivo se fechar com a conta
+        # sintética. Divergência aqui é erro de leitura do PDF: transferir
+        # gravaria um detalhamento que não explica o valor da célula.
+        cur.execute("""
+            SELECT COUNT(*)
+            FROM (
+                SELECT
+                    d.cod_filial,
+                    d.ano,
+                    d.mes,
+                    d.historico_conta,
+                    SUM(d.valor) AS soma,
+                    MAX(i.valor) AS valor_conta
+                FROM importacoes_detalhamento d
+                JOIN importacoes i
+                  ON i.cod_empresa = d.cod_empresa
+                 AND i.cod_filial = d.cod_filial
+                 AND i.ano = d.ano
+                 AND i.mes = d.mes
+                 AND i.historico = d.historico_conta
+                WHERE d.cod_empresa = %s
+                GROUP BY d.cod_filial, d.ano, d.mes, d.historico_conta
+            ) x
+            WHERE ABS(x.soma - x.valor_conta) >= 0.01
+        """, (cod_empresa,))
+        contas_divergentes = cur.fetchone()[0]
+
+        if contas_divergentes > 0:
+            session["erro_importacoes"] = (
+                f"Transferência negada. {contas_divergentes} conta(s) têm detalhamento "
+                f"analítico que não fecha com o valor da conta. Reimporte o PDF analítico."
+            )
+            return redirect(url_for("importacoes.listar_importacoes"))
+
         # Lançamentos já existentes para a mesma filial/ano/mês são substituídos pela
         # importação (a tela é exclusiva do WebPostos, que traz o mês inteiro da filial).
         conflitos = conflitos_transferencia(cur, cod_empresa)
@@ -602,6 +701,16 @@ def transferir_importacoes():
                   AND mes = %s
             """, (cod_empresa, c["cod_filial"], c["ano"], c["mes"]))
             total_substituidos += cur.rowcount
+
+            # o detalhamento do periodo substituido sai junto: ele explica
+            # lancamentos que deixaram de existir
+            cur.execute("""
+                DELETE FROM lancamentos_detalhamento
+                WHERE cod_empresa = %s
+                  AND cod_filial = %s
+                  AND ano = %s
+                  AND mes = %s
+            """, (cod_empresa, c["cod_filial"], c["ano"], c["mes"]))
 
         cur.execute("""
             INSERT INTO lancamentos (
@@ -638,7 +747,50 @@ def transferir_importacoes():
         total_transferidos = cur.rowcount
 
         cur.execute("""
+            INSERT INTO lancamentos_detalhamento (
+                cod_empresa,
+                cod_filial,
+                nome_filial,
+                ano,
+                mes,
+                data,
+                codigo_conta,
+                historico_conta,
+                descricao,
+                valor,
+                grupo,
+                conta,
+                descricao_conta,
+                complemento
+            )
+            SELECT
+                cod_empresa,
+                cod_filial,
+                nome_filial,
+                ano,
+                mes,
+                data,
+                codigo_conta,
+                historico_conta,
+                descricao,
+                valor,
+                grupo,
+                conta,
+                descricao_conta,
+                complemento
+            FROM importacoes_detalhamento
+            WHERE cod_empresa = %s
+        """, (cod_empresa,))
+
+        total_detalhes_transferidos = cur.rowcount
+
+        cur.execute("""
             DELETE FROM importacoes
+            WHERE cod_empresa = %s
+        """, (cod_empresa,))
+
+        cur.execute("""
+            DELETE FROM importacoes_detalhamento
             WHERE cod_empresa = %s
         """, (cod_empresa,))
 
@@ -648,6 +800,11 @@ def transferir_importacoes():
             f"Transferência concluída com sucesso. {total_transferidos} lançamento(s) "
             f"foram enviados para a tabela de lançamentos."
         )
+        if total_detalhes_transferidos:
+            msg += (
+                f" {total_detalhes_transferidos} linha(s) de detalhamento "
+                f"analítico acompanharam a transferência."
+            )
         if total_substituidos:
             msg += (
                 f" {total_substituidos} lançamento(s) anteriores de "

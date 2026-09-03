@@ -1592,6 +1592,222 @@ def matricial():
     )
 
 # =========================
+# DETALHAMENTO DA CELULA DO MATRICIAL
+# =========================
+#
+# A celula do matricial e o total de (grupo, conta) numa filial/mes. O
+# detalhamento analitico responde "o que compos esse valor": primeiro as
+# contas do WebPostos que cairam nessa conta gerencial, depois os
+# lancamentos de cada uma. Vem de `lancamentos_detalhamento`, que so
+# existe se o mes foi importado pelo PDF analitico.
+
+
+@financeiro_bp.route("/api/matricial/detalhamento")
+def api_matricial_detalhamento():
+    """Detalhamento analitico, em tres alcances.
+
+    escopo=celula  (padrao) -> uma conta gerencial numa filial: as contas do
+                               WebPostos que a compuseram, cada uma abrindo
+                               os seus lancamentos.
+    escopo=conta            -> a mesma conta gerencial em TODAS as filiais,
+                               em grade (contas do WebPostos x filiais).
+    escopo=grupo            -> o grupo inteiro em todas as filiais, um bloco
+                               por conta gerencial.
+
+    Clicar no titulo alarga o alcance: por isso os escopos largos ignoram o
+    filtro de filial da tela - o ponto de clicar na descricao e ver todas.
+    """
+    if "cod_empresa" not in session:
+        return jsonify({"erro": "sessão expirada"}), 401
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    escopo = (request.args.get("escopo") or "celula").strip()
+    grupo = (request.args.get("grupo") or "").strip()
+    conta = (request.args.get("conta") or "").strip()
+    cod_filial = (request.args.get("filial") or "").strip()
+    codigo_conta = (request.args.get("codigo_conta") or "").strip()
+    ano = (request.args.get("ano") or "").strip()
+    mes = (request.args.get("mes") or "").strip()
+
+    if not grupo:
+        return jsonify({"erro": "grupo é obrigatório"}), 400
+
+    if escopo != "grupo" and not conta:
+        return jsonify({"erro": "conta é obrigatória"}), 400
+
+    where = ["cod_empresa = %s", "CAST(grupo AS TEXT) = %s"]
+    params = [cod_empresa, grupo]
+
+    if conta:
+        where.append("CAST(conta AS TEXT) = %s")
+        params.append(conta)
+
+    # o alcance largo mostra todas as filiais; o de celula fica na filial clicada
+    if cod_filial and escopo == "celula":
+        where.append("CAST(cod_filial AS TEXT) = %s")
+        params.append(cod_filial)
+
+    if codigo_conta:
+        where.append("codigo_conta = %s")
+        params.append(codigo_conta)
+
+    if ano:
+        where.append("CAST(ano AS TEXT) = %s")
+        params.append(ano)
+
+    if mes:
+        where.append("CAST(mes AS TEXT) = %s")
+        params.append(mes)
+
+    where_sql = " AND ".join(where)
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        if escopo == "celula":
+            cur.execute(f"""
+                SELECT
+                    codigo_conta,
+                    historico_conta,
+                    data,
+                    descricao,
+                    valor
+                FROM lancamentos_detalhamento
+                WHERE {where_sql}
+                ORDER BY codigo_conta, data, descricao
+            """, params)
+
+            linhas = cur.fetchall() or []
+
+            contas = []
+            indice = {}
+
+            for codigo, historico, data, descricao, valor in linhas:
+                if codigo not in indice:
+                    indice[codigo] = {
+                        "codigo_conta": codigo,
+                        "historico_conta": historico,
+                        "total": 0.0,
+                        "lancamentos": [],
+                    }
+                    contas.append(indice[codigo])
+
+                item = indice[codigo]
+                valor_float = float(valor or 0)
+                item["total"] += valor_float
+                item["lancamentos"].append({
+                    "data": data.strftime("%d/%m/%Y") if data else "",
+                    "descricao": descricao or "",
+                    "valor": valor_float,
+                })
+
+            return jsonify({
+                "escopo": "celula",
+                "contas": contas,
+                "total": sum(c["total"] for c in contas),
+                "qtd_lancamentos": len(linhas),
+            })
+
+        # ---- escopos largos: grade contas do WebPostos x filiais ----
+
+        cur.execute(f"""
+            SELECT
+                CAST(grupo AS TEXT),
+                CAST(conta AS TEXT),
+                COALESCE(NULLIF(TRIM(descricao_conta), ''), 'SEM DESCRIÇÃO'),
+                codigo_conta,
+                historico_conta,
+                cod_filial,
+                SUM(valor)
+            FROM lancamentos_detalhamento
+            WHERE {where_sql}
+            GROUP BY 1, 2, 3, 4, 5, 6
+            ORDER BY 1, 2, 4, 6
+        """, params)
+
+        linhas = cur.fetchall() or []
+
+        cur.execute("""
+            SELECT cod_filial, nome_filial
+            FROM filiais
+            WHERE cod_empresa = %s
+              AND ativo = TRUE
+            ORDER BY cod_filial
+        """, (cod_empresa,))
+
+        filiais = [
+            {"cod_filial": int(f[0]), "nome_filial": f[1]}
+            for f in (cur.fetchall() or [])
+        ]
+
+    finally:
+        cur.close()
+        conn.close()
+
+    posicao = {f["cod_filial"]: i for i, f in enumerate(filiais)}
+    qtd_filiais = len(filiais)
+
+    blocos = []
+    indice_bloco = {}
+
+    for g, c, descricao_conta, codigo, historico, filial, valor in linhas:
+        chave = (g, c)
+
+        if chave not in indice_bloco:
+            indice_bloco[chave] = {
+                "grupo": g,
+                "conta": c,
+                "descricao_conta": descricao_conta,
+                "linhas": [],
+                "indice_linhas": {},
+                "totais": [0.0] * qtd_filiais,
+                "total": 0.0,
+            }
+            blocos.append(indice_bloco[chave])
+
+        bloco = indice_bloco[chave]
+
+        if codigo not in bloco["indice_linhas"]:
+            bloco["indice_linhas"][codigo] = {
+                "codigo_conta": codigo,
+                "historico_conta": historico,
+                "valores": [0.0] * qtd_filiais,
+                "total": 0.0,
+            }
+            bloco["linhas"].append(bloco["indice_linhas"][codigo])
+
+        linha = bloco["indice_linhas"][codigo]
+        idx = posicao.get(int(filial))
+
+        if idx is None:
+            continue
+
+        valor_float = float(valor or 0)
+
+        linha["valores"][idx] += valor_float
+        linha["total"] += valor_float
+        bloco["totais"][idx] += valor_float
+        bloco["total"] += valor_float
+
+    totais_gerais = [0.0] * qtd_filiais
+
+    for bloco in blocos:
+        bloco.pop("indice_linhas", None)
+        for i, v in enumerate(bloco["totais"]):
+            totais_gerais[i] += v
+
+    return jsonify({
+        "escopo": escopo,
+        "filiais": filiais,
+        "blocos": blocos,
+        "totais_gerais": totais_gerais,
+        "total": sum(totais_gerais),
+    })
+
+
+# =========================
 # MATRICIAL ANUAL POR POSTO
 # =========================
 

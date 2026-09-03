@@ -141,6 +141,7 @@ def menu_vendas():
         "IMPORTAR_VENDAS_DIARIAS",
         "CONSULTAS",
         "CONSULTA_POR_PRODUTO",
+        "MARGEM_UNITARIA",
         "PARAMETROS",
     ]
     if tipo_global == "superusuario":
