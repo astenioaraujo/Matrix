@@ -56,6 +56,10 @@
   .selo-ok, .selo-erro {
     display: inline-block; padding: 6px 12px; border-radius: 8px; font-weight: 800;
   }
+  .aviso-filial-unica {
+    background: #fff8e1; border: 1px solid #f0d081; border-radius: 10px;
+    padding: 12px 14px; font-size: 13px; color: #7a5b00; margin-bottom: 18px;
+  }
 </style>
 
 <div class="pagina-titulo">Importar PDF Analítico - WebPostos</div>
@@ -83,6 +87,22 @@
     {% set det = resultado_pdf["auditoria_detalhe"] %}
 
     <div class="painel-auditoria">
+
+      {% if resultado_pdf["filial_unica"] %}
+        {% set f = resultado_pdf["filiais_lidas"][0] %}
+        <div class="aviso-filial-unica">
+          <strong>Atenção: o arquivo trouxe uma filial só</strong> —
+          {{ f["cod_filial"] }} - {{ f["nome_filial"] }}.<br>
+          A transferência vai substituir apenas esta filial neste mês; as demais
+          continuam como estão. Para trazer as outras, emita e importe um arquivo
+          para cada uma (ou reemita o relatório com todas as filiais).
+        </div>
+      {% else %}
+        <div class="aviso-tela">
+          Filiais lidas ({{ resultado_pdf["filiais_lidas"]|length }}):
+          {% for f in resultado_pdf["filiais_lidas"] %}{{ f["cod_filial"] }}-{{ f["nome_filial"] }}{% if not loop.last %}, {% endif %}{% endfor %}
+        </div>
+      {% endif %}
 
       <div class="cartoes">
         <div class="cartao">

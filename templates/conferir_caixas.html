@@ -485,14 +485,48 @@
      (que é alinhado à direita). Pseudo-elemento, e não background-image,
      porque a regra de hover da linha redefine o background da célula e
      apagaria o desenho. */
+  /* O canto dobrado virou um olho: além de marcar que a célula tem
+     detalhamento, ele ABRE esse detalhamento. Fica no alto à ESQUERDA,
+     apagado, e só ganha cor no hover — o valor é alinhado à direita, e do
+     lado direito o olho disputaria espaço justamente com o número que
+     precisa ser lido. Elemento real (e não pseudo-elemento) porque pseudo
+     não recebe clique. */
   table.caixas td.tem-detalhe { position:relative; }
-  table.caixas td.tem-detalhe::after {
-    content:''; position:absolute; left:2px; top:2px;
-    border-left:5px solid #6366f1; border-bottom:5px solid transparent;
-    pointer-events:none;
+  .olho-det {
+    position:absolute; left:1px; top:0; font-size:8px; line-height:1;
+    opacity:.35; cursor:pointer; user-select:none; padding:1px;
   }
-  /* na tira de 24px da coluna fechada o canto não tem o que marcar */
-  table.caixas td.tem-detalhe.col-fechada::after { display:none; }
+  .olho-det:hover { opacity:1; }
+  /* na tira de 24px da coluna fechada não há espaço para a marca */
+  table.caixas td.col-fechada .olho-det { display:none; }
+
+  /* Nome da coluna que tem detalhamento no mês: clicar lista o mês inteiro */
+  th .th-nome.tem-det { cursor:pointer; text-decoration:underline dotted; }
+  th .th-nome.tem-det:hover { color:#4338ca; }
+
+  /* ── Janela de leitura do detalhamento ── */
+  #modal-det-item { display:none; position:fixed; inset:0; z-index:9500;
+    background:rgba(0,0,0,.45); align-items:center; justify-content:center; }
+  #modal-det-item.aberto { display:flex; }
+  .mdi-caixa { background:#fff; border-radius:14px; width:min(680px,94vw);
+    max-height:86vh; display:flex; flex-direction:column;
+    box-shadow:0 18px 50px rgba(0,0,0,.3); }
+  .mdi-topo { padding:14px 18px; border-bottom:1px solid #e5e7eb;
+    display:flex; justify-content:space-between; align-items:flex-start; gap:14px; }
+  .mdi-titulo { font-size:17px; font-weight:800; }
+  .mdi-sub { font-size:12px; color:#6b7280; margin-top:3px; }
+  .mdi-fechar { border:none; background:transparent; font-size:22px;
+    cursor:pointer; line-height:1; color:#6b7280; }
+  .mdi-corpo { overflow:auto; padding:12px 18px 18px; }
+  .mdi-dia { margin-bottom:12px; border:1px solid #e5e7eb; border-radius:10px; overflow:hidden; }
+  .mdi-dia-topo { background:#f3f4f6; padding:7px 12px; font-weight:800; font-size:13px;
+    display:flex; justify-content:space-between; }
+  .mdi-dia table { width:100%; border-collapse:collapse; font-size:13px; }
+  .mdi-dia td { border-top:1px solid #f1f5f9; padding:5px 12px; }
+  .mdi-dia td.v { text-align:right; font-family:Consolas,Menlo,monospace; white-space:nowrap; }
+  .mdi-vazio { padding:18px; color:#6b7280; }
+  .mdi-rodape { padding:11px 18px; border-top:1px solid #e5e7eb;
+    display:flex; justify-content:space-between; font-weight:800; }
 
   /* ── Painel de detalhamento (abre abaixo da grade) ──
      Fundo cinza no painel inteiro, para destacar dos cartões brancos de
@@ -783,7 +817,12 @@
                      aria-label="{% if travada %}{{ f.nome }} tem valor lançado no mês — não pode ser fechada{% else %}Abrir/fechar a coluna {{ f.nome }}{% endif %}"
                      onchange="alternarColuna('forma', {{ f.id }}, this.checked)">
             {% endif %}
-            <span class="th-nome">{{ f.nome }}</span>
+            {% if f.id in colunas_com_detalhe_forma %}
+              <span class="th-nome tem-det" title="Ver todo o detalhamento do mês nesta coluna"
+                    onclick="abrirDetItem('forma', {{ f.id }}, '')">{{ f.nome }}</span>
+            {% else %}
+              <span class="th-nome">{{ f.nome }}</span>
+            {% endif %}
           </th>
         {% endfor %}
         <th class="col-total">TOTAL</th>
@@ -805,7 +844,12 @@
                        aria-label="{% if c_travada %}{{ c.nome }} tem valor lançado no mês — não pode ser fechada{% else %}Abrir/fechar a coluna {{ c.nome }}{% endif %}"
                        onchange="alternarColuna('controle', {{ c.id }}, this.checked)">
               {% endif %}
-              <span class="th-nome">{{ c.nome }}</span>
+              {% if c.id in colunas_com_detalhe_controle %}
+                <span class="th-nome tem-det" title="Ver todo o detalhamento do mês nesta coluna"
+                      onclick="abrirDetItem('controle', {{ c.id }}, '')">{{ c.nome }}</span>
+              {% else %}
+                <span class="th-nome">{{ c.nome }}</span>
+              {% endif %}
             </th>
           {% endfor %}
         {% endif %}
@@ -874,9 +918,11 @@
                      {% if cel_travada %}readonly tabindex="-1"
                      title="{% if not dia_editavel %}Fora do prazo de digitação{% else %}Valor vem de um detalhamento (soma) — altere pelo ✎{% endif %}"{% endif %}
                      onblur="salvarCelula(this)">
+              {% if tem_det %}<span class="olho-det" title="Ver o detalhamento desta célula"
+                onclick="abrirDetItem('forma', {{ f.id }}, '{{ d.strftime('%Y-%m-%d') }}')">👁</span>{% endif %}
             </td>
             {% else %}
-            <td class="td-readonly {{ 'tem-detalhe' if tem_det else '' }} {{ 'col-fechada' if fechada else '' }}" data-col="{{ f.id }}">{{ money(v) }}</td>
+            <td class="td-readonly {{ 'tem-detalhe' if tem_det else '' }} {{ 'col-fechada' if fechada else '' }}" data-col="{{ f.id }}">{{ money(v) }}{% if tem_det %}<span class="olho-det" title="Ver o detalhamento desta célula" onclick="abrirDetItem('forma', {{ f.id }}, '{{ d.strftime('%Y-%m-%d') }}')">👁</span>{% endif %}</td>
             {% endif %}
           {% endfor %}
 
@@ -920,9 +966,11 @@
                        {% if cel_travada_c %}readonly tabindex="-1"
                        title="{% if not dia_editavel %}Fora do prazo de digitação{% else %}Valor vem de um detalhamento (soma) — altere pelo ✎{% endif %}"{% endif %}
                        onblur="salvarControle(this)">
+                {% if tem_det_c %}<span class="olho-det" title="Ver o detalhamento desta célula"
+                  onclick="abrirDetItem('controle', {{ c.id }}, '{{ d.strftime('%Y-%m-%d') }}')">👁</span>{% endif %}
               </td>
               {% else %}
-              <td class="td-ctrl-ro {{ 'tem-detalhe' if tem_det_c else '' }} {{ 'col-fechada' if c_fechada else '' }}" data-col-ctrl="{{ c.id }}">{{ money(cv) }}</td>
+              <td class="td-ctrl-ro {{ 'tem-detalhe' if tem_det_c else '' }} {{ 'col-fechada' if c_fechada else '' }}" data-col-ctrl="{{ c.id }}">{{ money(cv) }}{% if tem_det_c %}<span class="olho-det" title="Ver o detalhamento desta célula" onclick="abrirDetItem('controle', {{ c.id }}, '{{ d.strftime('%Y-%m-%d') }}')">👁</span>{% endif %}</td>
               {% endif %}
             {% endfor %}
           {% endif %}
@@ -1776,14 +1824,30 @@
     const inp = tr.querySelector(seletor);
     if (!inp) return;
     inp.value = total ? fmtBR(total) : '';
-    inp.closest('td').classList.toggle('tem-detalhe', temLinhas);
+    const td = inp.closest('td');
+    td.classList.toggle('tem-detalhe', temLinhas);
+
+    /* O olho da célula acompanha: passou a ter detalhamento, ganha o olho na
+       hora; deixou de ter, o olho sai. Sem isso só apareceria no recarregar. */
+    const olhoAtual = td.querySelector('.olho-det');
+
+    if (temLinhas && !olhoAtual) {
+      const olho = document.createElement('span');
+      olho.className = 'olho-det';
+      olho.title = 'Ver o detalhamento desta célula';
+      olho.textContent = '👁';
+      olho.onclick = () => abrirDetItem(tipo, idItem, pdDataAtual);
+      td.appendChild(olho);
+    } else if (!temLinhas && olhoAtual) {
+      olhoAtual.remove();
+    }
 
     /* Passou a ter detalhamento: a célula vira soma e trava na hora, sem
        precisar recarregar. Deixou de ter: destrava (o dia é editável, senão
        o ✎ nem teria aberto). */
     inp.readOnly = temLinhas;
     inp.classList.toggle('cel-travada', temLinhas);
-    inp.closest('td').classList.toggle('td-travada', temLinhas);
+    td.classList.toggle('td-travada', temLinhas);
     inp.title = temLinhas ? 'Valor vem de um detalhamento (soma) — altere pelo ✎' : '';
 
     if (tipo === 'forma') recalcTotal(tr);
@@ -1872,6 +1936,110 @@
     setTimeout(() => adicionarLinhaDetalhe(secao.querySelector('.pd-btn-add')), 150);
   }
   {% endif %}
+
+  /* ── Leitura do detalhamento ──────────────────────────────────────────
+     O mesmo endpoint serve os dois cliques: com data, o que compõe aquela
+     célula; sem data, o mês inteiro daquela coluna, agrupado por dia. */
+  const URL_DET_ITEM = "{{ url_for('financeiro.api_caixas_detalhe_item') }}";
+  const DET_COD_FILIAL = "{{ cod_filial_atual or '' }}";
+  const DET_ANO = "{{ ano_sel }}";
+  const DET_MES = "{{ mes_sel }}";
+
+  /* escapeHtml proprio: o do painel de edicao mora dentro do bloco
+     de edicao (que so e renderizado para quem edita) e nao existe para
+     quem so consulta. */
+  function mdiEscape(t) {
+    return (t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function fecharDetItem() {
+    document.getElementById('modal-det-item').classList.remove('aberto');
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') fecharDetItem();
+  });
+
+  async function abrirDetItem(tipo, idItem, data) {
+    const modal = document.getElementById('modal-det-item');
+    const corpo = document.getElementById('mdi-corpo');
+
+    document.getElementById('mdi-titulo').textContent = 'Detalhamento';
+    document.getElementById('mdi-sub').textContent = '';
+    document.getElementById('mdi-total').textContent = '';
+    document.getElementById('mdi-rotulo-total').textContent =
+      data ? 'Total do dia' : 'Total do mês';
+    corpo.innerHTML = '<div class="mdi-vazio">Carregando...</div>';
+    modal.classList.add('aberto');
+
+    const params = new URLSearchParams({
+      tipo, id_item: idItem, cod_filial: DET_COD_FILIAL
+    });
+    if (data) params.set('data', data);
+    else { params.set('ano', DET_ANO); params.set('mes', DET_MES); }
+
+    try {
+      const resp = await fetch(URL_DET_ITEM + '?' + params.toString());
+      const j = await resp.json();
+
+      if (!j.ok) {
+        corpo.innerHTML = '<div class="mdi-vazio">' + (j.erro || 'Erro ao consultar.') + '</div>';
+        return;
+      }
+
+      document.getElementById('mdi-titulo').textContent = j.nome_item || 'Detalhamento';
+      document.getElementById('mdi-sub').textContent = data
+        ? data.split('-').reverse().join('/')
+        : 'Mês inteiro — ' + String(DET_MES).padStart(2, '0') + '/' + DET_ANO
+          + ' — ' + j.dias.length + ' dia(s), ' + j.qtd + ' lançamento(s)';
+
+      if (!j.dias.length) {
+        corpo.innerHTML = '<div class="mdi-vazio">Sem detalhamento lançado.</div>';
+        return;
+      }
+
+      corpo.innerHTML = j.dias.map((dia) => {
+        const linhas = dia.linhas.map((l) =>
+          '<tr><td>' + (mdiEscape(l.observacao) ||
+            '<span style="color:#cbd5e1">(sem observação)</span>') +
+          '</td><td class="v">' + fmtBR(l.valor) + '</td></tr>'
+        ).join('');
+
+        /* Com um dia só (o olho da célula) a faixa com a data seria
+           redundante: ela já está no subtítulo. */
+        const topo = data ? '' :
+          '<div class="mdi-dia-topo"><span>' + dia.data_br + '</span>' +
+          '<span>' + fmtBR(dia.total) + '</span></div>';
+
+        return '<div class="mdi-dia">' + topo + '<table>' + linhas + '</table></div>';
+      }).join('');
+
+      document.getElementById('mdi-total').textContent = fmtBR(j.total);
+
+    } catch (e) {
+      corpo.innerHTML = '<div class="mdi-vazio">Erro ao consultar o detalhamento.</div>';
+    }
+  }
 </script>
+
+
+<!-- Janela de leitura do detalhamento (célula ou coluna do mês) -->
+<div id="modal-det-item" onclick="if (event.target === this) fecharDetItem()">
+  <div class="mdi-caixa">
+    <div class="mdi-topo">
+      <div>
+        <div class="mdi-titulo" id="mdi-titulo">Detalhamento</div>
+        <div class="mdi-sub" id="mdi-sub"></div>
+      </div>
+      <button type="button" class="mdi-fechar" onclick="fecharDetItem()">&times;</button>
+    </div>
+    <div class="mdi-corpo" id="mdi-corpo"></div>
+    <div class="mdi-rodape">
+      <span id="mdi-rotulo-total">Total</span>
+      <span id="mdi-total"></span>
+    </div>
+  </div>
+</div>
 
 {% endblock %}

@@ -702,16 +702,6 @@ def transferir_importacoes():
             """, (cod_empresa, c["cod_filial"], c["ano"], c["mes"]))
             total_substituidos += cur.rowcount
 
-            # o detalhamento do periodo substituido sai junto: ele explica
-            # lancamentos que deixaram de existir
-            cur.execute("""
-                DELETE FROM lancamentos_detalhamento
-                WHERE cod_empresa = %s
-                  AND cod_filial = %s
-                  AND ano = %s
-                  AND mes = %s
-            """, (cod_empresa, c["cod_filial"], c["ano"], c["mes"]))
-
         cur.execute("""
             INSERT INTO lancamentos (
                 cod_empresa,
@@ -745,6 +735,26 @@ def transferir_importacoes():
         """, (cod_empresa,))
 
         total_transferidos = cur.rowcount
+
+        # O detalhamento antigo sai por (filial, ano, mes) do que esta
+        # chegando - NAO pela lista de conflitos, que so enxerga periodos com
+        # linhas em `lancamentos`. Um periodo com detalhamento e sem
+        # lancamento (apagado por fora) passaria batido e o detalhe velho
+        # ficaria somando junto com o novo.
+        cur.execute("""
+            DELETE FROM lancamentos_detalhamento d
+            WHERE d.cod_empresa = %s
+              AND EXISTS (
+                    SELECT 1
+                    FROM importacoes_detalhamento i
+                    WHERE i.cod_empresa = d.cod_empresa
+                      AND i.cod_filial = d.cod_filial
+                      AND i.ano = d.ano
+                      AND i.mes = d.mes
+              )
+        """, (cod_empresa,))
+
+        total_detalhes_substituidos = cur.rowcount
 
         cur.execute("""
             INSERT INTO lancamentos_detalhamento (
@@ -803,8 +813,11 @@ def transferir_importacoes():
         if total_detalhes_transferidos:
             msg += (
                 f" {total_detalhes_transferidos} linha(s) de detalhamento "
-                f"analítico acompanharam a transferência."
+                f"analítico acompanharam a transferência"
             )
+            if total_detalhes_substituidos:
+                msg += f", substituindo {total_detalhes_substituidos} anterior(es)"
+            msg += "."
         if total_substituidos:
             msg += (
                 f" {total_substituidos} lançamento(s) anteriores de "

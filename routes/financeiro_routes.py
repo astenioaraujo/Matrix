@@ -2457,14 +2457,57 @@ def exclusoes():
                 ids = []
 
             if ids:
+                # As chaves precisam ser lidas ANTES do DELETE: o detalhamento
+                # analitico se liga a conta pelo historico (filial, ano, mes,
+                # historico), nao por id_lancamento, e depois de apagada a
+                # linha nao ha mais de onde tirar isso.
+                cur.execute("""
+                    SELECT DISTINCT cod_filial, ano, mes, historico
+                    FROM lancamentos
+                    WHERE id_lancamento = ANY(%s::int[])
+                      AND cod_empresa = %s
+                """, (ids, cod_empresa))
+
+                chaves = [tuple(r) for r in (cur.fetchall() or [])]
+
                 cur.execute("""
                     DELETE FROM lancamentos
                     WHERE id_lancamento = ANY(%s::int[])
                       AND cod_empresa = %s
                 """, (ids, cod_empresa))
 
+                total_detalhes = 0
+
+                if chaves:
+                    # So sai o detalhe que ficou orfao: se outra linha de
+                    # lancamento com o mesmo historico continua no periodo, o
+                    # detalhamento ainda explica alguma coisa e fica.
+                    cur.execute("""
+                        DELETE FROM lancamentos_detalhamento d
+                        WHERE d.cod_empresa = %s
+                          AND (d.cod_filial, d.ano, d.mes, d.historico_conta)
+                              IN %s
+                          AND NOT EXISTS (
+                                SELECT 1
+                                FROM lancamentos l
+                                WHERE l.cod_empresa = d.cod_empresa
+                                  AND l.cod_filial = d.cod_filial
+                                  AND l.ano = d.ano
+                                  AND l.mes = d.mes
+                                  AND l.historico = d.historico_conta
+                          )
+                    """, (cod_empresa, tuple(chaves)))
+
+                    total_detalhes = cur.rowcount
+
                 conn.commit()
                 mensagem = f"{len(ids)} lançamento(s) excluído(s) com sucesso."
+
+                if total_detalhes:
+                    mensagem += (
+                        f" {total_detalhes} linha(s) de detalhamento analítico "
+                        f"foram excluídas junto."
+                    )
             else:
                 erro = "Nenhum registro válido selecionado."
 
@@ -4965,15 +5008,21 @@ def conferir_caixas():
         # o olho de visualização, que também vale para quem só consulta.
         com_detalhe_forma = set()
         com_detalhe_controle = set()
+        # quais COLUNAS têm algum detalhamento no mês — é o que decide se o
+        # nome da coluna vira clicável (sem isso o clique abriria vazio)
+        colunas_com_detalhe_forma = set()
+        colunas_com_detalhe_controle = set()
         dias_com_soma = set()
         if cod_filial_atual:
             # Uma consulta por tabela de detalhe resolve as duas coisas: quais
             # células têm detalhamento (para a marca na grade) e em que dias
             # algum item recebeu MAIS DE UM lançamento (para o olho verde).
             # Antes eram três idas ao banco lendo as mesmas duas tabelas.
-            for tabela, campo, destino in (
-                ("caixas_lancamentos_detalhe", "id_forma", com_detalhe_forma),
-                ("caixas_controles_detalhe", "id_controle", com_detalhe_controle),
+            for tabela, campo, destino, destino_coluna in (
+                ("caixas_lancamentos_detalhe", "id_forma",
+                 com_detalhe_forma, colunas_com_detalhe_forma),
+                ("caixas_controles_detalhe", "id_controle",
+                 com_detalhe_controle, colunas_com_detalhe_controle),
             ):
                 cur.execute(f"""
                     SELECT data, {campo} AS id_item, COUNT(*) AS linhas
@@ -4985,6 +5034,7 @@ def conferir_caixas():
                 for r in cur.fetchall():
                     dia = r["data"].isoformat()
                     destino.add((dia, r["id_item"]))
+                    destino_coluna.add(r["id_item"])
                     # mais de uma linha = o valor da célula é uma soma
                     if r["linhas"] > 1:
                         dias_com_soma.add(dia)
@@ -5120,6 +5170,8 @@ def conferir_caixas():
         controles_valores=controles_valores,
         com_detalhe_forma=com_detalhe_forma,
         com_detalhe_controle=com_detalhe_controle,
+        colunas_com_detalhe_forma=colunas_com_detalhe_forma,
+        colunas_com_detalhe_controle=colunas_com_detalhe_controle,
         dias_com_soma=dias_com_soma,
         formas_com_valor=formas_com_valor,
         colunas_fechadas=colunas_fechadas,
@@ -5231,6 +5283,99 @@ def api_caixas_detalhe():
         "forma":    agrupar(linhas_forma),
         "controle": agrupar(linhas_controle),
         "observacao_dia": (linha_obs or {}).get("observacao") or "",
+    })
+
+
+@financeiro_bp.route("/api/caixas/detalhe-item")
+def api_caixas_detalhe_item():
+    """Detalhamento de UM item, para leitura.
+
+    Com `data`, responde o que compõe aquela célula (o olho na célula). Sem
+    `data`, o mês inteiro daquela coluna, agrupado por dia (o clique no nome
+    da coluna). É a mesma consulta: o que muda é o recorte.
+    """
+    if "cod_empresa" not in session:
+        return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    cod_filial = int(request.args.get("cod_filial") or 0)
+    tipo = (request.args.get("tipo") or "forma").strip()
+    id_item = int(request.args.get("id_item") or 0)
+    data_str = (request.args.get("data") or "").strip()
+    ano = (request.args.get("ano") or "").strip()
+    mes = (request.args.get("mes") or "").strip()
+
+    if tipo == "controle":
+        tabela, campo = "caixas_controles_detalhe", "id_controle"
+        tabela_item, campo_item = "caixas_controles_adicionais", "id"
+    else:
+        tabela, campo = "caixas_lancamentos_detalhe", "id_forma"
+        tabela_item, campo_item = "caixas_formas_recebimento", "id"
+
+    where = [f"d.cod_empresa=%s", "d.cod_filial=%s", f"d.{campo}=%s"]
+    params = [cod_empresa, cod_filial, id_item]
+
+    if data_str:
+        where.append("d.data=%s")
+        params.append(data_str)
+    else:
+        where.append("EXTRACT(YEAR FROM d.data)=%s")
+        params.append(ano)
+        where.append("EXTRACT(MONTH FROM d.data)=%s")
+        params.append(mes)
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute(f"""
+            SELECT d.data, d.observacao, d.valor
+              FROM {tabela} d
+             WHERE {" AND ".join(where)}
+             ORDER BY d.data, d.ordem, d.id
+        """, params)
+        linhas = cur.fetchall() or []
+
+        cur.execute(f"""
+            SELECT nome FROM {tabela_item}
+             WHERE cod_empresa=%s AND {campo_item}=%s
+        """, (cod_empresa, id_item))
+        item = cur.fetchone()
+
+    finally:
+        cur.close()
+        conn.close()
+
+    dias = []
+    indice = {}
+    total = 0.0
+
+    for l in linhas:
+        dia = l["data"].isoformat()
+
+        if dia not in indice:
+            indice[dia] = {
+                "data": dia,
+                "data_br": l["data"].strftime("%d/%m/%Y"),
+                "linhas": [],
+                "total": 0.0,
+            }
+            dias.append(indice[dia])
+
+        valor = float(l["valor"] or 0)
+        total += valor
+        indice[dia]["total"] += valor
+        indice[dia]["linhas"].append({
+            "observacao": l["observacao"] or "",
+            "valor": valor,
+        })
+
+    return jsonify({
+        "ok": True,
+        "nome_item": (item or {}).get("nome") or "",
+        "dias": dias,
+        "total": total,
+        "qtd": len(linhas),
     })
 
 

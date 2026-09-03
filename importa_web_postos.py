@@ -1014,12 +1014,11 @@ def Importa_Fluxo_Caixa_PDF_Analitico(arquivo_pdf, cod_empresa_fixo):
 
         filiais_importacao = carregar_filiais_importacao(cur, cod_empresa)
 
-        mes_atual = None
-        ano_atual = None
-        cod_filial_atual = None
-        nome_filial_atual = None
-        conta_atual = None
-        historico_conta_atual = None
+        # O texto e lido antes de interpretar porque a filial e uma
+        # propriedade do DOCUMENTO: ou ele vem quebrado por filial ("Filial:
+        # BONITO I" a cada secao), ou foi emitido sem quebra nenhuma e nao
+        # serve para importar.
+        linhas_pdf = []
 
         with pdfplumber.open(caminho_temp) as pdf:
             for pagina in pdf.pages:
@@ -1030,121 +1029,169 @@ def Importa_Fluxo_Caixa_PDF_Analitico(arquivo_pdf, cod_empresa_fixo):
                 pagina.close()
 
                 for linha_original in texto.splitlines():
-                    linha = re.sub(r"\s+", " ", (linha_original or "").strip())
+                    linha_limpa = re.sub(r"\s+", " ", (linha_original or "").strip())
 
-                    if not linha:
-                        continue
+                    if linha_limpa:
+                        linhas_pdf.append(linha_limpa)
 
-                    linha_norm = normalizar_texto(linha)
+        tem_quebra_por_filial = any(
+            normalizar_texto(l).startswith("filial:") for l in linhas_pdf
+        )
 
-                    m = _RE_MES_ANALITICO.match(linha_norm)
-                    if m:
-                        mes_atual = int(m.group(1))
-                        continue
+        filiais_lidas = []
 
-                    a = _RE_ANO_ANALITICO.match(linha_norm)
-                    if a:
-                        ano_atual = int(a.group(1))
-                        continue
+        if not tem_quebra_por_filial:
+            # NAO adivinhar a filial pelo titulo. O titulo e a razao social de
+            # quem emitiu ("POSTO FELIPE CAMARAO", "CONCEICAO I") e coincide
+            # com o nome de uma filial - em 03/09/2026 essa suposicao jogou o
+            # fluxo da EMP011 INTEIRA (10,7 milhoes de recebimento) dentro da
+            # filial 4, que sozinha faz ~1,1 milhao. Sem "Filial:" o relatorio
+            # foi emitido sem quebra por filial e nao ha como saber a quem
+            # pertence cada lancamento.
+            raise ValueError(
+                "O PDF foi emitido SEM quebra por filial (nenhuma linha "
+                "'Filial:'), então os valores são o consolidado da empresa e "
+                "não há como saber a que posto pertence cada lançamento.\n\n"
+                "Reemita o relatório no WebPostos marcando as filiais desejadas "
+                "no campo 'Filiais' — cada uma vira uma seção 'Filial: NOME'."
+            )
 
-                    if linha_norm.startswith("filial:"):
-                        cod_filial_detectada, nome_filial_detectada = \
-                            detectar_filial_na_linha(linha, filiais_importacao)
+        mes_atual = None
+        ano_atual = None
+        cod_filial_atual = None
+        nome_filial_atual = None
+        conta_atual = None
+        historico_conta_atual = None
 
-                        if cod_filial_detectada != cod_filial_atual:
-                            conta_atual = None
-                            historico_conta_atual = None
+        for linha_original in linhas_pdf:
+            linha = re.sub(r"\s+", " ", (linha_original or "").strip())
 
-                        cod_filial_atual = cod_filial_detectada
-                        nome_filial_atual = nome_filial_detectada
-                        continue
+            if not linha:
+                continue
 
-                    if _RE_RODAPE_ANALITICO.match(linha_norm):
-                        continue
+            linha_norm = normalizar_texto(linha)
 
-                    if _RE_CARIMBO_ANALITICO.match(linha):
-                        continue
+            m = _RE_MES_ANALITICO.match(linha_norm)
+            if m:
+                mes_atual = int(m.group(1))
+                continue
 
-                    if any(linha_norm.startswith(p)
-                           for p in _PREFIXOS_IGNORADOS_ANALITICO):
-                        continue
+            a = _RE_ANO_ANALITICO.match(linha_norm)
+            if a:
+                ano_atual = int(a.group(1))
+                continue
 
-                    if cod_filial_atual is None or not mes_atual or not ano_atual:
-                        continue
+            if linha_norm.startswith("filial:"):
+                cod_filial_detectada, nome_filial_detectada = \
+                    detectar_filial_na_linha(linha, filiais_importacao)
 
-                    conta = _RE_CONTA_ANALITICA.match(linha)
+                if cod_filial_detectada != cod_filial_atual:
+                    conta_atual = None
+                    historico_conta_atual = None
 
-                    if conta:
-                        codigo = conta.group(1)
-                        historico = limpar_historico_analitico(codigo, conta.group(2))
-                        valor = converter_decimal(conta.group(3))
+                cod_filial_atual = cod_filial_detectada
+                nome_filial_atual = nome_filial_detectada
 
-                        conta_atual = codigo
-                        historico_conta_atual = historico
+                if (cod_filial_atual, nome_filial_atual) not in filiais_lidas:
+                    filiais_lidas.append((cod_filial_atual, nome_filial_atual))
 
-                        contas_pendentes.append({
-                            "cod_empresa": cod_empresa,
-                            "cod_filial": cod_filial_atual,
-                            "nome_filial": nome_filial_atual,
-                            "data": datetime(ano_atual, mes_atual, 1).date().isoformat(),
-                            "ano": ano_atual,
-                            "mes": mes_atual,
-                            "historico": historico,
-                            "valor": valor,
-                            "grupo": None,
-                            "conta": None,
-                            "descricao_conta": None,
-                            "complemento": "Importado de PDF analítico",
-                        })
+                continue
 
-                        if len(contas_pendentes) >= tamanho_lote:
-                            flush_contas()
+            if _RE_RODAPE_ANALITICO.match(linha_norm):
+                continue
 
-                        continue
+            if _RE_CARIMBO_ANALITICO.match(linha):
+                continue
 
-                    detalhe = _RE_DETALHE_ANALITICO.match(linha)
+            if any(linha_norm.startswith(p)
+                   for p in _PREFIXOS_IGNORADOS_ANALITICO):
+                continue
 
-                    if detalhe and conta_atual:
-                        descricao = re.sub(r"\s+", " ", detalhe.group(1)).strip()
-                        data_txt = detalhe.group(2)
-                        valor = converter_decimal(detalhe.group(3))
+            if cod_filial_atual is None or not mes_atual or not ano_atual:
+                continue
 
-                        try:
-                            data_det = datetime.strptime(data_txt, "%d/%m/%Y").date()
-                        except ValueError:
-                            data_det = datetime(ano_atual, mes_atual, 1).date()
+            conta = _RE_CONTA_ANALITICA.match(linha)
 
-                        detalhes_pendentes.append({
-                            "cod_empresa": cod_empresa,
-                            "cod_filial": cod_filial_atual,
-                            "nome_filial": nome_filial_atual,
-                            "ano": ano_atual,
-                            "mes": mes_atual,
-                            "data": data_det.isoformat(),
-                            "codigo_conta": conta_atual,
-                            "historico_conta": historico_conta_atual,
-                            "descricao": descricao,
-                            "valor": valor,
-                            "complemento": "Importado de PDF analítico",
-                        })
+            if conta:
+                codigo = conta.group(1)
+                historico = limpar_historico_analitico(codigo, conta.group(2))
+                valor = converter_decimal(conta.group(3))
 
-                        if len(detalhes_pendentes) >= tamanho_lote:
-                            flush_detalhes()
+                conta_atual = codigo
+                historico_conta_atual = historico
 
-                        continue
+                contas_pendentes.append({
+                    "cod_empresa": cod_empresa,
+                    "cod_filial": cod_filial_atual,
+                    "nome_filial": nome_filial_atual,
+                    "data": datetime(ano_atual, mes_atual, 1).date().isoformat(),
+                    "ano": ano_atual,
+                    "mes": mes_atual,
+                    "historico": historico,
+                    "valor": valor,
+                    "grupo": None,
+                    "conta": None,
+                    "descricao_conta": None,
+                    "complemento": "Importado de PDF analítico",
+                })
 
-                    # Nada casou: linha guardada para aparecer na auditoria,
-                    # em vez de sumir calada.
-                    if len(linhas_ignoradas) < 50:
-                        linhas_ignoradas.append({
-                            "cod_filial": cod_filial_atual,
-                            "nome_filial": nome_filial_atual,
-                            "conta": conta_atual,
-                            "linha": linha,
-                        })
+                if len(contas_pendentes) >= tamanho_lote:
+                    flush_contas()
+
+                continue
+
+            detalhe = _RE_DETALHE_ANALITICO.match(linha)
+
+            if detalhe and conta_atual:
+                descricao = re.sub(r"\s+", " ", detalhe.group(1)).strip()
+                data_txt = detalhe.group(2)
+                valor = converter_decimal(detalhe.group(3))
+
+                try:
+                    data_det = datetime.strptime(data_txt, "%d/%m/%Y").date()
+                except ValueError:
+                    data_det = datetime(ano_atual, mes_atual, 1).date()
+
+                detalhes_pendentes.append({
+                    "cod_empresa": cod_empresa,
+                    "cod_filial": cod_filial_atual,
+                    "nome_filial": nome_filial_atual,
+                    "ano": ano_atual,
+                    "mes": mes_atual,
+                    "data": data_det.isoformat(),
+                    "codigo_conta": conta_atual,
+                    "historico_conta": historico_conta_atual,
+                    "descricao": descricao,
+                    "valor": valor,
+                    "complemento": "Importado de PDF analítico",
+                })
+
+                if len(detalhes_pendentes) >= tamanho_lote:
+                    flush_detalhes()
+
+                continue
+
+            # Nada casou: linha guardada para aparecer na auditoria,
+            # em vez de sumir calada.
+            if len(linhas_ignoradas) < 50:
+                linhas_ignoradas.append({
+                    "cod_filial": cod_filial_atual,
+                    "nome_filial": nome_filial_atual,
+                    "conta": conta_atual,
+                    "linha": linha,
+                })
 
         flush_contas()
         flush_detalhes()
+
+        # Importar zero linhas nao e sucesso: antes disso a tela dizia
+        # "concluida" e a consulta abria vazia, sem ninguem saber por que.
+        if total_contas == 0:
+            raise ValueError(
+                "Nenhuma conta foi lida do PDF. Confira se o relatório é o "
+                "'Fluxo de Caixa' com Tipo: Analítico e se as filiais estão "
+                "cadastradas em 'nome_filial_importacao' na tabela FILIAIS."
+            )
 
         # Auditoria do sintetico: 1 - RECEBIMENTO / 2 - PAGAMENTOS do PDF
         # contra a soma das contas analiticas. Precisa rodar ANTES da
@@ -1183,6 +1230,11 @@ def Importa_Fluxo_Caixa_PDF_Analitico(arquivo_pdf, cod_empresa_fixo):
             "diferenca_saldo": auditoria_movimento["diferenca_total"],
             "auditoria_detalhe": auditoria_detalhe,
             "linhas_ignoradas": linhas_ignoradas,
+            "filiais_lidas": [
+                {"cod_filial": c, "nome_filial": n}
+                for c, n in filiais_lidas
+            ],
+            "filial_unica": len(filiais_lidas) == 1,
         }
 
     except Exception:

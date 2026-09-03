@@ -138,11 +138,42 @@ duplicar código), e os lançamentos vão para `importacoes_detalhamento`.
 | `importacoes_detalhamento` | temporária — a importação enche |
 | `lancamentos_detalhamento` | definitiva — só recebe na transferência |
 
+**Na transferência a substituição é por filial + mês**, nunca pela empresa: importar o analítico
+de um posto só troca aquele posto naquele mês e deixa os demais como estão. O detalhamento
+antigo sai por `(filial, ano, mês)` **do que está chegando** — e não pela lista de conflitos,
+que só enxerga períodos com linhas em `lancamentos`: um período com detalhamento e sem
+lançamento (apagado por fora) passaria batido e o detalhe velho ficaria somando junto com o novo.
+
 > **As duas andam sempre juntas.** Detalhamento sem a sintética correspondente não tem como
 > ser conferido, e sintética sem detalhamento faz a célula do matricial abrir vazia. Por isso
 > **os quatro** pontos que apagam `importacoes` apagam o detalhamento na mesma transação:
 > PDF sintético, PDF analítico, CSV O Closet (`importa_ocloset.py`) e "Limpar Importações".
 > A transferência move os dois e apaga os dois.
+
+**A filial é uma propriedade do documento, e o título NÃO é a filial.** O texto é lido inteiro
+antes de ser interpretado, só para responder a uma pergunta: existe alguma linha `Filial:`?
+
+| Documento | O que acontece |
+|---|---|
+| quebrado por filial (`Filial: BONITO I` a cada seção) | importa; a tela lista as filiais lidas, e avisa em destaque quando veio **uma só** — a transferência substitui apenas ela |
+| **sem nenhuma** `Filial:` | **recusado**, com a instrução de reemitir marcando as filiais |
+
+> **Armadilha que já custou caro (03/09/2026).** Uma primeira versão, ao não achar `Filial:`,
+> usava o **título** como filial se ele casasse com `nome_filial_importacao`. Mas o título é a
+> razão social de quem emitiu — "POSTO FELIPE CAMARÃO" na EMP011, "CONCEICAO I" na EMP010 — e
+> nas duas empresas ele coincide com o nome de uma filial. Resultado: o fluxo da **EMP011
+> inteira** (10,7 milhões de recebimento, o consolidado das 9 filiais) foi gravado dentro da
+> **filial 4**, que sozinha faz ~1,1 milhão, e ainda apagou o que a filial 4 tinha em 08/2026.
+> Sem quebra por filial o relatório é o consolidado da empresa: não há o que adivinhar.
+
+**Importar zero contas é erro explícito**, não sucesso — antes a tela dizia "concluída" e a
+consulta abria vazia, sem ninguém saber por quê.
+
+**Exclusões**: `GET/POST /exclusoes` também leva o detalhamento junto. As chaves
+`(filial, ano, mês, histórico)` são lidas **antes** do DELETE — o detalhe se liga à conta pelo
+histórico, não por `id_lancamento`, e depois da linha apagada não haveria de onde tirá-las. Só
+sai o detalhe que ficou **órfão**: se outra linha com o mesmo histórico continua no período, o
+detalhamento ainda explica alguma coisa e fica.
 
 **Conferência**: `auditoria_detalhamento` compara, conta a conta, a soma dos detalhes com o
 valor da conta. A tela mostra as divergentes e as sem detalhe, e a **transferência é negada**
@@ -188,6 +219,33 @@ trecho sem detalhamento abre com o aviso, não com uma janela vazia.
 262 sintéticas removidas, 909 contas analíticas — **zero divergência**, soma dos detalhes
 igual à soma das contas (−178.422,41) e igual ao movimento do PDF. Leva ~3 min (229 páginas
 + gravação no banco remoto).
+
+## Conferir Caixas — leitura do detalhamento
+
+Célula cujo valor é soma de um detalhamento (`caixas_lancamentos_detalhe` /
+`caixas_controles_detalhe`) era marcada por um cantinho dobrado. Virou um **olho de 8px no
+canto superior esquerdo**, com `opacity: .35` que só sobe no hover. **Esquerdo, não direito**:
+o valor é alinhado à direita, e desse lado o olho disputa espaço justamente com o número que
+precisa ser lido — mesmo motivo pelo qual o cantinho antigo já ficava à esquerda. É `<span>`
+de verdade, não pseudo-elemento: pseudo não recebe clique.
+
+| Clique | O que abre |
+|---|---|
+| **olho da célula** | o que compõe aquele valor **naquele dia** |
+| **nome da coluna** ("PERSONAL CARD", "DESPESA ITAU") | todo o detalhamento da coluna **no mês**, agrupado por dia |
+
+O nome só fica clicável quando há detalhamento no mês (`colunas_com_detalhe_forma` /
+`_controle`, tiradas da mesma consulta que já marcava as células) — senão o clique abriria uma
+janela vazia. Um endpoint só serve os dois: `GET /api/caixas/detalhe-item`, com `data` para a
+célula e `ano`/`mes` para a coluna.
+
+Duas armadilhas dessa tela:
+
+- O olho precisa ser criado e removido também em `atualizarCelulaGrade`, quando o ✎ cria ou
+  apaga linhas — senão só apareceria no recarregar.
+- `escapeHtml` mora dentro do bloco `{% if editavel %}` e **não existe para quem só consulta**;
+  a janela usa um `mdiEscape` próprio. Pelo mesmo motivo, cuidado ao escrever `{% if ... %}`
+  dentro de comentário JavaScript no template: o Jinja lê a tag e quebra a página.
 
 ## Exclusões de lançamentos
 
