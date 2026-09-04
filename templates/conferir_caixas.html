@@ -617,6 +617,41 @@
     font-size:12px; color:#64748b;
   }
   .pv-sep-controles { font-size:11px; font-weight:800; color:#7f1d1d; text-transform:uppercase; letter-spacing:.05em; margin:14px 0 4px; padding-top:10px; border-top:2px solid #e2e8f0; }
+
+  /* ------------------------------------------------------------------
+     VERSÃO PARA IMPRESSÃO
+     O cabeçalho do Matrix, a barra de navegação, o título, a empresa,
+     os filtros e o resumo/gráfico comem a largura do papel. Marcando o
+     checkbox a página fica só com as áreas e o grid, que é o que se
+     leva para o papel em paisagem. O próprio checkbox continua visível
+     na tela (fixo no canto) — senão não haveria como desmarcar —, mas
+     sai na impressão.
+     ------------------------------------------------------------------ */
+  /* Mora no canto direito da barra de áreas — é a faixa que continua
+     na tela no modo impressão, então o checkbox nunca fica inalcançável. */
+  .chk-impressao {
+    margin-left:auto;
+    display:flex; align-items:center; gap:6px;
+    background:#fff; border:1px solid #cbd5e1; border-radius:8px;
+    padding:5px 10px; font-size:12px; font-weight:700; color:#14114f;
+    cursor:pointer; user-select:none;
+  }
+  .chk-impressao input { cursor:pointer; }
+
+  body.modo-impressao header,
+  body.modo-impressao footer,
+  body.modo-impressao .barra-navegacao,
+  body.modo-impressao .pagina-titulo,
+  body.modo-impressao .empresa,
+  body.modo-impressao #form-filtro,
+  body.modo-impressao .bloco-resumo { display:none !important; }
+
+  body.modo-impressao .container { margin:0 !important; padding:0 !important; }
+
+  @media print {
+    @page { size: landscape; margin: 8mm; }
+    .chk-impressao { display:none !important; }
+  }
 </style>
 
 <div class="pagina-titulo">Conferir Caixas</div>
@@ -717,8 +752,22 @@
       {% else %}
         <span class="nav-seta off">&#8594;</span>
       {% endif %}
+
+      <label class="chk-impressao" title="Esconde cabeçalho, filtros e resumo — deixa só as áreas e o grid, para caber no papel em paisagem">
+        <input type="checkbox" id="chk-impressao" onchange="alternarModoImpressao(this.checked)">
+        Versão para impressão
+      </label>
     </div>
   {% endif %}{% endfor %}
+{% else %}
+  {# Em "Todas as Áreas" não há barra de postos: a faixa existe só para
+     abrigar o checkbox, que precisa de um lugar fixo na tela. #}
+  <div class="nav-filiais">
+    <label class="chk-impressao" title="Esconde cabeçalho, filtros e resumo — deixa só as áreas e o grid, para caber no papel em paisagem">
+      <input type="checkbox" id="chk-impressao" onchange="alternarModoImpressao(this.checked)">
+      Versão para impressão
+    </label>
+  </div>
 {% endif %}
 
 {% if not formas %}
@@ -2041,5 +2090,25 @@
     </div>
   </div>
 </div>
+
+
+<script>
+/* Versão para impressão — só liga/desliga a classe no <body>; todo o
+   resto é CSS. A escolha fica no navegador para não se perder a cada
+   troca de mês/área, que recarrega a página. */
+function alternarModoImpressao(ligado) {
+  document.body.classList.toggle('modo-impressao', ligado);
+  try { localStorage.setItem('caixas_modo_impressao', ligado ? '1' : '0'); } catch (e) {}
+}
+(function () {
+  var ligado = false;
+  try { ligado = localStorage.getItem('caixas_modo_impressao') === '1'; } catch (e) {}
+  var chk = document.getElementById('chk-impressao');
+  if (ligado && chk) {
+    chk.checked = true;
+    document.body.classList.add('modo-impressao');
+  }
+})();
+</script>
 
 {% endblock %}

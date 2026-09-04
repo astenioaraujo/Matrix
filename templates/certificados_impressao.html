@@ -47,6 +47,9 @@
     background-position: center;
     background-repeat: no-repeat;
     overflow: hidden;
+    /* sem isto o navegador descarta a imagem de fundo ao imprimir/gerar PDF */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
     }
 
     .certificado:not(:last-child) {
@@ -65,6 +68,8 @@
 
     .certificado {
       margin: 0;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
   }
 </style>

@@ -228,6 +228,52 @@ th.col-mun, td.col-mun {
     border-top: 2px solid #999;
   }
 
+  .area-dados {
+    display: flex;
+    gap: 160px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .painel-graficos {
+    flex: 1 1 420px;
+    min-width: 380px;
+    max-width: 560px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  .grafico-card {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 10px 12px 6px 12px;
+  }
+
+  .grafico-card .titulo {
+    font-size: 15px;
+    font-weight: 800;
+    color: #333;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+
+  .grafico-card .tendencia {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .grafico-card svg {
+    display: block;
+    width: 100%;
+    height: 130px;
+  }
+
+  .tend-sobe { color: #2e7d32; }
+  .tend-cai  { color: #c62828; }
+
   .sem-dados {
     background: #fff;
     border: 1px solid #d9d9d9;
@@ -246,6 +292,12 @@ th.col-mun, td.col-mun {
     .resumo-card {
       min-width: 140px;
       flex: 1 1 140px;
+    }
+
+    .painel-graficos {
+      min-width: 0;
+      max-width: none;
+      flex-basis: 100%;
     }
   }
 </style>
@@ -365,6 +417,7 @@ th.col-mun, td.col-mun {
         </div>
       </div>
 
+      <div class="area-dados">
       <div class="tabela-wrap">
         <table>
           <thead>
@@ -399,6 +452,14 @@ th.col-mun, td.col-mun {
             </tr>
           </tfoot>
         </table>
+      </div>
+
+      <div class="painel-graficos">
+        <div class="grafico-card" data-campo="quantidade" data-rotulo="Quantidade"></div>
+        <div class="grafico-card" data-campo="valor" data-rotulo="Valor"></div>
+        <div class="grafico-card" data-campo="mb" data-rotulo="MB"></div>
+        <div class="grafico-card" data-campo="mun" data-rotulo="MUN"></div>
+      </div>
       </div>
     {% else %}
       <div class="sem-dados">
@@ -436,6 +497,7 @@ th.col-mun, td.col-mun {
         </div>
       </div>
 
+      <div class="area-dados">
       <div class="tabela-wrap">
         <table>
           <thead>
@@ -471,6 +533,14 @@ th.col-mun, td.col-mun {
           </tfoot>
         </table>
       </div>
+
+      <div class="painel-graficos">
+        <div class="grafico-card" data-campo="quantidade" data-rotulo="Quantidade"></div>
+        <div class="grafico-card" data-campo="valor" data-rotulo="Valor"></div>
+        <div class="grafico-card" data-campo="mb" data-rotulo="MB"></div>
+        <div class="grafico-card" data-campo="mun" data-rotulo="MUN"></div>
+      </div>
+      </div>
     {% else %}
       <div class="sem-dados">
         Nenhum dado encontrado para o período informado.
@@ -480,6 +550,72 @@ th.col-mun, td.col-mun {
   {% endif %}
 </div>
 <script>
+  const DADOS_GRAFICO = {{ dados_grafico|tojson }};
+
+  function fmtBR(valor, casas) {
+    return valor.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
+  }
+
+  function desenharGrafico(card) {
+    const campo = card.dataset.campo;
+    const rotulo = card.dataset.rotulo;
+    const serie = DADOS_GRAFICO.map(function (linha) { return Number(linha[campo]) || 0; });
+
+    if (serie.length < 2) {
+      card.innerHTML = '<div class="titulo">' + rotulo + '</div><div class="tendencia">Sem dados suficientes</div>';
+      return;
+    }
+
+    // Reta de tendência por mínimos quadrados — é ela que diz se sobe ou cai.
+    const n = serie.length;
+    let somaX = 0, somaY = 0, somaXY = 0, somaXX = 0;
+    for (let i = 0; i < n; i++) {
+      somaX += i; somaY += serie[i]; somaXY += i * serie[i]; somaXX += i * i;
+    }
+    const inclinacao = (n * somaXY - somaX * somaY) / (n * somaXX - somaX * somaX);
+    const intercepto = (somaY - inclinacao * somaX) / n;
+
+    const inicioTend = intercepto;
+    const fimTend = intercepto + inclinacao * (n - 1);
+    const variacao = inicioTend ? ((fimTend - inicioTend) / Math.abs(inicioTend)) * 100 : 0;
+    const sobe = fimTend >= inicioTend;
+
+    const largura = 300, altura = 130, margem = 6;
+    const minimo = Math.min.apply(null, serie.concat([inicioTend, fimTend]));
+    const maximo = Math.max.apply(null, serie.concat([inicioTend, fimTend]));
+    const faixa = (maximo - minimo) || 1;
+
+    const px = function (i) { return margem + (i * (largura - 2 * margem)) / (n - 1); };
+    const py = function (v) { return altura - margem - ((v - minimo) / faixa) * (altura - 2 * margem); };
+
+    const pontos = serie.map(function (v, i) { return px(i) + "," + py(v); }).join(" ");
+    const area = "M " + px(0) + "," + (altura - margem) + " L " + serie.map(function (v, i) {
+      return px(i) + "," + py(v);
+    }).join(" L ") + " L " + px(n - 1) + "," + (altura - margem) + " Z";
+
+    const cor = sobe ? "#2e7d32" : "#c62828";
+    const casas = campo === "mun" ? 2 : 0;
+    const sinal = variacao >= 0 ? "▲ +" : "▼ ";
+
+    card.innerHTML =
+      '<div class="titulo">' + rotulo + '</div>' +
+      '<div class="tendencia ' + (sobe ? "tend-sobe" : "tend-cai") + '">' +
+        sinal + fmtBR(variacao, 1) + '% no período</div>' +
+      '<svg viewBox="0 0 ' + largura + ' ' + altura + '" preserveAspectRatio="none">' +
+        '<path d="' + area + '" fill="' + cor + '" opacity="0.10"></path>' +
+        '<polyline points="' + pontos + '" fill="none" stroke="#1f3c88" stroke-width="1.6"></polyline>' +
+        '<line x1="' + px(0) + '" y1="' + py(inicioTend) + '" x2="' + px(n - 1) + '" y2="' + py(fimTend) +
+          '" stroke="' + cor + '" stroke-width="2" stroke-dasharray="5 4"></line>' +
+      '</svg>' +
+      '<div style="display:flex;justify-content:space-between;font-size:11px;color:#777;padding-bottom:4px;">' +
+        '<span>' + (DADOS_GRAFICO[0].data || "") + '</span>' +
+        '<span>' + fmtBR(serie[n - 1], casas) + '</span>' +
+        '<span>' + (DADOS_GRAFICO[n - 1].data || "") + '</span>' +
+      '</div>';
+  }
+
+  document.querySelectorAll(".grafico-card").forEach(desenharGrafico);
+
   function mudarData(idCampo, dias) {
     const inputData = document.getElementById(idCampo);
 

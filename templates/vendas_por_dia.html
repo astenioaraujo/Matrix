@@ -1,0 +1,369 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .painel-filtros {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 24px;
+  }
+
+  .grid-filtros {
+    display: grid;
+    grid-template-columns: 260px auto auto;
+    gap: 18px;
+    align-items: end;
+    justify-content: start;
+  }
+
+  .campo label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .campo input[type="date"] {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid #c9c9c9;
+    border-radius: 8px;
+    font-size: 15px;
+    background: #fff;
+  }
+
+  .data-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .data-nav input {
+    flex: 1;
+  }
+
+  .btn-data-nav {
+    width: 38px;
+    height: 38px;
+    border: 1px solid #c7c7c7;
+    border-radius: 9px;
+    background: #c8e6c9;
+    color: #111;
+    font-size: 18px;
+    font-weight: 900;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .btn-data-nav:hover {
+    background: #a5d6a7;
+  }
+
+  .caixas-mostrar {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+    padding-bottom: 8px;
+  }
+
+  .caixas-mostrar label {
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+
+  .btn-topo {
+    display: inline-block;
+    padding: 10px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    border: 1px solid #c7c7c7;
+    background: #f7f7f7;
+    color: #1f3c88;
+    cursor: pointer;
+    font-size: 15px;
+  }
+
+  .btn-consultar {
+    background: #6b8e23;
+    color: #fff;
+    border: 1px solid #6b8e23;
+  }
+
+  .btn-consultar:hover {
+    background: #5f7f1f;
+    border-color: #5f7f1f;
+  }
+
+  .tabela-wrap {
+    overflow-x: auto;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    background: #fff;
+    max-width: 100%;
+  }
+
+  table {
+    border-collapse: collapse;
+    font-size: 13px;
+    table-layout: fixed;
+    width: auto;
+  }
+
+  th, td {
+    border: 1px solid #dddddd;
+    padding: 6px 8px;
+    white-space: nowrap;
+    text-align: center;
+  }
+
+  th {
+    background: #dbe8f4;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  th.col-produto, td.col-produto {
+    width: 190px;
+    min-width: 190px;
+    max-width: 190px;
+    text-align: left;
+    position: sticky;
+    left: 0;
+    background: #f3f6fa;
+    z-index: 2;
+    font-weight: 700;
+  }
+
+  th.col-produto {
+    z-index: 3;
+  }
+
+  th.col-tipo, td.col-tipo {
+    width: 130px;
+    min-width: 130px;
+    max-width: 130px;
+    text-align: left;
+    position: sticky;
+    left: 190px;
+    background: #f8f8f8;
+    z-index: 2;
+  }
+
+  th.col-tipo {
+    z-index: 3;
+  }
+
+  th.col-unidade, td.col-valor {
+    width: 130px;
+    min-width: 130px;
+    max-width: 130px;
+  }
+
+  /* Com um bloco só, toda linha é início de produto e o traço grosso pesa;
+     com dois ou três, é ele que separa um combustível do outro. */
+  tr.inicio-produto td {
+    border-top: 2px solid #b0b0b0;
+  }
+
+  table.varios-blocos tr.inicio-produto td {
+    border-top: 3px solid #8a8a8a;
+  }
+
+  /* O traço grosso separa o grid do rodapé de totais. */
+  tr.inicio-total td {
+    border-top: 3px solid #555;
+  }
+
+  td.col-total {
+    font-weight: 700;
+  }
+
+  .sem-dados {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 20px;
+    color: #666;
+  }
+
+  .aviso {
+    background: #fff8e1;
+    border: 1px solid #ffe0a3;
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    color: #6b4e00;
+  }
+
+  @media (max-width: 900px) {
+    .grid-filtros {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">Vendas por Dia</div>
+  <div class="pagina-subtitulo">
+    Empresa: <strong>{{ nome_empresa }}</strong>
+  </div>
+
+  <form method="get" class="painel-filtros">
+    <input type="hidden" name="filtrado" value="1">
+    <div class="grid-filtros">
+      <div class="campo">
+        <label for="data">Data</label>
+        <div class="data-nav">
+          <button type="button" class="btn-data-nav" onclick="mudarData(-1)">←</button>
+          <input type="date" id="data" name="data" value="{{ data_sel }}"
+                 onchange="this.form.submit()">
+          <button type="button" class="btn-data-nav" onclick="mudarData(1)">→</button>
+        </div>
+      </div>
+
+      <div class="campo">
+        <label>Mostrar</label>
+        <div class="caixas-mostrar">
+          <label>
+            <input type="checkbox" name="mostrar_quantidade" value="1"
+                   onchange="this.form.submit()"
+                   {% if mostrar.quantidade %}checked{% endif %}>
+            Quantidade
+          </label>
+          <label>
+            <input type="checkbox" name="mostrar_valor" value="1"
+                   onchange="this.form.submit()"
+                   {% if mostrar.valor %}checked{% endif %}>
+            Valor
+          </label>
+          <label>
+            <input type="checkbox" name="mostrar_margem" value="1"
+                   onchange="this.form.submit()"
+                   {% if mostrar.margem %}checked{% endif %}>
+            Margem bruta
+          </label>
+        </div>
+      </div>
+
+      <div class="campo">
+        <button type="submit" class="btn-topo btn-consultar">Consultar</button>
+      </div>
+    </div>
+  </form>
+
+  {% if sem_cadastro %}
+  <div class="aviso">
+    Produtos vendidos no dia sem correspondência no cadastro de combustíveis
+    (não entraram no grid): {{ sem_cadastro|join(", ") }}
+  </div>
+  {% endif %}
+
+  {% if filiais and linhas %}
+  {% set blocos_visiveis = mostrar.values() | select | list | length %}
+  <div class="tabela-wrap">
+    <table class="{% if blocos_visiveis > 1 %}varios-blocos{% endif %}">
+      <colgroup>
+        <col style="width: 190px;">
+        <col style="width: 130px;">
+        {% for filial in filiais %}
+        <col style="width: 130px;">
+        {% endfor %}
+      </colgroup>
+      <thead>
+        <tr>
+          <th class="col-produto">Combustível</th>
+          <th class="col-tipo">&nbsp;</th>
+          {% for filial in filiais %}
+          <th class="col-unidade">{{ filial.cod_filial }} - {{ filial.nome_filial }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for linha in linhas %}
+          {% for bloco in linha.blocos %}
+          <tr class="{% if loop.first %}inicio-produto{% endif %}">
+            {% if loop.first %}
+            <td class="col-produto" rowspan="{{ linha.blocos|length }}">{{ linha.descricao }}</td>
+            {% endif %}
+            <td class="col-tipo">{{ bloco.rotulo }}</td>
+            {% for celula in bloco.celulas %}
+            <td class="col-valor" style="background: {{ celula.cor }};">
+              {% if celula.valor is not none %}{{ formatar_numero_br(celula.valor, 2) }}{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        {% endfor %}
+      </tbody>
+      {% if totais %}
+      <tfoot>
+        {% for bloco in totais %}
+        <tr class="{% if loop.first %}inicio-total{% endif %}">
+          {% if loop.first %}
+          <td class="col-produto col-total" rowspan="{{ totais|length }}">TOTAL</td>
+          {% endif %}
+          <td class="col-tipo col-total">{{ bloco.rotulo }}</td>
+          {% for celula in bloco.celulas %}
+          <td class="col-valor col-total" style="background: {{ celula.cor }};">
+            {% if celula.valor is not none %}{{ formatar_numero_br(celula.valor, 2) }}{% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+  {% else %}
+  <div class="sem-dados">
+    Nenhuma venda encontrada para a data informada.
+  </div>
+  {% endif %}
+</div>
+
+<script>
+  function mudarData(dias) {
+    const inputData = document.getElementById("data");
+
+    if (!inputData || !inputData.value) {
+      return;
+    }
+
+    const partes = inputData.value.split("-");
+    const data = new Date(
+      parseInt(partes[0], 10),
+      parseInt(partes[1], 10) - 1,
+      parseInt(partes[2], 10)
+    );
+    data.setDate(data.getDate() + dias);
+
+    const ano = data.getFullYear();
+    const mes = String(data.getMonth() + 1).padStart(2, "0");
+    const dia = String(data.getDate()).padStart(2, "0");
+
+    inputData.value = `${ano}-${mes}-${dia}`;
+    inputData.form.submit();
+  }
+</script>
+{% endblock %}

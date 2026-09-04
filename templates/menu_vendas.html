@@ -52,6 +52,7 @@
   .btn-consultas { background: #5e35b1; }
   .btn-produto { background: #d97706; color: #fff; }
   .btn-margem { background: #ad1457; }
+  .btn-vendas-dia { background: #00695c; }
   .btn-parametros { background: #37474f; }
   .btn-voltar { background: #444; }
 
@@ -106,6 +107,12 @@
     {% if pode_vendas.MARGEM_UNITARIA %}
     <a class="btn-margem" href="{{ url_for('vendas.vendas_margem_unitaria') }}">
       Margem Unitária por Dia
+    </a>
+    {% endif %}
+
+    {% if pode_vendas.VENDAS_POR_DIA %}
+    <a class="btn-vendas-dia" href="{{ url_for('vendas.vendas_por_dia') }}">
+      Vendas por Dia
     </a>
     {% endif %}
 

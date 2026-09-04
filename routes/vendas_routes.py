@@ -310,6 +310,20 @@ def aplicar_heatmap_consulta(linhas):
 
 
 
+def serie_grafico_consulta(linhas):
+    """Série enxuta para os gráficos da tela de consultas (nada persistido)."""
+    return [
+        {
+            "data": linha.get("data_fmt"),
+            "quantidade": float(linha.get("quantidade") or 0),
+            "valor": float(linha.get("valor") or 0),
+            "mb": float(linha.get("mb") or 0),
+            "mun": float(linha.get("mun") or 0),
+        }
+        for linha in (linhas or [])
+    ]
+
+
 def localizar_total_filial(ws, nome_busca):
     nome_busca = (nome_busca or "").strip().upper()
     if not nome_busca:
@@ -2602,8 +2616,11 @@ def vendas_consultas():
     linhas_totais = aplicar_heatmap_consulta(linhas_totais)
     linhas_filial = aplicar_heatmap_consulta(linhas_filial)
 
+    dados_grafico = serie_grafico_consulta(linhas_filial if cod_filial_sel else linhas_totais)
+
     return render_template(
         "vendas_consultas.html",
+        dados_grafico=dados_grafico,
         nome_empresa=nome_empresa,
         filiais=filiais,
         linhas_totais=linhas_totais,
@@ -3040,6 +3057,233 @@ def vendas_margem_unitaria():
         nome_empresa=nome_empresa,
         filiais=filiais,
         linhas=linhas,
+        mostrar=mostrar,
+        sem_cadastro=sem_cadastro,
+        data_sel=data_sel.strftime("%Y-%m-%d"),
+        formatar_numero_br=formatar_numero_br,
+        url_voltar=url_for("sistema.menu_vendas"),
+        texto_voltar="← Voltar",
+    )
+
+
+# ------------------------------------------
+# VENDAS POR DIA
+# ------------------------------------------
+# Mesmo grid da Margem Unitária por Dia (produto x posto, um dia só), mas com
+# os volumes em vez dos unitários: litros vendidos, dinheiro vendido e margem
+# bruta em dinheiro. Tudo somado de vendas_diarias, que traz uma linha por
+# preço praticado — aqui não há média ponderada, é soma direta.
+#
+# A regra de produto, os adicionais e os ignorados são os MESMOS da margem
+# unitária (e, por ela, os da Consulta de Estoques): as duas telas não podem
+# enxergar produtos diferentes no mesmo dia.
+
+BLOCOS_VENDAS_POR_DIA = [
+    ("quantidade", "Quantidade"),
+    ("valor", "Valor"),
+    ("margem", "Margem Bruta"),
+]
+
+
+@vendas_bp.route("/por_dia")
+@permissao_obrigatoria("VENDAS", "VENDAS_POR_DIA", redirecionar_para="sistema.menu_vendas")
+def vendas_por_dia():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+
+    data_txt = (request.args.get("data") or "").strip()
+    data_sel = para_data_excel(data_txt) if data_txt else None
+
+    # Os checkboxes só valem quando o formulário foi enviado; na primeira
+    # abertura os três vêm marcados.
+    if request.args.get("filtrado"):
+        mostrar = {
+            "quantidade": request.args.get("mostrar_quantidade") == "1",
+            "valor": request.args.get("mostrar_valor") == "1",
+            "margem": request.args.get("mostrar_margem") == "1",
+        }
+        if not any(mostrar.values()):
+            mostrar = {"quantidade": True, "valor": True, "margem": True}
+    else:
+        mostrar = {"quantidade": True, "valor": True, "margem": True}
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    filiais = []
+    linhas = []
+    sem_cadastro = []
+
+    try:
+        if not data_sel:
+            cur.execute("""
+                SELECT MAX(data) AS ultima
+                FROM vendas_diarias
+                WHERE cod_empresa = %s
+            """, (cod_empresa,))
+            row = cur.fetchone() or {}
+            hoje = datetime.now(ZoneInfo("America/Recife")).date()
+            data_sel = row.get("ultima") or (hoje - timedelta(days=1))
+
+        filiais = obter_filiais_ativas(cur, cod_empresa)
+
+        cur.execute("""
+            SELECT cod_produto, descricao
+            FROM combustiveis
+            WHERE cod_empresa = %s
+            ORDER BY cod_produto
+        """, (cod_empresa,))
+        produtos = list(cur.fetchall() or []) + PRODUTOS_ADICIONAIS_MARGEM
+
+        cur.execute("""
+            SELECT
+                cod_filial,
+                descricao,
+                SUM(quantidade) AS quantidade,
+                SUM(valor) AS valor,
+                SUM(margem_bruta) AS margem_bruta
+            FROM vendas_diarias
+            WHERE cod_empresa = %s
+              AND data = %s
+            GROUP BY cod_filial, descricao
+        """, (cod_empresa, data_sel))
+        registros = cur.fetchall() or []
+
+    finally:
+        cur.close()
+        conn.close()
+
+    # (cod_produto, cod_filial) -> somatórios
+    acumulado = defaultdict(lambda: {"quantidade": 0.0, "valor": 0.0,
+                                     "margem_bruta": 0.0})
+    nao_casados = set()
+
+    for registro in registros:
+        descricao = str(registro["descricao"] or "").strip()
+        cod_produto = _cod_produto_das_vendas(descricao)
+        if not cod_produto:
+            txt = re.sub(r"[^A-Z0-9]", "", descricao.upper())
+            if not any(p in txt for p in PRODUTOS_IGNORADOS_MARGEM):
+                nao_casados.add(descricao)
+            continue
+
+        chave = (cod_produto, int(registro["cod_filial"]))
+        acumulado[chave]["quantidade"] += float(registro["quantidade"] or 0)
+        acumulado[chave]["valor"] += float(registro["valor"] or 0)
+        acumulado[chave]["margem_bruta"] += float(registro["margem_bruta"] or 0)
+
+    sem_cadastro = sorted(nao_casados)
+    codigos_filiais = [int(f["cod_filial"]) for f in filiais]
+
+    for produto in produtos:
+        cod_produto = str(produto["cod_produto"]).strip()
+
+        # Produto sem venda no dia não vira linha, como na margem unitária.
+        vendeu = any(
+            float(acumulado[(cod_produto, cod_filial)]["quantidade"]) > 0
+            for cod_filial in codigos_filiais
+            if (cod_produto, cod_filial) in acumulado
+        )
+        if not vendeu:
+            continue
+
+        blocos = []
+        for chave, rotulo in BLOCOS_VENDAS_POR_DIA:
+            if not mostrar[chave]:
+                continue
+
+            valores = []
+            for cod_filial in codigos_filiais:
+                dados = acumulado.get((cod_produto, cod_filial))
+                qtd = float(dados["quantidade"]) if dados else 0.0
+
+                if not dados or qtd <= 0:
+                    valores.append(None)
+                    continue
+
+                if chave == "quantidade":
+                    valores.append(dados["quantidade"])
+                elif chave == "valor":
+                    valores.append(dados["valor"])
+                else:
+                    valores.append(dados["margem_bruta"])
+
+            # Mapa de calor por linha: cada linha se compara de posto a posto.
+            # Nos três blocos o alto é o bom (vendeu mais, faturou mais, ganhou
+            # mais), então não há escala invertida como no preço de compra.
+            preenchidos = [v for v in valores if v is not None]
+            minimo = min(preenchidos) if preenchidos else None
+            maximo = max(preenchidos) if preenchidos else None
+
+            celulas = []
+            for valor in valores:
+                if valor is None or minimo is None:
+                    celulas.append({"valor": None, "cor": ""})
+                else:
+                    celulas.append({
+                        "valor": valor,
+                        "cor": cor_excel_51(valor, minimo, maximo),
+                    })
+
+            blocos.append({"chave": chave, "rotulo": rotulo, "celulas": celulas})
+
+        if blocos:
+            linhas.append({
+                "cod_produto": cod_produto,
+                "descricao": produto["descricao"],
+                "blocos": blocos,
+            })
+
+    # Rodapé: um bloco por opção marcada em "Mostrar", somando TODOS os
+    # combustíveis do grid (os mesmos que viraram linha) posto a posto. Sai da
+    # mesma estrutura das linhas, então esconder um bloco esconde o total dele.
+    campos_total = {"quantidade": "quantidade", "valor": "valor",
+                    "margem": "margem_bruta"}
+    codigos_no_grid = [linha["cod_produto"] for linha in linhas]
+    totais = []
+
+    for chave, rotulo in BLOCOS_VENDAS_POR_DIA:
+        if not mostrar[chave]:
+            continue
+
+        campo = campos_total[chave]
+        valores = []
+        for cod_filial in codigos_filiais:
+            soma = 0.0
+            teve = False
+            for cod_produto in codigos_no_grid:
+                dados = acumulado.get((cod_produto, cod_filial))
+                if not dados or float(dados["quantidade"]) <= 0:
+                    continue
+                soma += float(dados[campo])
+                teve = True
+            valores.append(soma if teve else None)
+
+        preenchidos = [v for v in valores if v is not None]
+        minimo = min(preenchidos) if preenchidos else None
+        maximo = max(preenchidos) if preenchidos else None
+
+        celulas = []
+        for valor in valores:
+            if valor is None or minimo is None:
+                celulas.append({"valor": None, "cor": ""})
+            else:
+                celulas.append({
+                    "valor": valor,
+                    "cor": cor_excel_51(valor, minimo, maximo),
+                })
+
+        totais.append({"chave": chave, "rotulo": rotulo, "celulas": celulas})
+
+    return render_template(
+        "vendas_por_dia.html",
+        nome_empresa=nome_empresa,
+        filiais=filiais,
+        linhas=linhas,
+        totais=totais,
         mostrar=mostrar,
         sem_cadastro=sem_cadastro,
         data_sel=data_sel.strftime("%Y-%m-%d"),
