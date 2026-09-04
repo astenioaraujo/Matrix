@@ -11,6 +11,11 @@
   .bloco { border:1px solid #e2e2e2; border-radius:10px; margin-bottom:18px; overflow:hidden; background:#fff; }
   .bloco-titulo { background:#0F766E; color:#fff; font-weight:700; font-size:14px; padding:7px 12px; }
   .bloco-titulo.vinho { background:#7B1E3A; }
+  .risco { display:flex; align-items:center; gap:8px; }
+  .bolinha {
+    display:inline-block; width:14px; height:14px; border-radius:50%;
+    border:1px solid #999; flex:0 0 auto;
+  }
 
   .grid {
     display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -127,6 +132,14 @@
   <div class="grid">
     {{ item('Serasa / birô de crédito', rotulo('biro_situacao', analise.biro_situacao)) }}
     {{ item('Score', analise.biro_score) }}
+    {% set risco = risco_do_score(analise.biro_score) %}
+    <div class="item">
+      <span>Risco (pelo score)</span>
+      <div class="risco">
+        <span class="bolinha" style="background:{{ risco.cor }}"></span>
+        {{ risco.rotulo }}
+      </div>
+    </div>
     {{ item('Protestos / pendências', rotulo('protestos', analise.protestos)) }}
     {{ dinheiro('Valor dos protestos', analise.protestos_valor) }}
     {{ item('Situação CPF / CNPJ', rotulo('situacao_documento', analise.situacao_documento)) }}

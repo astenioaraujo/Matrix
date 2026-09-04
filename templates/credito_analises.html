@@ -42,6 +42,12 @@
   .selo-APROVADO_COM_CONDICAO { background:#1D4ED8; }
   .selo-REPROVADO { background:#B91C1C; }
 
+  .bolinha {
+    display:inline-block; width:14px; height:14px; border-radius:50%;
+    border:1px solid #999; vertical-align:middle;
+  }
+  .col-risco { width:34px; text-align:center; }
+
   .vazio { padding:20px 0; color:#777; }
 
   .flash-msg {
@@ -85,14 +91,18 @@
 <table>
   <thead>
     <tr>
+      <th class="col-risco" title="Risco pelo score do birô"></th>
       <th>Nº</th>
       <th>Cliente</th>
       <th>Tipo</th>
       <th>CPF / CNPJ</th>
       <th>Cidade / UF</th>
       <th class="num">Limite solicitado</th>
-      <th class="num">Prazo</th>
+      <th class="num">Prazo solic.</th>
+      <th class="num">Limite recomendado</th>
+      <th class="num">Prazo recom.</th>
       <th class="num">Limite aprovado</th>
+      <th class="num">Prazo aprov.</th>
       <th>Status</th>
       <th>Analista</th>
       <th>Cadastro</th>
@@ -102,6 +112,10 @@
   <tbody>
     {% for a in analises %}
     <tr>
+      {% set risco = risco_do_score(a.biro_score) %}
+      <td class="col-risco" title="{{ risco.rotulo }}">
+        <span class="bolinha" style="background:{{ risco.cor }}"></span>
+      </td>
       <td>{{ a.id_analise }}</td>
       <td>{{ a.nome_razao_social or '' }}</td>
       <td>{{ a.tipo_cliente or '' }}</td>
@@ -109,7 +123,10 @@
       <td>{{ a.cidade_uf or '' }}</td>
       <td class="num">{% if a.limite_solicitado is not none %}{{ formatar_numero_br(a.limite_solicitado) }}{% endif %}</td>
       <td class="num">{% if a.prazo_solicitado_dias %}{{ a.prazo_solicitado_dias }} d{% endif %}</td>
+      <td class="num">{% if a.limite_recomendado is not none %}{{ formatar_numero_br(a.limite_recomendado) }}{% endif %}</td>
+      <td class="num">{% if a.prazo_recomendado_dias %}{{ a.prazo_recomendado_dias }} d{% endif %}</td>
       <td class="num">{% if a.limite_aprovado is not none %}{{ formatar_numero_br(a.limite_aprovado) }}{% endif %}</td>
+      <td class="num">{% if a.prazo_aprovado_dias %}{{ a.prazo_aprovado_dias }} d{% endif %}</td>
       <td><span class="selo selo-{{ a.status }}">{{ status_rotulo.get(a.status, a.status) }}</span></td>
       <td>{{ a.nome_analista or '' }}</td>
       <td>{% if a.data_analise %}{{ a.data_analise.strftime('%d/%m/%Y') }}{% endif %}</td>

@@ -10121,6 +10121,7 @@ CREDITO_OPCOES = {
     ],
     "protestos": [("NAO", "Não"), ("SIM", "Sim")],
     "situacao_documento": [("REGULAR", "Regular"), ("IRREGULAR", "Irregular")],
+    "socio_situacao": [("REGULAR", "Regular"), ("IRREGULAR", "Irregular")],
     "referencia_comercial": [
         ("FAVORAVEL", "Favorável"),
         ("ATENCAO", "Atenção"),
@@ -10169,6 +10170,89 @@ CREDITO_CAMPOS_NUMERICOS = [
 CREDITO_CAMPOS_INTEIROS = [
     "prazo_solicitado_dias", "biro_score", "prazo_recomendado_dias",
 ]
+
+# Sócios / proprietários (só PJ). Uma linha por pessoa, em tabela filha —
+# ver migrations/criar_credito_socios.sql.
+CREDITO_SOCIO_CAMPOS = [
+    "nome", "cpf", "situacao", "situacao_motivo", "telefone",
+    "cep", "logradouro", "numero", "complemento", "bairro", "cidade", "uf",
+    "processos_judiciais",
+]
+
+# Faixas do score do birô. O risco NÃO é gravado: é lido do score toda vez,
+# senão score e risco divergiriam na primeira correção. Sem score, bolinha
+# branca — "não consultado" não é o mesmo que "risco baixo".
+CREDITO_FAIXAS_RISCO = [
+    (300, "ALTO", "Risco alto", "#DC2626"),
+    (600, "MEDIO", "Risco médio", "#F59E0B"),
+    (10 ** 9, "BAIXO", "Risco baixo", "#2563EB"),
+]
+
+
+def credito_risco_do_score(score):
+    """Devolve (codigo, rotulo, cor) do score; sem score, branco."""
+    if score is None or str(score).strip() == "":
+        return {"codigo": None, "rotulo": "Sem score", "cor": "#ffffff"}
+    try:
+        valor = float(score)
+    except (TypeError, ValueError):
+        return {"codigo": None, "rotulo": "Sem score", "cor": "#ffffff"}
+    for limite, codigo, rotulo, cor in CREDITO_FAIXAS_RISCO:
+        if valor <= limite:
+            return {"codigo": codigo, "rotulo": rotulo, "cor": cor}
+    return {"codigo": None, "rotulo": "Sem score", "cor": "#ffffff"}
+
+
+def _credito_socios_do_form(form):
+    """Lê as linhas de sócio do formulário; descarta linha totalmente vazia."""
+    # Sócio é coisa de pessoa jurídica: em PF o bloco fica escondido na tela,
+    # mas os campos ainda seriam enviados — aqui eles não entram.
+    if (form.get("tipo_cliente") or "").strip() != "PJ":
+        return []
+
+    listas = {c: form.getlist("socio_" + c) for c in CREDITO_SOCIO_CAMPOS}
+    total = max((len(v) for v in listas.values()), default=0)
+    socios = []
+    for i in range(total):
+        linha = {}
+        for c in CREDITO_SOCIO_CAMPOS:
+            valores = listas[c]
+            linha[c] = (valores[i].strip() if i < len(valores) else "") or None
+        # Situação regular não carrega motivo — o texto pertence à restrição.
+        if linha.get("situacao") != "IRREGULAR":
+            linha["situacao_motivo"] = None
+        if any(linha.values()):
+            socios.append(linha)
+    return socios
+
+
+def _credito_gravar_socios(cur, cod_empresa, id_analise, socios):
+    """Regrava as linhas da análise. O sócio não é referenciado por ninguém,
+    então apagar e reinserir na mesma transação é o caminho simples."""
+    cur.execute("""
+        DELETE FROM credito_analises_socios
+        WHERE id_analise = %s AND cod_empresa = %s
+    """, (id_analise, cod_empresa))
+
+    for ordem, linha in enumerate(socios, start=1):
+        colunas = ", ".join(CREDITO_SOCIO_CAMPOS)
+        marcadores = ", ".join(["%s"] * len(CREDITO_SOCIO_CAMPOS))
+        cur.execute(f"""
+            INSERT INTO credito_analises_socios (
+                cod_empresa, id_analise, {colunas}, ordem, criado_em, atualizado_em
+            ) VALUES (%s, %s, {marcadores}, %s, NOW(), NOW())
+        """, [cod_empresa, id_analise] + [linha[c] for c in CREDITO_SOCIO_CAMPOS] + [ordem * 10])
+
+
+def _credito_socios(cur, cod_empresa, id_analise):
+    if not id_analise:
+        return []
+    cur.execute("""
+        SELECT * FROM credito_analises_socios
+        WHERE id_analise = %s AND cod_empresa = %s
+        ORDER BY ordem, id_socio
+    """, (id_analise, cod_empresa))
+    return cur.fetchall() or []
 
 
 def _credito_numero(valor):
@@ -10287,6 +10371,7 @@ def credito_analises():
         busca=busca,
         status_rotulo=CREDITO_STATUS_ROTULO,
         formatar_numero_br=formatar_numero_br,
+        risco_do_score=credito_risco_do_score,
     )
 
 
@@ -10345,6 +10430,10 @@ def credito_analise_form(id_analise=None):
                         SET {sets}, atualizado_em = NOW()
                         WHERE id_analise = %s AND cod_empresa = %s
                     """, valores + [id_analise, cod_empresa])
+                    _credito_gravar_socios(
+                        cur, cod_empresa, id_analise,
+                        _credito_socios_do_form(request.form),
+                    )
                     conn.commit()
                     flash("Análise atualizada com sucesso.", "success")
                 else:
@@ -10364,6 +10453,10 @@ def credito_analise_form(id_analise=None):
                         date.today(),
                     ])
                     id_analise = cur.fetchone()["id_analise"]
+                    _credito_gravar_socios(
+                        cur, cod_empresa, id_analise,
+                        _credito_socios_do_form(request.form),
+                    )
                     conn.commit()
                     flash("Análise cadastrada e enviada para aprovação.", "success")
 
@@ -10376,6 +10469,8 @@ def credito_analise_form(id_analise=None):
                 WHERE id_analise = %s AND cod_empresa = %s
             """, (id_analise or 0, cod_empresa))
             analise = cur.fetchone()
+
+        socios = _credito_socios(cur, cod_empresa, id_analise)
     finally:
         cur.close()
         conn.close()
@@ -10387,8 +10482,11 @@ def credito_analise_form(id_analise=None):
         url_voltar=url_for("financeiro.credito_analises"),
         texto_voltar="← Voltar",
         analise=analise,
+        socios=socios,
+        campos_socio=CREDITO_SOCIO_CAMPOS,
         opcoes=CREDITO_OPCOES,
         status_rotulo=CREDITO_STATUS_ROTULO,
+        risco_do_score=credito_risco_do_score,
     )
 
 
@@ -10440,6 +10538,7 @@ def credito_aprovacoes():
         status_sel=status_sel,
         status_rotulo=CREDITO_STATUS_ROTULO,
         formatar_numero_br=formatar_numero_br,
+        risco_do_score=credito_risco_do_score,
     )
 
 
@@ -10535,4 +10634,5 @@ def credito_decisao(id_analise):
         opcoes=CREDITO_OPCOES,
         status_rotulo=CREDITO_STATUS_ROTULO,
         formatar_numero_br=formatar_numero_br,
+        risco_do_score=credito_risco_do_score,
     )

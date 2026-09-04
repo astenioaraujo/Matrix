@@ -65,6 +65,32 @@
   }
   .flash-success { background:#dcfce7; color:#14532d; border:1px solid #86efac; }
   .flash-error   { background:#fee2e2; color:#7f1d1d; border:1px solid #fca5a5; }
+
+  /* Bolinha de risco, lida do score (nunca gravada) */
+  .risco { display:flex; align-items:center; gap:8px; height:34px; font-size:14px; }
+  .bolinha {
+    width:16px; height:16px; border-radius:50%;
+    border:1px solid #999; flex:0 0 auto;
+  }
+
+  /* Sócios / proprietários (só PJ) */
+  .socio {
+    border:1px solid #e2e2e2; border-radius:8px; margin:0 14px 12px;
+    background:#fbfbfb;
+  }
+  .socio .grid { padding:12px; }
+  .socio-cabeca {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:6px 12px; border-bottom:1px solid #e9e9e9;
+    font-size:12px; font-weight:700; color:#555;
+  }
+  .btn-mini {
+    height:26px; padding:0 10px; border-radius:6px; border:1px solid #ccc;
+    background:#fff; color:#333; font-size:12px; font-weight:600; cursor:pointer;
+  }
+  .btn-mini:hover { background:#f2f2f2; }
+  .socio-rodape { padding:0 14px 14px; }
+  .motivo-irregular { display:none; }
 </style>
 
 {% macro texto(nome, rotulo, largo=false, tipo='text') %}
@@ -92,6 +118,56 @@
   <div class="campo largo">
     <label>{{ rotulo }}</label>
     <textarea name="{{ nome }}" {% if travado %}disabled{% endif %}>{{ a.get(nome) or '' }}</textarea>
+  </div>
+{% endmacro %}
+
+{% macro campo_socio(nome, rotulo, s, largo=false) %}
+  <div class="campo {% if largo %}largo{% endif %}">
+    <label>{{ rotulo }}</label>
+    <input type="text" name="socio_{{ nome }}"
+           value="{{ s.get(nome) if s.get(nome) is not none else '' }}"
+           {% if travado %}disabled{% endif %}>
+  </div>
+{% endmacro %}
+
+{% macro bloco_socio(s) %}
+  <div class="socio">
+    <div class="socio-cabeca">
+      <span>SÓCIO / PROPRIETÁRIO</span>
+      {% if not travado %}
+        <button type="button" class="btn-mini" onclick="removerSocio(this)">Remover</button>
+      {% endif %}
+    </div>
+    <div class="grid">
+      {{ campo_socio('nome', 'Nome', s) }}
+      {{ campo_socio('cpf', 'CPF', s) }}
+      <div class="campo">
+        <label>Situação</label>
+        <select name="socio_situacao" onchange="alternarMotivo(this)" {% if travado %}disabled{% endif %}>
+          <option value="">—</option>
+          {% for valor, texto_opcao in opcoes['socio_situacao'] %}
+            <option value="{{ valor }}" {% if s.get('situacao') == valor %}selected{% endif %}>{{ texto_opcao }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {{ campo_socio('telefone', 'Telefone / WhatsApp', s) }}
+      <div class="campo largo motivo-irregular"
+           {% if s.get('situacao') == 'IRREGULAR' %}style="display:flex"{% endif %}>
+        <label>Por que está irregular</label>
+        <textarea name="socio_situacao_motivo" {% if travado %}disabled{% endif %}>{{ s.get('situacao_motivo') or '' }}</textarea>
+      </div>
+      {{ campo_socio('cep', 'CEP', s) }}
+      {{ campo_socio('logradouro', 'Logradouro', s) }}
+      {{ campo_socio('numero', 'Número', s) }}
+      {{ campo_socio('complemento', 'Complemento', s) }}
+      {{ campo_socio('bairro', 'Bairro', s) }}
+      {{ campo_socio('cidade', 'Cidade', s) }}
+      {{ campo_socio('uf', 'UF', s) }}
+      <div class="campo largo">
+        <label>Processos judiciais</label>
+        <textarea name="socio_processos_judiciais" {% if travado %}disabled{% endif %}>{{ s.get('processos_judiciais') or '' }}</textarea>
+      </div>
+    </div>
   </div>
 {% endmacro %}
 
@@ -142,6 +218,22 @@
     </div>
   </div>
 
+  <!-- Só aparece para Pessoa Jurídica: a análise da empresa passa por quem
+       está atrás dela. -->
+  <div class="bloco" id="bloco-socios" {% if a.get('tipo_cliente') != 'PJ' %}style="display:none"{% endif %}>
+    <div class="bloco-titulo">1.1. SÓCIOS / PROPRIETÁRIOS</div>
+    <div id="lista-socios">
+      {% for s in socios %}{{ bloco_socio(s) }}{% endfor %}
+    </div>
+    {% if not travado %}
+      <div class="socio-rodape">
+        <button type="button" class="btn btn-secundario" onclick="adicionarSocio()">+ Adicionar sócio</button>
+      </div>
+    {% endif %}
+  </div>
+
+  <template id="modelo-socio">{{ bloco_socio({}) }}</template>
+
   <div class="bloco">
     <div class="bloco-titulo">2. CRÉDITO SOLICITADO</div>
     <div class="grid">
@@ -168,6 +260,14 @@
     <div class="grid">
       {{ escolha('biro_situacao', 'Serasa / birô de crédito') }}
       {{ texto('biro_score', 'Score') }}
+      {% set risco = risco_do_score(a.get('biro_score')) %}
+      <div class="campo">
+        <label>Risco (pelo score)</label>
+        <div class="risco">
+          <span class="bolinha" id="risco-bolinha" style="background:{{ risco.cor }}"></span>
+          <span id="risco-rotulo">{{ risco.rotulo }}</span>
+        </div>
+      </div>
       {{ escolha('protestos', 'Protestos / pendências') }}
       {{ texto('protestos_valor', 'Valor dos protestos (R$)') }}
       {{ escolha('situacao_documento', 'Situação CPF / CNPJ') }}
@@ -197,5 +297,67 @@
   </div>
 
 </form>
+
+<script>
+  // O risco é derivado do score, aqui e no servidor — nunca gravado.
+  const FAIXAS_RISCO = [
+    [300,  "#DC2626", "Risco alto"],
+    [600,  "#F59E0B", "Risco médio"],
+    [1e9,  "#2563EB", "Risco baixo"],
+  ];
+
+  function pintarRisco() {
+    const campo = document.querySelector('[name="biro_score"]');
+    const bolinha = document.getElementById("risco-bolinha");
+    const rotulo = document.getElementById("risco-rotulo");
+    if (!campo || !bolinha) return;
+
+    const texto = (campo.value || "").trim().replace(",", ".");
+    const valor = texto === "" ? NaN : Number(texto);
+
+    if (!isFinite(valor)) {
+      bolinha.style.background = "#ffffff";
+      rotulo.textContent = "Sem score";
+      return;
+    }
+    for (const [limite, cor, nome] of FAIXAS_RISCO) {
+      if (valor <= limite) { bolinha.style.background = cor; rotulo.textContent = nome; return; }
+    }
+  }
+
+  // Sócios só existem para Pessoa Jurídica.
+  function alternarSocios() {
+    const tipo = document.querySelector('[name="tipo_cliente"]');
+    const bloco = document.getElementById("bloco-socios");
+    if (!tipo || !bloco) return;
+    bloco.style.display = tipo.value === "PJ" ? "" : "none";
+  }
+
+  function alternarMotivo(select) {
+    const socio = select.closest(".socio");
+    const motivo = socio.querySelector(".motivo-irregular");
+    motivo.style.display = select.value === "IRREGULAR" ? "flex" : "none";
+  }
+
+  function adicionarSocio() {
+    const modelo = document.getElementById("modelo-socio");
+    const lista = document.getElementById("lista-socios");
+    lista.appendChild(modelo.content.cloneNode(true));
+  }
+
+  async function removerSocio(botao) {
+    if (!await confirmarGlobal("Remover este sócio?")) return;
+    botao.closest(".socio").remove();
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    const score = document.querySelector('[name="biro_score"]');
+    if (score) score.addEventListener("input", pintarRisco);
+    const tipo = document.querySelector('[name="tipo_cliente"]');
+    if (tipo) tipo.addEventListener("change", alternarSocios);
+    pintarRisco();
+    alternarSocios();
+  });
+</script>
 
 {% endblock %}

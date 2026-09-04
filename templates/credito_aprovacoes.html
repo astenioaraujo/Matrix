@@ -34,6 +34,12 @@
   .selo-APROVADO_COM_CONDICAO { background:#1D4ED8; }
   .selo-REPROVADO { background:#B91C1C; }
 
+  .bolinha {
+    display:inline-block; width:14px; height:14px; border-radius:50%;
+    border:1px solid #999; vertical-align:middle;
+  }
+  .col-risco { width:34px; text-align:center; }
+
   .vazio { padding:20px 0; color:#777; }
 
   .flash-msg {
@@ -75,6 +81,7 @@
 <table>
   <thead>
     <tr>
+      <th class="col-risco" title="Risco pelo score do birô"></th>
       <th>Nº</th>
       <th>Cliente</th>
       <th>CPF / CNPJ</th>
@@ -91,6 +98,10 @@
   <tbody>
     {% for a in analises %}
     <tr>
+      {% set risco = risco_do_score(a.biro_score) %}
+      <td class="col-risco" title="{{ risco.rotulo }}">
+        <span class="bolinha" style="background:{{ risco.cor }}"></span>
+      </td>
       <td>{{ a.id_analise }}</td>
       <td>{{ a.nome_razao_social or '' }}</td>
       <td>{{ a.cpf_cnpj or '' }}</td>
