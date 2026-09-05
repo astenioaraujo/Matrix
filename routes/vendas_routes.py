@@ -3483,7 +3483,8 @@ def _comparativo_sintetico_diarias(cur, cod_empresa, regs_qtd, regs_val, regs_mb
 
 
 @vendas_bp.route("/painel-diarias")
-@permissao_obrigatoria("VENDAS", "CONSULTAR_PAINEL", redirecionar_para="sistema.menu_vendas")
+@permissao_obrigatoria("VENDAS", "CONSULTAR_VENDAS_SINTETICAS",
+                       redirecionar_para="sistema.menu_vendas")
 def vendas_painel_diarias():
     if "id_usuario" not in session:
         return redirect(url_for("auth.index"))
@@ -3682,7 +3683,8 @@ def _montar_grade_detalhe(metrica, rotulos, colunas, celulas):
 
 
 @vendas_bp.route("/api/painel-diarias/detalhe")
-@permissao_obrigatoria("VENDAS", "CONSULTAR_PAINEL", redirecionar_para="sistema.menu_vendas")
+@permissao_obrigatoria("VENDAS", "CONSULTAR_VENDAS_SINTETICAS",
+                       redirecionar_para="sistema.menu_vendas")
 def api_painel_diarias_detalhe():
     cod_empresa = str(session.get("cod_empresa") or "").strip()
 

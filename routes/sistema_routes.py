@@ -137,6 +137,7 @@ def menu_vendas():
     opcoes_vendas = [
         "CONSULTAR_PAINEL",
         "IMPORTAR_PAINEL",
+        "CONSULTAR_VENDAS_SINTETICAS",
         "CONSULTAR_VENDAS_DIARIAS",
         "IMPORTAR_VENDAS_DIARIAS",
         "CONSULTAS",

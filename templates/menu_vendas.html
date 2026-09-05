@@ -69,21 +69,26 @@
 
   <div class="menu-botoes">
 
+    {# O Painel importado saiu do menu: as Vendas Sintéticas passaram a ser
+       lidas das vendas diárias, e uma importação só basta. As rotas e as
+       rotinas de importação continuam inteiras, só não têm mais porta de
+       entrada — para voltar, basta reativar os dois blocos abaixo.
     {% if pode_vendas.CONSULTAR_PAINEL %}
     <a class="btn-painel" href="{{ url_for('vendas.vendas_painel') }}">
       Consultar Painel
     </a>
     {% endif %}
 
-    {% if pode_vendas.CONSULTAR_PAINEL %}
-    <a class="btn-painel-diarias" href="{{ url_for('vendas.vendas_painel_diarias') }}">
-      Consultar Vendas Sintéticas
-    </a>
-    {% endif %}
-
     {% if pode_vendas.IMPORTAR_PAINEL %}
     <a class="btn-importar-painel" href="{{ url_for('vendas.vendas_importar_painel') }}">
       Importar Painel
+    </a>
+    {% endif %}
+    #}
+
+    {% if pode_vendas.CONSULTAR_VENDAS_SINTETICAS %}
+    <a class="btn-painel-diarias" href="{{ url_for('vendas.vendas_painel_diarias') }}">
+      Consultar Vendas Sintéticas
     </a>
     {% endif %}
 
