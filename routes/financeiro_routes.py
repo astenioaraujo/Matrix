@@ -6,6 +6,10 @@ import math
 import io
 from psycopg2.extras import RealDictCursor, execute_batch
 from db import get_connection
+from services.vendas_mb_service import (
+    mb_por_filial as mb_diarias_por_filial,
+    mb_por_mes as mb_diarias_por_mes,
+)
 from security_helpers import usuario_tem_permissao, permissao_obrigatoria
 from services.dashboard_service import montar_dashboard
 from services.estoques_service import totais_estoque_rs
@@ -1352,9 +1356,8 @@ def resultado_mb():
             if mes:
                 where_mes = "AND mes = %s"
                 params.append(mes)
-            campo_valor = "margem_bruta" if tabela == "vendas_mb_sintetico" else "valor"
             cur.execute(f"""
-                SELECT cod_filial, COALESCE(SUM({campo_valor}), 0)
+                SELECT cod_filial, COALESCE(SUM(valor), 0)
                 FROM {tabela}
                 WHERE cod_empresa = %s AND ano = %s
                 {where_mes} {filtro_extra}
@@ -1362,7 +1365,9 @@ def resultado_mb():
             """, params)
             return {r[0]: float(r[1]) for r in cur.fetchall()}
 
-        mb   = buscar_valores("vendas_mb_sintetico", "")
+        # A MB vem das vendas diárias, não mais do painel sintético importado:
+        # é a mesma informação, sem depender de uma segunda importação.
+        mb   = mb_diarias_por_filial(cod_empresa, ano, mes)
         desp = buscar_valores("lancamentos", "AND grupo = '4'")
         inv  = buscar_valores("lancamentos", "AND grupo = '5'")
         div  = buscar_valores("lancamentos", "AND grupo = '6'")
@@ -1462,9 +1467,8 @@ def resultado_mb_anual():
             if filial_sel is not None:
                 where_filial = "AND cod_filial = %s"
                 params.append(filial_sel)
-            campo_valor = "margem_bruta" if tabela == "vendas_mb_sintetico" else "valor"
             cur.execute(f"""
-                SELECT mes, COALESCE(SUM({campo_valor}), 0)
+                SELECT mes, COALESCE(SUM(valor), 0)
                 FROM {tabela}
                 WHERE cod_empresa = %s AND ano = %s
                   AND mes IS NOT NULL
@@ -1473,7 +1477,7 @@ def resultado_mb_anual():
             """, params)
             return {int(r[0]): float(r[1]) for r in cur.fetchall()}
 
-        mb   = buscar_valores("vendas_mb_sintetico", "")
+        mb   = mb_diarias_por_mes(cod_empresa, ano, filial_sel)
         desp = buscar_valores("lancamentos", "AND grupo = '4'")
         inv  = buscar_valores("lancamentos", "AND grupo = '5'")
         div  = buscar_valores("lancamentos", "AND grupo = '6'")
@@ -4137,21 +4141,13 @@ def fluxo_caixa_projetado():
         """, (cod_empresa,))
         contas_sem_projecao = {(str(r["cod_grupo"]), r["cod_conta"]) for r in cur.fetchall()}
 
-        cur.execute("""
-            SELECT mes, COALESCE(SUM(margem_bruta), 0) AS mb
-            FROM vendas_mb_sintetico
-            WHERE cod_empresa = %s AND ano = %s
-            GROUP BY mes
-            ORDER BY mes
-        """, (cod_empresa, ano_sel))
-        mb_registros = cur.fetchall()
+        mb_vals = mb_diarias_por_mes(cod_empresa, ano_sel)
 
     finally:
         cur.close()
         conn.close()
 
     # Montar MB por mês com projeção
-    mb_vals = {int(r["mes"]): float(r["mb"] or 0) for r in mb_registros}
     mes_inicio_media = mes_atual - qtd_meses
     proj_mb = (sum(mb_vals.get(m, 0) for m in range(mes_inicio_media, mes_atual)) / qtd_meses) if qtd_meses > 0 else 0.0
 

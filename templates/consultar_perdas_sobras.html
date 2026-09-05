@@ -166,6 +166,19 @@
 
       <input type="hidden" name="vis" id="input-vis" value="{{ vis }}">
 
+      {% if vis == "mes" %}
+      <div style="align-self:flex-end;">
+        <label style="margin-bottom:6px;">&nbsp;</label>
+        <label style="display:flex; align-items:center; gap:6px; font-weight:normal; cursor:pointer;">
+          <input type="hidden" name="desloc" value="0">
+          <input type="checkbox" name="desloc" value="1"
+                 {% if desloc %}checked{% endif %}
+                 onchange="this.form.submit()">
+          A partir do dia 2
+        </label>
+      </div>
+      {% endif %}
+
       <button type="submit" class="btn">Filtrar</button>
 
       <div style="align-self:flex-end;">

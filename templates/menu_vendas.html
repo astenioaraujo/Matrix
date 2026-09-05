@@ -53,6 +53,7 @@
   .btn-produto { background: #d97706; color: #fff; }
   .btn-margem { background: #ad1457; }
   .btn-vendas-dia { background: #00695c; }
+  .btn-painel-diarias { background: #4527a0; }
   .btn-parametros { background: #37474f; }
   .btn-voltar { background: #444; }
 
@@ -71,6 +72,12 @@
     {% if pode_vendas.CONSULTAR_PAINEL %}
     <a class="btn-painel" href="{{ url_for('vendas.vendas_painel') }}">
       Consultar Painel
+    </a>
+    {% endif %}
+
+    {% if pode_vendas.CONSULTAR_PAINEL %}
+    <a class="btn-painel-diarias" href="{{ url_for('vendas.vendas_painel_diarias') }}">
+      Consultar Vendas Sintéticas
     </a>
     {% endif %}
 

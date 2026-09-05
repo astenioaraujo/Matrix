@@ -1,0 +1,874 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  body {
+    overflow-x: auto;
+  }
+
+  .card {
+    overflow-x: visible;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .acoes-topo {
+    margin-bottom: 28px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .btn-topo {
+    display: inline-block;
+    padding: 10px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    border: 1px solid #c7c7c7;
+    background: #f7f7f7;
+    color: #1f3c88;
+  }
+
+  .btn-topo:hover {
+    background: #ededed;
+  }
+
+  .bloco-painel {
+    margin-top: 34px;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .bloco-titulo {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    color: #b02a37;
+  }
+
+  .bloco-resumo {
+    margin-top: 8px;
+    margin-bottom: 34px;
+  }
+
+  .bloco-variacoes {
+    margin-top: 8px;
+    margin-bottom: 40px;
+    max-width: 820px;
+  }
+
+  .bloco-secao {
+    margin-top: 40px;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .tabela-wrap {
+    overflow: visible;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    background: #fff;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: max-content;
+    min-width: max-content;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #dddddd;
+    padding: 7px 10px;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  .col-mes {
+    width: 110px;
+    min-width: 110px;
+    max-width: 110px;
+  }
+
+  .col-total {
+    width: 150px;
+    min-width: 150px;
+    max-width: 150px;
+    font-weight: 700;
+    background: #faf7dd;
+    border-right: 3px solid #2c2c2c;
+    box-shadow: 2px 0 0 #2c2c2c;
+  }
+
+  .col-filial {
+    width: 140px;
+    min-width: 140px;
+    max-width: 140px;
+  }
+
+  th {
+    background: #dbe8f4;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    font-weight: 700;
+  }
+
+  th:first-child,
+  td:first-child {
+    text-align: left;
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: #fff;
+    min-width: 110px;
+  }
+
+  thead th:first-child {
+    background: #dbe8f4;
+    z-index: 3;
+  }
+
+  tbody tr:nth-child(even) {
+    background: #fafafa;
+  }
+
+  .linha-novo-ano td {
+    border-top: 2px solid #7f7f7f;
+  }
+
+  tfoot td {
+    font-weight: 700;
+    background: #f3f3f3;
+  }
+
+  .linha-total td {
+    background: #eef3f8;
+    font-weight: 700;
+  }
+
+  tfoot tr.linha-total td {
+    border-top: 4px solid #2c2c2c;
+    padding-top: 10px;
+  }
+
+  .linha-med td {
+    background: #f8f3ea;
+    font-weight: 700;
+  }
+
+  .linha-proj td {
+    background: #eef8ea;
+    font-weight: 700;
+  }
+
+  .numero-filial {
+    font-size: 11px;
+    color: #1f6fb2;
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  .nome-filial {
+    font-size: 12px;
+    color: #333;
+    display: block;
+    max-width: 150px;
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  .btn-importar-painel {
+    background: #2e9b57;
+    color: #fff;
+    border: 1px solid #2e9b57;
+  }
+
+  .btn-importar-painel:hover {
+    background: #25834a;
+    border-color: #25834a;
+  }  
+  
+  .resumo-projecao {
+    width: 390px;
+    border: 2px solid #2c2c2c;
+    background: #fff;
+  }
+
+  .resumo-topo {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .resumo-topo div {
+    background: #f1ef43;
+    font-weight: 800;
+    font-size: 18px;
+    text-align: center;
+    padding: 8px 10px;
+    border-bottom: 2px solid #2c2c2c;
+    color: #d61f1f;
+  }
+
+  .resumo-linha {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .resumo-linha .rotulo {
+    background: #ffffff;
+    font-weight: 800;
+    font-size: 18px;
+    padding: 6px 12px;
+    border-right: 1px solid #cfcfcf;
+    border-bottom: 1px solid #cfcfcf;
+    text-align: center;
+  }
+
+  .resumo-linha .valor {
+    background: #bfbfbf;
+    font-weight: 800;
+    font-size: 18px;
+    padding: 6px 12px;
+    border-bottom: 1px solid #cfcfcf;
+    text-align: right;
+  }
+
+  .variacoes-titulo {
+    font-size: 22px;
+    font-weight: 800;
+    color: #e1251b;
+    margin-bottom: 12px;
+  }
+
+  .variacoes-wrap {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    overflow: auto;
+    max-width: 820px;
+  }
+
+  .variacoes-table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 760px;
+    font-size: 14px;
+  }
+
+  .variacoes-table th,
+  .variacoes-table td {
+    border: 1px solid #dddddd;
+    padding: 7px 10px;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  .variacoes-table th {
+    background: #ffffff;
+    color: #000;
+    font-size: 18px;
+    font-weight: 800;
+    text-align: center;
+    position: static;
+  }
+
+  .variacoes-table td.col-data {
+    text-align: center;
+    font-weight: 700;
+    background: #fff;
+  }
+
+  @media (max-width: 700px) {
+    .pagina-titulo {
+      font-size: 24px;
+    }
+
+    .pagina-subtitulo {
+      font-size: 16px;
+    }
+
+    table {
+      font-size: 13px;
+    }
+
+    th, td {
+      padding: 6px 8px;
+    }
+
+    .col-total {
+      width: 130px;
+      min-width: 130px;
+      max-width: 130px;
+    }
+
+    .col-filial {
+      width: 130px;
+      min-width: 130px;
+      max-width: 130px;
+    }
+
+    .resumo-projecao {
+      width: 100%;
+      max-width: 390px;
+    }
+
+    .resumo-topo div,
+    .resumo-linha .rotulo,
+    .resumo-linha .valor {
+      font-size: 16px;
+    }
+
+    .variacoes-table {
+      min-width: 680px;
+    }
+
+    .variacoes-table th {
+      font-size: 16px;
+    }
+
+    .bloco-resumo,
+    .bloco-variacoes,
+    .bloco-secao {
+      margin-bottom: 28px;
+    }
+  }
+</style>
+
+{% macro render_bloco(titulo, grade, metrica) %}
+<div class="bloco-painel">
+  <div class="bloco-titulo">{{ titulo }}</div>
+
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="col-mes">MÊS</th>
+          <th class="col-total">TOTAL</th>
+          {% for filial in filiais %}
+            <th class="col-filial clicavel"
+                onclick="abrirDetalhe({metrica: '{{ metrica }}', escopo: 'filial', filial: {{ filial.cod_filial }}})">
+              <span class="numero-filial">{{ filial.cod_filial }}</span>
+              <span class="nome-filial">{{ filial.nome_filial }}</span>
+            </th>
+          {% endfor %}
+        </tr>
+      </thead>
+
+      <tbody>
+        {% for linha in grade.linhas %}
+        {% set idx_linha = loop.index0 %}
+        {% set mudou_ano = loop.index0 > 0 and grade.linhas[loop.index0 - 1].ano != linha.ano %}
+        <tr class="{% if mudou_ano %}linha-novo-ano{% endif %}">
+          <td class="col-mes">{{ linha.periodo }}</td>
+          <td class="col-total clicavel" style="background: {{ grade.cores_totais[idx_linha] }};"
+              onclick="abrirDetalhe({metrica: '{{ metrica }}', escopo: 'mes_total', ano: {{ linha.ano }}, mes: {{ linha.mes }}})">
+            {% if linha.total and linha.total != 0 %}
+              {{ formatar_numero_br(linha.total) }}
+            {% endif %}
+          </td>
+          {% for valor in linha.valores %}
+            <td class="col-filial clicavel" style="background: {{ grade.cores_linhas[idx_linha][loop.index0] }};"
+                onclick="abrirDetalhe({metrica: '{{ metrica }}', escopo: 'mes_filial', ano: {{ linha.ano }}, mes: {{ linha.mes }}, filial: {{ filiais[loop.index0].cod_filial }}})">
+              {% if valor and valor != 0 %}
+                {{ formatar_numero_br(valor) }}
+              {% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+
+      <tfoot>
+        <tr class="linha-total">
+          <td class="col-mes">{{ grade.linha_total.rotulo }}</td>
+          <td class="col-total">
+            {% if grade.linha_total.total and grade.linha_total.total != 0 %}
+              {{ formatar_numero_br(grade.linha_total.total) }}
+            {% endif %}
+          </td>
+          {% for valor in grade.linha_total.valores %}
+            <td class="col-filial">
+              {% if valor and valor != 0 %}
+                {{ formatar_numero_br(valor) }}
+              {% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+
+        <tr class="linha-med">
+          <td class="col-mes">{{ grade.linha_med_12m.rotulo }}</td>
+          <td class="col-total">
+            {% if grade.linha_med_12m.total and grade.linha_med_12m.total != 0 %}
+              {{ formatar_numero_br(grade.linha_med_12m.total) }}
+            {% endif %}
+          </td>
+          {% for valor in grade.linha_med_12m.valores %}
+            <td class="col-filial">
+              {% if valor and valor != 0 %}
+                {{ formatar_numero_br(valor) }}
+              {% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+
+        <tr class="linha-proj">
+          <td class="col-mes">{{ grade.linha_proj_12m.rotulo }}</td>
+          <td class="col-total">
+            {% if grade.linha_proj_12m.total and grade.linha_proj_12m.total != 0 %}
+              {{ formatar_numero_br(grade.linha_proj_12m.total) }}
+            {% endif %}
+          </td>
+          {% for valor in grade.linha_proj_12m.valores %}
+            <td class="col-filial">
+              {% if valor and valor != 0 %}
+                {{ formatar_numero_br(valor) }}
+              {% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+{% endmacro %}
+
+<div class="card">
+  <div class="pagina-titulo">Vendas Sintéticas (a partir das diárias)</div>
+  <div class="pagina-subtitulo">
+    Empresa: <strong>{{ nome_empresa }}</strong>
+    {% if meta %}
+      &nbsp;|&nbsp; Origem: <strong>vendas diárias</strong>
+      {% if meta.projetado %}
+        &nbsp;|&nbsp; {{ meta.dia_base }} de {{ meta.dias_mes }} dias no mês corrente (projetado)
+      {% endif %}
+    {% endif %}
+  </div>
+
+
+  <div class="acoes-topo">
+  </div>
+
+  {% if resumo_projecao %}
+  <div class="bloco-resumo">
+    <div class="resumo-projecao">
+      <div class="resumo-topo clicavel"
+           onclick="abrirDetalhe({escopo: 'periodo', ano: {{ meta.ano }}, mes: {{ meta.mes }}})">
+        <div>PROJEÇÃO</div>
+        <div>{{ resumo_projecao.periodo }}</div>
+      </div>
+
+      <div class="resumo-linha clicavel"
+           onclick="abrirDetalhe({metrica: 'qtd', escopo: 'mes_total', ano: {{ meta.ano }}, mes: {{ meta.mes }}})">
+        <div class="rotulo">QUANTIDADE</div>
+        <div class="valor">{{ formatar_numero_br(resumo_projecao.quantidade) }}</div>
+      </div>
+
+      <div class="resumo-linha clicavel"
+           onclick="abrirDetalhe({metrica: 'valor', escopo: 'mes_total', ano: {{ meta.ano }}, mes: {{ meta.mes }}})">
+        <div class="rotulo">VALOR</div>
+        <div class="valor">{{ formatar_numero_br(resumo_projecao.valor) }}</div>
+      </div>
+
+      <div class="resumo-linha clicavel"
+           onclick="abrirDetalhe({metrica: 'mb', escopo: 'mes_total', ano: {{ meta.ano }}, mes: {{ meta.mes }}})">
+        <div class="rotulo">MB</div>
+        <div class="valor">{{ formatar_numero_br(resumo_projecao.mb) }}</div>
+      </div>
+
+      <div class="resumo-linha clicavel"
+           onclick="abrirDetalhe({metrica: 'mun', escopo: 'mes_total', ano: {{ meta.ano }}, mes: {{ meta.mes }}})">
+        <div class="rotulo">MUN</div>
+        <div class="valor">{{ formatar_numero_br(resumo_projecao.mun) }}</div>
+      </div>
+
+      <div class="resumo-linha clicavel"
+           onclick="abrirDetalhe({metrica: 'qtd', escopo: 'mes_total', ano: {{ meta.ano }}, mes: {{ meta.mes }}})">
+        <div class="rotulo">QTD/DIA</div>
+        <div class="valor">{{ formatar_numero_br(resumo_projecao.qtd_dia) }}</div>
+      </div>
+
+      <div class="resumo-linha clicavel"
+           onclick="abrirDetalhe({metrica: 'mb', escopo: 'mes_total', ano: {{ meta.ano }}, mes: {{ meta.mes }}})">
+        <div class="rotulo">MB/DIA</div>
+        <div class="valor">{{ formatar_numero_br(resumo_projecao.mb_dia) }}</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if variacoes_projecoes %}
+  <div class="bloco-variacoes">
+    <div class="variacoes-titulo">VARIAÇÃO DAS PROJEÇÕES</div>
+
+    <div class="variacoes-wrap">
+      <table class="variacoes-table">
+        <thead>
+          <tr>
+            <th>DATA</th>
+            <th>DIA BASE</th>
+            <th>DIAS MÊS</th>
+            <th>QUANTIDADE</th>
+            <th>VALORES</th>
+            <th>MB</th>
+            <th>MUN</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for linha in variacoes_projecoes %}
+          <tr>
+            <td class="col-data">{{ linha.data }}</td>
+            <td>{{ linha.dia_base }}</td>
+            <td>{{ linha.dias_mes }}</td>
+            <td style="background: {{ linha.quantidade_cor }};">
+              {{ formatar_numero_br(linha.quantidade) }}
+            </td>
+            <td style="background: {{ linha.valor_cor }};">
+              {{ formatar_numero_br(linha.valor) }}
+            </td>
+            <td style="background: {{ linha.mb_cor }};">
+              {{ formatar_numero_br(linha.mb) }}
+            </td>
+            <td style="background: {{ linha.mun_cor }};">
+              {{ formatar_numero_br(linha.mun) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+  
+  <div class="bloco-secao">
+    {{ render_bloco("QUANTIDADES", grade_unidades, "qtd") }}
+  </div>
+
+  <div class="bloco-secao">
+    {{ render_bloco("VALORES", grade_valores, "valor") }}
+  </div>
+
+  <div class="bloco-secao">
+    {{ render_bloco("MB", grade_mb, "mb") }}
+  </div>
+
+  <div class="bloco-secao">
+    {{ render_bloco("MUN", grade_mun, "mun") }}
+  </div>
+</div>
+
+
+<style>
+  /* Tudo o que abre detalhe se anuncia no hover, como no matricial. */
+  .clicavel { cursor: pointer; }
+  .clicavel:hover { outline: 2px solid #26418f; outline-offset: -2px; }
+  .resumo-topo.clicavel:hover, .resumo-linha.clicavel:hover { outline-offset: 0; }
+
+  #modal-vpd {
+    display: none; position: fixed; inset: 0; z-index: 9000;
+    background: rgba(0,0,0,.45); align-items: center; justify-content: center;
+  }
+  #modal-vpd.aberto { display: flex; }
+  .vpd-caixa {
+    background: #fff; border-radius: 14px; width: 98vw; height: 94vh;
+    display: flex; flex-direction: column; box-shadow: 0 18px 50px rgba(0,0,0,.3);
+  }
+  .vpd-topo {
+    padding: 14px 20px; border-bottom: 1px solid #e3e3e3;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+  }
+  .vpd-titulo { font-size: 18px; font-weight: 800; }
+  .vpd-sub { font-size: 13px; color: #666; margin-top: 4px; }
+  .vpd-fechar {
+    border: none; background: transparent; font-size: 26px; cursor: pointer;
+    line-height: 1; color: #666;
+  }
+  /* Sem padding lateral: a coluna congelada gruda em left:0 do container de
+     rolagem, e o padding deixaria uma faixa da coluna vizinha por baixo dela. */
+  .vpd-corpo { flex: 1; overflow: auto; padding: 12px 0 20px; }
+  /* Largura fixa em todas as colunas: sem isso cada coluna se ajusta ao
+     título ("DIESEL S10" estreita, "GASOLINA COMUM" larga) e a grade perde o
+     alinhamento de leitura que o painel tem. */
+  .vpd-grade { border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+  .vpd-grade th, .vpd-grade td { width: 96px; }
+  .vpd-grade thead th { overflow: hidden; text-overflow: ellipsis; }
+  .vpd-grade th, .vpd-grade td {
+    border: 1px solid #ddd; padding: 5px 8px; white-space: nowrap;
+  }
+  .vpd-grade thead th {
+    background: #f2f2f2; position: sticky; top: 0; z-index: 2; text-align: center;
+    font-size: 11px; letter-spacing: -.2px;
+  }
+  /* z-index explícito nas colunas congeladas: sem ele as células comuns, que
+     vêm depois no DOM, passam por cima delas ao rolar. */
+  .vpd-grade td.rot, .vpd-grade th.rot {
+    position: sticky; left: 0; background: #fff; text-align: left; z-index: 2;
+    width: 130px; overflow: hidden; text-overflow: ellipsis;
+  }
+  .vpd-grade thead th.rot { z-index: 4; background: #f2f2f2; }
+  .vpd-grade td.tot, .vpd-grade th.tot {
+    position: sticky; left: 130px; background: #fff; z-index: 2;
+    width: 118px; border-right: 3px solid #8f8f8f;
+    font-weight: 800; text-align: right;
+  }
+  .vpd-grade thead th.tot { z-index: 4; background: #f2f2f2; }
+  .vpd-fil {
+    display: block; font-size: 10px; font-weight: 400; color: #666;
+    margin-top: 2px; overflow: hidden; text-overflow: ellipsis;
+  }
+  .vpd-grade td.n {
+    text-align: right; font-family: Consolas, Menlo, monospace;
+  }
+  .vpd-grade tr.total td {
+    font-weight: 800; background: #f3f3f3 !important;
+    border-top: 2px solid #9a9a9a;
+  }
+  /* A média liga o realizado à projeção: total ÷ períodos, e a projeção é a
+     média vezes os dias do mês. */
+  .vpd-grade tr.media td {
+    font-weight: 700; background: #eef2fb !important;
+    border-top: 1px solid #b9c6e2;
+  }
+  .vpd-grade tr.projecao td {
+    font-weight: 800; background: #fff3cd !important;
+    border-top: 2px solid #d6b656; border-bottom: 2px solid #d6b656;
+  }
+  /* O mês dia a dia tem seis colunas só: ocupa a largura toda. */
+  .vpd-periodo { width: 100%; table-layout: auto; }
+  .vpd-vazio { padding: 24px; color: #666; }
+  .vpd-nota { padding: 8px 20px 0; font-size: 12px; color: #666; }
+</style>
+
+<div id="modal-vpd" onclick="if (event.target === this) fecharDetalhe()">
+  <div class="vpd-caixa">
+    <div class="vpd-topo">
+      <div>
+        <div class="vpd-titulo" id="vpd-titulo">Detalhamento</div>
+        <div class="vpd-sub" id="vpd-sub"></div>
+      </div>
+      <button type="button" class="vpd-fechar" onclick="fecharDetalhe()">&times;</button>
+    </div>
+    <div class="vpd-corpo" id="vpd-corpo"></div>
+  </div>
+</div>
+
+<script>
+  const VPD_URL = "{{ url_for('vendas.api_painel_diarias_detalhe') }}";
+
+  function vpdNum(v, casas) {
+    if (v === null || v === undefined || v === "") return "";
+    return Number(v).toLocaleString("pt-BR", {
+      minimumFractionDigits: casas, maximumFractionDigits: casas
+    });
+  }
+
+  // Mede o texto na fonte real do cabeçalho: 11px bold para o título e para o
+  // número do posto, 10px normal para o nome discreto embaixo.
+  function vpdLarguraColuna(colunas) {
+    const ctx = document.createElement("canvas").getContext("2d");
+    const fonte = getComputedStyle(document.body).fontFamily;
+    let maior = 0;
+
+    colunas.forEach(c => {
+      const m = /^(\d+) - (.*)$/.exec(c);
+      const partes = m
+        ? [["bold 11px " + fonte, m[1]], ["10px " + fonte, m[2]]]
+        : [["bold 11px " + fonte, c]];
+
+      partes.forEach(([f, texto]) => {
+        ctx.font = f;
+        maior = Math.max(maior, ctx.measureText(texto).width);
+      });
+    });
+
+    return Math.max(96, Math.ceil(maior) + 18);
+  }
+
+  function vpdEscape(t) {
+    return String(t === null || t === undefined ? "" : t)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function fecharDetalhe() {
+    document.getElementById("modal-vpd").classList.remove("aberto");
+  }
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") fecharDetalhe();
+  });
+
+  async function abrirDetalhe(params) {
+    const modal = document.getElementById("modal-vpd");
+    const corpo = document.getElementById("vpd-corpo");
+
+    document.getElementById("vpd-titulo").textContent = "Carregando...";
+    document.getElementById("vpd-sub").textContent = "";
+    corpo.innerHTML = '<div class="vpd-vazio">Buscando os dados...</div>';
+    modal.classList.add("aberto");
+
+    const q = new URLSearchParams();
+    Object.keys(params).forEach(k => q.set(k, params[k]));
+
+    let dados;
+    try {
+      const r = await fetch(VPD_URL + "?" + q.toString());
+      dados = await r.json();
+    } catch (e) {
+      corpo.innerHTML = '<div class="vpd-vazio">Não foi possível carregar.</div>';
+      return;
+    }
+
+    if (dados.erro) {
+      document.getElementById("vpd-titulo").textContent = "Detalhamento";
+      corpo.innerHTML = '<div class="vpd-vazio">' + vpdEscape(dados.erro) + "</div>";
+      return;
+    }
+
+    document.getElementById("vpd-titulo").textContent = dados.titulo || "";
+    document.getElementById("vpd-sub").textContent = dados.subtitulo || "";
+
+    corpo.innerHTML = dados.tipo === "periodo"
+      ? montarPeriodo(dados)
+      : montarGrade(dados);
+  }
+
+  function montarGrade(d) {
+    if (!d.linhas || !d.linhas.length) {
+      return '<div class="vpd-vazio">Sem lançamentos nesse recorte.</div>';
+    }
+
+    const casas = d.casas;
+    // Todas as colunas saem na largura do título mais largo — "GASOLINA COMUM"
+    // decide o passo, e as demais o acompanham. Medido de verdade na fonte do
+    // cabeçalho, senão um nome comprido transborda a célula.
+    const larguraCol = vpdLarguraColuna(d.colunas);
+    const largura = 130 + 118 + larguraCol * d.colunas.length;
+    let h = '<table class="vpd-grade" style="width:' + largura + 'px">';
+    h += "<colgroup><col style=\"width:130px\"><col style=\"width:118px\">";
+    d.colunas.forEach(() => {
+      h += '<col style="width:' + larguraCol + 'px">';
+    });
+    h += "</colgroup><thead><tr>";
+    h += '<th class="rot">' + vpdEscape(d.rotulo_coluna) + "</th>";
+    h += '<th class="tot">TOTAL</th>';
+    // Coluna de posto: o número manda, o nome fica embaixo em corpo menor —
+    // o mesmo desenho do cabeçalho das grades da tela.
+    d.colunas.forEach(c => {
+      const m = /^(\d+) - (.*)$/.exec(c);
+      h += "<th>" + (m
+        ? vpdEscape(m[1]) + '<span class="vpd-fil">' + vpdEscape(m[2]) + "</span>"
+        : vpdEscape(c)) + "</th>";
+    });
+    h += "</tr></thead><tbody>";
+
+    d.linhas.forEach(l => {
+      h += '<tr><td class="rot">' + vpdEscape(l.rotulo) + "</td>";
+      const ct = l.cor_total ? ' style="background:' + l.cor_total + '"' : "";
+      h += '<td class="tot n"' + ct + ">" + vpdNum(l.total, casas) + "</td>";
+      l.valores.forEach((v, i) => {
+        const cor = l.cores[i] ? ' style="background:' + l.cores[i] + '"' : "";
+        h += '<td class="n"' + cor + ">" + vpdNum(v, casas) + "</td>";
+      });
+      h += "</tr>";
+    });
+
+    h += '<tr class="total"><td class="rot">TOTAL</td>';
+    h += '<td class="tot n">' + vpdNum(d.linha_total.total, casas) + "</td>";
+    d.linha_total.valores.forEach(v => {
+      h += '<td class="n">' + vpdNum(v, casas) + "</td>";
+    });
+    h += "</tr>";
+
+    if (d.media) {
+      h += '<tr class="media"><td class="rot">' + d.media.rotulo;
+      h += '<span class="vpd-fil">' + d.media.periodos + " períodos</span></td>";
+      h += '<td class="tot n">' + vpdNum(d.media.valor, casas) + "</td>";
+      d.media.valores.forEach(v => {
+        h += '<td class="n">' + vpdNum(v, casas) + "</td>";
+      });
+      h += "</tr>";
+    }
+
+    if (d.projecao) {
+      const rot = d.projecao.razao
+        ? "PROJEÇÃO (razão)"
+        : "PROJEÇÃO " + d.projecao.dias_mes + " DIAS";
+      h += '<tr class="projecao"><td class="rot">' + rot;
+      h += '<span class="vpd-fil">' + d.projecao.dia_base + " de ";
+      h += d.projecao.dias_mes + " dias lançados</span></td>";
+      h += '<td class="tot n">' + vpdNum(d.projecao.valor, casas) + "</td>";
+      d.projecao.valores.forEach(v => {
+        h += '<td class="n">' + vpdNum(v, casas) + "</td>";
+      });
+      h += "</tr>";
+    }
+
+    return h + "</tbody></table>";
+  }
+
+  function montarPeriodo(d) {
+    if (!d.dias || !d.dias.length) {
+      return '<div class="vpd-vazio">Sem vendas nesse mês.</div>';
+    }
+
+    let h = '<table class="vpd-grade vpd-periodo"><thead><tr>';
+    h += '<th class="rot">DATA</th><th>DIA</th>';
+    h += "<th>QUANTIDADE</th><th>VALORES</th><th>MB</th><th>MUN</th>";
+    h += "</tr></thead><tbody>";
+
+    d.dias.forEach(l => {
+      h += '<tr><td class="rot">' + vpdEscape(l.data) + "</td>";
+      h += "<td>" + vpdEscape(l.dia_semana) + "</td>";
+      ["qtd", "valor", "mb"].forEach(c => {
+        const cor = l[c + "_cor"] ? ' style="background:' + l[c + "_cor"] + '"' : "";
+        h += '<td class="n"' + cor + ">" + vpdNum(l[c], 2) + "</td>";
+      });
+      const cm = l.mun_cor ? ' style="background:' + l.mun_cor + '"' : "";
+      h += '<td class="n"' + cm + ">" + vpdNum(l.mun, 2) + "</td></tr>";
+    });
+
+    h += '<tr class="total"><td class="rot">TOTAL</td><td></td>';
+    h += '<td class="n">' + vpdNum(d.totais.qtd, 2) + "</td>";
+    h += '<td class="n">' + vpdNum(d.totais.valor, 2) + "</td>";
+    h += '<td class="n">' + vpdNum(d.totais.mb, 2) + "</td>";
+    h += '<td class="n">' + vpdNum(d.totais.mun, 2) + "</td></tr>";
+
+    if (d.media) {
+      h += '<tr class="media"><td class="rot">MÉDIA/DIA</td>';
+      h += "<td>" + d.media.periodos + "d</td>";
+      h += '<td class="n">' + vpdNum(d.media.qtd, 2) + "</td>";
+      h += '<td class="n">' + vpdNum(d.media.valor, 2) + "</td>";
+      h += '<td class="n">' + vpdNum(d.media.mb, 2) + "</td>";
+      h += '<td class="n">' + vpdNum(d.media.mun, 2) + "</td></tr>";
+    }
+
+    if (d.projecao) {
+      h += '<tr class="projecao"><td class="rot">PROJEÇÃO</td>';
+      h += "<td>" + d.projecao.dias_mes + "d</td>";
+      h += '<td class="n">' + vpdNum(d.projecao.qtd, 2) + "</td>";
+      h += '<td class="n">' + vpdNum(d.projecao.valor, 2) + "</td>";
+      h += '<td class="n">' + vpdNum(d.projecao.mb, 2) + "</td>";
+      h += '<td class="n">' + vpdNum(d.projecao.mun, 2) + "</td></tr>";
+    }
+
+    return h + "</tbody></table>";
+  }
+</script>
+{% endblock %}

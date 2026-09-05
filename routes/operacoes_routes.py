@@ -3117,6 +3117,13 @@ def consultar_perdas_sobras():
 
     limite_dia = hoje_br() - timedelta(days=1)
 
+    # Deslocamento de 1 dia: a medicao registrada num dia se refere ao dia
+    # anterior, entao o mes "condizente" vai do dia 2 ate o dia 1 do mes
+    # seguinte. Marcado por padrao (ausente = marcado; so o form manda "0").
+    # o form manda sempre o hidden "0" antes do checkbox; vale o ultimo valor
+    _desloc_vals = request.args.getlist("desloc")
+    desloc = (_desloc_vals[-1].strip() if _desloc_vals else "1") != "0"
+
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
@@ -3212,13 +3219,28 @@ def consultar_perdas_sobras():
             )"""
 
         if vis == "mes":
-            data_ini = date(ano, mes, 1)
-            data_fim = date(ano + 1, 1, 1) if mes == 12 else date(ano, mes + 1, 1)
+            prim_mes = date(ano, mes, 1)
+            prox_mes = date(ano + 1, 1, 1) if mes == 12 else date(ano, mes + 1, 1)
+
+            if desloc:
+                data_ini = prim_mes + timedelta(days=1)
+                data_fim = prox_mes + timedelta(days=1)
+            else:
+                data_ini = prim_mes
+                data_fim = prox_mes
 
             if data_ini <= limite_dia < data_fim:
                 data_fim_consulta = limite_dia + timedelta(days=1)
             else:
                 data_fim_consulta = data_fim
+
+            # ordem das colunas em ordem de data (com deslocamento, o dia 1 do
+            # mes seguinte vem por ultimo)
+            ordem_colunas = []
+            d_cursor = data_ini
+            while d_cursor < data_fim_consulta:
+                ordem_colunas.append(d_cursor.day)
+                d_cursor += timedelta(days=1)
 
             ultimo_dia = (data_fim_consulta - timedelta(days=1)).day
 
@@ -3325,10 +3347,7 @@ def consultar_perdas_sobras():
                 totais_filiais[cf]["saldo"] += l["saldo"]
                 total_geral["saldo"] += l["saldo"]
 
-            colunas = sorted([
-                d for d in range(1, ultimo_dia + 1)
-                if d in dias_com_medicao
-            ])
+            colunas = [d for d in ordem_colunas if d in dias_com_medicao]
 
             # saldo = soma apenas dos dias visíveis na tela
             for l in linhas:
@@ -3493,6 +3512,7 @@ def consultar_perdas_sobras():
         cod_empresa=cod_empresa,
         nome_empresa=nome_empresa,
         vis=vis,
+        desloc=desloc,
         ano=ano,
         mes=mes,
         mes_num=mes,

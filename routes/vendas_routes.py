@@ -16,6 +16,11 @@ from datetime import date, timedelta, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
+from services.vendas_produtos import (
+    PRODUTOS_NAO_COMBUSTIVEL,
+    FILTRO_SQL_COMBUSTIVEL,
+)
+
 vendas_bp = Blueprint("vendas", __name__, url_prefix="/vendas")
 
 
@@ -2862,7 +2867,7 @@ PRODUTOS_ADICIONAIS_MARGEM = [
 # de origem vem como "DIESEL COMUM" e é o S500.
 # Vendido no posto, mas não é combustível: fica fora do grid e não vale nem
 # aviso — a ausência dele não é uma diferença a explicar.
-PRODUTOS_IGNORADOS_MARGEM = ("ARLA",)
+PRODUTOS_IGNORADOS_MARGEM = PRODUTOS_NAO_COMBUSTIVEL
 
 PALAVRAS_PRODUTO_MARGEM = [
     ("NATURAL", "GN"),
@@ -3291,3 +3296,737 @@ def vendas_por_dia():
         url_voltar=url_for("sistema.menu_vendas"),
         texto_voltar="← Voltar",
     )
+
+
+# =========================
+# PAINEL SINTÉTICO A PARTIR DAS VENDAS DIÁRIAS
+# =========================
+# A mesma leitura do Painel de Vendas Sintético, só que sem depender da
+# importação sintética: os números saem de vendas_diarias, somados por
+# ano/mês/filial. O mês corrente é projetado do mesmo jeito que a importação
+# projeta — acumulado ÷ dias com venda × dias do mês —, que é o que permite
+# comparar as duas telas linha a linha.
+def _agregar_diarias_sintetico(cur, cod_empresa):
+    """Devolve (registros_qtd, registros_valor, registros_mb, meta).
+
+    `meta` traz dia_base (dias com venda no último mês) e dias_mes, os mesmos
+    dois números que vendas_painel_importacoes guarda.
+    """
+    cur.execute(f"""
+        SELECT
+            EXTRACT(YEAR FROM data)::int  AS ano,
+            EXTRACT(MONTH FROM data)::int AS mes,
+            cod_filial,
+            SUM(quantidade)   AS quantidade,
+            SUM(valor)        AS valor,
+            SUM(margem_bruta) AS margem_bruta
+        FROM vendas_diarias
+        WHERE cod_empresa = %s
+        {FILTRO_SQL_COMBUSTIVEL}
+        GROUP BY 1, 2, 3
+        ORDER BY 1, 2, 3
+    """, (cod_empresa,))
+    linhas = cur.fetchall()
+
+    if not linhas:
+        return [], [], [], None
+
+    ultimo_ano, ultimo_mes = max((int(l["ano"]), int(l["mes"])) for l in linhas)
+
+    # Dias com venda no último mês — a contagem é da empresa, não da filial,
+    # porque é assim que a importação sintética conta o "dia base".
+    cur.execute("""
+        SELECT COUNT(DISTINCT data) AS dias
+        FROM vendas_diarias
+        WHERE cod_empresa = %s
+          AND EXTRACT(YEAR FROM data)::int = %s
+          AND EXTRACT(MONTH FROM data)::int = %s
+    """, (cod_empresa, ultimo_ano, ultimo_mes))
+    dia_base = int(cur.fetchone()["dias"] or 0)
+    dias_mes = calendar.monthrange(ultimo_ano, ultimo_mes)[1]
+
+    fator = (dias_mes / dia_base) if dia_base and dia_base < dias_mes else 1.0
+
+    regs_qtd, regs_val, regs_mb = [], [], []
+
+    for l in linhas:
+        ano = int(l["ano"])
+        mes = int(l["mes"])
+        f = fator if (ano, mes) == (ultimo_ano, ultimo_mes) else 1.0
+
+        base = {"cod_empresa": cod_empresa, "cod_filial": int(l["cod_filial"]),
+                "ano": ano, "mes": mes}
+
+        regs_qtd.append(dict(base, quantidade_vendida=float(l["quantidade"] or 0) * f))
+        regs_val.append(dict(base, valor_vendido=float(l["valor"] or 0) * f))
+        regs_mb.append(dict(base, margem_bruta=float(l["margem_bruta"] or 0) * f))
+
+    meta = {
+        "ano": ultimo_ano,
+        "mes": ultimo_mes,
+        "dia_base": dia_base,
+        "dias_mes": dias_mes,
+        "projetado": fator != 1.0
+    }
+
+    return regs_qtd, regs_val, regs_mb, meta
+
+
+def _variacoes_projecoes_diarias(cur, cod_empresa, meta):
+    """Reconstrói a 'variação das projeções' do mês corrente.
+
+    Não há histórico de importações aqui, mas ele é dispensável: a projeção de
+    cada dia é o acumulado até aquele dia ÷ dias decorridos × dias do mês — que
+    é exatamente a conta que a importação daquele dia teria feito.
+    """
+    if not meta:
+        return []
+
+    cur.execute(f"""
+        SELECT
+            data,
+            SUM(quantidade)   AS quantidade,
+            SUM(valor)        AS valor,
+            SUM(margem_bruta) AS margem_bruta
+        FROM vendas_diarias
+        WHERE cod_empresa = %s
+          AND EXTRACT(YEAR FROM data)::int = %s
+          AND EXTRACT(MONTH FROM data)::int = %s
+          {FILTRO_SQL_COMBUSTIVEL}
+        GROUP BY data
+        ORDER BY data
+    """, (cod_empresa, meta["ano"], meta["mes"]))
+    dias = cur.fetchall()
+
+    dias_mes = meta["dias_mes"]
+    acum_qtd = acum_val = acum_mb = 0.0
+    registros = []
+
+    for i, d in enumerate(dias, start=1):
+        acum_qtd += float(d["quantidade"] or 0)
+        acum_val += float(d["valor"] or 0)
+        acum_mb += float(d["margem_bruta"] or 0)
+
+        registros.append({
+            "dia_base": i,
+            "dias_mes": dias_mes,
+            "quantidade_proj": acum_qtd / i * dias_mes,
+            "valor_proj": acum_val / i * dias_mes,
+            "mb_proj": acum_mb / i * dias_mes,
+            "data_importacao": d["data"]
+        })
+
+    return montar_grade_variacoes_projecoes(registros[-30:])
+
+
+def _comparativo_sintetico_diarias(cur, cod_empresa, regs_qtd, regs_val, regs_mb):
+    """Mês a mês, o que a importação sintética gravou × o que as diárias dão.
+
+    É a tela de conferência: se a diferença fecha em zero, a importação
+    sintética é dispensável.
+    """
+    diarias = defaultdict(lambda: {"qtd": 0.0, "val": 0.0, "mb": 0.0})
+
+    for r in regs_qtd:
+        diarias[(r["ano"], r["mes"])]["qtd"] += r["quantidade_vendida"]
+    for r in regs_val:
+        diarias[(r["ano"], r["mes"])]["val"] += r["valor_vendido"]
+    for r in regs_mb:
+        diarias[(r["ano"], r["mes"])]["mb"] += r["margem_bruta"]
+
+    sintetico = defaultdict(lambda: {"qtd": 0.0, "val": 0.0, "mb": 0.0})
+
+    for tabela, campo, chave in (
+        ("vendas_unidades_sintetico", "quantidade_vendida", "qtd"),
+        ("vendas_valores_sintetico", "valor_vendido", "val"),
+        ("vendas_mb_sintetico", "margem_bruta", "mb"),
+    ):
+        cur.execute(f"""
+            SELECT ano, mes, SUM({campo}) AS total
+            FROM {tabela}
+            WHERE cod_empresa = %s
+            GROUP BY ano, mes
+        """, (cod_empresa,))
+
+        for r in cur.fetchall():
+            sintetico[(int(r["ano"]), int(r["mes"]))][chave] = float(r["total"] or 0)
+
+    linhas = []
+
+    for ano, mes in sorted(set(diarias) | set(sintetico))[-24:]:
+        d = diarias.get((ano, mes), {"qtd": 0.0, "val": 0.0, "mb": 0.0})
+        s = sintetico.get((ano, mes), {"qtd": 0.0, "val": 0.0, "mb": 0.0})
+
+        linha = {
+            "periodo": f"{obter_nome_mes_abrev(mes)}/{str(ano)[-2:]}",
+            "campos": []
+        }
+
+        for chave in ("qtd", "val", "mb"):
+            dif = d[chave] - s[chave]
+            base = s[chave] or d[chave]
+            perc = (dif / base * 100) if base else 0.0
+            linha["campos"].append({
+                "diarias": d[chave],
+                "sintetico": s[chave],
+                "diferenca": dif,
+                "perc": perc,
+                # Arredondamento das duas importações não é divergência: o que
+                # importa é a ordem de grandeza (0,1% do mês).
+                "ok": abs(dif) < 1.0 or abs(perc) < 0.1
+            })
+
+        linha["ok"] = all(c["ok"] for c in linha["campos"])
+        linhas.append(linha)
+
+    return linhas
+
+
+@vendas_bp.route("/painel-diarias")
+@permissao_obrigatoria("VENDAS", "CONSULTAR_PAINEL", redirecionar_para="sistema.menu_vendas")
+def vendas_painel_diarias():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.escolher_empresa"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT cod_filial, nome_filial
+            FROM filiais
+            WHERE cod_empresa = %s
+              AND ativo = TRUE
+            ORDER BY cod_filial
+        """, (cod_empresa,))
+        filiais = cur.fetchall()
+
+        regs_qtd, regs_val, regs_mb, meta = _agregar_diarias_sintetico(cur, cod_empresa)
+        variacoes_projecoes = _variacoes_projecoes_diarias(cur, cod_empresa, meta)
+        comparativo = _comparativo_sintetico_diarias(
+            cur, cod_empresa, regs_qtd, regs_val, regs_mb
+        )
+    finally:
+        cur.close()
+        conn.close()
+
+    grade_unidades = montar_grade_sintetica(filiais, regs_qtd, "quantidade_vendida")
+    grade_valores = montar_grade_sintetica(filiais, regs_val, "valor_vendido")
+    grade_mb = montar_grade_sintetica(filiais, regs_mb, "margem_bruta")
+    grade_mun = montar_grade_mun(filiais, grade_mb, grade_unidades)
+
+    for grade in (grade_unidades, grade_valores, grade_mb, grade_mun):
+        aplicar_heatmap_na_grade(grade)
+        aplicar_heatmap_na_coluna_total(grade)
+
+    resumo_projecao = montar_resumo_projecao(
+        grade_unidades,
+        grade_valores,
+        grade_mb,
+        dias_mes=meta["dias_mes"] if meta else None
+    )
+
+    return render_template(
+        "vendas_painel_diarias.html",
+        nome_empresa=nome_empresa,
+        filiais=filiais,
+        grade_unidades=grade_unidades,
+        grade_valores=grade_valores,
+        grade_mb=grade_mb,
+        grade_mun=grade_mun,
+        resumo_projecao=resumo_projecao,
+        variacoes_projecoes=variacoes_projecoes,
+        comparativo=comparativo,
+        meta=meta,
+        formatar_numero_br=formatar_numero_br,
+        url_voltar=url_for("sistema.menu_vendas"),
+        texto_voltar="← Voltar"
+    )
+
+
+# =========================
+# DETALHAMENTO DO PAINEL DE VENDAS SINTÉTICAS
+# =========================
+# O painel é uma leitura de cima; aqui se desce até o dia e o produto, no mesmo
+# espírito do drill-down do matricial: o que se clica define o alcance.
+#
+#   célula (mês × filial)  -> produtos × dias daquele posto no mês
+#   TOTAL da linha do mês  -> filiais × dias no mês
+#   nome da filial         -> produtos × meses daquele posto
+#   cabeçalho do período   -> o mês corrente dia a dia, com as quatro métricas
+#
+# Tudo é montado no servidor, inclusive o mapa de calor, para a janela usar a
+# mesma escala de cor das grades da tela.
+METRICAS_PAINEL = {
+    "qtd": {"campo": "quantidade", "rotulo": "Quantidade", "casas": 2},
+    "valor": {"campo": "valor", "rotulo": "Valores", "casas": 2},
+    "mb": {"campo": "margem_bruta", "rotulo": "MB", "casas": 2},
+    # MUN não se soma: é MB ÷ quantidade, recalculada em cada célula.
+    # Duas casas, como na grade da tela — quatro davam uma precisão que o
+    # número não tem e ainda desalinhavam a leitura das duas telas.
+    "mun": {"campo": None, "rotulo": "MUN", "casas": 2},
+}
+
+
+def _fator_projecao_mes(cur, cod_empresa, ano, mes):
+    """(dia_base, dias_mes, fator) do mês pedido, se ele for o último com venda."""
+    cur.execute("""
+        SELECT
+            EXTRACT(YEAR FROM MAX(data))::int  AS ano,
+            EXTRACT(MONTH FROM MAX(data))::int AS mes
+        FROM vendas_diarias
+        WHERE cod_empresa = %s
+    """, (cod_empresa,))
+    row = cur.fetchone()
+
+    dias_mes = calendar.monthrange(int(ano), int(mes))[1]
+
+    if not row or not row["ano"] or (int(row["ano"]), int(row["mes"])) != (int(ano), int(mes)):
+        return None, dias_mes, 1.0
+
+    cur.execute("""
+        SELECT COUNT(DISTINCT data) AS dias
+        FROM vendas_diarias
+        WHERE cod_empresa = %s
+          AND EXTRACT(YEAR FROM data)::int = %s
+          AND EXTRACT(MONTH FROM data)::int = %s
+    """, (cod_empresa, int(ano), int(mes)))
+    dia_base = int(cur.fetchone()["dias"] or 0)
+
+    fator = (dias_mes / dia_base) if dia_base and dia_base < dias_mes else 1.0
+    return dia_base, dias_mes, fator
+
+
+def _valor_metrica(metrica, soma_qtd, soma_valor, soma_mb):
+    if metrica == "qtd":
+        return soma_qtd
+    if metrica == "valor":
+        return soma_valor
+    if metrica == "mb":
+        return soma_mb
+    return (soma_mb / soma_qtd) if soma_qtd else None
+
+
+def _montar_grade_detalhe(metrica, rotulos, colunas, celulas):
+    """Grade genérica: uma linha por período, uma coluna por posto/combustível.
+
+    A orientação é a mesma do painel — o tempo desce na vertical e as entidades
+    ficam na barra de cima —, e o mapa de calor também: escala única sobre as
+    células e escala própria na coluna TOTAL, que compara os períodos entre si.
+
+    `celulas` é {(rotulo, coluna): (qtd, valor, mb)} — os três acumuladores, e
+    não o valor final, porque a MUN só pode ser calculada depois de somados.
+    """
+    linhas = []
+    acum_col = {c: [0.0, 0.0, 0.0] for c in colunas}
+    acum_geral = [0.0, 0.0, 0.0]
+
+    for rotulo in rotulos:
+        valores = []
+        acum_linha = [0.0, 0.0, 0.0]
+
+        for c in colunas:
+            trio = celulas.get((rotulo, c))
+
+            if trio is None:
+                valores.append(None)
+                continue
+
+            for i in range(3):
+                acum_linha[i] += trio[i]
+                acum_col[c][i] += trio[i]
+                acum_geral[i] += trio[i]
+
+            valores.append(_valor_metrica(metrica, *trio))
+
+        linhas.append({
+            "rotulo": rotulo,
+            "valores": valores,
+            "total": _valor_metrica(metrica, *acum_linha)
+        })
+
+    reais = [
+        v for linha in linhas for v in linha["valores"]
+        if v not in (None, 0, 0.0)
+    ]
+    minimo = min(reais) if reais else 0
+    maximo = max(reais) if reais else 0
+
+    totais = [l["total"] for l in linhas if l["total"] not in (None, 0, 0.0)]
+    min_tot = min(totais) if totais else 0
+    max_tot = max(totais) if totais else 0
+
+    for linha in linhas:
+        linha["cores"] = [
+            "" if v in (None, 0, 0.0) else cor_excel_51(v, minimo, maximo)
+            for v in linha["valores"]
+        ]
+        linha["cor_total"] = (
+            "" if linha["total"] in (None, 0, 0.0)
+            else cor_excel_51(linha["total"], min_tot, max_tot)
+        )
+
+    linha_total = {
+        "rotulo": "TOTAL",
+        "valores": [_valor_metrica(metrica, *acum_col[c]) for c in colunas],
+        "total": _valor_metrica(metrica, *acum_geral)
+    }
+
+    return linhas, linha_total, acum_geral, [acum_col[c] for c in colunas]
+
+
+@vendas_bp.route("/api/painel-diarias/detalhe")
+@permissao_obrigatoria("VENDAS", "CONSULTAR_PAINEL", redirecionar_para="sistema.menu_vendas")
+def api_painel_diarias_detalhe():
+    cod_empresa = str(session.get("cod_empresa") or "").strip()
+
+    if not cod_empresa:
+        return {"erro": "Sessão sem empresa."}, 400
+
+    metrica = (request.args.get("metrica") or "qtd").strip()
+    escopo = (request.args.get("escopo") or "mes_total").strip()
+
+    if metrica not in METRICAS_PAINEL:
+        return {"erro": "Métrica desconhecida."}, 400
+
+    ano = request.args.get("ano", type=int)
+    mes = request.args.get("mes", type=int)
+    cod_filial = request.args.get("filial", type=int)
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT cod_filial, nome_filial
+            FROM filiais
+            WHERE cod_empresa = %s AND ativo = TRUE
+            ORDER BY cod_filial
+        """, (cod_empresa,))
+        nomes_filiais = {int(r["cod_filial"]): r["nome_filial"] for r in cur.fetchall()}
+
+        if escopo == "periodo":
+            resposta = _detalhe_periodo(cur, cod_empresa, ano, mes)
+        elif escopo == "filial":
+            resposta = _detalhe_filial(cur, cod_empresa, metrica, cod_filial,
+                                       nomes_filiais)
+        elif escopo == "mes_filial":
+            resposta = _detalhe_mes_filial(cur, cod_empresa, metrica, ano, mes,
+                                           cod_filial, nomes_filiais)
+        else:
+            resposta = _detalhe_mes_total(cur, cod_empresa, metrica, ano, mes,
+                                          nomes_filiais)
+    finally:
+        cur.close()
+        conn.close()
+
+    return resposta
+
+
+def _linha_media(metrica, acum, acum_colunas, periodos, rotulo):
+    """Média por período — o passo diário que está por trás do total.
+
+    É ela que liga o realizado à projeção: total ÷ dias lançados, e a projeção
+    é essa média vezes os dias do mês.
+    """
+    if not periodos:
+        return None
+
+    return {
+        "rotulo": rotulo,
+        "periodos": periodos,
+        "valor": _valor_metrica(metrica, *[a / periodos for a in acum]),
+        "valores": [
+            _valor_metrica(metrica, *[a / periodos for a in trio])
+            for trio in acum_colunas
+        ],
+        # A MUN é razão: dividir os dois lados pelo mesmo número não a muda.
+        "razao": metrica == "mun"
+    }
+
+
+def _cabecalho_projecao(cur, cod_empresa, ano, mes, acum, metrica, acum_colunas):
+    """Rodapé de projeção do mês corrente, quando ele ainda não fechou.
+
+    Projeta coluna a coluna, e não só o total: é por posto que se acompanha se
+    o mês vai fechar acima ou abaixo, e um total projetado sozinho não diz de
+    onde vem a diferença.
+    """
+    dia_base, dias_mes, fator = _fator_projecao_mes(cur, cod_empresa, ano, mes)
+
+    if fator == 1.0:
+        return None
+
+    qtd, valor, mb = [a * fator for a in acum]
+
+    return {
+        "dia_base": dia_base,
+        "dias_mes": dias_mes,
+        "valor": _valor_metrica(metrica, qtd, valor, mb),
+        "valores": [
+            _valor_metrica(metrica, *[a * fator for a in trio])
+            for trio in acum_colunas
+        ],
+        # A MUN não se projeta: é uma razão, e a razão do acumulado já é ela.
+        "razao": metrica == "mun"
+    }
+
+
+def _detalhe_mes_filial(cur, cod_empresa, metrica, ano, mes, cod_filial, nomes):
+    """Produtos × dias de um posto no mês."""
+    cur.execute(f"""
+        SELECT
+            descricao,
+            EXTRACT(DAY FROM data)::int AS dia,
+            SUM(quantidade)   AS qtd,
+            SUM(valor)        AS valor,
+            SUM(margem_bruta) AS mb
+        FROM vendas_diarias
+        WHERE cod_empresa = %s
+          AND cod_filial = %s
+          AND EXTRACT(YEAR FROM data)::int = %s
+          AND EXTRACT(MONTH FROM data)::int = %s
+          {FILTRO_SQL_COMBUSTIVEL}
+        GROUP BY descricao, 2
+        ORDER BY descricao, 2
+    """, (cod_empresa, cod_filial, ano, mes))
+    linhas = cur.fetchall()
+
+    dias = sorted({int(r["dia"]) for r in linhas})
+    produtos = sorted({r["descricao"] for r in linhas})
+
+    celulas = {
+        (int(r["dia"]), r["descricao"]): (
+            float(r["qtd"] or 0), float(r["valor"] or 0), float(r["mb"] or 0)
+        )
+        for r in linhas
+    }
+
+    corpo, total, acum, acum_colunas = _montar_grade_detalhe(metrica, dias, produtos, celulas)
+
+    for linha in corpo:
+        linha["rotulo"] = f"{linha['rotulo']:02d}/{int(mes):02d}"
+
+    return {
+        "titulo": f"{METRICAS_PAINEL[metrica]['rotulo']} — "
+                  f"{cod_filial} {nomes.get(cod_filial, '')}",
+        "subtitulo": f"{obter_nome_mes_abrev(mes)}/{ano} · por dia e combustível",
+        "rotulo_coluna": "DIA",
+        "colunas": produtos,
+        "linhas": corpo,
+        "linha_total": total,
+        "media": _linha_media(metrica, acum, acum_colunas, len(dias),
+                              "MÉDIA/DIA"),
+        "projecao": _cabecalho_projecao(cur, cod_empresa, ano, mes, acum,
+                                        metrica, acum_colunas),
+        "casas": METRICAS_PAINEL[metrica]["casas"]
+    }
+
+
+def _detalhe_mes_total(cur, cod_empresa, metrica, ano, mes, nomes):
+    """Filiais × dias no mês — o que está atrás do TOTAL da linha."""
+    cur.execute(f"""
+        SELECT
+            cod_filial,
+            EXTRACT(DAY FROM data)::int AS dia,
+            SUM(quantidade)   AS qtd,
+            SUM(valor)        AS valor,
+            SUM(margem_bruta) AS mb
+        FROM vendas_diarias
+        WHERE cod_empresa = %s
+          AND EXTRACT(YEAR FROM data)::int = %s
+          AND EXTRACT(MONTH FROM data)::int = %s
+          {FILTRO_SQL_COMBUSTIVEL}
+        GROUP BY cod_filial, 2
+        ORDER BY cod_filial, 2
+    """, (cod_empresa, ano, mes))
+    linhas = cur.fetchall()
+
+    dias = sorted({int(r["dia"]) for r in linhas})
+    filiais = sorted({int(r["cod_filial"]) for r in linhas})
+    rotulos = [f"{f} - {nomes.get(f, '')}" for f in filiais]
+
+    celulas = {}
+    for r in linhas:
+        f = int(r["cod_filial"])
+        celulas[(int(r["dia"]), f"{f} - {nomes.get(f, '')}")] = (
+            float(r["qtd"] or 0), float(r["valor"] or 0), float(r["mb"] or 0)
+        )
+
+    corpo, total, acum, acum_colunas = _montar_grade_detalhe(metrica, dias, rotulos, celulas)
+
+    for linha in corpo:
+        linha["rotulo"] = f"{linha['rotulo']:02d}/{int(mes):02d}"
+
+    return {
+        "titulo": f"{METRICAS_PAINEL[metrica]['rotulo']} — todos os postos",
+        "subtitulo": f"{obter_nome_mes_abrev(mes)}/{ano} · por dia e posto",
+        "rotulo_coluna": "DIA",
+        "colunas": rotulos,
+        "linhas": corpo,
+        "linha_total": total,
+        "media": _linha_media(metrica, acum, acum_colunas, len(dias),
+                              "MÉDIA/DIA"),
+        "projecao": _cabecalho_projecao(cur, cod_empresa, ano, mes, acum,
+                                        metrica, acum_colunas),
+        "casas": METRICAS_PAINEL[metrica]["casas"]
+    }
+
+
+def _detalhe_filial(cur, cod_empresa, metrica, cod_filial, nomes):
+    """Produtos × meses de um posto — o que está atrás do nome da coluna."""
+    cur.execute(f"""
+        SELECT
+            descricao,
+            EXTRACT(YEAR FROM data)::int  AS ano,
+            EXTRACT(MONTH FROM data)::int AS mes,
+            SUM(quantidade)   AS qtd,
+            SUM(valor)        AS valor,
+            SUM(margem_bruta) AS mb
+        FROM vendas_diarias
+        WHERE cod_empresa = %s
+          AND cod_filial = %s
+          {FILTRO_SQL_COMBUSTIVEL}
+        GROUP BY descricao, 2, 3
+        ORDER BY 2, 3
+    """, (cod_empresa, cod_filial))
+    linhas = cur.fetchall()
+
+    meses = sorted({(int(r["ano"]), int(r["mes"])) for r in linhas})[-24:]
+    validos = set(meses)
+    produtos = sorted({r["descricao"] for r in linhas})
+
+    # A última coluna é o mês corrente e sai projetada, senão a janela mostraria
+    # um mês truncado ao lado da grade da tela, que já vem projetada.
+    ultimo = meses[-1] if meses else None
+    _, _, fator = (
+        _fator_projecao_mes(cur, cod_empresa, ultimo[0], ultimo[1])
+        if ultimo else (None, None, 1.0)
+    )
+
+    celulas = {}
+    for r in linhas:
+        chave_mes = (int(r["ano"]), int(r["mes"]))
+
+        if chave_mes not in validos:
+            continue
+
+        f = fator if chave_mes == ultimo else 1.0
+
+        celulas[(chave_mes, r["descricao"])] = (
+            float(r["qtd"] or 0) * f,
+            float(r["valor"] or 0) * f,
+            float(r["mb"] or 0) * f
+        )
+
+    corpo, total, acum, acum_colunas = _montar_grade_detalhe(
+        metrica, meses, produtos, celulas
+    )
+
+    for linha in corpo:
+        ano_l, mes_l = linha["rotulo"]
+        linha["rotulo"] = f"{obter_nome_mes_abrev(mes_l)}/{str(ano_l)[-2:]}"
+
+    return {
+        "titulo": f"{METRICAS_PAINEL[metrica]['rotulo']} — "
+                  f"{cod_filial} {nomes.get(cod_filial, '')}",
+        "subtitulo": "por mês e combustível"
+                     + (" · último mês projetado" if fator != 1.0 else ""),
+        "rotulo_coluna": "MÊS",
+        "colunas": produtos,
+        "media": _linha_media(metrica, acum, acum_colunas, len(meses),
+                              "MÉDIA/MÊS"),
+        "linhas": corpo,
+        "linha_total": total,
+        "projecao": None,
+        "casas": METRICAS_PAINEL[metrica]["casas"]
+    }
+
+
+def _detalhe_periodo(cur, cod_empresa, ano, mes):
+    """O mês dia a dia, nas quatro métricas — a leitura da Consulta de Vendas
+    Diárias, aberta a partir do cabeçalho da projeção."""
+    cur.execute(f"""
+        SELECT
+            data,
+            dia_semana,
+            SUM(quantidade)   AS qtd,
+            SUM(valor)        AS valor,
+            SUM(margem_bruta) AS mb
+        FROM vendas_diarias
+        WHERE cod_empresa = %s
+          AND EXTRACT(YEAR FROM data)::int = %s
+          AND EXTRACT(MONTH FROM data)::int = %s
+          {FILTRO_SQL_COMBUSTIVEL}
+        GROUP BY data, dia_semana
+        ORDER BY data
+    """, (cod_empresa, ano, mes))
+    linhas = cur.fetchall()
+
+    dias = []
+    acum = [0.0, 0.0, 0.0]
+
+    for r in linhas:
+        qtd = float(r["qtd"] or 0)
+        valor = float(r["valor"] or 0)
+        mb = float(r["mb"] or 0)
+
+        acum[0] += qtd
+        acum[1] += valor
+        acum[2] += mb
+
+        dias.append({
+            "data": formatar_data_brasil(r["data"]),
+            "dia_semana": r["dia_semana"] or "",
+            "qtd": qtd,
+            "valor": valor,
+            "mb": mb,
+            "mun": (mb / qtd) if qtd else 0.0
+        })
+
+    # Mapa de calor coluna a coluna: cada métrica se compara dia a dia.
+    for campo in ("qtd", "valor", "mb", "mun"):
+        reais = [d[campo] for d in dias if d[campo]]
+        minimo = min(reais) if reais else 0
+        maximo = max(reais) if reais else 0
+
+        for d in dias:
+            d[campo + "_cor"] = (
+                "" if not d[campo] else cor_excel_51(d[campo], minimo, maximo)
+            )
+
+    dia_base, dias_mes, fator = _fator_projecao_mes(cur, cod_empresa, ano, mes)
+
+    return {
+        "tipo": "periodo",
+        "titulo": f"Vendas de {obter_nome_mes_abrev(mes)}/{ano} — dia a dia",
+        "subtitulo": f"{len(dias)} dias com venda",
+        "dias": dias,
+        "totais": {
+            "qtd": acum[0],
+            "valor": acum[1],
+            "mb": acum[2],
+            "mun": (acum[2] / acum[0]) if acum[0] else 0.0
+        },
+        "media": None if not dias else {
+            "periodos": len(dias),
+            "qtd": acum[0] / len(dias),
+            "valor": acum[1] / len(dias),
+            "mb": acum[2] / len(dias),
+            "mun": (acum[2] / acum[0]) if acum[0] else 0.0
+        },
+        "projecao": None if fator == 1.0 else {
+            "dia_base": dia_base,
+            "dias_mes": dias_mes,
+            "qtd": acum[0] * fator,
+            "valor": acum[1] * fator,
+            "mb": acum[2] * fator,
+            "mun": (acum[2] / acum[0]) if acum[0] else 0.0
+        }
+    }
