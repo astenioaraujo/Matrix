@@ -4149,14 +4149,35 @@ def fluxo_caixa_projetado():
 
     # Montar MB por mês com projeção
     mes_inicio_media = mes_atual - qtd_meses
-    proj_mb = (sum(mb_vals.get(m, 0) for m in range(mes_inicio_media, mes_atual)) / qtd_meses) if qtd_meses > 0 else 0.0
+
+    # A média que projeta os meses futuros inclui o mês atual, pela projeção
+    # própria dele (as vendas diárias do mês reprojetadas). É o mês mais
+    # recente que se tem, e deixá-lo de fora fazia a média olhar só para trás.
+    # Os demais valores da janela continuam sendo os meses fechados.
+    meses_media_mb = list(range(mes_inicio_media, mes_atual))
+    if mb_vals.get(mes_atual):
+        meses_media_mb.append(mes_atual)
+
+    proj_mb = (
+        sum(mb_vals.get(m, 0) for m in meses_media_mb) / len(meses_media_mb)
+        if meses_media_mb else 0.0
+    )
 
     mb_por_mes = {}
     for m in meses:
-        if ano_aberto and m >= mes_atual:
-            mb_por_mes[m] = {"valor": proj_mb, "projetado": True}
-        else:
+        if not (ano_aberto and m >= mes_atual):
             mb_por_mes[m] = {"valor": mb_vals.get(m, 0), "projetado": False}
+            continue
+
+        # O mês corrente já tem projeção própria: as vendas diárias do mês,
+        # reprojetadas para os dias que faltam. Ela sabe o que está vendendo
+        # agora, e a média dos meses anteriores não — só os meses ainda sem
+        # nenhum lançamento é que caem na média.
+        mb_por_mes[m] = (
+            {"valor": mb_vals[m], "projetado": True}
+            if m == mes_atual and mb_vals.get(m)
+            else {"valor": proj_mb, "projetado": True}
+        )
     total_mb = sum(v["valor"] for v in mb_por_mes.values())
 
     # Montar estrutura por grupo > conta > mês
