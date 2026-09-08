@@ -161,14 +161,40 @@
           <tr>
         {% endif %}
 
-          <td class="col-fixa"><b>{{ linha.nome }}</b></td>
+          <td class="col-fixa">
+            {% if linha.grupo %}
+              <b class="titulo-detalhavel"
+                 data-grupo="{{ linha.grupo }}"
+                 data-descricao="{{ linha.nome }}"
+                 onclick="abrirDetalhamentoLargo(this, 'grupo')"
+                 title="Ver o detalhamento em todas as filiais">{{ linha.nome }}</b>
+            {% else %}
+              <b>{{ linha.nome }}</b>
+            {% endif %}
+          </td>
 
-          <td class="col-total num">
+          {# O TOTAL da linha é o grupo somado em todas as filiais — mesmo
+             alcance do clique no nome da linha. #}
+          <td class="col-total num {{ 'celula-detalhavel' if linha.grupo else '' }}"
+              {% if linha.grupo %}
+              data-grupo="{{ linha.grupo }}"
+              data-descricao="{{ linha.nome }}"
+              onclick="abrirDetalhamentoLargo(this, 'grupo')"
+              title="Ver o detalhamento em todas as filiais"
+              {% endif %}>
             {{ "{:,.2f}".format(linha.total).replace(",", "X").replace(".", ",").replace("X", ".") }}
           </td>
 
           {% for f in filiais %}
-            <td class="num resultado-calor">
+            <td class="num resultado-calor {{ 'celula-detalhavel' if linha.grupo else '' }}"
+                {% if linha.grupo %}
+                data-grupo="{{ linha.grupo }}"
+                data-filial="{{ f[0] }}"
+                data-nome-filial="{{ f[1] }}"
+                data-descricao="{{ linha.nome }}"
+                onclick="abrirDetalhamentoLargo(this, 'grupo')"
+                title="Ver o detalhamento desta filial"
+                {% endif %}>
               {{ "{:,.2f}".format(linha.por_filial[f[0]]).replace(",", "X").replace(".", ",").replace("X", ".") }}
             </td>
           {% endfor %}
@@ -228,5 +254,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
 });
 </script>
+
+
+{% set det_ano = ano %}
+{% set det_mes = mes %}
+{% include "components/detalhamento_fluxo.html" %}
 
 {% endblock %}

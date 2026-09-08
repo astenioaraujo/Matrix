@@ -1372,8 +1372,11 @@ def resultado_mb():
         inv  = buscar_valores("lancamentos", "AND grupo = '5'")
         div  = buscar_valores("lancamentos", "AND grupo = '6'")
 
-        def montar_linha(nome, base):
-            linha = {"nome": nome, "total": 0.0, "por_filial": {}}
+        # Qual grupo gerencial alimenta a linha — é o que permite abrir o
+        # detalhamento analítico. MB vem das vendas diárias e os RESULTADOS
+        # são somas: esses três não têm grupo e não abrem nada.
+        def montar_linha(nome, base, grupo=None):
+            linha = {"nome": nome, "total": 0.0, "por_filial": {}, "grupo": grupo}
             for cod_filial, _ in filiais:
                 v = base.get(cod_filial, 0.0)
                 linha["por_filial"][cod_filial] = v
@@ -1381,15 +1384,15 @@ def resultado_mb():
             return linha
 
         linha_mb   = montar_linha("MB", mb)
-        linha_desp = montar_linha("DESPESAS", desp)
+        linha_desp = montar_linha("DESPESAS", desp, grupo="4")
         linha_res1 = montar_linha("RESULTADO 1", {
             f[0]: mb.get(f[0], 0.0) + desp.get(f[0], 0.0) for f in filiais
         })
-        linha_inv  = montar_linha("INVESTIMENTOS / AMORTIZAÇÕES", inv)
+        linha_inv  = montar_linha("INVESTIMENTOS / AMORTIZAÇÕES", inv, grupo="5")
         linha_res2 = montar_linha("RESULTADO 2", {
             f[0]: linha_res1["por_filial"][f[0]] + inv.get(f[0], 0.0) for f in filiais
         })
-        linha_div  = montar_linha("ANTECIPAÇÃO DIVIDENDOS", div)
+        linha_div  = montar_linha("ANTECIPAÇÃO DIVIDENDOS", div, grupo="6")
         linha_res3 = montar_linha("RESULTADO 3", {
             f[0]: linha_res2["por_filial"][f[0]] + div.get(f[0], 0.0) for f in filiais
         })
@@ -1637,8 +1640,10 @@ def api_matricial_detalhamento():
     if not grupo:
         return jsonify({"erro": "grupo é obrigatório"}), 400
 
-    if escopo != "grupo" and not conta:
-        return jsonify({"erro": "conta é obrigatória"}), 400
+    if escopo == "celula" and not conta:
+        # celula sem conta = o grupo inteiro numa filial (Resultado por MB):
+        # a leitura util ali e por conta gerencial, nao uma lista corrida
+        escopo = "grupo"
 
     where = ["cod_empresa = %s", "CAST(grupo AS TEXT) = %s"]
     params = [cod_empresa, grupo]
@@ -1647,8 +1652,10 @@ def api_matricial_detalhamento():
         where.append("CAST(conta AS TEXT) = %s")
         params.append(conta)
 
-    # o alcance largo mostra todas as filiais; o de celula fica na filial clicada
-    if cod_filial and escopo == "celula":
+    # A filial restringe sempre que vier. Os cliques de titulo do matricial
+    # simplesmente nao mandam filial - e isso que os faz mostrar todas. Ja o
+    # Resultado por Margem Bruta manda, para abrir o grupo de UMA filial.
+    if cod_filial:
         where.append("CAST(cod_filial AS TEXT) = %s")
         params.append(cod_filial)
 
@@ -1733,13 +1740,21 @@ def api_matricial_detalhamento():
 
         linhas = cur.fetchall() or []
 
-        cur.execute("""
+        # As colunas acompanham o alcance: restringiu a filial, a grade abre
+        # so ela - senao seriam 22 colunas de zero ao lado da unica com valor.
+        where_filiais = ["cod_empresa = %s", "ativo = TRUE"]
+        params_filiais = [cod_empresa]
+
+        if cod_filial:
+            where_filiais.append("CAST(cod_filial AS TEXT) = %s")
+            params_filiais.append(cod_filial)
+
+        cur.execute(f"""
             SELECT cod_filial, nome_filial
             FROM filiais
-            WHERE cod_empresa = %s
-              AND ativo = TRUE
+            WHERE {" AND ".join(where_filiais)}
             ORDER BY cod_filial
-        """, (cod_empresa,))
+        """, params_filiais)
 
         filiais = [
             {"cod_filial": int(f[0]), "nome_filial": f[1]}

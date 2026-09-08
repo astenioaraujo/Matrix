@@ -195,8 +195,12 @@ se clica define o alcance — **clicar no título alarga**.
 | cabeçalho do grupo | `grupo` | o grupo inteiro em todas as filiais, um bloco por conta gerencial |
 
 Os dois escopos largos **ignoram o filtro de filial da tela** de propósito: o sentido de clicar
-no título é justamente ver todas. A janela larga ocupa 98vw × 94vh e **não encolhe as colunas
-para caber**: como em `matricial.html`, a coluna do rótulo e a de TOTAL ficam congeladas
+no título é justamente ver todas. A janela larga tem largura **pelo conteúdo**
+(`width: fit-content`, teto de 98vw): com 23 filiais ela toma a tela e rola para o lado; com
+uma filial só ela encolhe, senão o número ficaria no fim de uma faixa vazia. A coluna do rótulo
+tem largura **fixa**, na variável `--col-rotulo` (380px) — a de TOTAL gruda em
+`left: var(--col-rotulo)`, então rótulo elástico, ou a medida repetida em dois lugares, faria
+as duas se sobreporem. E ela **não encolhe as colunas para caber**: como em `matricial.html`, a coluna do rótulo e a de TOTAL ficam congeladas
 (`position: sticky`) e as filiais deslizam para o lado. Duas armadilhas já corrigidas nela: o
 `padding` lateral do corpo deixava uma faixa da coluna vizinha aparecer por baixo da coluna
 congelada (por isso `padding-left/right: 0` só no modo largo), e sem `z-index` explícito as
@@ -214,6 +218,24 @@ senão a grade voltaria cinza).
 
 Tudo vem de `lancamentos_detalhamento`, logo só existe nos meses importados pelo PDF analítico;
 trecho sem detalhamento abre com o aviso, não com uma janela vazia.
+
+**A janela é um componente compartilhado**, `templates/components/detalhamento_fluxo.html`
+(CSS + markup + JS). Cada tela define `det_ano`/`det_mes` antes do `{% include %}` — é o
+recorte que ela consulta. Duplicar o bloco no segundo template faria as duas divergirem na
+primeira correção.
+
+**Resultado por Margem Bruta** usa o mesmo componente: as linhas **DESPESAS** (grupo 4),
+**INVESTIMENTOS / AMORTIZAÇÕES** (5) e **ANTECIPAÇÃO DIVIDENDOS** (6) abrem o detalhamento —
+a célula, o grupo naquela filial; o nome da linha **e a coluna TOTAL**, o grupo em todas (o
+TOTAL é justamente a soma das filiais, então abre o mesmo alcance do nome). **MB e os RESULTADOS não
+abrem**: MB vem das vendas diárias (`mb_diarias_por_filial`, não de `lancamentos`) e os
+RESULTADOS são somas das linhas de cima — não há detalhamento a mostrar. É o que a chave
+`grupo` de `montar_linha` diz: sem grupo, sem clique.
+
+O filtro de filial do endpoint vale **sempre que for enviado**, e as colunas da grade
+acompanham: célula de um posto abre uma coluna só, e não 22 colunas de zero ao lado dela. Os
+cliques de título do matricial simplesmente não mandam filial — é isso que os faz mostrar
+todas.
 
 **Carga de 03/09/2026 (EMP010, 08/2026)**: 1.171 contas e 11.475 lançamentos, 23 filiais,
 262 sintéticas removidas, 909 contas analíticas — **zero divergência**, soma dos detalhes
