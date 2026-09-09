@@ -82,6 +82,8 @@
     color: #666;
     margin-top: 12px;
   }
+
+  .coligada { color: #6a1b9a; font-weight: 700; }
 </style>
 
 <div class="pagina-titulo">Consultar Compras de Combustíveis</div>
@@ -150,7 +152,13 @@
 
         <td>{{ c.data_compra.strftime("%d/%m/%Y") if c.data_compra else "" }}</td>
 
-        <td>{{ c.cod_filial }} - {{ c.nome_filial }}</td>
+        <td>
+          {% if c.id_coligada %}
+            <span class="coligada">Coligada: {{ c.nome_coligada }}</span>
+          {% else %}
+            {{ c.cod_filial }} - {{ c.nome_filial }}
+          {% endif %}
+        </td>
 
         <td>{{ c.cod_produto }} - {{ c.produto }}</td>
 

@@ -5,6 +5,12 @@ from zoneinfo import ZoneInfo
 
 from db import get_connection
 from services.estoques_service import linhas_estoque
+from services.coligadas_service import (
+    coligadas_ativas,
+    empresa_tem_coligadas,
+    parte_do_form,
+    coligada_valida,
+)
 from services.bloqueios_service import (
     DIAS_LIMITE_BLOQUEIO,
     data_bloqueada,
@@ -993,6 +999,136 @@ def excluir_fornecedor_combustivel(id_fornecedor):
     return redirect(url_for("operacoes.fornecedores_combustiveis"))
 
 # ---------------------------------------
+# COLIGADAS
+# ---------------------------------------
+
+@operacoes_bp.route("/configuracoes/coligadas", methods=["GET", "POST"])
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONFIGURACOES",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def coligadas_operacoes():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        if request.method == "POST":
+            id_coligada = (request.form.get("id_coligada") or "").strip()
+            nome = (request.form.get("nome") or "").strip()
+            nome_fantasia = (request.form.get("nome_fantasia") or "").strip()
+            cnpj = (request.form.get("cnpj") or "").strip()
+            ordem_txt = (request.form.get("ordem") or "10").strip()
+            ordem = int(ordem_txt) if ordem_txt.isdigit() else 10
+            ativo = True if request.form.get("ativo") == "on" else False
+
+            if not nome:
+                flash("Informe o nome da coligada.", "error")
+                return redirect(url_for("operacoes.coligadas_operacoes"))
+
+            if id_coligada.isdigit():
+                cur.execute("""
+                    UPDATE operacoes_coligadas
+                    SET nome = %s,
+                        nome_fantasia = %s,
+                        cnpj = %s,
+                        ordem = %s,
+                        ativo = %s,
+                        atualizado_em = NOW()
+                    WHERE id_coligada = %s
+                      AND cod_empresa = %s
+                """, (nome, nome_fantasia or None, cnpj or None, ordem, ativo,
+                      int(id_coligada), cod_empresa))
+            else:
+                cur.execute("""
+                    INSERT INTO operacoes_coligadas (
+                        cod_empresa, nome, nome_fantasia, cnpj, ordem, ativo,
+                        criado_em, atualizado_em
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, NOW(), NOW())
+                """, (cod_empresa, nome, nome_fantasia or None, cnpj or None, ordem, ativo))
+
+            conn.commit()
+            flash("Coligada salva com sucesso.", "success")
+            return redirect(url_for("operacoes.coligadas_operacoes"))
+
+        cur.execute("""
+            SELECT id_coligada, nome, nome_fantasia, cnpj, ordem, ativo
+            FROM operacoes_coligadas
+            WHERE cod_empresa = %s
+            ORDER BY ordem, nome
+        """, (cod_empresa,))
+        coligadas = cur.fetchall() or []
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao processar coligadas: {e}", "error")
+        coligadas = []
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "coligadas_operacoes.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        coligadas=coligadas,
+        url_voltar=url_for("operacoes.menu_configuracoes"),
+        texto_voltar="\u2190 Voltar",
+    )
+
+
+@operacoes_bp.route("/configuracoes/coligadas/excluir/<int:id_coligada>", methods=["POST"])
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONFIGURACOES",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def excluir_coligada_operacoes(id_coligada):
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            DELETE FROM operacoes_coligadas
+            WHERE id_coligada = %s
+              AND cod_empresa = %s
+        """, (id_coligada, cod_empresa))
+
+        conn.commit()
+        flash("Coligada excluída com sucesso.", "success")
+
+    except Exception as e:
+        conn.rollback()
+        flash(
+            "Não foi possível excluir: a coligada já tem compras ou descarregos. "
+            f"Desmarque \"Ativo\" para tirá-la das telas sem apagar o histórico. Erro: {e}",
+            "error",
+        )
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return redirect(url_for("operacoes.coligadas_operacoes"))
+
+
+# ---------------------------------------
 # INFORMAR COMPRAS DE COMBUSTÍVEIS
 # ---------------------------------------
 
@@ -1076,6 +1212,8 @@ def informar_compras_combustiveis():
         """, (cod_empresa,))
         fornecedores = cur.fetchall() or []
 
+        coligadas = coligadas_ativas(cur, cod_empresa)
+
         bloqueada = data_bloqueada(cur, cod_empresa, data_sel)
 
         if request.method == "POST":
@@ -1084,15 +1222,21 @@ def informar_compras_combustiveis():
                 return redirect(url_for("operacoes.informar_compras_combustiveis", data=data_sel))
 
             id_compra_txt = (request.form.get("id_compra") or "").strip()
-            cod_filial = int(request.form.get("cod_filial") or 0)
             cod_produto = (request.form.get("cod_produto") or "").strip()
             id_fornecedor = int(request.form.get("id_fornecedor") or 0)
+
+            # a ponta da compra é uma filial nossa OU uma coligada
+            cod_filial, id_coligada = parte_do_form(request.form)
 
             quantidade_comprada = parse_valor_br(request.form.get("quantidade_comprada"))
             preco_unitario = parse_valor_br(request.form.get("preco_unitario"))
             valor_comprado = quantidade_comprada * preco_unitario
 
-            if cod_filial not in codigos_filiais:
+            if id_coligada is not None:
+                if not coligada_valida(cur, cod_empresa, id_coligada):
+                    flash("Coligada inválida.", "error")
+                    return redirect(url_for("operacoes.informar_compras_combustiveis", data=data_sel))
+            elif cod_filial is None or cod_filial not in codigos_filiais:
                 flash("Filial não permitida para este usuário.", "error")
                 return redirect(url_for("operacoes.informar_compras_combustiveis", data=data_sel))
 
@@ -1106,6 +1250,7 @@ def informar_compras_combustiveis():
                 cur.execute("""
                     UPDATE compras_combustiveis
                     SET cod_filial = %s,
+                        id_coligada = %s,
                         cod_produto = %s,
                         id_fornecedor = %s,
                         quantidade_comprada = %s,
@@ -1116,6 +1261,7 @@ def informar_compras_combustiveis():
                       AND cod_empresa = %s
                 """, (
                     cod_filial,
+                    id_coligada,
                     cod_produto,
                     id_fornecedor,
                     quantidade_comprada,
@@ -1126,11 +1272,23 @@ def informar_compras_combustiveis():
                 ))
 
             else:
-                cur.execute("""
+                # o índice único de filial não enxerga a compra de coligada
+                # (cod_filial fica nulo, e NULL não conflita); a coligada tem
+                # o seu próprio índice parcial.
+                if id_coligada is not None:
+                    conflito = (
+                        "(cod_empresa, data_compra, id_coligada, cod_produto, id_fornecedor) "
+                        "WHERE id_coligada IS NOT NULL"
+                    )
+                else:
+                    conflito = "(cod_empresa, data_compra, cod_filial, cod_produto, id_fornecedor)"
+
+                cur.execute(f"""
                     INSERT INTO compras_combustiveis (
                         cod_empresa,
                         data_compra,
                         cod_filial,
+                        id_coligada,
                         cod_produto,
                         id_fornecedor,
                         quantidade_comprada,
@@ -1140,8 +1298,8 @@ def informar_compras_combustiveis():
                         criado_em,
                         atualizado_em
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'ABERTA', NOW(), NOW())
-                    ON CONFLICT (cod_empresa, data_compra, cod_filial, cod_produto, id_fornecedor)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'ABERTA', NOW(), NOW())
+                    ON CONFLICT {conflito}
                     DO UPDATE SET
                         quantidade_comprada = EXCLUDED.quantidade_comprada,
                         preco_unitario = EXCLUDED.preco_unitario,
@@ -1151,6 +1309,7 @@ def informar_compras_combustiveis():
                     cod_empresa,
                     data_sel,
                     cod_filial,
+                    id_coligada,
                     cod_produto,
                     id_fornecedor,
                     quantidade_comprada,
@@ -1168,6 +1327,8 @@ def informar_compras_combustiveis():
                 cc.data_compra,
                 cc.cod_filial,
                 f.nome_filial,
+                cc.id_coligada,
+                COALESCE(cg.nome_fantasia, cg.nome) AS nome_coligada,
                 cc.cod_produto,
                 c.descricao AS produto,
                 cc.quantidade_comprada,
@@ -1182,6 +1343,8 @@ def informar_compras_combustiveis():
             LEFT JOIN filiais f
               ON f.cod_empresa = cc.cod_empresa
              AND f.cod_filial = cc.cod_filial
+            LEFT JOIN operacoes_coligadas cg
+              ON cg.id_coligada = cc.id_coligada
             LEFT JOIN combustiveis c
               ON c.cod_empresa = cc.cod_empresa
              AND c.cod_produto = cc.cod_produto
@@ -1197,6 +1360,9 @@ def informar_compras_combustiveis():
                 cc.data_compra,
                 cc.cod_filial,
                 f.nome_filial,
+                cc.id_coligada,
+                cg.nome,
+                cg.nome_fantasia,
                 cc.cod_produto,
                 c.descricao,
                 cc.quantidade_comprada,
@@ -1206,7 +1372,7 @@ def informar_compras_combustiveis():
                 fc.nome_fornecedor,
                 fc.cidade_base,
                 cc.status
-            ORDER BY cc.cod_filial, cc.cod_produto
+            ORDER BY cc.cod_filial NULLS LAST, cc.cod_produto
         """, (cod_empresa, data_sel))
 
         compras = cur.fetchall() or []
@@ -1214,6 +1380,11 @@ def informar_compras_combustiveis():
         resumo_produtos = {}
 
         for c in compras:
+            # compra de coligada aparece na lista, mas fica fora dos totais:
+            # o combustível dela não é estoque nosso
+            if c["id_coligada"]:
+                continue
+
             cod_produto = str(c["cod_produto"] or "").strip()
             produto = c["produto"] or cod_produto
 
@@ -1251,6 +1422,7 @@ def informar_compras_combustiveis():
         filiais = []
         produtos = []
         fornecedores = []
+        coligadas = []
         resumo_compras = []
         total_geral_qtd = 0
         total_geral_valor = 0
@@ -1270,6 +1442,7 @@ def informar_compras_combustiveis():
         filiais=filiais,
         produtos=produtos,
         fornecedores=fornecedores,
+        coligadas=coligadas,
         compras=compras,
         resumo_compras=resumo_compras,
         total_geral_qtd=total_geral_qtd,
@@ -1362,7 +1535,9 @@ def consultar_compras_combustiveis():
             filtros.append("cc.cod_filial = %s")
             params.append(filial_sel)
         elif tipo_global != "superusuario":
-            filtros.append("cc.cod_filial = ANY(%s)")
+            # a compra da coligada não é de filial nenhuma, mas é do grupo:
+            # quem enxerga alguma filial enxerga também as coligadas
+            filtros.append("(cc.cod_filial = ANY(%s) OR cc.id_coligada IS NOT NULL)")
             params.append(codigos_filiais)
 
         where_sql = " AND ".join(filtros)
@@ -1373,6 +1548,8 @@ def consultar_compras_combustiveis():
                 cc.data_compra,
                 cc.cod_filial,
                 f.nome_filial,
+                cc.id_coligada,
+                COALESCE(cg.nome_fantasia, cg.nome) AS nome_coligada,
                 cc.cod_produto,
                 c.descricao AS produto,
                 cc.quantidade_comprada,
@@ -1387,6 +1564,8 @@ def consultar_compras_combustiveis():
             LEFT JOIN filiais f
               ON f.cod_empresa = cc.cod_empresa
              AND f.cod_filial = cc.cod_filial
+            LEFT JOIN operacoes_coligadas cg
+              ON cg.id_coligada = cc.id_coligada
             LEFT JOIN combustiveis c
               ON c.cod_empresa = cc.cod_empresa
              AND c.cod_produto = cc.cod_produto
@@ -1401,6 +1580,9 @@ def consultar_compras_combustiveis():
                 cc.data_compra,
                 cc.cod_filial,
                 f.nome_filial,
+                cc.id_coligada,
+                cg.nome,
+                cg.nome_fantasia,
                 cc.cod_produto,
                 c.descricao,
                 cc.quantidade_comprada,
@@ -1410,7 +1592,7 @@ def consultar_compras_combustiveis():
                 fc.nome_fornecedor,
                 fc.cidade_base,
                 cc.status
-            ORDER BY cc.cod_filial, cc.cod_produto
+            ORDER BY cc.cod_filial NULLS LAST, cc.cod_produto
         """, params)
 
         compras = cur.fetchall() or []
@@ -1418,6 +1600,10 @@ def consultar_compras_combustiveis():
         resumo_produtos = {}
 
         for c in compras:
+            # a compra da coligada é listada, mas não soma: não é compra nossa
+            if c["id_coligada"]:
+                continue
+
             cod_produto = str(c["cod_produto"] or "").strip()
             produto = c["produto"] or cod_produto
 
@@ -1570,6 +1756,7 @@ def consultar_resumo_compras_combustiveis():
             WHERE cc.cod_empresa = %s
               AND cc.data_compra >= %s
               AND cc.data_compra < %s
+              AND cc.cod_filial IS NOT NULL
               {filtros_filiais}
             GROUP BY cc.data_compra, cc.cod_filial
             ORDER BY cc.data_compra, cc.cod_filial
@@ -1758,6 +1945,8 @@ def informar_descarregos_combustiveis():
 
         codigos_filiais = [int(f["cod_filial"]) for f in filiais]
 
+        coligadas = coligadas_ativas(cur, cod_empresa)
+
         # -----------------------------------
         # COMPRAS COM SALDO
         # -----------------------------------
@@ -1767,6 +1956,8 @@ def informar_descarregos_combustiveis():
                 cc.data_compra,
                 cc.cod_filial,
                 f.nome_filial,
+                cc.id_coligada,
+                COALESCE(cg.nome_fantasia, cg.nome) AS nome_coligada,
                 cc.cod_produto,
                 c.descricao AS produto,
                 cc.quantidade_comprada,
@@ -1774,16 +1965,18 @@ def informar_descarregos_combustiveis():
                 (cc.quantidade_comprada - COALESCE(SUM(d.quantidade_descarregada), 0)) AS saldo
             FROM compras_combustiveis cc
             LEFT JOIN filiais f ON f.cod_empresa = cc.cod_empresa AND f.cod_filial = cc.cod_filial
+            LEFT JOIN operacoes_coligadas cg ON cg.id_coligada = cc.id_coligada
             LEFT JOIN combustiveis c ON c.cod_empresa = cc.cod_empresa AND c.cod_produto = cc.cod_produto
             LEFT JOIN descarregos_combustiveis d ON d.id_compra = cc.id_compra
 
             WHERE cc.cod_empresa = %s
-              AND cc.cod_filial = ANY(%s)
+              AND (cc.cod_filial = ANY(%s) OR cc.id_coligada IS NOT NULL)
               AND cc.status = 'ABERTA'
 
             GROUP BY
                 cc.id_compra, cc.data_compra, cc.cod_filial,
-                f.nome_filial, cc.cod_produto, c.descricao,
+                f.nome_filial, cc.id_coligada, cg.nome, cg.nome_fantasia,
+                cc.cod_produto, c.descricao,
                 cc.quantidade_comprada
 
             HAVING (cc.quantidade_comprada - COALESCE(SUM(d.quantidade_descarregada), 0)) > 0
@@ -1804,26 +1997,33 @@ def informar_descarregos_combustiveis():
                 return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
 
             id_compra_txt = (request.form.get("id_compra") or "").strip()
-            cod_filial_descarga_txt = (request.form.get("cod_filial_descarga") or "").strip()
             quantidade_txt = (request.form.get("quantidade_descarregada") or "0").strip()
+
+            # a ponta da descarga é uma filial nossa OU uma coligada
+            cod_filial_descarga, id_coligada_descarga = parte_do_form(
+                request.form, "parte_descarga"
+            )
 
             if not id_compra_txt.isdigit():
                 flash("Selecione uma compra válida.", "error")
                 return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
 
-            if not cod_filial_descarga_txt.isdigit():
-                flash("Selecione a filial de descarga.", "error")
+            if cod_filial_descarga is None and id_coligada_descarga is None:
+                flash("Selecione o destino da descarga.", "error")
                 return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
 
             id_compra = int(id_compra_txt)
-            cod_filial_descarga = int(cod_filial_descarga_txt)
             quantidade_descarregada = parse_valor_br(quantidade_txt)
 
             if quantidade_descarregada <= 0:
                 flash("Informe uma quantidade maior que zero.", "error")
                 return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
 
-            if cod_filial_descarga not in codigos_filiais:
+            if id_coligada_descarga is not None:
+                if not coligada_valida(cur, cod_empresa, id_coligada_descarga):
+                    flash("Coligada inválida.", "error")
+                    return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
+            elif cod_filial_descarga not in codigos_filiais:
                 flash("Filial de descarga não permitida.", "error")
                 return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
 
@@ -1853,18 +2053,20 @@ def informar_descarregos_combustiveis():
                     data_descarrego,
                     id_compra,
                     cod_filial_descarga,
+                    id_coligada,
                     cod_produto,
                     quantidade_descarregada,
                     criado_em,
                     atualizado_em
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, NOW(), NOW())
+                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
                 RETURNING id_descarrego
             """, (
                 cod_empresa,
                 data_sel,
                 id_compra,
                 cod_filial_descarga,
+                id_coligada_descarga,
                 cod_produto,
                 quantidade_descarregada
             ))
@@ -1915,6 +2117,10 @@ def informar_descarregos_combustiveis():
                 d.id_compra,
                 d.cod_filial_descarga,
                 fd.nome_filial AS nome_filial_descarga,
+                d.id_coligada AS id_coligada_descarga,
+                COALESCE(cgd.nome_fantasia, cgd.nome) AS nome_coligada_descarga,
+                cc.id_coligada AS id_coligada_compra,
+                COALESCE(cgc.nome_fantasia, cgc.nome) AS nome_coligada_compra,
                 d.cod_produto,
                 c.descricao AS produto,
                 d.quantidade_descarregada,
@@ -1935,6 +2141,12 @@ def informar_descarregos_combustiveis():
             LEFT JOIN filiais fd
               ON fd.cod_empresa = d.cod_empresa
              AND fd.cod_filial = d.cod_filial_descarga
+
+            LEFT JOIN operacoes_coligadas cgd
+              ON cgd.id_coligada = d.id_coligada
+
+            LEFT JOIN operacoes_coligadas cgc
+              ON cgc.id_coligada = cc.id_coligada
 
             LEFT JOIN filiais fc
               ON fc.cod_empresa = cc.cod_empresa
@@ -1962,6 +2174,7 @@ def informar_descarregos_combustiveis():
         filiais = []
         compras = []
         descarregos = []
+        coligadas = []
 
     finally:
         cur.close()
@@ -1975,6 +2188,7 @@ def informar_descarregos_combustiveis():
         bloqueada=bloqueada,
         msg_bloqueio=msg_data_bloqueada(data_sel) if bloqueada else "",
         filiais=filiais,
+        coligadas=coligadas,
         compras=compras,
         descarregos=descarregos,
         url_voltar=url_for("operacoes.menu_operacoes"),
@@ -2060,7 +2274,10 @@ def consultar_descarregos_combustiveis():
             filtros.append("d.cod_filial_descarga = %s")
             params.append(filial_sel)
         elif tipo_global != "superusuario":
-            filtros.append("d.cod_filial_descarga = ANY(%s)")
+            # descarrego na coligada não é de filial nenhuma, mas é do grupo
+            filtros.append(
+                "(d.cod_filial_descarga = ANY(%s) OR d.id_coligada IS NOT NULL)"
+            )
             params.append(codigos_filiais)
 
         where_sql = " AND ".join(filtros)
@@ -2072,6 +2289,10 @@ def consultar_descarregos_combustiveis():
                 d.id_compra,
                 d.cod_filial_descarga,
                 fd.nome_filial AS nome_filial_descarga,
+                d.id_coligada AS id_coligada_descarga,
+                COALESCE(cgd.nome_fantasia, cgd.nome) AS nome_coligada_descarga,
+                cc.id_coligada AS id_coligada_compra,
+                COALESCE(cgc.nome_fantasia, cgc.nome) AS nome_coligada_compra,
                 d.cod_produto,
                 c.descricao AS produto,
                 d.quantidade_descarregada,
@@ -2088,6 +2309,12 @@ def consultar_descarregos_combustiveis():
             LEFT JOIN compras_combustiveis cc
               ON cc.cod_empresa = d.cod_empresa
              AND cc.id_compra = d.id_compra
+
+            LEFT JOIN operacoes_coligadas cgd
+              ON cgd.id_coligada = d.id_coligada
+
+            LEFT JOIN operacoes_coligadas cgc
+              ON cgc.id_coligada = cc.id_coligada
 
             LEFT JOIN filiais fd
               ON fd.cod_empresa = d.cod_empresa
@@ -2108,7 +2335,7 @@ def consultar_descarregos_combustiveis():
             WHERE {where_sql}
 
             ORDER BY
-                d.cod_filial_descarga,
+                d.cod_filial_descarga NULLS LAST,
                 d.id_descarrego
         """, params)
 
@@ -2228,6 +2455,7 @@ def consultar_resumo_descarregos_combustiveis():
             WHERE d.cod_empresa = %s
               AND d.data_descarrego >= %s
               AND d.data_descarrego < %s
+              AND d.cod_filial_descarga IS NOT NULL
               {filtro_filiais}
             GROUP BY d.data_descarrego, d.cod_filial_descarga
             ORDER BY d.data_descarrego, d.cod_filial_descarga
@@ -2780,7 +3008,10 @@ def consultar_emprestimos():
             "d.cod_empresa = %s",
             "d.data_descarrego >= %s",
             "d.data_descarrego < %s",
-            "cc.cod_filial <> d.cod_filial_descarga",
+            # ponta de saída diferente da ponta de chegada — é isso que
+            # caracteriza o empréstimo, e a ponta pode ser uma coligada
+            "(cc.cod_filial IS DISTINCT FROM d.cod_filial_descarga"
+            " OR cc.id_coligada IS DISTINCT FROM d.id_coligada)",
         ]
 
         params = [cod_empresa, data_ini, data_fim]
@@ -2803,9 +3034,23 @@ def consultar_emprestimos():
 
                 cc.cod_filial AS cod_filial_emprestou,
                 fe.nome_filial AS nome_filial_emprestou,
+                cc.id_coligada AS id_coligada_emprestou,
+
+                CASE
+                    WHEN cc.id_coligada IS NOT NULL
+                        THEN 'Coligada: ' || COALESCE(cgc.nome_fantasia, cgc.nome)
+                    ELSE cc.cod_filial || ' - ' || COALESCE(fe.nome_filial, '')
+                END AS nome_emprestou,
 
                 d.cod_filial_descarga AS cod_filial_recebeu,
                 fr.nome_filial AS nome_filial_recebeu,
+                d.id_coligada AS id_coligada_recebeu,
+
+                CASE
+                    WHEN d.id_coligada IS NOT NULL
+                        THEN 'Coligada: ' || COALESCE(cgd.nome_fantasia, cgd.nome)
+                    ELSE d.cod_filial_descarga || ' - ' || COALESCE(fr.nome_filial, '')
+                END AS nome_recebeu,
 
                 d.quantidade_descarregada AS quantidade,
 
@@ -2827,6 +3072,12 @@ def consultar_emprestimos():
               ON fr.cod_empresa = d.cod_empresa
              AND fr.cod_filial = d.cod_filial_descarga
 
+            LEFT JOIN operacoes_coligadas cgc
+              ON cgc.id_coligada = cc.id_coligada
+
+            LEFT JOIN operacoes_coligadas cgd
+              ON cgd.id_coligada = d.id_coligada
+
             LEFT JOIN combustiveis c
               ON c.cod_empresa = d.cod_empresa
              AND c.cod_produto = d.cod_produto
@@ -2835,8 +3086,8 @@ def consultar_emprestimos():
 
             ORDER BY
                 d.data_descarrego,
-                cc.cod_filial,
-                d.cod_filial_descarga,
+                cc.cod_filial NULLS LAST,
+                d.cod_filial_descarga NULLS LAST,
                 d.cod_produto
         """, params)
 
@@ -2933,7 +3184,10 @@ def consultar_saldo_emprestimos():
 
         filtros = [
             "d.cod_empresa = %s",
-            "cc.cod_filial <> d.cod_filial_descarga",
+            # ponta de saída diferente da ponta de chegada — e a ponta pode
+            # ser uma coligada, que não tem cod_filial
+            "(cc.cod_filial IS DISTINCT FROM d.cod_filial_descarga"
+            " OR cc.id_coligada IS DISTINCT FROM d.id_coligada)",
         ]
 
         params = [cod_empresa]
@@ -2947,79 +3201,109 @@ def consultar_saldo_emprestimos():
 
         where_sql = " AND ".join(filtros)
 
+        # A ponta é identificada por uma chave de texto — 'F:<filial>' para
+        # filial nossa, 'C:<coligada>' para coligada. Sem isso o par teria de
+        # ser (inteiro, inteiro) e não caberia a coligada.
         cur.execute(f"""
             WITH movimentos AS (
                 SELECT
-                    LEAST(cc.cod_filial, d.cod_filial_descarga) AS filial_a,
-                    GREATEST(cc.cod_filial, d.cod_filial_descarga) AS filial_b,
-                    cc.cod_filial AS filial_credora,
-                    d.cod_filial_descarga AS filial_devedora,
+                    CASE
+                        WHEN cc.id_coligada IS NOT NULL THEN 'C:' || cc.id_coligada
+                        ELSE 'F:' || cc.cod_filial
+                    END AS parte_credora,
+
+                    CASE
+                        WHEN cc.id_coligada IS NOT NULL
+                            THEN 'Coligada: ' || COALESCE(cgc.nome_fantasia, cgc.nome)
+                        ELSE cc.cod_filial || ' - ' || COALESCE(fe.nome_filial, '')
+                    END AS nome_credora,
+
+                    CASE
+                        WHEN d.id_coligada IS NOT NULL THEN 'C:' || d.id_coligada
+                        ELSE 'F:' || d.cod_filial_descarga
+                    END AS parte_devedora,
+
+                    CASE
+                        WHEN d.id_coligada IS NOT NULL
+                            THEN 'Coligada: ' || COALESCE(cgd.nome_fantasia, cgd.nome)
+                        ELSE d.cod_filial_descarga || ' - ' || COALESCE(fr.nome_filial, '')
+                    END AS nome_devedora,
+
                     d.cod_produto,
                     c.descricao AS produto,
                     COALESCE(d.quantidade_descarregada, 0) AS quantidade,
-                    COALESCE(cc.preco_unitario, 0) AS preco_unitario,
                     COALESCE(d.quantidade_descarregada, 0) * COALESCE(cc.preco_unitario, 0) AS valor
+
                 FROM descarregos_combustiveis d
+
                 JOIN compras_combustiveis cc
                   ON cc.cod_empresa = d.cod_empresa
                  AND cc.id_compra = d.id_compra
+
+                LEFT JOIN filiais fe
+                  ON fe.cod_empresa = cc.cod_empresa
+                 AND fe.cod_filial = cc.cod_filial
+
+                LEFT JOIN filiais fr
+                  ON fr.cod_empresa = d.cod_empresa
+                 AND fr.cod_filial = d.cod_filial_descarga
+
+                LEFT JOIN operacoes_coligadas cgc
+                  ON cgc.id_coligada = cc.id_coligada
+
+                LEFT JOIN operacoes_coligadas cgd
+                  ON cgd.id_coligada = d.id_coligada
+
                 LEFT JOIN combustiveis c
                   ON c.cod_empresa = d.cod_empresa
                  AND c.cod_produto = d.cod_produto
+
                 WHERE {where_sql}
+            ),
+
+            nomes AS (
+                SELECT DISTINCT parte_credora AS parte, nome_credora AS nome FROM movimentos
+                UNION
+                SELECT DISTINCT parte_devedora, nome_devedora FROM movimentos
             ),
 
             saldos AS (
                 SELECT
-                    filial_a,
-                    filial_b,
+                    LEAST(parte_credora, parte_devedora) AS parte_a,
+                    GREATEST(parte_credora, parte_devedora) AS parte_b,
                     cod_produto,
                     produto,
 
                     SUM(
                         CASE
-                            WHEN filial_devedora = filial_a AND filial_credora = filial_b
+                            WHEN parte_devedora = LEAST(parte_credora, parte_devedora)
                                 THEN quantidade
-                            WHEN filial_devedora = filial_b AND filial_credora = filial_a
-                                THEN quantidade * -1
-                            ELSE 0
+                            ELSE quantidade * -1
                         END
                     ) AS saldo_quantidade,
 
                     SUM(
                         CASE
-                            WHEN filial_devedora = filial_a AND filial_credora = filial_b
+                            WHEN parte_devedora = LEAST(parte_credora, parte_devedora)
                                 THEN valor
-                            WHEN filial_devedora = filial_b AND filial_credora = filial_a
-                                THEN valor * -1
-                            ELSE 0
+                            ELSE valor * -1
                         END
                     ) AS saldo_valor
 
                 FROM movimentos
-                GROUP BY filial_a, filial_b, cod_produto, produto
+                GROUP BY
+                    LEAST(parte_credora, parte_devedora),
+                    GREATEST(parte_credora, parte_devedora),
+                    cod_produto,
+                    produto
             )
 
             SELECT
-                CASE
-                    WHEN s.saldo_quantidade > 0 THEN s.filial_a
-                    ELSE s.filial_b
-                END AS cod_filial_devedora,
+                CASE WHEN s.saldo_quantidade > 0 THEN n_a.nome ELSE n_b.nome END AS nome_devedora,
+                CASE WHEN s.saldo_quantidade > 0 THEN n_b.nome ELSE n_a.nome END AS nome_credora,
 
-                CASE
-                    WHEN s.saldo_quantidade > 0 THEN fd_a.nome_filial
-                    ELSE fd_b.nome_filial
-                END AS nome_filial_devedora,
-
-                CASE
-                    WHEN s.saldo_quantidade > 0 THEN s.filial_b
-                    ELSE s.filial_a
-                END AS cod_filial_credora,
-
-                CASE
-                    WHEN s.saldo_quantidade > 0 THEN fd_b.nome_filial
-                    ELSE fd_a.nome_filial
-                END AS nome_filial_credora,
+                CASE WHEN s.saldo_quantidade > 0 THEN s.parte_a ELSE s.parte_b END AS parte_devedora,
+                CASE WHEN s.saldo_quantidade > 0 THEN s.parte_b ELSE s.parte_a END AS parte_credora,
 
                 s.cod_produto,
                 s.produto,
@@ -3033,21 +3317,16 @@ def consultar_saldo_emprestimos():
 
             FROM saldos s
 
-            LEFT JOIN filiais fd_a
-              ON fd_a.cod_empresa = %s
-             AND fd_a.cod_filial = s.filial_a
-
-            LEFT JOIN filiais fd_b
-              ON fd_b.cod_empresa = %s
-             AND fd_b.cod_filial = s.filial_b
+            LEFT JOIN nomes n_a ON n_a.parte = s.parte_a
+            LEFT JOIN nomes n_b ON n_b.parte = s.parte_b
 
             WHERE ABS(s.saldo_quantidade) > 0.0001
 
             ORDER BY
-                cod_filial_devedora,
-                cod_filial_credora,
+                nome_devedora,
+                nome_credora,
                 s.cod_produto
-        """, params + [cod_empresa, cod_empresa])
+        """, params)
 
         linhas = cur.fetchall() or []
 
@@ -3213,6 +3492,7 @@ def consultar_perdas_sobras():
                     SUM(COALESCE(quantidade_descarregada, 0)) AS descarregos
                 FROM descarregos_combustiveis
                 WHERE cod_empresa = %s
+                  AND cod_filial_descarga IS NOT NULL
                   AND data_descarrego >= %s
                   AND data_descarrego < %s
                 GROUP BY cod_filial_descarga, cod_produto, data_descarrego

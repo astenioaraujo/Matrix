@@ -84,6 +84,9 @@
   .num {
     text-align: right;
   }
+
+  .coligada { color: #6a1b9a; font-weight: 700; }
+  .nota-coligada { font-size: 13px; color: #6a1b9a; margin-top: 8px; }
 </style>
 
 <div class="pagina-titulo">Informar Compras de Combustíveis</div>
@@ -124,7 +127,7 @@
 <thead>
 <tr>
   <th>ID</th>
-  <th>Filial</th>
+  <th>{% if coligadas %}Filial / Coligada{% else %}Filial{% endif %}</th>
   <th>Produto</th>
   <th>Qtd</th>
   <th>Preço</th>
@@ -146,10 +149,13 @@
 <td>Novo</td>
 
 <td>
-<select name="cod_filial" required>
+<select name="parte" required>
 <option value="">Selecione</option>
 {% for f in filiais %}
-<option value="{{ f.cod_filial }}">{{ f.cod_filial }} - {{ f.nome_filial }}</option>
+<option value="F:{{ f.cod_filial }}">{{ f.cod_filial }} - {{ f.nome_filial }}</option>
+{% endfor %}
+{% for cg in coligadas %}
+<option value="C:{{ cg.id_coligada }}">Coligada: {{ cg.nome_fantasia or cg.nome }}</option>
 {% endfor %}
 </select>
 </td>
@@ -207,12 +213,19 @@
 
 <td>
 {% if bloqueado %}
-<span class="texto-bloqueado">{{ c.cod_filial }} - {{ c.nome_filial }}</span>
+<span class="texto-bloqueado{% if c.id_coligada %} coligada{% endif %}">
+{% if c.id_coligada %}Coligada: {{ c.nome_coligada }}{% else %}{{ c.cod_filial }} - {{ c.nome_filial }}{% endif %}
+</span>
 {% else %}
-<select name="cod_filial">
+<select name="parte" {% if c.id_coligada %}class="coligada"{% endif %}>
 {% for f in filiais %}
-<option value="{{ f.cod_filial }}" {% if f.cod_filial == c.cod_filial %}selected{% endif %}>
+<option value="F:{{ f.cod_filial }}" {% if not c.id_coligada and f.cod_filial == c.cod_filial %}selected{% endif %}>
 {{ f.cod_filial }} - {{ f.nome_filial }}
+</option>
+{% endfor %}
+{% for cg in coligadas %}
+<option value="C:{{ cg.id_coligada }}" {% if cg.id_coligada == c.id_coligada %}selected{% endif %}>
+Coligada: {{ cg.nome_fantasia or cg.nome }}
 </option>
 {% endfor %}
 </select>

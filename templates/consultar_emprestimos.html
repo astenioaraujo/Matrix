@@ -51,6 +51,8 @@
 
   .num { text-align: right; }
   .sem-dados { font-weight: 700; color: #666; margin-top: 12px; }
+
+  .coligada { color: #6a1b9a; font-weight: 700; }
 </style>
 
 <div class="pagina-titulo">Consultar Empréstimos</div>
@@ -125,8 +127,8 @@
 
         <tr>
           <td>{{ l.data_descarrego.strftime("%d/%m/%Y") if l.data_descarrego else "" }}</td>
-          <td>{{ l.cod_filial_emprestou }} - {{ l.nome_filial_emprestou }}</td>
-          <td>{{ l.cod_filial_recebeu }} - {{ l.nome_filial_recebeu }}</td>
+          <td {% if l.id_coligada_emprestou %}class="coligada"{% endif %}>{{ l.nome_emprestou }}</td>
+          <td {% if l.id_coligada_recebeu %}class="coligada"{% endif %}>{{ l.nome_recebeu }}</td>
           <td>{{ l.cod_produto }} - {{ l.produto }}</td>
           <td class="num">{{ l.quantidade | br }}</td>
           <td class="num">{{ l.preco_unitario | br }}</td>

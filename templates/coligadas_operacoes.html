@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 10px; }
+  .empresa { font-size: 22px; margin-bottom: 16px; }
+
+  .explicacao {
+    max-width: 1000px;
+    background: #eef4ff;
+    border: 1px solid #c7d8f5;
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .painel {
+    max-width: 1000px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { border: 1px solid #dcdcdc; padding: 8px; }
+  th { background: #f1f1f1; font-weight: 800; text-align: left; }
+
+  input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px;
+    border: 1px solid #cfcfcf;
+    border-radius: 6px;
+  }
+
+  .col-id { width: 70px; text-align: center; }
+  .col-ordem { width: 90px; }
+  .col-ativo { width: 80px; text-align: center; }
+  .col-acoes { width: 170px; text-align: center; }
+
+  .btn-salvar {
+    padding: 8px 12px; border-radius: 8px;
+    border: 1px solid #1565c0; background: #1565c0;
+    color: #fff; font-weight: 700; cursor: pointer;
+  }
+
+  .btn-excluir {
+    padding: 8px 12px; border-radius: 8px;
+    border: 1px solid #b00020; background: #fff;
+    color: #b00020; font-weight: 700; cursor: pointer;
+  }
+
+  .linha-novo td { background: #fffbe6; }
+</style>
+
+<div class="pagina-titulo">Coligadas</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="explicacao">
+  Coligadas são empresas do grupo econômico da família que <strong>não têm estoque,
+  perda e sobra controlados aqui</strong>. Com uma coligada ativa cadastrada, as telas de
+  Compras e de Descarregos passam a oferecer a coligada como ponta: dá para comprar
+  pela coligada e descarregar numa filial nossa (ficamos devendo a ela) e o contrário.
+  O saldo aparece em <strong>Operações → Saldo de Empréstimos</strong>.
+</div>
+
+{% with mensagens = get_flashed_messages(with_categories=true) %}
+  {% if mensagens %}
+    <div style="max-width:1000px;margin-bottom:16px;">
+      {% for categoria, texto in mensagens %}
+        <div style="padding:10px 14px;border-radius:8px;margin-bottom:8px;
+                    background:{{ '#fdecea' if categoria == 'error' else '#e8f5e9' }};
+                    color:{{ '#b00020' if categoria == 'error' else '#1b5e20' }};">
+          {{ texto }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<div class="painel">
+  <table>
+    <thead>
+      <tr>
+        <th class="col-id">ID</th>
+        <th>Nome</th>
+        <th>Nome Fantasia</th>
+        <th>CNPJ</th>
+        <th class="col-ordem">Ordem</th>
+        <th class="col-ativo">Ativo</th>
+        <th class="col-acoes">Ações</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      <tr class="linha-novo">
+        <form method="post">
+          <td class="col-id">Novo</td>
+          <td><input type="text" name="nome" placeholder="Ex: Posto 30 de Setembro" required></td>
+          <td><input type="text" name="nome_fantasia" placeholder="Ex: 30 Set"></td>
+          <td><input type="text" name="cnpj" placeholder="Opcional"></td>
+          <td class="col-ordem"><input type="text" name="ordem" value="10"></td>
+          <td class="col-ativo"><input type="checkbox" name="ativo" checked></td>
+          <td class="col-acoes">
+            <button type="submit" class="btn-salvar">Adicionar</button>
+          </td>
+        </form>
+      </tr>
+
+      {% for c in coligadas %}
+        <tr>
+          <form method="post">
+            <input type="hidden" name="id_coligada" value="{{ c.id_coligada }}">
+            <td class="col-id">{{ c.id_coligada }}</td>
+            <td><input type="text" name="nome" value="{{ c.nome }}" required></td>
+            <td><input type="text" name="nome_fantasia" value="{{ c.nome_fantasia or '' }}"></td>
+            <td><input type="text" name="cnpj" value="{{ c.cnpj or '' }}"></td>
+            <td class="col-ordem"><input type="text" name="ordem" value="{{ c.ordem or 10 }}"></td>
+            <td class="col-ativo">
+              <input type="checkbox" name="ativo" {% if c.ativo %}checked{% endif %}>
+            </td>
+            <td class="col-acoes">
+              <button type="submit" class="btn-salvar">Salvar</button>
+          </form>
+
+              <form method="post"
+                    action="{{ url_for('operacoes.excluir_coligada_operacoes', id_coligada=c.id_coligada) }}"
+                    style="display:inline;"
+                    onsubmit="return confirmarEnvio(this, 'Confirma excluir esta coligada?');">
+                <button type="submit" class="btn-excluir">Excluir</button>
+              </form>
+            </td>
+        </tr>
+      {% endfor %}
+
+      {% if not coligadas %}
+        <tr>
+          <td colspan="7" style="text-align:center;color:#777;padding:18px;">
+            Nenhuma coligada cadastrada — a empresa não trabalha com coligadas.
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

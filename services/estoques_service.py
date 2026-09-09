@@ -149,6 +149,7 @@ def linhas_estoque(cur, cod_empresa, data_base, codigos_filiais=None):
             FROM compras_combustiveis
             WHERE cod_empresa = %s
               AND data_compra = %s
+              AND cod_filial IS NOT NULL
             GROUP BY cod_filial, cod_produto
         ),
 
@@ -174,6 +175,7 @@ def linhas_estoque(cur, cod_empresa, data_base, codigos_filiais=None):
              AND d.id_compra = cc.id_compra
             WHERE cc.cod_empresa = %s
               AND cc.data_compra < %s
+              AND cc.cod_filial IS NOT NULL
               AND COALESCE(cc.status, 'ABERTA') = 'ABERTA'
             GROUP BY cc.cod_filial, cc.cod_produto
         ),
@@ -186,6 +188,7 @@ def linhas_estoque(cur, cod_empresa, data_base, codigos_filiais=None):
             FROM descarregos_combustiveis
             WHERE cod_empresa = %s
               AND data_descarrego = %s
+              AND cod_filial_descarga IS NOT NULL
             GROUP BY cod_filial_descarga, cod_produto
         ),
 
@@ -208,6 +211,7 @@ def linhas_estoque(cur, cod_empresa, data_base, codigos_filiais=None):
             FROM compras_combustiveis
             WHERE cod_empresa = %s
               AND data_compra <= %s
+              AND cod_filial IS NOT NULL
             ORDER BY cod_filial, cod_produto, data_compra DESC, id_compra DESC
         ),
 
@@ -228,6 +232,7 @@ def linhas_estoque(cur, cod_empresa, data_base, codigos_filiais=None):
             FROM compras_combustiveis
             WHERE cod_empresa = %s
               AND data_compra <= %s
+              AND cod_filial IS NOT NULL
               AND COALESCE(preco_unitario, 0) > 0
             ORDER BY cod_produto, data_compra DESC, id_compra DESC
         )

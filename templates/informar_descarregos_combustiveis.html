@@ -67,6 +67,8 @@
     border: 1px solid #b00020;
     margin-left: 5px;
   }
+
+  .coligada { color: #6a1b9a; font-weight: 700; }
 </style>
 
 <div class="pagina-titulo">Informar Descarregos</div>
@@ -99,7 +101,7 @@
       <tr>
         <th class="col-id">ID</th>
         <th>Compra</th>
-        <th>Filial Descarga</th>
+        <th>{% if coligadas %}Destino da Descarga{% else %}Filial Descarga{% endif %}</th>
         <th>Produto</th>
         <th>Fornecedor</th>
         <th class="col-qtd">Qtd Descarga</th>
@@ -123,12 +125,12 @@
                 <option value="{{ c.id_compra }}"
                     data-produto="{{ c.cod_produto }} - {{ c.produto }}"
                     data-saldo="{{ c.saldo }}"
-                    data-filial="{{ c.cod_filial }}"
+                    data-parte="{% if c.id_coligada %}C:{{ c.id_coligada }}{% else %}F:{{ c.cod_filial }}{% endif %}"
                     data-fornecedor="{{ c.nome_fornecedor or '' }}{% if c.cidade_base %} - {{ c.cidade_base }}{% endif %}">
 
                     {{ c.id_compra }} |
                     {{ c.data_compra.strftime('%d/%m') }} |
-                    {{ c.cod_filial }} - {{ c.nome_filial }} |
+                    {% if c.id_coligada %}Coligada: {{ c.nome_coligada }}{% else %}{{ c.cod_filial }} - {{ c.nome_filial }}{% endif %} |
                     {{ c.produto }} |
                     Saldo: {{ c.saldo | br }}
 
@@ -138,11 +140,16 @@
           </td>
 
           <td>
-            <select name="cod_filial_descarga" id="filial_descarga" required>
+            <select name="parte_descarga" id="parte_descarga" required>
               <option value="">Selecione</option>
               {% for f in filiais %}
-                <option value="{{ f.cod_filial }}">
+                <option value="F:{{ f.cod_filial }}">
                   {{ f.cod_filial }} - {{ f.nome_filial }}
+                </option>
+              {% endfor %}
+              {% for cg in coligadas %}
+                <option value="C:{{ cg.id_coligada }}">
+                  Coligada: {{ cg.nome_fantasia or cg.nome }}
                 </option>
               {% endfor %}
             </select>
@@ -172,11 +179,19 @@
         <td>
           <strong>ID {{ d.id_compra }}</strong><br>
           Compra: {{ d.data_compra.strftime("%d/%m/%Y") if d.data_compra else "" }}<br>
-          {{ d.cod_filial_compra }} - {{ d.nome_filial_compra or "" }}
+          {% if d.id_coligada_compra %}
+            <span class="coligada">Coligada: {{ d.nome_coligada_compra }}</span>
+          {% else %}
+            {{ d.cod_filial_compra }} - {{ d.nome_filial_compra or "" }}
+          {% endif %}
         </td>
 
         <td>
-          {{ d.cod_filial_descarga }} - {{ d.nome_filial_descarga or "" }}
+          {% if d.id_coligada_descarga %}
+            <span class="coligada">Coligada: {{ d.nome_coligada_descarga }}</span>
+          {% else %}
+            {{ d.cod_filial_descarga }} - {{ d.nome_filial_descarga or "" }}
+          {% endif %}
         </td>
 
         <td>{{ d.cod_produto }} - {{ d.produto }}</td>
@@ -215,7 +230,7 @@ document.getElementById("id_compra").addEventListener("change", function() {
 
     let produto = option.getAttribute("data-produto");
     let saldo = option.getAttribute("data-saldo");
-    let filial = option.getAttribute("data-filial");
+    let parte = option.getAttribute("data-parte");
     let fornecedor = option.getAttribute("data-fornecedor");
 
     document.getElementById("produto_label").innerText = produto || "-";
@@ -226,8 +241,10 @@ document.getElementById("id_compra").addEventListener("change", function() {
         document.getElementById("quantidade_descarregada").value = valor;
     }
 
-    if (filial) {
-        document.getElementById("filial_descarga").value = filial;
+    // sugere descarregar na mesma ponta que comprou; trocar aqui é o
+    // que caracteriza o empréstimo (nosso posto ↔ coligada)
+    if (parte) {
+        document.getElementById("parte_descarga").value = parte;
     }
 });
 </script>

@@ -287,6 +287,63 @@ Botão vermelho no menu de Operações (`OPERACOES/BLOQUEAR_MOVIMENTACOES` 490).
 - Data bloqueada não grava mais nada em Informar Medições, Informar Preço de Compra, Informar Compras e Informar Descarregos — as telas continuam abrindo, com aviso e campos desabilitados. A trava real está nos **7 pontos de gravação** (POST das 4 telas, os 2 ajax-salvar e as 2 exclusões), via `data_bloqueada()` / `msg_data_bloqueada()`. Nas exclusões vale a data do **próprio lançamento**, não a data em tela.
 - É o que libera a importação dos valores de estoque em Financeiro → Saldos.
 
+## Coligadas
+
+Empresas do grupo econômico da família que **não são do grupo** a ponto de
+controlarmos estoque, falta e perda delas. Elas compram e descarregam
+combustível junto conosco — comprar pela coligada e descarregar aqui (fico
+devendo a ela) e o contrário.
+
+`operacoes_coligadas` (`migrations/criar_coligadas_operacoes.sql`), cadastro
+em **Operações → Configurações → Coligadas** (`CONFIGURACOES`), serviço em
+`services/coligadas_service.py`.
+
+> **Não há parâmetro "trabalha com coligadas".** Empresa com coligada ativa
+> cadastrada trabalha com coligadas — `empresa_tem_coligadas()`, cacheado em `g`.
+> Um flag à parte seria a mesma verdade em dois lugares, divergindo da tabela
+> na primeira manutenção.
+
+**A ponta da compra e a ponta do descarrego passam a ser "filial nossa OU
+coligada"**: coluna `id_coligada` nula em `compras_combustiveis` e em
+`descarregos_combustiveis`, com CHECK de que exatamente uma das duas está
+preenchida (`cod_filial` deixou de ser NOT NULL nas duas). A tela manda a ponta
+como texto `F:<cod_filial>` / `C:<id_coligada>`, lido por `parte_do_form()`.
+
+| Caso | Compra | Descarrego |
+|---|---|---|
+| normal | filial | mesma filial |
+| empréstimo interno (já existia) | filial A | filial B |
+| compro pela coligada, descarrego aqui | coligada | filial |
+| compro por mim, descarrego na coligada | filial | coligada |
+
+**O pedido de compra continua obrigatório**, inclusive o da coligada: é ele que
+carrega quantidade, preço e fornecedor, e é dele que sai o saldo a descarregar.
+Descarrego de coligada sem pedido precisaria de campos próprios de
+quantidade/preço e viraria um segundo caminho de gravação.
+
+> O índice único de compras não enxerga a linha de coligada (`cod_filial` nulo,
+> e NULL não conflita) — a coligada tem o seu próprio índice parcial, e o
+> `ON CONFLICT` do insert escolhe o alvo conforme a ponta.
+
+**Coligada não encosta em estoque, medição, perda nem sobra.** Isso é feito com
+`cod_filial IS NOT NULL` / `cod_filial_descarga IS NOT NULL` nas CTEs de
+`services/estoques_service.py` (compras do dia, trânsito, descarregos, último
+preço de compra), em Perdas e Sobras e nos dois resumos por filial — que são
+grades de filial e explodiriam num `int(None)`.
+
+**Nas consultas de Compras e de Descarregos a linha aparece, em roxo e
+sinalizada, mas fica fora dos totais** (`if c["id_coligada"]: continue`): o
+combustível dela não é nosso. Quem enxerga alguma filial enxerga as coligadas
+(`OR cc.id_coligada IS NOT NULL` no filtro do não-superusuário).
+
+**Empréstimos**: `consultar_emprestimos` e `consultar_saldo_emprestimos` pareavam
+`(cod_filial, cod_filial)`. A ponta virou **chave de texto** (`'F:4'`, `'C:2'`),
+com os nomes resolvidos numa CTE `nomes` — é o que faz o mesmo SQL fechar saldo
+entre filial×filial *e* filial×coligada. O comparativo de pontas diferentes é
+`IS DISTINCT FROM` nos dois campos, não `<>` em `cod_filial` (que some com NULL).
+Devolução é a operação inversa, sem nada novo: compra na filial, descarrego na
+coligada.
+
 ## Consulta de Estoques
 
 A consulta grande saiu da rota para `services/estoques_service.py` (`linhas_estoque`, `totais_estoque_rs`): a importação em Saldos usa a **mesma** função, para os números não divergirem com o tempo. O cursor precisa ser `RealDictCursor`.
