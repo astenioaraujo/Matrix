@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 8px; color: #111; }
+  .pagina-subtitulo { font-size: 20px; margin-bottom: 24px; color: #222; }
+
+  .bloco {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 20px;
+    max-width: 900px;
+  }
+
+  .topo-bloco { margin-bottom: 14px; line-height: 1.5; }
+
+  .btn-novo {
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn-novo:hover { filter: brightness(0.92); }
+
+  .linha-form-acesso {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+
+  .linha-form-acesso input[type="date"] {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #bbb;
+  }
+
+  .tabela-lib { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  .tabela-lib th, .tabela-lib td {
+    border-bottom: 1px solid #e5e5e5;
+    padding: 8px 10px;
+    text-align: left;
+    font-size: 14px;
+  }
+  .tabela-lib th { background: #f5f5f5; font-weight: 700; }
+
+  .btn-revogar {
+    padding: 5px 12px;
+    border-radius: 8px;
+    border: 1px solid #9f2f2f;
+    background: #fff;
+    color: #9f2f2f;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .btn-revogar:hover { background: #9f2f2f; color: #fff; }
+
+  .vazio { color: #666; font-style: italic; }
+
+  .datas-seletor { margin-top: 16px; font-size: 14px; color: #444; }
+
+  .status-msg { font-size: 13px; margin-top: 10px; color: #1e6b34; min-height: 18px; }
+  .status-msg.erro { color: #9f2f2f; }
+</style>
+
+<div class="pagina-titulo">Liberar Data de Medição</div>
+
+<div class="pagina-subtitulo">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="bloco">
+  <div class="topo-bloco">
+    Informar Medições só oferece <strong>hoje</strong> e os dias imediatamente anteriores
+    enquanto forem domingo ou feriado — no primeiro dia útil a lista para. Um feriado que
+    ficou para trás de um dia útil, portanto, some do seletor.<br>
+    Liberar aqui devolve aquela data ao seletor por <strong>{{ horas_liberacao }} horas</strong>,
+    voltando sozinha ao normal depois.<br>
+    A liberação <strong>não reabre data bloqueada</strong> em Bloquear Movimentações — se for o
+    caso, reabra lá primeiro.
+  </div>
+
+  <div class="linha-form-acesso">
+    <input type="date" id="dataLiberada" max="{{ hoje_iso }}">
+    <button type="button" class="btn-novo" id="btnLiberar">Liberar Temporariamente</button>
+  </div>
+
+  <div id="listaLiberacoes"></div>
+
+  <div class="datas-seletor" id="datasSeletor"></div>
+
+  <div class="status-msg" id="statusLiberacao"></div>
+</div>
+
+<script>
+  async function fetchJson(url, opcoes) {
+    const resp = await fetch(url, opcoes);
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+    }
+    return resp.json();
+  }
+
+  function mostrarStatus(mensagem, erro) {
+    const el = document.getElementById("statusLiberacao");
+    el.textContent = mensagem;
+    el.classList.toggle("erro", !!erro);
+    if (!erro) setTimeout(() => { el.textContent = ""; }, 2500);
+  }
+
+  function escapar(txt) {
+    const d = document.createElement("div");
+    d.textContent = txt == null ? "" : txt;
+    return d.innerHTML;
+  }
+
+  function horaDe(iso) {
+    const d = new Date(iso);
+    return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  }
+
+  async function carregarLiberacoes() {
+    try {
+      const data = await fetchJson("/operacoes/api/liberacao-medicao");
+
+      const lista = document.getElementById("listaLiberacoes");
+      if (!data.liberacoes.length) {
+        lista.innerHTML = '<div class="vazio">Nenhuma liberação ativa no momento.</div>';
+      } else {
+        lista.innerHTML =
+          '<table class="tabela-lib"><thead><tr>' +
+          "<th>Data liberada</th><th>Liberada por</th><th>Expira às</th><th></th>" +
+          "</tr></thead><tbody>" +
+          data.liberacoes.map(l =>
+            "<tr>" +
+            "<td><strong>" + escapar(l.data_liberada_br) + "</strong></td>" +
+            "<td>" + escapar(l.ativado_por) + "</td>" +
+            "<td>" + horaDe(l.expira_em) + "</td>" +
+            '<td><button type="button" class="btn-revogar" data-id="' + l.id_liberacao +
+            '">Encerrar</button></td>' +
+            "</tr>"
+          ).join("") +
+          "</tbody></table>";
+
+        lista.querySelectorAll(".btn-revogar").forEach(btn => {
+          btn.addEventListener("click", () => revogar(btn.dataset.id));
+        });
+      }
+
+      document.getElementById("datasSeletor").textContent =
+        "Datas hoje disponíveis em Informar Medições: " + data.datas_no_seletor.join(", ") + ".";
+    } catch (e) {
+      mostrarStatus(e.message || "Erro ao carregar.", true);
+    }
+  }
+
+  async function liberar() {
+    const dataLiberada = document.getElementById("dataLiberada").value;
+    if (!dataLiberada) {
+      mostrarStatus("Selecione a data.", true);
+      return;
+    }
+    try {
+      const data = await fetchJson("/operacoes/api/liberacao-medicao", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data_liberada: dataLiberada }),
+      });
+      if (data.ok) {
+        mostrarStatus("Liberado por " + data.horas + " horas.", false);
+        carregarLiberacoes();
+      } else {
+        mostrarStatus(data.erro || "Erro ao liberar.", true);
+      }
+    } catch (e) {
+      mostrarStatus(e.message || "Erro ao liberar.", true);
+    }
+  }
+
+  async function revogar(idLiberacao) {
+    if (!await confirmarGlobal("Encerrar esta liberação agora?")) return;
+    try {
+      const data = await fetchJson("/operacoes/api/liberacao-medicao/" + idLiberacao, {
+        method: "DELETE",
+      });
+      if (data.ok) {
+        mostrarStatus("Liberação encerrada.", false);
+        carregarLiberacoes();
+      } else {
+        mostrarStatus(data.erro || "Erro ao encerrar.", true);
+      }
+    } catch (e) {
+      mostrarStatus(e.message || "Erro ao encerrar.", true);
+    }
+  }
+
+  document.getElementById("btnLiberar").addEventListener("click", liberar);
+
+  carregarLiberacoes();
+</script>
+
+{% endblock %}

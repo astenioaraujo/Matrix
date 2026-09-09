@@ -287,6 +287,31 @@ Botão vermelho no menu de Operações (`OPERACOES/BLOQUEAR_MOVIMENTACOES` 490).
 - Data bloqueada não grava mais nada em Informar Medições, Informar Preço de Compra, Informar Compras e Informar Descarregos — as telas continuam abrindo, com aviso e campos desabilitados. A trava real está nos **7 pontos de gravação** (POST das 4 telas, os 2 ajax-salvar e as 2 exclusões), via `data_bloqueada()` / `msg_data_bloqueada()`. Nas exclusões vale a data do **próprio lançamento**, não a data em tela.
 - É o que libera a importação dos valores de estoque em Financeiro → Saldos.
 
+## Liberar Data de Medição
+
+O seletor de data de **Informar Medições** não é um calendário: é um `<select>` montado por
+`datas_medicao_permitidas()`, que oferece **hoje** e, andando para trás, só enquanto o dia for
+**domingo ou feriado** — no primeiro dia útil a varredura para. Numa terça-feira, portanto, o
+feriado da segunda **já não aparece**, e a medição daquele dia fica sem como ser digitada (foi o
+que aconteceu com 07/09/2026 na EMP012, em 09/09).
+
+`operacoes_liberacao_temporaria` (`migrations/criar_tabela_operacoes_liberacao_temporaria.sql`)
+devolve uma data avulsa ao seletor por `HORAS_LIBERACAO_MEDICOES` = 4 horas. Tela
+`templates/liberacao_medicao.html` em **Operações → Liberar Data de Medição**, atrás de
+`BLOQUEAR_MOVIMENTACOES` (quem fecha a data é quem a reabre — sem permissão nova). Endpoints
+`GET/POST /operacoes/api/liberacao-medicao` + `DELETE /<id>` (encerrar antes da hora).
+
+- As liberações são **acumulativas** e expiram **por horário na leitura**, sem rotina em
+  background. Ler só a última (`ORDER BY ativado_em DESC LIMIT 1`) faria a segunda liberação
+  cancelar a primeira em silêncio — foi o bug de `caixas_liberacao_temporaria`.
+- `ativado_em` é `timestamp without time zone` gravado pelo `NOW()` do banco, que roda em **UTC**:
+  comparar direto com o relógio local daria 3 horas de folga. `_ativado_em_local` converte.
+- **Não fura o bloqueio de movimentações.** São duas regras independentes, e a gravação continua
+  checando `data_bloqueada`. Ativar sobre data bloqueada é **recusado** (403), apontando para
+  Bloquear Movimentações — o que está fechado mora numa tabela só.
+- A trava está em `datas_medicao_permitidas`, que é lida tanto pelo GET da tela quanto pelo
+  `POST /medicoes/ajax-salvar` (400) — não é só o `<select>`.
+
 ## Coligadas
 
 Empresas do grupo econômico da família que **não são do grupo** a ponto de

@@ -16,7 +16,7 @@ estoque em Financeiro → Saldos:
    percorrer o histórico inteiro.
 """
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 # Quantos dias para trás o bloqueio ainda é manual. Antes disso, bloqueado
@@ -111,3 +111,66 @@ def msg_data_bloqueada(data_ref):
         )
 
     return f"Movimentações de {data_ref.strftime('%d/%m/%Y')} estão bloqueadas."
+
+
+# ---------------------------------------------------------------------
+# Liberação temporária de data para Informar Medições
+# ---------------------------------------------------------------------
+# Quantas horas uma liberação vale depois de ativada. Quem expira é o
+# relógio, na leitura — não há rotina em background.
+HORAS_LIBERACAO_MEDICOES = 4
+
+
+def _ativado_em_local(ativado_em):
+    """Converte o `ativado_em` da liberação para o horário de Brasília.
+
+    A coluna é `timestamp without time zone` e é preenchida pelo NOW() do
+    banco, que roda em UTC. Comparar esse valor direto com datetime.now(),
+    que é local, daria três horas de folga: a liberação anunciada como de
+    4 horas duraria 7, e a tela mostraria a expiração em UTC.
+    """
+    if ativado_em is None:
+        return None
+    return (ativado_em.replace(tzinfo=timezone.utc)
+            .astimezone(ZoneInfo("America/Sao_Paulo")))
+
+
+def liberacoes_medicao_vigentes(cur, cod_empresa):
+    """Liberações ainda dentro do prazo, mais recentes primeiro.
+
+    São **acumulativas**: cada linha abre uma data, e todas as que não
+    expiraram valem ao mesmo tempo. Ler só a última faria uma liberação
+    nova cancelar a anterior sem avisar.
+    """
+    cur.execute("""
+        SELECT l.id_liberacao, l.data_liberada, l.ativado_em,
+               u.nome AS ativado_por
+        FROM operacoes_liberacao_temporaria l
+        LEFT JOIN usuarios u ON u.id_usuario = l.id_usuario_ativou
+        WHERE l.cod_empresa = %s
+          AND l.revogado_em IS NULL
+          AND l.ativado_em >= (NOW() AT TIME ZONE 'UTC') - %s::interval
+        ORDER BY l.ativado_em DESC
+    """, (cod_empresa, f"{HORAS_LIBERACAO_MEDICOES} hours"))
+
+    agora = datetime.now(ZoneInfo("America/Sao_Paulo"))
+    vigentes = []
+    for linha in cur.fetchall():
+        lib = linha if isinstance(linha, dict) else {
+            "id_liberacao": linha[0],
+            "data_liberada": linha[1],
+            "ativado_em": linha[2],
+            "ativado_por": linha[3],
+        }
+        expira_em = (_ativado_em_local(lib["ativado_em"])
+                     + timedelta(hours=HORAS_LIBERACAO_MEDICOES))
+        if agora >= expira_em:
+            continue
+        lib["expira_em"] = expira_em
+        vigentes.append(lib)
+    return vigentes
+
+
+def datas_medicao_liberadas(cur, cod_empresa):
+    """Conjunto de datas avulsas abertas por liberação temporária vigente."""
+    return {lib["data_liberada"] for lib in liberacoes_medicao_vigentes(cur, cod_empresa)}

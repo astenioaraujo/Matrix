@@ -13,9 +13,12 @@ from services.coligadas_service import (
 )
 from services.bloqueios_service import (
     DIAS_LIMITE_BLOQUEIO,
+    HORAS_LIBERACAO_MEDICOES,
     data_bloqueada,
     data_limite_bloqueio,
     datas_bloqueadas,
+    datas_medicao_liberadas,
+    liberacoes_medicao_vigentes,
     msg_data_bloqueada,
 )
 from security_helpers import (
@@ -60,6 +63,14 @@ def eh_feriado_empresa(cur, cod_empresa, data_ref):
 
 
 def datas_medicao_permitidas(cur, cod_empresa, hoje=None):
+    """Datas que o seletor de Informar Medições oferece.
+
+    Hoje, mais os dias imediatamente anteriores enquanto forem domingo ou
+    feriado — no primeiro dia útil a varredura para. Um feriado que ficou
+    para trás de um dia útil, portanto, não aparece mais: é para esse caso
+    que existe a liberação temporária (Operações → Liberar Data de
+    Medição), cujas datas entram aqui enquanto estiverem vigentes.
+    """
     if hoje is None:
         hoje = hoje_br()
 
@@ -77,7 +88,10 @@ def datas_medicao_permitidas(cur, cod_empresa, hoje=None):
         else:
             break
 
-    return permitidas
+    # Data futura nunca é digitável, nem liberada.
+    liberadas = {d for d in datas_medicao_liberadas(cur, cod_empresa) if d <= hoje}
+
+    return sorted(set(permitidas) | liberadas, reverse=True)
 
 
 DIAS_SEMANA_OPERACOES = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira",
@@ -4407,6 +4421,165 @@ def alternar_bloqueio_movimentacoes():
 
         conn.commit()
         return {"ok": True, "bloqueada": bloquear}
+
+    except Exception as e:
+        conn.rollback()
+        return {"ok": False, "erro": str(e)}, 500
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+#------------------------------------------
+# LIBERAÇÃO TEMPORÁRIA DE DATA DE MEDIÇÃO
+#------------------------------------------
+# O seletor de Informar Medições só oferece hoje e os domingos/feriados
+# imediatamente anteriores (`datas_medicao_permitidas`). Um feriado que
+# ficou atrás de um dia útil some do seletor e a medição daquele dia deixa
+# de ter como ser digitada. Aqui se abre essa data avulsa, por
+# HORAS_LIBERACAO_MEDICOES horas.
+#
+# Não fura o bloqueio de movimentações: são duas regras independentes, e a
+# gravação continua checando `data_bloqueada`. Por isso a ativação recusa
+# data bloqueada, apontando para Bloquear Movimentações — a verdade sobre
+# o que está fechado mora numa tabela só.
+
+def _liberacao_medicao_json(lib):
+    return {
+        "id_liberacao": lib["id_liberacao"],
+        "data_liberada": lib["data_liberada"].isoformat(),
+        "data_liberada_br": lib["data_liberada"].strftime("%d/%m/%Y"),
+        "ativado_por": lib["ativado_por"] or "—",
+        "expira_em": lib["expira_em"].isoformat(),
+    }
+
+
+@operacoes_bp.route("/liberacao-medicao")
+@permissao_obrigatoria(
+    "OPERACOES",
+    "BLOQUEAR_MOVIMENTACOES",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def liberacao_medicao():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    return render_template(
+        "liberacao_medicao.html",
+        cod_empresa=str(session["cod_empresa"]).strip(),
+        nome_empresa=session.get("nome_empresa", ""),
+        horas_liberacao=HORAS_LIBERACAO_MEDICOES,
+        hoje_iso=hoje_br().isoformat(),
+        url_voltar=url_for("operacoes.menu_operacoes"),
+        texto_voltar="← Voltar",
+    )
+
+
+@operacoes_bp.route("/api/liberacao-medicao", methods=["GET"])
+@permissao_obrigatoria(
+    "OPERACOES",
+    "BLOQUEAR_MOVIMENTACOES",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def api_listar_liberacao_medicao():
+    cod_empresa = str(session.get("cod_empresa") or "").strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        vigentes = liberacoes_medicao_vigentes(cur, cod_empresa)
+        datas = datas_medicao_permitidas(cur, cod_empresa)
+    finally:
+        cur.close()
+        conn.close()
+
+    return {
+        "ok": True,
+        "horas": HORAS_LIBERACAO_MEDICOES,
+        "liberacoes": [_liberacao_medicao_json(l) for l in vigentes],
+        "datas_no_seletor": [d.strftime("%d/%m/%Y") for d in datas],
+    }
+
+
+@operacoes_bp.route("/api/liberacao-medicao", methods=["POST"])
+@permissao_obrigatoria(
+    "OPERACOES",
+    "BLOQUEAR_MOVIMENTACOES",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def api_ativar_liberacao_medicao():
+    cod_empresa = str(session.get("cod_empresa") or "").strip()
+    id_usuario = session.get("id_usuario")
+    hoje = hoje_br()
+
+    dados = request.get_json(silent=True) or {}
+
+    try:
+        data_liberada = date.fromisoformat(str(dados.get("data_liberada") or "").strip())
+    except ValueError:
+        return {"ok": False, "erro": "Informe a data a liberar."}, 400
+
+    if data_liberada > hoje:
+        return {"ok": False, "erro": "Data futura não pode ser liberada."}, 400
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        if data_bloqueada(cur, cod_empresa, data_liberada):
+            return {
+                "ok": False,
+                "erro": msg_data_bloqueada(data_liberada)
+                        + " Reabra a data em Bloquear Movimentações antes de liberar aqui.",
+            }, 403
+
+        cur.execute("""
+            INSERT INTO operacoes_liberacao_temporaria
+                (cod_empresa, data_liberada, id_usuario_ativou)
+            VALUES (%s, %s, %s)
+            RETURNING id_liberacao
+        """, (cod_empresa, data_liberada, id_usuario))
+
+        conn.commit()
+        return {"ok": True, "horas": HORAS_LIBERACAO_MEDICOES}
+
+    except Exception as e:
+        conn.rollback()
+        return {"ok": False, "erro": str(e)}, 500
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+@operacoes_bp.route("/api/liberacao-medicao/<int:id_liberacao>", methods=["DELETE"])
+@permissao_obrigatoria(
+    "OPERACOES",
+    "BLOQUEAR_MOVIMENTACOES",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def api_revogar_liberacao_medicao(id_liberacao):
+    cod_empresa = str(session.get("cod_empresa") or "").strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            UPDATE operacoes_liberacao_temporaria
+               SET revogado_em = NOW()
+             WHERE id_liberacao = %s
+               AND cod_empresa = %s
+               AND revogado_em IS NULL
+        """, (id_liberacao, cod_empresa))
+
+        # Revogar uma liberação inexistente respondendo "ok" faria a linha
+        # sumir da tela e continuar valendo no servidor.
+        if cur.rowcount == 0:
+            conn.rollback()
+            return {"ok": False, "erro": "Liberação não encontrada ou já encerrada."}, 404
+
+        conn.commit()
+        return {"ok": True}
 
     except Exception as e:
         conn.rollback()
