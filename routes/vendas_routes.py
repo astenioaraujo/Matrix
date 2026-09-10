@@ -717,6 +717,19 @@ DIAS_SEMANA_PT = {
     4: "Sexta", 5: "Sábado", 6: "Domingo",
 }
 
+# Abreviação de três letras, para o rótulo de data das janelas de detalhamento
+# ("09/09 - Qua"): a coluna é estreita e o nome inteiro empurraria a grade.
+DIAS_SEMANA_PT_ABREV = {
+    0: "Seg", 1: "Ter", 2: "Qua", 3: "Qui",
+    4: "Sex", 5: "Sáb", 6: "Dom",
+}
+
+
+def rotulo_dia_mes(dia, mes, ano):
+    """`09/09 - Qua` — a data sozinha não diz que dia da semana foi."""
+    return (f"{int(dia):02d}/{int(mes):02d} - "
+            f"{DIAS_SEMANA_PT_ABREV[date(int(ano), int(mes), int(dia)).weekday()]}")
+
 
 def ler_csv_ocloset_diario(conteudo_bytes):
     """Lê o CSV de itens do O Closet agrupando por (data, produto).
@@ -3813,7 +3826,7 @@ def _detalhe_mes_filial(cur, cod_empresa, metrica, ano, mes, cod_filial, nomes):
     corpo, total, acum, acum_colunas = _montar_grade_detalhe(metrica, dias, produtos, celulas)
 
     for linha in corpo:
-        linha["rotulo"] = f"{linha['rotulo']:02d}/{int(mes):02d}"
+        linha["rotulo"] = rotulo_dia_mes(linha["rotulo"], mes, ano)
 
     return {
         "titulo": f"{METRICAS_PAINEL[metrica]['rotulo']} — "
@@ -3864,7 +3877,7 @@ def _detalhe_mes_total(cur, cod_empresa, metrica, ano, mes, nomes):
     corpo, total, acum, acum_colunas = _montar_grade_detalhe(metrica, dias, rotulos, celulas)
 
     for linha in corpo:
-        linha["rotulo"] = f"{linha['rotulo']:02d}/{int(mes):02d}"
+        linha["rotulo"] = rotulo_dia_mes(linha["rotulo"], mes, ano)
 
     return {
         "titulo": f"{METRICAS_PAINEL[metrica]['rotulo']} — todos os postos",

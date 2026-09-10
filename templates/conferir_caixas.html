@@ -638,6 +638,17 @@
   }
   .chk-impressao input { cursor:pointer; }
 
+  /* Liga o modo impressão e chama a caixa de impressão do navegador num
+     clique só — o checkbox ao lado continua valendo para quem só quer
+     ver a tela limpa. */
+  .btn-imprimir {
+    display:flex; align-items:center; gap:6px;
+    background:#14114f; border:1px solid #14114f; border-radius:8px;
+    padding:6px 12px; font-size:12px; font-weight:700; color:#fff;
+    cursor:pointer;
+  }
+  .btn-imprimir:hover { background:#1e1a6e; }
+
   body.modo-impressao header,
   body.modo-impressao footer,
   body.modo-impressao .barra-navegacao,
@@ -650,7 +661,20 @@
 
   @media print {
     @page { size: landscape; margin: 8mm; }
-    .chk-impressao { display:none !important; }
+    .chk-impressao, .btn-imprimir { display:none !important; }
+
+    /* Sem isto o navegador descarta o fundo azul da linha de totais e ela
+       sai cinza no papel — com o texto branco por cima, quase ilegível.
+       Vale só para a linha de totais: mandar a grade inteira imprimir os
+       fundos gastaria tinta à toa. */
+    tr.linha-total td {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      background:#14114f !important;
+      color:#fff !important;
+    }
+    tr.linha-total td.fpos { color:#22c55e !important; }
+    tr.linha-total td.fneg { color:#f87171 !important; }
   }
 </style>
 
@@ -757,6 +781,7 @@
         <input type="checkbox" id="chk-impressao" onchange="alternarModoImpressao(this.checked)">
         Versão para impressão
       </label>
+      <button type="button" class="btn-imprimir" onclick="imprimirCaixa()" title="Liga a versão para impressão e abre a impressão do navegador">🖨 Imprimir</button>
     </div>
   {% endif %}{% endfor %}
 {% else %}
@@ -767,6 +792,7 @@
       <input type="checkbox" id="chk-impressao" onchange="alternarModoImpressao(this.checked)">
       Versão para impressão
     </label>
+    <button type="button" class="btn-imprimir" onclick="imprimirCaixa()" title="Liga a versão para impressão e abre a impressão do navegador">🖨 Imprimir</button>
   </div>
 {% endif %}
 
@@ -2099,6 +2125,18 @@
 function alternarModoImpressao(ligado) {
   document.body.classList.toggle('modo-impressao', ligado);
   try { localStorage.setItem('caixas_modo_impressao', ligado ? '1' : '0'); } catch (e) {}
+  /* Com mais de uma área na tela existe um checkbox por bloco: todos
+     precisam refletir o mesmo estado, senão o próximo clique desliga o
+     que o outro acabou de ligar. */
+  document.querySelectorAll('.chk-impressao input').forEach(function (c) { c.checked = ligado; });
+}
+
+/* Botão Imprimir: garante a tela limpa e chama a impressão do navegador.
+   O modo fica ligado depois (o checkbox marcado mostra isso), para que
+   voltar a imprimir outro posto seja um clique só. */
+function imprimirCaixa() {
+  alternarModoImpressao(true);
+  window.print();
 }
 (function () {
   var ligado = false;

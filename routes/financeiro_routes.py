@@ -1709,7 +1709,7 @@ def api_matricial_detalhamento():
                 valor_float = float(valor or 0)
                 item["total"] += valor_float
                 item["lancamentos"].append({
-                    "data": data.strftime("%d/%m/%Y") if data else "",
+                    "data": data_br_com_dia(data),
                     "descricao": descricao or "",
                     "valor": valor_float,
                 })
@@ -5388,7 +5388,7 @@ def api_caixas_detalhe_item():
         if dia not in indice:
             indice[dia] = {
                 "data": dia,
-                "data_br": l["data"].strftime("%d/%m/%Y"),
+                "data_br": data_br_com_dia(l["data"]),
                 "linhas": [],
                 "total": 0.0,
             }
@@ -6424,6 +6424,18 @@ def _hoje_local():
 # =========================
 DIAS_SEMANA_PT = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira",
                   "Sexta-feira", "Sábado", "Domingo"]
+
+# Abreviação de três letras, para as janelas de detalhamento: a data sozinha
+# não diz que dia da semana foi, e o nome inteiro não cabe na coluna.
+DIAS_SEMANA_PT_ABREV = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+
+
+def data_br_com_dia(data):
+    """`09/09/2026 - Qua`."""
+    if not data:
+        return ""
+
+    return f"{data.strftime('%d/%m/%Y')} - {DIAS_SEMANA_PT_ABREV[data.weekday()]}"
 
 
 def carregar_feriados(cod_empresa, data_inicio=None, data_fim=None):
