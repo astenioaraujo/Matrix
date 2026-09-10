@@ -1186,6 +1186,11 @@
   const ANO_ATUAL = {{ ano_sel }};
   const FORMAS_JS    = {{ formas | tojson }};
   const CONTROLES_JS = {{ controles | tojson }};
+  {# Coluna fechada na grade não tem por que abrir seção no painel do ✎:
+     o que não está à vista não se lança. Mesmos conjuntos que pintam a
+     grade, para as duas leituras não divergirem. #}
+  const COLS_FECHADAS_FORMA    = new Set({{ colunas_fechadas | list | tojson }});
+  const COLS_FECHADAS_CONTROLE = new Set({{ controles_fechados | list | tojson }});
   {# Só quem edita chega a usar estas, mas declarar sempre evita que o código
      compartilhado do painel esbarre numa const inexistente. #}
   const URL_DETALHE_SALVAR = "{{ url_for('financeiro.api_caixas_detalhe_salvar') }}";
@@ -1714,10 +1719,13 @@
       const j = await resp.json();
       if (!j.ok) { cont.innerHTML = '<div style="color:#b91c1c;font-size:13px;">Erro ao carregar.</div>'; return; }
 
-      let html = FORMAS_JS.map(f => montarSecaoDetalhe('forma', f.id, f.nome, j.forma[f.id] || [])).join('');
-      if (CONTROLES_JS.length) {
+      const formasAbertas    = FORMAS_JS.filter(f => !COLS_FECHADAS_FORMA.has(f.id));
+      const controlesAbertos = CONTROLES_JS.filter(c => !COLS_FECHADAS_CONTROLE.has(c.id));
+
+      let html = formasAbertas.map(f => montarSecaoDetalhe('forma', f.id, f.nome, j.forma[f.id] || [])).join('');
+      if (controlesAbertos.length) {
         html += '<div class="pd-sep-controles">Controles adicionais</div>';
-        html += CONTROLES_JS.map(c => montarSecaoDetalhe('controle', c.id, c.nome, j.controle[c.id] || [])).join('');
+        html += controlesAbertos.map(c => montarSecaoDetalhe('controle', c.id, c.nome, j.controle[c.id] || [])).join('');
       }
       cont.innerHTML = html;
 
