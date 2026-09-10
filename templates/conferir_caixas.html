@@ -2044,7 +2044,16 @@
     if (e.key === 'Escape') fecharDetItem();
   });
 
+  /* O que está aberto agora, para o checkbox "Mostrar tudo" reabrir a
+     mesma coisa com o outro recorte. */
+  let detItemAtual = null;
+
+  function recarregarDetItem() {
+    if (detItemAtual) abrirDetItem(detItemAtual.tipo, detItemAtual.idItem, detItemAtual.data);
+  }
+
   async function abrirDetItem(tipo, idItem, data) {
+    detItemAtual = { tipo, idItem, data };
     const modal = document.getElementById('modal-det-item');
     const corpo = document.getElementById('mdi-corpo');
 
@@ -2059,8 +2068,16 @@
     const params = new URLSearchParams({
       tipo, id_item: idItem, cod_filial: DET_COD_FILIAL
     });
+    /* Só faz sentido na coluna do mês: o olho da célula já é de um dia
+       que, por definição, tem detalhamento. */
+    const caixaTudo = document.getElementById('mdi-chk-tudo-box');
+    const chkTudo   = document.getElementById('mdi-chk-tudo');
+    caixaTudo.style.display = data ? 'none' : 'flex';
+    const mostrarTudo = !data && chkTudo.checked;
+
     if (data) params.set('data', data);
     else { params.set('ano', DET_ANO); params.set('mes', DET_MES); }
+    if (mostrarTudo) params.set('tudo', '1');
 
     try {
       const resp = await fetch(URL_DET_ITEM + '?' + params.toString());
@@ -2075,7 +2092,9 @@
       document.getElementById('mdi-sub').textContent = data
         ? data.split('-').reverse().join('/')
         : 'Mês inteiro — ' + String(DET_MES).padStart(2, '0') + '/' + DET_ANO
-          + ' — ' + j.dias.length + ' dia(s), ' + j.qtd + ' lançamento(s)';
+          + ' — ' + j.dias.length + ' dia(s), ' + j.qtd + ' lançamento(s)'
+          + (mostrarTudo ? ' — detalhamento e valores digitados na grade'
+                         : ' — só o detalhamento');
 
       if (!j.dias.length) {
         corpo.innerHTML = '<div class="mdi-vazio">Sem detalhamento lançado.</div>';
@@ -2084,8 +2103,10 @@
 
       corpo.innerHTML = j.dias.map((dia) => {
         const linhas = dia.linhas.map((l) =>
-          '<tr><td>' + (mdiEscape(l.observacao) ||
-            '<span style="color:#cbd5e1">(sem observação)</span>') +
+          '<tr><td>' + (l.direto
+            ? '<span style="color:#6b7280;font-style:italic">Digitado na grade (sem detalhamento)</span>'
+            : (mdiEscape(l.observacao) ||
+               '<span style="color:#cbd5e1">(sem observação)</span>')) +
           '</td><td class="v">' + fmtBR(l.valor) + '</td></tr>'
         ).join('');
 
@@ -2115,7 +2136,14 @@
         <div class="mdi-titulo" id="mdi-titulo">Detalhamento</div>
         <div class="mdi-sub" id="mdi-sub"></div>
       </div>
-      <button type="button" class="mdi-fechar" onclick="fecharDetItem()">&times;</button>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <label id="mdi-chk-tudo-box"
+               style="display:none;align-items:center;gap:6px;font-size:12px;color:#374151;cursor:pointer;">
+          <input type="checkbox" id="mdi-chk-tudo" onchange="recarregarDetItem()">
+          Mostrar tudo
+        </label>
+        <button type="button" class="mdi-fechar" onclick="fecharDetItem()">&times;</button>
+      </div>
     </div>
     <div class="mdi-corpo" id="mdi-corpo"></div>
     <div class="mdi-rodape">

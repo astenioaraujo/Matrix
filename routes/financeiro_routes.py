@@ -5337,12 +5337,21 @@ def api_caixas_detalhe_item():
     ano = (request.args.get("ano") or "").strip()
     mes = (request.args.get("mes") or "").strip()
 
+    # "Mostrar tudo": além do detalhamento, os dias em que o valor foi
+    # digitado direto na célula e por isso não tem detalhe nenhum. Sem
+    # isso a janela da coluna some com parte do que a coluna soma no mês
+    # — e é justamente aí que moram os valores importantes digitados na
+    # grade (impostos, por exemplo).
+    tudo = (request.args.get("tudo") or "") in ("1", "true", "sim")
+
     if tipo == "controle":
         tabela, campo = "caixas_controles_detalhe", "id_controle"
         tabela_item, campo_item = "caixas_controles_adicionais", "id"
+        tabela_valor = "caixas_controles_valores"
     else:
         tabela, campo = "caixas_lancamentos_detalhe", "id_forma"
         tabela_item, campo_item = "caixas_formas_recebimento", "id"
+        tabela_valor = "caixas_lancamentos"
 
     where = [f"d.cod_empresa=%s", "d.cod_filial=%s", f"d.{campo}=%s"]
     params = [cod_empresa, cod_filial, id_item]
@@ -5374,6 +5383,19 @@ def api_caixas_detalhe_item():
         """, (cod_empresa, id_item))
         item = cur.fetchone()
 
+        # Só no recorte do mês: no olho da célula o dia já é o do detalhe.
+        valores_celula = []
+        if tudo and not data_str:
+            cur.execute(f"""
+                SELECT data, valor
+                  FROM {tabela_valor}
+                 WHERE cod_empresa=%s AND cod_filial=%s AND {campo}=%s
+                   AND EXTRACT(YEAR FROM data)=%s
+                   AND EXTRACT(MONTH FROM data)=%s
+                 ORDER BY data
+            """, (cod_empresa, cod_filial, id_item, ano, mes))
+            valores_celula = cur.fetchall() or []
+
     finally:
         cur.close()
         conn.close()
@@ -5402,12 +5424,35 @@ def api_caixas_detalhe_item():
             "valor": valor,
         })
 
+    # Dia com valor na célula e sem nenhum detalhe vira uma linha só,
+    # marcada como digitada na grade. Dia que tem detalhe fica como está:
+    # ali o que explica o valor é o detalhamento.
+    qtd_direto = 0
+    for v in valores_celula:
+        dia = v["data"].isoformat()
+        if dia in indice:
+            continue
+        valor = float(v["valor"] or 0)
+        if not valor:
+            continue
+        total += valor
+        qtd_direto += 1
+        dias.append({
+            "data": dia,
+            "data_br": data_br_com_dia(v["data"]),
+            "linhas": [{"observacao": "", "valor": valor, "direto": True}],
+            "total": valor,
+            "direto": True,
+        })
+
+    dias.sort(key=lambda d: d["data"])
+
     return jsonify({
         "ok": True,
         "nome_item": (item or {}).get("nome") or "",
         "dias": dias,
         "total": total,
-        "qtd": len(linhas),
+        "qtd": len(linhas) + qtd_direto,
     })
 
 
