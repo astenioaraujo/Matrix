@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 36px; font-weight: 700; margin-bottom: 10px; }
+  .empresa { font-size: 22px; margin-bottom: 30px; }
+  .menu-botoes {
+    display: grid; grid-template-columns: repeat(auto-fill, 220px);
+    gap: 14px; margin-bottom: 20px;
+  }
+  .menu-botoes a {
+    display: flex; align-items: center; justify-content: center;
+    width: 220px; height: 60px; border-radius: 12px;
+    text-decoration: none; font-weight: 600; font-size: 16px; color: white;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15); transition: all 0.2s ease;
+    text-align: center; padding: 0 10px; box-sizing: border-box;
+  }
+  .menu-botoes a:hover { transform: translateY(-2px); filter: brightness(0.95); }
+  .btn-carretas { background: #0e7490; }
+  .btn-cavalos { background: #b45309; }
+  .btn-motoristas { background: #4527a0; }
+  .btn-distribuidoras { background: #546e7a; }
+  .nota { color: #555; font-size: 14px; max-width: 700px; }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">Configurações de Logística</div>
+  <div class="empresa"><strong>Empresa:</strong> {{ nome_empresa }}</div>
+
+  <div class="menu-botoes">
+    <a class="btn-carretas" href="{{ url_for('logistica.carretas') }}">Carretas</a>
+    <a class="btn-cavalos" href="{{ url_for('logistica.cadastro_simples', cadastro='cavalos') }}">Cavalos</a>
+    <a class="btn-motoristas" href="{{ url_for('logistica.cadastro_simples', cadastro='motoristas') }}">Motoristas</a>
+  </div>
+
+  <div class="nota">
+    As distribuidoras são as mesmas de <strong>Operações → Configurações → Fornecedores de Combustíveis</strong>,
+    e o CNPJ de cada posto fica em <strong>Configurações → Filiais</strong>.
+  </div>
+</div>
+
+{% endblock %}

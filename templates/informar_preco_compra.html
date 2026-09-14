@@ -60,7 +60,7 @@
         type="date"
         id="data_preco"
         value="{{ data_sel }}"
-        onchange="window.location='{{ url_for('operacoes.informar_preco_compra') }}?data=' + this.value"
+        onchange="window.location='{{ url_tela }}' + ('{{ url_tela }}'.includes('?') ? '&' : '?') + 'data=' + this.value"
       >
     </div>
   
@@ -68,7 +68,7 @@
       <button
         type="button"
         class="btn-carregar"
-        onclick="window.location='{{ url_for('operacoes.informar_preco_compra') }}?data=' + document.getElementById('data_preco').value"
+        onclick="window.location='{{ url_tela }}' + ('{{ url_tela }}'.includes('?') ? '&' : '?') + 'data=' + document.getElementById('data_preco').value"
       >
         Carregar
       </button>

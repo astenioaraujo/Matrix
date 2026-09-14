@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 10px; }
+  .empresa { font-size: 22px; margin-bottom: 24px; }
+  .painel {
+    max-width: 900px; background: #fff; border: 1px solid #d9d9d9; border-radius: 16px;
+    padding: 20px; box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { border: 1px solid #dcdcdc; padding: 8px; }
+  th { background: #f1f1f1; font-weight: 800; text-align: left; }
+  input[type="text"] {
+    width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #cfcfcf; border-radius: 6px;
+  }
+  .maiusculo { text-transform: uppercase; }
+  .col-ativo { width: 80px; text-align: center; }
+  .col-acoes { width: 190px; text-align: center; white-space: nowrap; }
+  .btn-salvar {
+    padding: 8px 12px; border-radius: 8px; border: 1px solid #1565c0;
+    background: #1565c0; color: #fff; font-weight: 700; cursor: pointer;
+  }
+  .btn-excluir {
+    padding: 8px 12px; border-radius: 8px; border: 1px solid #b00020;
+    background: #fff; color: #b00020; font-weight: 700; cursor: pointer;
+  }
+  .linha-novo td { background: #fffbe6; }
+  .linha-inativa input[type="text"] { color: #999; }
+  .flash-msg { padding: 10px 14px; border-radius: 8px; margin-bottom: 15px; font-weight: 600; max-width: 900px; }
+  .flash-success { background: #e6f4ea; color: #1e6b34; border: 1px solid #b7dfc2; }
+  .flash-error { background: #fdeaea; color: #9f2f2f; border: 1px solid #efc2c2; }
+</style>
+
+<div class="pagina-titulo">{{ spec.titulo }}</div>
+<div class="empresa"><strong>Empresa:</strong> {{ nome_empresa }}</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endwith %}
+
+<div class="painel">
+  <table>
+    <thead>
+      <tr>
+        {% for campo in spec.campos %}<th>{{ campo.rotulo }}</th>{% endfor %}
+        <th class="col-ativo">Ativo</th>
+        <th class="col-acoes">Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="linha-novo">
+        <form method="post">
+          {% for campo in spec.campos %}
+            <td><input type="text" name="{{ campo.nome }}"
+                       class="{% if campo.maiusculo %}maiusculo{% endif %}"
+                       {% if campo.cpf %}inputmode="numeric" placeholder="000.000.000-00"{% endif %}
+                       {% if campo.obrigatorio %}required{% endif %}></td>
+          {% endfor %}
+          <td class="col-ativo"><input type="checkbox" name="ativo" checked></td>
+          <td class="col-acoes"><button type="submit" class="btn-salvar">Adicionar</button></td>
+        </form>
+      </tr>
+
+      {% for r in registros %}
+      <tr class="{% if not r.ativo %}linha-inativa{% endif %}">
+        <form method="post">
+          <input type="hidden" name="id" value="{{ r.id }}">
+          {% for campo in spec.campos %}
+            <td><input type="text" name="{{ campo.nome }}" value="{{ r[campo.nome] or '' }}"
+                       class="{% if campo.maiusculo %}maiusculo{% endif %}"
+                       {% if campo.obrigatorio %}required{% endif %}></td>
+          {% endfor %}
+          <td class="col-ativo"><input type="checkbox" name="ativo" {% if r.ativo %}checked{% endif %}></td>
+          <td class="col-acoes">
+            <button type="submit" class="btn-salvar">Salvar</button>
+        </form>
+            <form method="post" style="display:inline;"
+                  action="{{ url_for('logistica.excluir_cadastro', cadastro=cadastro, id_registro=r.id) }}"
+                  onsubmit="return confirmarEnvio(this, 'Excluir este {{ spec.singular }}?');">
+              <button type="submit" class="btn-excluir">Excluir</button>
+            </form>
+          </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

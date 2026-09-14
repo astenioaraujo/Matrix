@@ -1,0 +1,401 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 32px; font-weight: 800; margin-bottom: 6px; }
+  .empresa { font-size: 20px; margin-bottom: 18px; }
+  .bloco {
+    background: #fff; border: 1px solid #d9d9d9; border-radius: 14px;
+    padding: 18px; box-shadow: 0 6px 20px rgba(0,0,0,0.05); margin-bottom: 18px;
+  }
+  .bloco h3 { margin: 0 0 14px; font-size: 18px; color: #0e7490; }
+  .cabecalho { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+  .campo label { display: block; font-weight: 700; margin-bottom: 5px; font-size: 13px; }
+  .campo input, .campo select, .campo textarea {
+    width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #bfc7d1; border-radius: 7px; font-size: 14px;
+  }
+  .campo .dica { font-size: 12px; color: #666; margin-top: 3px; min-height: 15px; }
+  .numero-carga { font-size: 22px; font-weight: 800; color: #0e7490; padding-top: 6px; }
+
+  .grade-wrap { overflow-x: auto; }
+  table.grade { border-collapse: collapse; font-size: 14px; width: 100%; min-width: 1050px; }
+  .grade th, .grade td { border: 1px solid #dcdcdc; padding: 5px 6px; }
+  .grade th { background: #e0f2f1; text-align: left; white-space: nowrap; }
+  .grade select, .grade input {
+    width: 100%; box-sizing: border-box; padding: 6px; border: 1px solid #cfd6de; border-radius: 6px; font-size: 14px;
+  }
+  .grade .num input, .grade td.num { text-align: right; }
+  .grade .cnpj { color: #444; white-space: nowrap; font-size: 13px; }
+  .grade .total-linha { font-weight: 700; white-space: nowrap; }
+  .grade .origem-preco { font-size: 11px; color: #777; display: block; text-align: right; }
+  .grade .manual { background: #fff8e1; }
+  .grade tfoot td { font-weight: 800; background: #fff8c5; }
+  .btn-rem { border: none; background: none; color: #b00020; font-size: 20px; cursor: pointer; }
+
+  .btn { padding: 10px 18px; border-radius: 10px; border: none; font-weight: 700; cursor: pointer; font-size: 15px; }
+  .btn-add { background: #e0f2f1; color: #0e7490; border: 1px solid #0e7490; margin-top: 10px; }
+  .btn-salvar { background: #2d7d46; color: #fff; }
+  .btn-imprimir { background: #1565c0; color: #fff; }
+  .btn-excluir { background: #fff; color: #b00020; border: 1px solid #b00020; }
+  .acoes { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+
+  .resumo-topo { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px 18px; margin-bottom: 14px; font-size: 15px; }
+  .resumo-topo span { color: #555; }
+  table.resumo { border-collapse: collapse; font-size: 15px; min-width: 620px; }
+  .resumo th, .resumo td { border: 1px solid #d0d0d0; padding: 7px 10px; }
+  .resumo th { background: #f1f1f1; text-align: left; }
+  .resumo td.num, .resumo th.num { text-align: right; }
+  .resumo tfoot td { font-weight: 800; background: #fff8c5; }
+  .alerta { margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-weight: 600; }
+  .alerta-erro { background: #fdeaea; color: #9f2f2f; border: 1px solid #efc2c2; }
+  .alerta-ok { background: #e6f4ea; color: #1e6b34; border: 1px solid #b7dfc2; }
+
+  .flash-msg { padding: 10px 14px; border-radius: 8px; margin-bottom: 15px; font-weight: 600; }
+  .flash-success { background: #e6f4ea; color: #1e6b34; border: 1px solid #b7dfc2; }
+  .flash-error { background: #fdeaea; color: #9f2f2f; border: 1px solid #efc2c2; }
+
+  @media print {
+    body * { visibility: hidden; }
+    #bloco-resumo, #bloco-resumo * { visibility: visible; }
+    #bloco-resumo { position: absolute; left: 0; top: 0; width: 100%; box-shadow: none; border: none; }
+    #alerta-capacidade { display: none; }
+  }
+</style>
+
+<div class="pagina-titulo">{% if cab %}Carregamento nº {{ cab.numero }}{% else %}Novo Carregamento{% endif %}</div>
+<div class="empresa"><strong>Empresa:</strong> {{ nome_empresa }}</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endwith %}
+
+<form method="post" id="form-carga">
+
+  <div class="bloco">
+    <h3>Cabeçalho</h3>
+    <div class="cabecalho">
+      <div class="campo">
+        <label>Nº do carregamento</label>
+        <div class="numero-carga">{{ cab.numero if cab else 'gerado ao salvar' }}</div>
+      </div>
+      <div class="campo">
+        <label>Data do pedido</label>
+        <input type="date" name="data_pedido" id="data_pedido" value="{{ data_pedido }}" required>
+        <div class="dica">Define o preço de compra sugerido</div>
+      </div>
+      <div class="campo">
+        <label>Data do carregamento</label>
+        <input type="date" name="data_carregamento" id="data_carregamento"
+               value="{{ cab.data_carregamento.isoformat() if cab and cab.data_carregamento else '' }}">
+      </div>
+      <div class="campo">
+        <label>Carreta</label>
+        <select name="id_carreta" id="id_carreta" required>
+          <option value="">— escolha —</option>
+          {% for c in carretas %}
+            <option value="{{ c.id }}" {% if cab and cab.id_carreta == c.id %}selected{% endif %}>
+              {{ c.placa }} — {{ '{:,}'.format(c.capacidade).replace(',', '.') }} L
+            </option>
+          {% endfor %}
+        </select>
+        <div class="dica" id="dica-carreta"></div>
+      </div>
+      <div class="campo">
+        <label>Cavalo</label>
+        <select name="id_cavalo" id="id_cavalo" required>
+          <option value="">— escolha —</option>
+          {% for c in cavalos %}
+            <option value="{{ c.id }}" {% if cab and cab.id_cavalo == c.id %}selected{% endif %}>{{ c.placa }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label>Motorista</label>
+        <select name="id_motorista" id="id_motorista" required>
+          <option value="">— escolha —</option>
+          {% for m in motoristas %}
+            <option value="{{ m.id }}" data-cpf="{{ m.cpf or '' }}" {% if cab and cab.id_motorista == m.id %}selected{% endif %}>{{ m.nome }}</option>
+          {% endfor %}
+        </select>
+        <div class="dica" id="dica-motorista"></div>
+      </div>
+      <div class="campo">
+        <label>Distribuidora</label>
+        <select name="id_fornecedor" id="id_fornecedor" required>
+          <option value="">— escolha —</option>
+          {% for d in distribuidoras %}
+            <option value="{{ d.id }}" {% if cab and cab.id_fornecedor == d.id %}selected{% endif %}>{{ d.nome }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo" style="grid-column: span 2;">
+        <label>Observação</label>
+        <input type="text" name="observacao" value="{{ cab.observacao if cab and cab.observacao else '' }}">
+      </div>
+    </div>
+  </div>
+
+  <div class="bloco">
+    <h3>Composição do carregamento</h3>
+    <div class="grade-wrap">
+      <table class="grade">
+        <colgroup>
+          <col style="width:34px"><col style="width:220px"><col style="width:150px"><col style="width:190px">
+          <col style="width:120px"><col style="width:130px"><col style="width:140px"><col style="width:110px"><col style="width:36px">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>#</th><th>Posto</th><th>CNPJ</th><th>Produto</th>
+            <th>Quantidade (L)</th><th>Valor unitário</th><th>Valor total</th><th>Código</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="linhas"></tbody>
+        <tfoot>
+          <tr>
+            <td colspan="4">TOTAL</td>
+            <td class="num" id="tot-qtd"></td>
+            <td></td>
+            <td class="num" id="tot-valor"></td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <button type="button" class="btn btn-add" onclick="novaLinha()">+ Linha</button>
+  </div>
+
+  <div class="acoes">
+    <button type="submit" class="btn btn-salvar">Salvar carregamento</button>
+    <button type="button" class="btn btn-imprimir" onclick="window.print()">Imprimir resumo</button>
+  </div>
+</form>
+
+<div class="bloco" id="bloco-resumo">
+  <h3>Resumo da carga{% if cab %} — nº {{ cab.numero }}{% endif %}</h3>
+  <div class="resumo-topo">
+    <div><span>Distribuidora:</span> <strong id="r-distribuidora">—</strong></div>
+    <div><span>Motorista:</span> <strong id="r-motorista">—</strong></div>
+    <div><span>Carreta / Cavalo:</span> <strong id="r-veiculo">—</strong></div>
+    <div><span>Data do pedido:</span> <strong id="r-pedido">—</strong></div>
+    <div><span>Data do carregamento:</span> <strong id="r-carregamento">—</strong></div>
+  </div>
+  <table class="resumo">
+    <thead>
+      <tr><th>Posto</th><th>CNPJ</th><th class="num">Volume (L)</th><th class="num">Valor a pagar (R$)</th></tr>
+    </thead>
+    <tbody id="r-linhas"></tbody>
+    <tfoot>
+      <tr><td colspan="2">TOTAL</td><td class="num" id="r-tot-qtd"></td><td class="num" id="r-tot-valor"></td></tr>
+    </tfoot>
+  </table>
+  <div id="alerta-capacidade"></div>
+</div>
+
+{% if cab %}
+<form method="post" action="{{ url_for('logistica.excluir_carregamento', id_carregamento=cab.id_carregamento) }}"
+      onsubmit="return confirmarEnvio(this, 'Excluir o carregamento nº {{ cab.numero }}?');">
+  <button type="submit" class="btn btn-excluir">Excluir carregamento</button>
+</form>
+{% endif %}
+
+<script>
+const POSTOS = {{ postos | tojson }};
+const PRODUTOS = {{ produtos | tojson }};
+const CARRETAS = {{ carretas | tojson }};
+const ITENS = {{ itens | tojson }};
+const URL_PRECOS = "{{ url_for('logistica.api_precos_compra') }}";
+let PRECOS = {{ precos | tojson }};
+
+// ---------- números pt-BR ----------
+function paraNumero(texto) {
+  // tolera texto meio digitado: "1.234,5", "1234,", ",5"
+  let t = String(texto || "").trim();
+  if (!t) return 0;
+  if (t.includes(",")) t = t.replace(/\./g, "").replace(/,/g, ".");
+  const partes = t.split(".");
+  if (partes.length > 2) t = partes.slice(0, -1).join("") + "." + partes[partes.length - 1];
+  const n = parseFloat(t);
+  return isNaN(n) ? 0 : n;
+}
+function fmt(n, casas) {
+  return Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
+}
+function fmtPreco(n) {
+  return Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+}
+function dataBR(iso) {
+  if (!iso) return "—";
+  const [a, m, d] = iso.split("-");
+  return `${d}/${m}/${a}`;
+}
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// ---------- grade ----------
+const corpo = document.getElementById("linhas");
+
+function opcoes(lista, selecionado, rotulo) {
+  return '<option value="">—</option>' + lista.map(x =>
+    `<option value="${esc(x.cod)}" ${String(x.cod) === String(selecionado) ? "selected" : ""}>${esc(rotulo(x))}</option>`
+  ).join("");
+}
+
+function novaLinha(item) {
+  item = item || {};
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td class="num idx"></td>
+    <td><select name="item_filial">${opcoes(POSTOS, item.cod_filial, p => p.cod + " - " + p.nome)}</select></td>
+    <td class="cnpj"></td>
+    <td><select name="item_produto">${opcoes(PRODUTOS, item.cod_produto, p => p.nome)}</select></td>
+    <td class="num"><input name="item_quantidade" inputmode="numeric" value="${item.quantidade ? fmt(item.quantidade, 0) : ""}"></td>
+    <td class="num"><input name="item_preco" inputmode="decimal" value="${item.preco_unitario != null ? fmtPreco(item.preco_unitario) : ""}">
+        <span class="origem-preco"></span></td>
+    <td class="num total-linha"></td>
+    <td><input name="item_codigo" value="${esc(item.codigo || "")}" style="text-transform:uppercase" placeholder="E99-16"></td>
+    <td><button type="button" class="btn-rem" title="Remover linha">×</button></td>`;
+  corpo.appendChild(tr);
+
+  const selPosto = tr.querySelector('[name="item_filial"]');
+  const selProduto = tr.querySelector('[name="item_produto"]');
+  const inQtd = tr.querySelector('[name="item_quantidade"]');
+  const inPreco = tr.querySelector('[name="item_preco"]');
+
+  // Linha que já veio do banco tem preço escolhido: não é sobrescrita pela sugestão
+  if (item.preco_unitario != null) marcarManual(inPreco, true);
+
+  selPosto.addEventListener("change", recalcular);
+  selProduto.addEventListener("change", () => { sugerirPreco(tr); recalcular(); });
+  inQtd.addEventListener("input", () => {
+    inQtd.value = inQtd.value.replace(/\D/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    recalcular();
+  });
+  inPreco.addEventListener("input", () => { marcarManual(inPreco, true); recalcular(); });
+  inPreco.addEventListener("blur", () => { if (inPreco.value.trim()) inPreco.value = fmtPreco(paraNumero(inPreco.value)); });
+  tr.querySelector(".btn-rem").addEventListener("click", () => { tr.remove(); recalcular(); });
+
+  if (item.preco_unitario == null) sugerirPreco(tr);
+  recalcular();
+  return tr;
+}
+
+function marcarManual(input, manual) {
+  input.dataset.manual = manual ? "1" : "";
+  input.classList.toggle("manual", manual && !!input.dataset.sugerido && paraNumero(input.value) !== Number(input.dataset.sugerido));
+}
+
+function sugerirPreco(tr) {
+  const cod = tr.querySelector('[name="item_produto"]').value;
+  const inPreco = tr.querySelector('[name="item_preco"]');
+  const origem = tr.querySelector(".origem-preco");
+  const p = PRECOS[cod];
+  inPreco.dataset.sugerido = p ? p.preco : "";
+  origem.textContent = p ? "compra de " + p.data : (cod ? "sem preço cadastrado" : "");
+  if (inPreco.dataset.manual === "1") { marcarManual(inPreco, true); return; }
+  inPreco.value = p ? fmtPreco(p.preco) : "";
+}
+
+function recalcular() {
+  let totQtd = 0, totValor = 0;
+  const porPosto = {};
+  corpo.querySelectorAll("tr").forEach((tr, i) => {
+    tr.querySelector(".idx").textContent = i + 1;
+    const cod = tr.querySelector('[name="item_filial"]').value;
+    const posto = POSTOS.find(p => String(p.cod) === cod);
+    tr.querySelector(".cnpj").textContent = posto ? (posto.cnpj || "sem CNPJ") : "";
+    tr.querySelector(".cnpj").style.color = posto && !posto.cnpj ? "#b00020" : "";
+    const qtd = paraNumero(tr.querySelector('[name="item_quantidade"]').value.replace(/\./g, ""));
+    const preco = paraNumero(tr.querySelector('[name="item_preco"]').value);
+    const valor = qtd * preco;
+    tr.querySelector(".total-linha").textContent = valor ? fmt(valor, 2) : "";
+    totQtd += qtd; totValor += valor;
+    if (posto && qtd) {
+      porPosto[cod] = porPosto[cod] || { posto, qtd: 0, valor: 0 };
+      porPosto[cod].qtd += qtd;
+      porPosto[cod].valor += valor;
+    }
+  });
+  document.getElementById("tot-qtd").textContent = fmt(totQtd, 0);
+  document.getElementById("tot-valor").textContent = fmt(totValor, 2);
+  montarResumo(porPosto, totQtd, totValor);
+}
+
+// ---------- resumo ----------
+function textoSelecionado(id) {
+  const s = document.getElementById(id);
+  return s.value ? s.options[s.selectedIndex].text.trim() : "—";
+}
+
+function montarResumo(porPosto, totQtd, totValor) {
+  const selMot = document.getElementById("id_motorista");
+  const cpf = selMot.value ? selMot.options[selMot.selectedIndex].dataset.cpf : "";
+  document.getElementById("dica-motorista").textContent = cpf ? "CPF " + cpf : "";
+  document.getElementById("r-distribuidora").textContent = textoSelecionado("id_fornecedor");
+  document.getElementById("r-motorista").textContent = textoSelecionado("id_motorista") + (cpf ? " (CPF " + cpf + ")" : "");
+  const carreta = CARRETAS.find(c => String(c.id) === document.getElementById("id_carreta").value);
+  const cavalo = textoSelecionado("id_cavalo");
+  document.getElementById("r-veiculo").textContent = (carreta ? carreta.placa : "—") + " / " + cavalo;
+  document.getElementById("r-pedido").textContent = dataBR(document.getElementById("data_pedido").value);
+  document.getElementById("r-carregamento").textContent = dataBR(document.getElementById("data_carregamento").value);
+  document.getElementById("dica-carreta").textContent = carreta
+    ? carreta.tanques.length + " tanques: " + carreta.tanques.map(t => fmt(t, 0)).join(" · ")
+    : "";
+
+  const linhas = Object.values(porPosto).sort((a, b) => a.posto.cod - b.posto.cod);
+  document.getElementById("r-linhas").innerHTML = linhas.length ? linhas.map(l => `
+    <tr><td>${esc(l.posto.nome)}</td><td>${esc(l.posto.cnpj || "—")}</td>
+        <td class="num">${fmt(l.qtd, 0)}</td><td class="num">${fmt(l.valor, 2)}</td></tr>`).join("")
+    : '<tr><td colspan="4" style="color:#777">Nenhuma linha na composição.</td></tr>';
+  document.getElementById("r-tot-qtd").textContent = fmt(totQtd, 0);
+  document.getElementById("r-tot-valor").textContent = fmt(totValor, 2);
+
+  const alerta = document.getElementById("alerta-capacidade");
+  if (carreta && totQtd) {
+    const sobra = carreta.capacidade - totQtd;
+    alerta.className = "alerta " + (sobra < 0 ? "alerta-erro" : "alerta-ok");
+    alerta.textContent = sobra < 0
+      ? `Carga de ${fmt(totQtd, 0)} L passa da capacidade da carreta ${carreta.placa} (${fmt(carreta.capacidade, 0)} L) em ${fmt(-sobra, 0)} L.`
+      : `Carreta ${carreta.placa}: ${fmt(totQtd, 0)} de ${fmt(carreta.capacidade, 0)} L (sobram ${fmt(sobra, 0)} L).`;
+  } else {
+    alerta.className = ""; alerta.textContent = "";
+  }
+}
+
+["id_carreta", "id_cavalo", "id_motorista", "id_fornecedor", "data_carregamento"].forEach(id =>
+  document.getElementById(id).addEventListener("change", recalcular));
+
+// Data do pedido mudou: busca os preços daquele dia e atualiza as linhas não editadas à mão
+document.getElementById("data_pedido").addEventListener("change", async function () {
+  if (!this.value) return;
+  try {
+    const r = await fetch(URL_PRECOS + "?data=" + this.value, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+    const dados = await r.json();
+    if (dados.ok) {
+      PRECOS = dados.precos;
+      corpo.querySelectorAll("tr").forEach(sugerirPreco);
+    }
+  } catch (e) { /* mantém os preços que já estão na tela */ }
+  recalcular();
+});
+
+// Antes de enviar, números vão sem máscara ("30.000" → "30000", "5,89" → "5.89")
+document.getElementById("form-carga").addEventListener("submit", function () {
+  corpo.querySelectorAll("tr").forEach(tr => {
+    const q = tr.querySelector('[name="item_quantidade"]');
+    const p = tr.querySelector('[name="item_preco"]');
+    q.value = q.value ? String(paraNumero(q.value.replace(/\./g, ""))) : "";
+    p.value = p.value ? String(paraNumero(p.value)) : "";
+  });
+});
+
+ITENS.forEach(novaLinha);
+if (!ITENS.length) novaLinha();
+recalcular();
+</script>
+
+{% endblock %}

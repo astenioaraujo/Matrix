@@ -84,6 +84,7 @@
   .col-codigo { width: 110px; }
   .col-nome { width: 260px; }
   .col-import { width: 300px; }
+  .col-cnpj { width: 190px; }
   .col-lanc { width: 90px; text-align: center; }
   .col-ativo { width: 90px; text-align: center; }
   .col-acoes { width: 190px; white-space: nowrap; }
@@ -162,6 +163,7 @@
         <th class="col-codigo">Cód. Filial</th>
         <th class="col-nome">Nome da Filial</th>
         <th class="col-import">Nome Filial Importação</th>
+        <th class="col-cnpj">CNPJ</th>
         <th class="col-lanc">Lanç.</th>
         <th class="col-ativo">Ativo</th>
         <th class="col-acoes">Ações</th>
@@ -184,6 +186,10 @@
 
         <td>
             <input type="text" name="nome_filial_importacao" value="{{ filial.nome_filial_importacao or '' }}">
+        </td>
+
+        <td>
+            <input type="text" name="cnpj" value="{{ filial.cnpj or '' }}" placeholder="00.000.000/0000-00" inputmode="numeric">
         </td>
 
         <td class="col-lanc">

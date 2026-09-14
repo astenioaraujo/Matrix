@@ -121,10 +121,11 @@ def fp_lancar():
 
             if descricao and data_lancamento:
                 cur.execute("""
-                    INSERT INTO fp_lancamentos (id_usuario, data, descricao, valor, id_classificacao, id_conta_bancaria)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO fp_lancamentos (id_usuario, data, competencia, descricao, valor, id_classificacao, id_conta_bancaria)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
-                """, (id_usuario, data_lancamento, descricao, valor, id_classificacao, id_conta_bancaria))
+                """, (id_usuario, data_lancamento, date(ano_sel, mes_sel, 1),
+                      descricao, valor, id_classificacao, id_conta_bancaria))
                 novo_id = cur.fetchone()["id"]
                 conn.commit()
 
@@ -198,8 +199,8 @@ def fp_lancar():
             LEFT JOIN fp_classificacoes c ON c.id = l.id_classificacao
             LEFT JOIN fp_contas_bancarias b ON b.id = l.id_conta_bancaria
             WHERE l.id_usuario = %s
-              AND EXTRACT(MONTH FROM l.data) = %s
-              AND EXTRACT(YEAR  FROM l.data) = %s
+              AND EXTRACT(MONTH FROM l.competencia) = %s
+              AND EXTRACT(YEAR  FROM l.competencia) = %s
             ORDER BY l.data, l.id
         """, (id_usuario, mes_sel, ano_sel))
         lancamentos = cur.fetchall() or []
@@ -212,8 +213,8 @@ def fp_lancar():
               AND (ativo = TRUE
                    OR EXISTS (SELECT 1 FROM fp_lancamentos l
                                WHERE l.id_classificacao = fp_classificacoes.id
-                                 AND EXTRACT(MONTH FROM l.data) = %s
-                                 AND EXTRACT(YEAR  FROM l.data) = %s))
+                                 AND EXTRACT(MONTH FROM l.competencia) = %s
+                                 AND EXTRACT(YEAR  FROM l.competencia) = %s))
             ORDER BY nome
         """, (id_usuario, mes_sel, ano_sel))
         classificacoes = cur.fetchall() or []
@@ -286,8 +287,8 @@ def fp_consultar():
             LEFT JOIN fp_classificacoes c ON c.id = l.id_classificacao
             LEFT JOIN fp_contas_bancarias b ON b.id = l.id_conta_bancaria
             WHERE l.id_usuario = %s
-              AND EXTRACT(MONTH FROM l.data) = %s
-              AND EXTRACT(YEAR  FROM l.data) = %s
+              AND EXTRACT(MONTH FROM l.competencia) = %s
+              AND EXTRACT(YEAR  FROM l.competencia) = %s
             ORDER BY l.data, l.id
         """, (id_usuario, mes_sel, ano_sel))
         lancamentos_raw = cur.fetchall() or []
@@ -312,8 +313,8 @@ def fp_consultar():
               AND (ativo = TRUE
                    OR EXISTS (SELECT 1 FROM fp_lancamentos l
                                WHERE l.id_classificacao = fp_classificacoes.id
-                                 AND EXTRACT(MONTH FROM l.data) = %s
-                                 AND EXTRACT(YEAR  FROM l.data) = %s))
+                                 AND EXTRACT(MONTH FROM l.competencia) = %s
+                                 AND EXTRACT(YEAR  FROM l.competencia) = %s))
             ORDER BY nome
         """, (id_usuario, mes_sel, ano_sel))
         classificacoes_consulta = cur.fetchall() or []
@@ -322,8 +323,8 @@ def fp_consultar():
             SELECT COALESCE(SUM(valor), 0) AS total
             FROM fp_lancamentos
             WHERE id_usuario = %s
-              AND EXTRACT(MONTH FROM data) = %s
-              AND EXTRACT(YEAR  FROM data) = %s
+              AND EXTRACT(MONTH FROM competencia) = %s
+              AND EXTRACT(YEAR  FROM competencia) = %s
         """, (id_usuario, mes_sel, ano_sel))
         total = cur.fetchone()["total"]
 
@@ -337,8 +338,8 @@ def fp_consultar():
             LEFT JOIN fp_lancamentos l
                 ON l.id_classificacao = c.id
                AND l.id_usuario = %s
-               AND EXTRACT(MONTH FROM l.data) = %s
-               AND EXTRACT(YEAR  FROM l.data) = %s
+               AND EXTRACT(MONTH FROM l.competencia) = %s
+               AND EXTRACT(YEAR  FROM l.competencia) = %s
             WHERE c.id_usuario = %s
             GROUP BY c.id, c.nome, c.valor_orcado, c.ajustar_ao_real, c.ativo
             -- inativa não some do passado: no mês em que houve lançamento ela
@@ -355,8 +356,8 @@ def fp_consultar():
             FROM fp_lancamentos
             WHERE id_usuario = %s
               AND id_classificacao IS NULL
-              AND EXTRACT(MONTH FROM data) = %s
-              AND EXTRACT(YEAR  FROM data) = %s
+              AND EXTRACT(MONTH FROM competencia) = %s
+              AND EXTRACT(YEAR  FROM competencia) = %s
             HAVING COALESCE(SUM(valor), 0) <> 0
 
             ORDER BY classificacao
@@ -404,7 +405,7 @@ def fp_consultar():
 
 @canivete_bp.route("/financas-pessoais/pagar", methods=["POST"])
 def fp_pagar():
-    """Paga uma classificação ainda sem realizado: cria o lançamento de hoje."""
+    """Paga uma classificação: lançamento com data de hoje e competência do mês da tela."""
     r = _checar_login()
     if r:
         return r
@@ -453,10 +454,16 @@ def fp_pagar():
                 flash("Conta bancária inválida.", "error")
                 return redirect(proxima_url)
 
+        # pago hoje, mas pertence ao mês que estava na tela (boleto de agosto pago em setembro)
+        hoje = _hoje_br()
+        try:
+            competencia = date(int(request.form.get("ano")), int(request.form.get("mes")), 1)
+        except (TypeError, ValueError):
+            competencia = hoje.replace(day=1)
         cur.execute("""
-            INSERT INTO fp_lancamentos (id_usuario, data, descricao, valor, id_classificacao, id_conta_bancaria)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (id_usuario, _hoje_br(), descricao, valor, id_classificacao, id_conta_bancaria))
+            INSERT INTO fp_lancamentos (id_usuario, data, competencia, descricao, valor, id_classificacao, id_conta_bancaria)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (id_usuario, hoje, competencia, descricao, valor, id_classificacao, id_conta_bancaria))
         conn.commit()
     finally:
         cur.close()

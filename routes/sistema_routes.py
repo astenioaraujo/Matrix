@@ -24,6 +24,7 @@ def selecionar_sistema():
         pode_operacoes = True
         pode_financeiro = True
         pode_vendas = True
+        pode_logistica = True
         pode_configuracoes = True
         pode_compliance = True
         pode_vistorias = True
@@ -40,6 +41,7 @@ def selecionar_sistema():
         pode_operacoes = usuario_tem_permissao(id_usuario, cod_empresa, "OPERACOES", "MENU")
         pode_financeiro = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "MENU")
         pode_vendas = usuario_tem_permissao(id_usuario, cod_empresa, "VENDAS", "MENU")
+        pode_logistica = usuario_tem_permissao(id_usuario, cod_empresa, "LOGISTICA", "MENU")
         pode_configuracoes = usuario_tem_permissao(id_usuario, cod_empresa, "CONFIGURACOES", "MENU")
         pode_compliance = usuario_tem_permissao(id_usuario, cod_empresa, "COMPLIANCE", "MENU")
         pode_vistorias = usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "MENU")
@@ -59,6 +61,7 @@ def selecionar_sistema():
         pode_operacoes=pode_operacoes,
         pode_financeiro=pode_financeiro,
         pode_vendas=pode_vendas,
+        pode_logistica=pode_logistica,
         pode_compliance=pode_compliance,
         pode_vistorias=pode_vistorias,
         pode_rh=pode_rh,

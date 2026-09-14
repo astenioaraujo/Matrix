@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+{% set nomes_meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'] %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 10px; }
+  .empresa { font-size: 22px; margin-bottom: 20px; }
+  .barra { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; margin-bottom: 16px; }
+  .barra label { display: block; font-weight: 700; margin-bottom: 4px; font-size: 13px; }
+  .barra select { padding: 8px; border-radius: 8px; border: 1px solid #bbb; }
+  .btn { padding: 9px 16px; border-radius: 10px; border: none; font-weight: 700; cursor: pointer; text-decoration: none; display: inline-block; }
+  .btn-azul { background: #1565c0; color: #fff; }
+  .btn-novo { background: #0e7490; color: #fff; }
+  .painel {
+    background: #fff; border: 1px solid #d9d9d9; border-radius: 16px;
+    padding: 16px; box-shadow: 0 6px 20px rgba(0,0,0,0.06); overflow-x: auto;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { border: 1px solid #dcdcdc; padding: 8px 10px; white-space: nowrap; }
+  th { background: #e0f2f1; text-align: left; }
+  .num { text-align: right; }
+  tbody tr:hover td { background: #f5fbfb; cursor: pointer; }
+  tfoot td { font-weight: 800; background: #fff8c5; }
+  .vazio { color: #666; padding: 20px; text-align: center; }
+  .flash-msg { padding: 10px 14px; border-radius: 8px; margin-bottom: 15px; font-weight: 600; }
+  .flash-success { background: #e6f4ea; color: #1e6b34; border: 1px solid #b7dfc2; }
+  .flash-error { background: #fdeaea; color: #9f2f2f; border: 1px solid #efc2c2; }
+</style>
+
+<div class="pagina-titulo">Carregamentos</div>
+<div class="empresa"><strong>Empresa:</strong> {{ nome_empresa }}</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endwith %}
+
+<form class="barra" method="get">
+  <div>
+    <label>Mês do pedido</label>
+    <select name="mes" onchange="this.form.submit()">
+      {% for n in nomes_meses %}<option value="{{ loop.index }}" {% if loop.index == mes %}selected{% endif %}>{{ n }}</option>{% endfor %}
+    </select>
+  </div>
+  <div>
+    <label>Ano</label>
+    <select name="ano" onchange="this.form.submit()">
+      {% for a in anos %}<option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>{% endfor %}
+    </select>
+  </div>
+  <a class="btn btn-novo" href="{{ url_for('logistica.carregamento_form') }}">+ Novo Carregamento</a>
+</form>
+
+<div class="painel">
+  {% if carregamentos %}
+  <table>
+    <thead>
+      <tr>
+        <th>Nº</th>
+        <th>Data do pedido</th>
+        <th>Carregamento</th>
+        <th>Distribuidora</th>
+        <th>Motorista</th>
+        <th>Carreta / Cavalo</th>
+        <th class="num">Postos</th>
+        <th class="num">Volume (L)</th>
+        <th class="num">Valor (R$)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in carregamentos %}
+      <tr onclick="window.location='{{ url_for('logistica.carregamento_form', id_carregamento=c.id_carregamento) }}'">
+        <td><strong>{{ c.numero }}</strong></td>
+        <td>{{ c.data_pedido.strftime('%d/%m/%Y') }}</td>
+        <td>{{ c.data_carregamento.strftime('%d/%m/%Y') if c.data_carregamento else '—' }}</td>
+        <td>{{ c.distribuidora or '—' }}</td>
+        <td>{{ c.motorista or '—' }}</td>
+        <td>{{ c.placa_carreta or '—' }} / {{ c.placa_cavalo or '—' }}</td>
+        <td class="num">{{ c.qtd_postos }}</td>
+        <td class="num">{{ '{:,.0f}'.format(c.volume).replace(',', '.') }}</td>
+        <td class="num">{{ c.valor | br }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="7">TOTAL DO MÊS ({{ carregamentos|length }} carregamento{{ 's' if carregamentos|length > 1 }})</td>
+        <td class="num">{{ '{:,.0f}'.format(total_volume).replace(',', '.') }}</td>
+        <td class="num">{{ total_valor | br }}</td>
+      </tr>
+    </tfoot>
+  </table>
+  {% else %}
+    <div class="vazio">Nenhum carregamento em {{ nomes_meses[mes - 1] }}/{{ ano }}.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

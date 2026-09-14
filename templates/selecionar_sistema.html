@@ -98,6 +98,7 @@
   .btn-projetos { background: #b45309; }
   .btn-mercado { background: #0369a1; }
   .btn-pdv { background: #0f9d58; }
+  .btn-logistica { background: #0e7490; }
 
   @media (max-width: 700px) {
     .pagina-wrap {
@@ -173,6 +174,13 @@
         <a class="btn-sistema btn-vendas" href="{{ url_for('sistema.menu_vendas') }}">
           <div class="btn-icone">📊</div>
           <div>Vendas</div>
+        </a>
+      {% endif %}
+
+      {% if pode_logistica %}
+        <a class="btn-sistema btn-logistica" href="{{ url_for('logistica.menu_logistica') }}">
+          <div class="btn-icone">🚛</div>
+          <div>Logística</div>
         </a>
       {% endif %}
 

@@ -408,6 +408,21 @@ Sem filtro de Status — todas as linhas entram. A projeção do mês é a médi
 
 ---
 
+# Módulo Logística
+
+Montagem de carregamentos: o supervisor liga para as distribuidoras, faz o pedido e monta a carga. Botão 🚛 no menu principal, logo depois de Vendas. `routes/logistica_routes.py` (prefixo `/logistica`), templates em `templates/logistica/`, migration `migrations/criar_modulo_logistica.sql`. Permissões (`LOGISTICA`): `MENU` 2000, `CARREGAMENTOS` 2010, `CONFIGURACOES` 2020 — nenhuma concedida, só bypass de superusuário.
+
+- **Configurações de Logística**: Carretas (`logistica_carretas` — placa + `tanque_01`…`tanque_12`, capacidade em litros, tanque inexistente fica nulo; a capacidade total é somada na consulta), Cavalos (`logistica_cavalos`, placa) e Motoristas (`logistica_motoristas`, nome + CPF formatado). Cavalos e motoristas usam um template só, dirigido por `CADASTROS_SIMPLES`. Placa única por empresa. Registro usado em carregamento não se exclui (FK) — a mensagem manda desmarcar Ativo; inativo some das opções mas continua aparecendo no carregamento antigo.
+- **Distribuidora = `fornecedores_combustiveis`** de Operações. Não criar cadastro paralelo.
+- **CNPJ da filial**: coluna `filiais.cnpj`, editada em Configurações → Filiais (validada com 14 dígitos e gravada formatada). Aparece na composição e no resumo; posto sem CNPJ é sinalizado em vermelho.
+- **Carregamento** (`logistica_carregamentos` + `logistica_carregamentos_itens`): `numero` sequencial por empresa, gerado ao salvar. Cabeçalho: datas do pedido e do carregamento, carreta, cavalo, motorista, distribuidora. Composição: posto × produto × quantidade × valor unitário + `codigo` alfanumérico (ex.: E99-16 — significado ainda a confirmar com o cliente). Valor de linha, totais por posto e total geral são calculados, nunca gravados. A tela manda a composição inteira e o servidor a **reescreve** na mesma transação do cabeçalho — sem gravação por tecla (ver bugs de Saldos/Antecipação). O resumo embaixo (e o botão Imprimir) mostra o valor a pagar por posto e avisa se o volume passa da capacidade da carreta.
+- **Preço sugerido** sai de `precos_compra`: o último preço **> 0** até a **data do pedido** (`_precos_na_data`); trocar a data na tela rebusca (`GET /logistica/api/precos-compra`). Linha com preço digitado à mão não é sobrescrita. O botão "Informar Preço de Compra" do menu abre a **mesma** tela de Operações (`?origem=logistica`, que só troca o Voltar), com a mesma permissão `OPERACOES/INFORMAR_PRECO_COMPRA`.
+- **Carga inicial EMP010** (`migrations/seed_logistica_emp010.sql`, 11/09/2026), tirada de 6 planilhas de carregamento de 10/09/2026: CNPJ de 18 filiais (faltam Bonito II, Conceição II, Coremas I e II, Santana), 6 carretas **só com a placa** (as planilhas não trazem a capacidade dos tanques), 6 cavalos e 6 motoristas com CPF. Os pedidos não foram carregados.
+- **O `codigo` parece ser do posto, não do pedido**: nas planilhas ele se repete para o mesmo posto em carregamentos diferentes (Patos = E11178 em dois) e muda de um posto para outro. Provavelmente é o código do cliente na distribuidora. Se isso se confirmar, ele vira cadastro posto × distribuidora e é preenchido sozinho.
+- **Integração com Operações pendente**: um dia o carregamento deve gerar as compras em `compras_combustiveis`. Hoje as duas coisas são independentes.
+
+---
+
 # Módulo Vistorias
 
 Menu com quatro opções: **Programar Vistorias**, **Executar Vistorias**, **Consultar Vistorias** e **Configurar Checklists**. Programar e executar eram a **mesma** tela (`/vistorias/executar` fazia as duas coisas); foram separadas em 13/08/2026.
@@ -762,6 +777,7 @@ Telas: `/pdv/devolucoes` (lista), `/pdv/devolucoes/nova/<id_venda>` (a partir do
 Módulo pessoal (`routes/canivete_routes.py`, prefixo `/canivete`): Finanças Pessoais e Agenda. Permissões no sistema `CANIVETE`: `MENU`, `AGENDA`, `FINANCAS_PESSOAIS_MENU`, `FINANCAS_PESSOAIS_LANCAR`, `FINANCAS_PESSOAIS_CONSULTAR`, `FINANCAS_PESSOAIS_CONFIGURACOES`.
 
 - **Finanças Pessoais** são **por usuário** (`fp_lancamentos`, `fp_classificacoes`, `fp_contas_bancarias` — chaveadas por `id_usuario`, não por empresa).
+- **Competência ≠ data** em `fp_lancamentos` (`migrations/adicionar_competencia_fp_lancamentos.sql`, 11/09/2026): `data` é quando o dinheiro saiu, `competencia` (dia 1 do mês) é o mês a que o lançamento pertence — boleto de agosto pago em setembro tem data em setembro e aparece em **agosto**. Lançar e Consultar filtram **só pela competência**. Na inclusão e no botão Pagar a competência é o **mês da tela**; o Pagar grava a data de hoje. Não voltar a filtrar por `EXTRACT(... FROM data)`.
 - **Atalhos no topo** (`base.html`): 💰 Finanças Pessoais à esquerda de 📅 Agenda. O de finanças exige `CANIVETE/MENU` **e** `CANIVETE/FINANCAS_PESSOAIS_MENU`; o da agenda exige `CANIVETE/AGENDA`. Superusuário vê ambos.
 ## Agenda — Programação do Dia
 

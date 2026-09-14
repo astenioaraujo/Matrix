@@ -41,6 +41,9 @@
   .btn-excluir:hover { background: #b91c1c; }
 
   .total-row td { font-weight: 800; background: #f8fafc; border-top: 2px solid #ddd; }
+  .mes-nav { display: flex; align-items: center; gap: 6px; }
+  .filtro-bar .btn-mes-nav { width: 38px; padding: 0; background: #c8e6c9; color: #111; border: 1px solid #c7c7c7; border-radius: 9px; font-size: 18px; font-weight: 900; }
+  .filtro-bar .btn-mes-nav:hover { background: #a5d6a7; }
 </style>
 
 <h2>💰 Finanças Pessoais — Lançar</h2>
@@ -57,15 +60,19 @@
   <div class="filtro-bar">
     <div>
       <label>Mês</label>
-      <select name="mes">
+      <div class="mes-nav">
+        <button type="button" class="btn-mes-nav" onclick="mudarMes(-1)" title="Mês anterior">←</button>
+        <select name="mes" id="fp-mes">
         {% for m in meses %}
           <option value="{{ m }}" {% if m == mes_sel %}selected{% endif %}>{{ nomes_meses[m-1] }}</option>
         {% endfor %}
       </select>
+        <button type="button" class="btn-mes-nav" onclick="mudarMes(1)" title="Próximo mês">→</button>
+      </div>
     </div>
     <div>
       <label>Ano</label>
-      <select name="ano">
+      <select name="ano" id="fp-ano">
         {% for a in anos %}
           <option value="{{ a }}" {% if a == ano_sel %}selected{% endif %}>{{ a }}</option>
         {% endfor %}
@@ -302,4 +309,22 @@
   });
 </script>
 
+
+<script>
+  // Setas ← → do filtro: andam um mês, virando o ano em dezembro/janeiro (mesmo padrão do Matricial)
+  function mudarMes(delta) {
+    const selMes = document.getElementById("fp-mes");
+    const selAno = document.getElementById("fp-ano");
+    let mes = parseInt(selMes.value, 10) + delta;
+    let ano = parseInt(selAno.value, 10);
+    if (mes < 1)  { mes = 12; ano -= 1; }
+    if (mes > 12) { mes = 1;  ano += 1; }
+    if (!Array.from(selAno.options).some(o => o.value === String(ano))) {
+      selAno.add(new Option(ano, ano), delta < 0 ? 0 : undefined);
+    }
+    selMes.value = String(mes);
+    selAno.value = String(ano);
+    selMes.form.submit();
+  }
+</script>
 {% endblock %}

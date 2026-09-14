@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 10px; }
+  .empresa { font-size: 22px; margin-bottom: 24px; }
+  .painel {
+    background: #fff; border: 1px solid #d9d9d9; border-radius: 16px;
+    padding: 20px; box-shadow: 0 6px 20px rgba(0,0,0,0.06); overflow-x: auto;
+  }
+  table { border-collapse: collapse; font-size: 14px; }
+  th, td { border: 1px solid #dcdcdc; padding: 6px; }
+  th { background: #f1f1f1; font-weight: 800; text-align: center; white-space: nowrap; }
+  input[type="text"] {
+    box-sizing: border-box; padding: 7px; border: 1px solid #cfcfcf; border-radius: 6px;
+  }
+  .in-placa { width: 110px; text-transform: uppercase; font-weight: 700; }
+  .in-tanque { width: 72px; text-align: right; }
+  .col-total { text-align: right; font-weight: 800; white-space: nowrap; min-width: 90px; }
+  .col-ativo { text-align: center; }
+  .col-acoes { white-space: nowrap; text-align: center; }
+  .btn-salvar {
+    padding: 7px 12px; border-radius: 8px; border: 1px solid #1565c0;
+    background: #1565c0; color: #fff; font-weight: 700; cursor: pointer;
+  }
+  .btn-excluir {
+    padding: 7px 12px; border-radius: 8px; border: 1px solid #b00020;
+    background: #fff; color: #b00020; font-weight: 700; cursor: pointer;
+  }
+  .linha-novo td { background: #fffbe6; }
+  .linha-inativa td { color: #999; }
+  .nota { color: #555; font-size: 14px; margin-bottom: 14px; }
+  .flash-msg { padding: 10px 14px; border-radius: 8px; margin-bottom: 15px; font-weight: 600; }
+  .flash-success { background: #e6f4ea; color: #1e6b34; border: 1px solid #b7dfc2; }
+  .flash-error { background: #fdeaea; color: #9f2f2f; border: 1px solid #efc2c2; }
+</style>
+
+<div class="pagina-titulo">Carretas</div>
+<div class="empresa"><strong>Empresa:</strong> {{ nome_empresa }}</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endwith %}
+
+<div class="nota">Capacidade de cada tanque em <strong>litros</strong>. Tanque que a carreta não tem fica em branco.</div>
+
+<div class="painel">
+  <table>
+    <thead>
+      <tr>
+        <th>Placa</th>
+        {% for t in colunas_tanques %}<th>T{{ loop.index }}</th>{% endfor %}
+        <th>Capacidade</th>
+        <th>Ativo</th>
+        <th>Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="linha-novo">
+        <form method="post">
+          <td><input type="text" name="placa" class="in-placa" placeholder="ABC1D23" required></td>
+          {% for t in colunas_tanques %}
+            <td><input type="text" name="{{ t }}" class="in-tanque" inputmode="numeric"></td>
+          {% endfor %}
+          <td class="col-total"></td>
+          <td class="col-ativo"><input type="checkbox" name="ativo" checked></td>
+          <td class="col-acoes"><button type="submit" class="btn-salvar">Adicionar</button></td>
+        </form>
+      </tr>
+
+      {% for c in carretas %}
+      <tr class="{% if not c.ativo %}linha-inativa{% endif %}">
+        <form method="post">
+          <input type="hidden" name="id_carreta" value="{{ c.id_carreta }}">
+          <td><input type="text" name="placa" class="in-placa" value="{{ c.placa }}" required></td>
+          {% for t in colunas_tanques %}
+            <td><input type="text" name="{{ t }}" class="in-tanque" inputmode="numeric"
+                       value="{{ '{:,}'.format(c[t]).replace(',', '.') if c[t] else '' }}"></td>
+          {% endfor %}
+          <td class="col-total">{{ '{:,}'.format(c.capacidade_total).replace(',', '.') }} L<br>
+            <span style="font-weight:400;color:#666;font-size:12px;">{{ c.qtd_tanques }} tanque(s)</span></td>
+          <td class="col-ativo"><input type="checkbox" name="ativo" {% if c.ativo %}checked{% endif %}></td>
+          <td class="col-acoes">
+            <button type="submit" class="btn-salvar">Salvar</button>
+        </form>
+            <form method="post" style="display:inline;"
+                  action="{{ url_for('logistica.excluir_cadastro', cadastro='carretas', id_registro=c.id_carreta) }}"
+                  onsubmit="return confirmarEnvio(this, 'Excluir a carreta {{ c.placa }}?');">
+              <button type="submit" class="btn-excluir">Excluir</button>
+            </form>
+          </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+// Soma ao vivo na linha em edição (o total gravado é recalculado no servidor)
+document.querySelectorAll("tr").forEach(function (tr) {
+  const campos = tr.querySelectorAll(".in-tanque");
+  const total = tr.querySelector(".col-total");
+  if (!campos.length || !total) return;
+  campos.forEach(function (inp) {
+    inp.addEventListener("input", function () {
+      this.value = this.value.replace(/\D/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+      let soma = 0, qtd = 0;
+      campos.forEach(function (c) {
+        const n = parseInt(c.value.replace(/\D/g, ""), 10);
+        if (n) { soma += n; qtd++; }
+      });
+      total.innerHTML = soma.toLocaleString("pt-BR") + " L<br><span style='font-weight:400;color:#666;font-size:12px;'>" + qtd + " tanque(s)</span>";
+    });
+  });
+});
+</script>
+
+{% endblock %}

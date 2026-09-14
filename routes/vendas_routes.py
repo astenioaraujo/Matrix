@@ -181,13 +181,25 @@ def localizar_filial_por_nome_importacao(nome_planilha, mapa_filiais):
     if not nome_planilha_norm:
         return None
 
+    # Nome igual sempre ganha: "AFOGADOS II" e "AFOGADOS I" sao filiais
+    # diferentes, e "AFOGADOS I" e prefixo de "AFOGADOS II".
+    if nome_planilha_norm in mapa_filiais:
+        return mapa_filiais[nome_planilha_norm]
+
+    # Sem igualdade, vale o prefixo MAIS LONGO que casa - nunca o primeiro
+    # encontrado, que dependia da ordem em que o banco devolveu as filiais.
+    melhor_nome = None
+    melhor_cod = None
+
     for nome_padrao, cod_filial in mapa_filiais.items():
         tamanho = len(nome_padrao)
 
         if nome_planilha_norm[:tamanho] == nome_padrao:
-            return cod_filial
+            if melhor_nome is None or tamanho > len(melhor_nome):
+                melhor_nome = nome_padrao
+                melhor_cod = cod_filial
 
-    return None
+    return melhor_cod
 
 
 def cor_excel_51(valor, minimo, maximo):
@@ -2215,12 +2227,16 @@ def vendas_importar_diarias():
             n for n in sorted(nomes_excel)
             if localizar_filial_por_nome_importacao(n, mapa_filiais) is None
         ]
+        # Resolve pelo mesmo caminho da importacao: um aviso montado com outra
+        # regra diria que a filial esta no arquivo enquanto as linhas dela caem
+        # em outra filial.
+        cods_excel = {
+            localizar_filial_por_nome_importacao(n, mapa_filiais)
+            for n in nomes_excel
+        }
         filiais_db_sem_excel = [
             ni for norm_ni, ni in nomes_db_norm.items()
-            if not any(
-                normalizar_nome_filial_importacao(n)[:len(norm_ni)] == norm_ni
-                for n in nomes_excel
-            )
+            if mapa_filiais.get(norm_ni) not in cods_excel
         ]
 
         if filiais_excel_sem_cadastro:

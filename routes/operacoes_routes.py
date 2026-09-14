@@ -751,6 +751,8 @@ def informar_preco_compra():
     cod_empresa = str(session["cod_empresa"]).strip()
     nome_empresa = session.get("nome_empresa", "")
     data_sel = (request.args.get("data") or "").strip()
+    # Logística abre esta mesma tela; o Voltar leva de volta para lá
+    origem = "logistica" if request.args.get("origem") == "logistica" else None
 
     if not data_sel:
         data_sel = hoje_br().isoformat()
@@ -795,7 +797,8 @@ def informar_preco_compra():
         precos_existentes=precos_existentes,
         bloqueada=bloqueada,
         msg_bloqueio=msg_data_bloqueada(data_sel) if bloqueada else "",
-        url_voltar=url_for("operacoes.menu_operacoes"),
+        url_tela=url_for("operacoes.informar_preco_compra", origem=origem),
+        url_voltar=url_for("logistica.menu_logistica") if origem else url_for("operacoes.menu_operacoes"),
         texto_voltar="← Voltar",
     )
 

@@ -45,6 +45,7 @@ def config_filiais():
                 f.cod_filial,
                 f.nome_filial,
                 f.nome_filial_importacao,
+                f.cnpj,
                 f.ativo,
                 COUNT(l.id_lancamento) AS qt_lancamentos
             FROM filiais f
@@ -56,6 +57,7 @@ def config_filiais():
                 f.cod_filial,
                 f.nome_filial,
                 f.nome_filial_importacao,
+                f.cnpj,
                 f.ativo
             ORDER BY f.cod_filial
         """, (cod_empresa,))
@@ -132,7 +134,15 @@ def config_filiais_salvar():
     cod_filial = (request.form.get("cod_filial") or "").strip()
     nome_filial = (request.form.get("nome_filial") or "").strip()
     nome_filial_importacao = (request.form.get("nome_filial_importacao") or "").strip()
+    cnpj = (request.form.get("cnpj") or "").strip()
     ativo = request.form.get("ativo") == "on"
+
+    if cnpj:
+        digitos = "".join(ch for ch in cnpj if ch.isdigit())
+        if len(digitos) != 14:
+            flash("CNPJ inválido: precisa ter 14 dígitos.", "error")
+            return redirect(url_for("configuracoes.config_filiais"))
+        cnpj = f"{digitos[:2]}.{digitos[2:5]}.{digitos[5:8]}/{digitos[8:12]}-{digitos[12:]}"
 
     if not cod_filial:
         flash("O código da filial é obrigatório.", "error")
@@ -148,6 +158,7 @@ def config_filiais_salvar():
                 cod_filial = %s,
                 nome_filial = %s,
                 nome_filial_importacao = %s,
+                cnpj = %s,
                 ativo = %s
             WHERE cod_empresa = %s
               AND cod_filial = %s
@@ -155,6 +166,7 @@ def config_filiais_salvar():
             cod_filial,
             nome_filial,
             nome_filial_importacao if nome_filial_importacao else None,
+            cnpj or None,
             ativo,
             cod_empresa,
             cod_filial_original
