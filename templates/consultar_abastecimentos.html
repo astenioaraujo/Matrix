@@ -181,6 +181,13 @@
   <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
 </div>
 
+{% if sem_vinculo %}
+<div class="card" style="border-left: 4px solid #d97706; background: #fffbeb;">
+  Seu usuário não está vinculado a nenhuma filial, por isso não há abastecimentos
+  a exibir. Peça o vínculo em Usuários → Filiais.
+</div>
+{% endif %}
+
 <div class="card">
   <form method="get" class="grid-filtro">
     <div class="mes-nav">

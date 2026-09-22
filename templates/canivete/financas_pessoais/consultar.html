@@ -100,6 +100,41 @@
   }
   .btn-detalhar:hover { background: #0f766e; color: #fff; }
 
+  table.principal .col-prox { text-align: center; width: 78px; font-size: 12px; }
+  table.principal tr.data-row.prox-mes td { color: #94a3b8; font-style: italic; }
+  table.principal .prox-row td { font-weight: 700; background: #f8fafc; color: #64748b; font-style: italic; }
+
+  .btn-novo-lanc {
+    background: none;
+    border: 1px dashed #0f766e;
+    color: #0f766e;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 10px;
+    width: 100%;
+  }
+  .btn-novo-lanc:hover { background: #0f766e; color: #fff; }
+
+  .form-novo-lanc { display: none; margin-top: 10px; border-top: 1px dashed #ccc; padding-top: 10px; }
+  .form-novo-lanc.visivel { display: block; }
+  .form-novo-lanc label { display: block; font-size: 11px; font-weight: 700; color: #555; margin: 6px 0 2px; }
+  .form-novo-lanc input, .form-novo-lanc select {
+    width: 100%; box-sizing: border-box; height: 30px;
+    border: 1px solid #ccc; border-radius: 6px; padding: 0 8px; font-size: 13px;
+  }
+  .form-novo-lanc .fixo {
+    font-size: 13px; font-weight: 700; color: #0f766e;
+    background: #f1f5f9; border-radius: 6px; padding: 6px 8px;
+  }
+  .form-novo-lanc .acoes { display: flex; gap: 8px; margin-top: 12px; }
+  .form-novo-lanc .acoes button { flex: 1; height: 32px; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .form-novo-lanc .acoes .cancelar { background: #fff; border: 1px solid #ccc; color: #555; }
+  .form-novo-lanc .acoes .confirmar { background: #0f766e; border: 1px solid #0f766e; color: #fff; }
+  .form-novo-lanc .erro { color: #dc2626; font-size: 12px; margin-top: 8px; display: none; }
+
   .btn-pagar {
     background: #16a34a;
     border: 1px solid #16a34a;
@@ -217,6 +252,7 @@
             <th class="num">Realizado (R$)</th>
             <th class="num">Saldo (R$)</th>
             <th class="num">Extrapolado (R$)</th>
+            <th class="col-prox" title="Marcar o que fica para o próximo mês">Próx. mês</th>
             <th></th>
           </tr>
         </thead>
@@ -230,7 +266,7 @@
             {% set extrap = (-saldo_real) if saldo_real < 0 else 0 %}
             {% set ns_tot.saldo_sum = ns_tot.saldo_sum + saldo_exib %}
             {% set ns_tot.extrap_sum = ns_tot.extrap_sum + extrap %}
-            <tr class="data-row" onclick="detalhar('{{ t.classificacao | e }}')" data-class="{{ t.classificacao | e }}" data-orcado="{{ t.orcado | float }}" data-realizado="{{ t.realizado | float | abs }}" data-saldo="{{ saldo_exib }}" data-extrap="{{ extrap }}">
+            <tr class="data-row" onclick="detalhar('{{ t.classificacao | e }}')" data-class="{{ t.classificacao | e }}" data-id-class="{{ t.id_classificacao or '' }}" data-orcado="{{ t.orcado | float }}" data-realizado="{{ t.realizado | float | abs }}" data-realizado-sinal="{{ t.realizado | float }}" data-saldo="{{ saldo_exib }}" data-extrap="{{ extrap }}">
               <td>{{ t.classificacao }}</td>
               <td class="num">{{ "{:,.2f}".format(t.orcado).replace(",","X").replace(".",",").replace("X",".") }}</td>
               <td class="num realizado-heat" data-valor="{{ t.realizado | float | abs }}">{{ "{:,.2f}".format(t.realizado).replace(",","X").replace(".",",").replace("X",".") }}</td>
@@ -241,6 +277,10 @@
                 {% if extrap > 0 %}
                   {{ "{:,.2f}".format(extrap).replace(",","X").replace(".",",").replace("X",".") }}
                 {% else %}—{% endif %}
+              </td>
+              <td class="col-prox">
+                <input type="checkbox" class="chk-prox" data-class="{{ t.classificacao | e }}"
+                       onclick="event.stopPropagation()" onchange="marcarProximoMes(this)">
               </td>
               {% set tem_lanc = t.realizado | float != 0 %}
               <td style="white-space:nowrap;">
@@ -254,18 +294,22 @@
             </tr>
             {% endif %}
           {% endfor %}
-          <tr class="total-row">
+          <tr class="total-row" id="linha-total">
             <td>Total Geral</td>
-            <td class="num">{{ "{:,.2f}".format(total_orcado).replace(",","X").replace(".",",").replace("X",".") }}</td>
-            <td class="num" style="color:#dc2626;">{{ "{:,.2f}".format(total).replace(",","X").replace(".",",").replace("X",".") }}</td>
-            <td class="num" style="color:#16a34a;">
-              {{ "{:,.2f}".format(ns_tot.saldo_sum).replace(",","X").replace(".",",").replace("X",".") }}
-            </td>
-            <td class="num" style="color:{% if ns_tot.extrap_sum > 0 %}#dc2626{% else %}#aaa{% endif %};">
-              {% if ns_tot.extrap_sum > 0 %}
-                {{ "{:,.2f}".format(ns_tot.extrap_sum).replace(",","X").replace(".",",").replace("X",".") }}
-              {% else %}—{% endif %}
-            </td>
+            <td class="num" id="tot-orcado"></td>
+            <td class="num" style="color:#dc2626;" id="tot-realizado"></td>
+            <td class="num" style="color:#16a34a;" id="tot-saldo"></td>
+            <td class="num" id="tot-extrap"></td>
+            <td class="col-prox"></td>
+            <td></td>
+          </tr>
+          <tr class="prox-row" id="linha-prox" style="display:none;">
+            <td>Deixado para o próximo mês</td>
+            <td class="num" id="prox-orcado"></td>
+            <td class="num" id="prox-realizado"></td>
+            <td class="num" id="prox-saldo"></td>
+            <td class="num" id="prox-extrap"></td>
+            <td class="col-prox"></td>
             <td></td>
           </tr>
         </tbody>
@@ -290,6 +334,36 @@
       </thead>
       <tbody id="detalhe-tbody"></tbody>
     </table>
+    {% if pode_lancar %}
+    <button type="button" class="btn-novo-lanc" id="btn-novo-lanc" onclick="abrirNovoLanc()">+ Novo lançamento</button>
+    <div class="form-novo-lanc" id="form-novo-lanc">
+      <label>Classificação</label>
+      <div class="fixo" id="novo-classe"></div>
+
+      <label>Data</label>
+      <input type="date" id="novo-data" value="{{ hoje_iso }}">
+
+      <label>Descrição</label>
+      <input type="text" id="novo-descricao" autocomplete="off">
+
+      <label>Valor (R$)</label>
+      <input type="text" id="novo-valor" inputmode="decimal" autocomplete="off">
+
+      <label>Conta</label>
+      <select id="novo-conta">
+        <option value="">— Sem conta —</option>
+        {% for b in contas_bancarias %}
+          <option value="{{ b.id }}">{{ b.nome }}</option>
+        {% endfor %}
+      </select>
+
+      <div class="erro" id="novo-erro"></div>
+      <div class="acoes">
+        <button type="button" class="cancelar" onclick="fecharNovoLanc()">Cancelar</button>
+        <button type="button" class="confirmar" id="novo-confirmar" onclick="salvarNovoLanc()">Incluir</button>
+      </div>
+    </div>
+    {% endif %}
   </div>
 
 </div>
@@ -397,10 +471,14 @@
   }
 
   let classeAtiva = null;
+  let idClasseAtiva = '';
 
   function detalhar(classe) {
     if (classeAtiva === classe) { fecharDetalhe(); return; }
     classeAtiva = classe;
+    const trClasse = document.querySelector(`tr.data-row[data-class="${CSS.escape(classe)}"]`);
+    idClasseAtiva = (trClasse && trClasse.dataset.idClass) || '';
+    fecharNovoLanc();
 
     document.querySelectorAll('tr.data-row').forEach(tr => {
       tr.classList.toggle('ativa', tr.dataset.class === classe);
@@ -440,11 +518,170 @@
     painel.classList.add('visivel');
   }
 
+  // Novo lançamento direto no detalhe: a classificação é a do painel aberto
+  function abrirNovoLanc() {
+    const form = document.getElementById('form-novo-lanc');
+    if (!form) return;
+    document.getElementById('novo-classe').textContent = classeAtiva || '(Sem classificação)';
+    document.getElementById('novo-descricao').value = classeAtiva && idClasseAtiva ? classeAtiva : '';
+    document.getElementById('novo-valor').value = '';
+    document.getElementById('novo-data').value = '{{ hoje_iso }}';
+    document.getElementById('novo-conta').selectedIndex = 0;
+    document.getElementById('novo-erro').style.display = 'none';
+    form.classList.add('visivel');
+    document.getElementById('btn-novo-lanc').style.display = 'none';
+    setTimeout(() => document.getElementById('novo-valor').focus(), 50);
+  }
+
+  function fecharNovoLanc() {
+    const form = document.getElementById('form-novo-lanc');
+    if (!form) return;
+    form.classList.remove('visivel');
+    document.getElementById('btn-novo-lanc').style.display = '';
+  }
+
+  function salvarNovoLanc() {
+    const erro = document.getElementById('novo-erro');
+    const data = document.getElementById('novo-data').value;
+    const desc = document.getElementById('novo-descricao').value.trim();
+    const valor = document.getElementById('novo-valor').value.trim();
+    if (!data || !desc || !valor) {
+      erro.textContent = 'Informe data, descrição e valor.';
+      erro.style.display = 'block';
+      return;
+    }
+    // despesa é negativa no banco, como em Pagar: o sinal sai do orçado da
+    // classificação, a menos que o usuário digite + ou - explicitamente
+    let valorEnviado = valor;
+    if (!/^[+-]/.test(valor)) {
+      const tr = document.querySelector(`tr.data-row[data-class="${CSS.escape(classeAtiva)}"]`);
+      const orcado = tr ? parseFloat(tr.dataset.orcado) || 0 : 0;
+      valorEnviado = (orcado <= 0 ? '-' : '') + valor;
+    }
+    const btn = document.getElementById('novo-confirmar');
+    btn.disabled = true;
+    const dados = new URLSearchParams({
+      acao: 'incluir',
+      data_lancamento: data,
+      descricao: desc,
+      valor: valorEnviado,
+      id_classificacao: idClasseAtiva,
+      id_conta_bancaria: document.getElementById('novo-conta').value,
+      mes: '{{ mes_sel }}',
+      ano: '{{ ano_sel }}',
+    });
+    fetch('{{ url_for("canivete.fp_lancar") }}', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: dados.toString(),
+    })
+      .then(r => r.json())
+      .then(j => {
+        if (!j || !j.ok) throw new Error('falhou');
+        // os totais (realizado, saldo, extrapolado) são calculados no servidor:
+        // recarrega, mas guarda a classificação aberta para reabrir o painel
+        try {
+          sessionStorage.setItem('fp_detalhe_classe', classeAtiva || '');
+          sessionStorage.setItem('fp_detalhe_scroll', String(window.scrollY));
+        } catch (e) {}
+        window.location.reload();
+      })
+      .catch(() => {
+        btn.disabled = false;
+        erro.textContent = 'Não foi possível incluir o lançamento.';
+        erro.style.display = 'block';
+      });
+  }
+
   function fecharDetalhe() {
+    fecharNovoLanc();
     classeAtiva = null;
+    idClasseAtiva = '';
     document.getElementById('painel-detalhe').classList.remove('visivel');
     document.querySelectorAll('tr.data-row').forEach(tr => tr.classList.remove('ativa'));
   }
+
+  // ---- Totais: somam só as linhas que estão na tela (o filtro "Com saldo"
+  // esconde linhas, e o total tem de acompanhar o que se está vendo) e fora
+  // as marcadas como "Próximo mês" — o que sobra é o que falta pagar no mês.
+  const CHAVE_PROX = 'fp_prox_mes_{{ ano_sel }}_{{ mes_sel }}';
+
+  function fmtNum(v) {
+    return v.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
+
+  function proxMesSalvas() {
+    try { return JSON.parse(localStorage.getItem(CHAVE_PROX) || '[]'); }
+    catch (e) { return []; }
+  }
+
+  function marcarProximoMes(chk) {
+    const tr = chk.closest('tr');
+    tr.classList.toggle('prox-mes', chk.checked);
+    const marcadas = new Set(proxMesSalvas());
+    if (chk.checked) marcadas.add(chk.dataset.class); else marcadas.delete(chk.dataset.class);
+    try { localStorage.setItem(CHAVE_PROX, JSON.stringify(Array.from(marcadas))); } catch (e) {}
+    recalcTotais();
+  }
+
+  function recalcTotais() {
+    const acc  = {orcado: 0, realizado: 0, saldo: 0, extrap: 0};
+    const prox = {orcado: 0, realizado: 0, saldo: 0, extrap: 0};
+    let temProx = false;
+
+    document.querySelectorAll('tr.data-row').forEach(tr => {
+      const chk = tr.querySelector('.chk-prox');
+      const alvo = (chk && chk.checked) ? prox : acc;
+      if (chk && chk.checked) temProx = true;
+      alvo.orcado    += parseFloat(tr.dataset.orcado) || 0;
+      alvo.realizado += parseFloat(tr.dataset.realizadoSinal) || 0;
+      alvo.saldo     += parseFloat(tr.dataset.saldo) || 0;
+      alvo.extrap    += parseFloat(tr.dataset.extrap) || 0;
+    });
+
+    const pinta = (pref, v) => {
+      document.getElementById(pref + '-orcado').textContent    = fmtNum(v.orcado);
+      document.getElementById(pref + '-realizado').textContent = fmtNum(v.realizado);
+      document.getElementById(pref + '-saldo').textContent     = fmtNum(v.saldo);
+      const tdEx = document.getElementById(pref + '-extrap');
+      tdEx.textContent = v.extrap > 0 ? fmtNum(v.extrap) : '—';
+      if (pref === 'tot') tdEx.style.color = v.extrap > 0 ? '#dc2626' : '#aaa';
+    };
+    pinta('tot', acc);
+    pinta('prox', prox);
+    document.getElementById('linha-prox').style.display = temProx ? '' : 'none';
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    const marcadas = new Set(proxMesSalvas());
+    document.querySelectorAll('.chk-prox').forEach(chk => {
+      if (marcadas.has(chk.dataset.class)) {
+        chk.checked = true;
+        chk.closest('tr').classList.add('prox-mes');
+      }
+    });
+    recalcTotais();
+  });
+
+  // Reabre o painel de detalhe depois do recarregamento, no mesmo ponto da tela
+  (function() {
+    let classe = null, scroll = null;
+    try {
+      classe = sessionStorage.getItem('fp_detalhe_classe');
+      scroll = sessionStorage.getItem('fp_detalhe_scroll');
+      sessionStorage.removeItem('fp_detalhe_classe');
+      sessionStorage.removeItem('fp_detalhe_scroll');
+    } catch (e) {}
+    if (!classe) return;
+    document.addEventListener('DOMContentLoaded', function() {
+      if (!LANC[classe] && !document.querySelector(`tr.data-row[data-class="${CSS.escape(classe)}"]`)) return;
+      detalhar(classe);
+      if (scroll !== null) window.scrollTo(0, parseInt(scroll, 10) || 0);
+    });
+  })();
 
   // Mapa de calor na coluna Realizado — 51 faixas, igual à consulta matricial
   (function() {

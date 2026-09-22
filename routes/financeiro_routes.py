@@ -9074,6 +9074,7 @@ def menu_cr_fiado():
     tipo_global = str(session.get("tipo_global") or "").strip().lower()
     if tipo_global == "superusuario":
         pode_importar = pode_consultar = pode_variacoes = pode_por_filial = pode_por_filial_cli = pode_por_cliente = True
+        pode_recebimentos = True
     else:
         pode_importar      = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_IMPORTAR")
         pode_consultar     = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_CONSULTAR")
@@ -9081,6 +9082,7 @@ def menu_cr_fiado():
         pode_por_filial    = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_POR_FILIAL")
         pode_por_filial_cli= usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_POR_FILIAL_CLIENTE")
         pode_por_cliente   = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_POR_CLIENTE")
+        pode_recebimentos  = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "RECEBIMENTOS_DIA")
     return render_template(
         "menu_cr_fiado.html",
         empresa_ativa=session["cod_empresa"],
@@ -9092,6 +9094,7 @@ def menu_cr_fiado():
         pode_por_filial=pode_por_filial,
         pode_por_filial_cli=pode_por_filial_cli,
         pode_por_cliente=pode_por_cliente,
+        pode_recebimentos=pode_recebimentos,
     )
 
 
@@ -9464,6 +9467,262 @@ def cr_fiado_impl(url_voltar):
         sucesso=sucesso,
         hoje=date.today().isoformat(),
     )
+
+# -----------------------------------------------------------
+# CR — RECEBIMENTOS POR DIA
+# -----------------------------------------------------------
+
+def _parse_recebimentos_xlsx(fileobj):
+    """
+    Lê o relatório "Notas/Duplicatas a Receber" (WebPostos, xlsx) e devolve
+    o que cada filial recebeu em cada dia.
+
+    O arquivo é uma sequência de blocos "Filial: NOME" seguidos das
+    duplicatas. O que foi recebido é a coluna "Pago (R$)" das linhas cuja
+    coluna "Pgto." tem data — a soma dessas linhas é exatamente o subtotal
+    que o próprio relatório imprime por filial. As colunas de forma
+    (Crt./Chq./Din./Tsf.) NÃO são usadas: elas não fecham com o Pago linha a
+    linha (pagamento parcial de duplicata), e o número que o relatório chama
+    de recebido é o Pago.
+
+    Devolve {(NOME_FILIAL_UPPER, date): (valor, quantidade)}.
+    """
+    import openpyxl
+
+    COL_PGTO = 11
+    COL_PAGO = 19
+
+    wb = openpyxl.load_workbook(fileobj, data_only=True, read_only=True)
+    ws = wb.active
+
+    resultado = defaultdict(lambda: [0.0, 0])
+    filial = None
+
+    for linha in ws.iter_rows(values_only=True):
+        if not linha:
+            continue
+        primeira = linha[0]
+        if isinstance(primeira, str) and primeira.strip().upper().startswith("FILIAL:"):
+            filial = primeira.split(":", 1)[1].strip().upper()
+            continue
+        # linha de duplicata: a primeira coluna é o número do documento
+        if not (isinstance(primeira, str) and primeira.strip().isdigit()):
+            continue
+        if filial is None or len(linha) <= COL_PAGO:
+            continue
+
+        pgto = linha[COL_PGTO]
+        if isinstance(pgto, datetime):
+            data_pgto = pgto.date()
+        elif isinstance(pgto, date):
+            data_pgto = pgto
+        elif isinstance(pgto, str) and pgto.strip():
+            try:
+                data_pgto = datetime.strptime(pgto.strip()[:10], "%d/%m/%Y").date()
+            except ValueError:
+                continue
+        else:
+            # sem data de pagamento é duplicata em aberto: não foi recebida
+            continue
+
+        try:
+            valor = float(linha[COL_PAGO] or 0)
+        except (TypeError, ValueError):
+            valor = 0.0
+        if valor == 0:
+            continue
+
+        acumulado = resultado[(filial, data_pgto)]
+        acumulado[0] += valor
+        acumulado[1] += 1
+
+    wb.close()
+    return {chave: (round(v, 2), q) for chave, (v, q) in resultado.items()}
+
+
+@financeiro_bp.route("/cr/recebimentos", methods=["GET", "POST"])
+def cr_recebimentos():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    id_usuario  = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    superusuario = str(session.get("tipo_global") or "").strip().lower() == "superusuario"
+
+    pode_ver = superusuario or usuario_tem_permissao(
+        id_usuario, cod_empresa, "FINANCEIRO", "RECEBIMENTOS_DIA")
+    if not pode_ver:
+        flash("Sem permissão para acessar Recebimentos por Dia.", "error")
+        return redirect(url_for("financeiro.menu_cr_fiado"))
+
+    pode_importar = superusuario or usuario_tem_permissao(
+        id_usuario, cod_empresa, "FINANCEIRO", "RECEBIMENTOS_IMPORTAR")
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    erro = None
+    sucesso = None
+    nao_encontradas = []
+
+    if request.method == "POST":
+        if not pode_importar:
+            erro = "Sem permissão para importar."
+        else:
+            arquivo = request.files.get("arquivo")
+            if not arquivo or not arquivo.filename:
+                erro = "Escolha a planilha do relatório antes de importar."
+            elif not arquivo.filename.lower().endswith((".xlsx", ".xlsm")):
+                erro = "O arquivo precisa ser uma planilha do Excel (.xlsx)."
+            else:
+                try:
+                    dados = _parse_recebimentos_xlsx(io.BytesIO(arquivo.read()))
+                    if not dados:
+                        # importar zero é erro explícito: antes de avisar
+                        # "concluída", a consulta abriria vazia sem motivo
+                        raise ValueError(
+                            "Nenhum recebimento encontrado no arquivo. "
+                            "Confira se o relatório é o de Notas/Duplicatas a Receber "
+                            "e se ele foi emitido quebrado por filial."
+                        )
+
+                    nomes_arquivo = {nome for nome, _ in dados.keys()}
+                    mapa_nome = _mapa_filiais_cadastro(cur, cod_empresa, nomes_arquivo)
+
+                    cur.execute("""
+                        SELECT cod_filial, UPPER(COALESCE(nome_filial_importacao, '')) AS nome
+                        FROM filiais
+                        WHERE cod_empresa = %s
+                          AND COALESCE(nome_filial_importacao, '') <> ''
+                    """, (cod_empresa,))
+                    cod_por_nome = {r["nome"]: r["cod_filial"] for r in cur.fetchall()}
+
+                    linhas = []
+                    faltando = set()
+                    for (nome_fil, data_pg), (valor, qtd) in dados.items():
+                        cod_filial = cod_por_nome.get(mapa_nome.get(nome_fil, nome_fil))
+                        if cod_filial is None:
+                            faltando.add(nome_fil)
+                            continue
+                        linhas.append((cod_empresa, cod_filial, data_pg, valor, qtd,
+                                       arquivo.filename))
+
+                    if not linhas:
+                        raise ValueError(
+                            "Nenhuma filial do arquivo foi encontrada no cadastro. "
+                            "Verifique o campo 'nome_filial_importacao' em Configurações → Filiais."
+                        )
+
+                    # O relatório é do dia inteiro: reimportar substitui a data
+                    # toda, e não só as filiais que vieram desta vez — senão
+                    # uma filial que deixou de ter recebimento ficaria com o
+                    # valor velho para sempre.
+                    datas = sorted({l[2] for l in linhas})
+                    cur.execute(
+                        "DELETE FROM cr_recebimentos_dia WHERE cod_empresa = %s AND data = ANY(%s)",
+                        (cod_empresa, datas))
+                    execute_batch(cur, """
+                        INSERT INTO cr_recebimentos_dia
+                            (cod_empresa, cod_filial, data, valor, quantidade, nome_arquivo)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, linhas)
+                    conn.commit()
+
+                    total = sum(l[3] for l in linhas)
+                    periodo = (datas[0].strftime("%d/%m/%Y") if len(datas) == 1
+                               else f"{datas[0].strftime('%d/%m/%Y')} a {datas[-1].strftime('%d/%m/%Y')}")
+                    sucesso = (f"Importado {periodo} — {len(linhas)} lançamentos em "
+                               f"{len({l[1] for l in linhas})} filiais, total R$ "
+                               f"{formatar_numero_br(total)}.")
+                    nao_encontradas = sorted(faltando)
+                except Exception as e:
+                    conn.rollback()
+                    erro = f"Erro ao processar o arquivo: {e}"
+
+    # ---- período exibido: o mês pedido, ou o último com recebimento
+    hoje = date.today()
+    try:
+        mes_sel = int(request.values.get("mes") or 0)
+        ano_sel = int(request.values.get("ano") or 0)
+    except ValueError:
+        mes_sel = ano_sel = 0
+
+    if not (mes_sel and ano_sel):
+        cur.execute("""
+            SELECT EXTRACT(MONTH FROM data)::int AS mes, EXTRACT(YEAR FROM data)::int AS ano
+            FROM cr_recebimentos_dia WHERE cod_empresa = %s
+            ORDER BY data DESC LIMIT 1
+        """, (cod_empresa,))
+        ultimo = cur.fetchone()
+        mes_sel = ultimo["mes"] if ultimo else hoje.month
+        ano_sel = ultimo["ano"] if ultimo else hoje.year
+
+    cur.execute("""
+        SELECT cod_filial, nome_filial
+        FROM filiais
+        WHERE cod_empresa = %s AND ativo = TRUE
+        ORDER BY cod_filial
+    """, (cod_empresa,))
+    filiais = cur.fetchall() or []
+
+    cur.execute("""
+        SELECT cod_filial, data, valor
+        FROM cr_recebimentos_dia
+        WHERE cod_empresa = %s
+          AND EXTRACT(MONTH FROM data) = %s
+          AND EXTRACT(YEAR  FROM data) = %s
+    """, (cod_empresa, mes_sel, ano_sel))
+    valores = {(r["cod_filial"], r["data"].day): float(r["valor"]) for r in cur.fetchall()}
+
+    cur.close()
+    conn.close()
+
+    # Grade: um dia por linha, uma filial por coluna. Totais do dia, da
+    # filial e geral são somados aqui — nada disso é gravado.
+    import calendar
+    ultimo_dia = calendar.monthrange(ano_sel, mes_sel)[1]
+    dias = []
+    total_filial = {f["cod_filial"]: 0.0 for f in filiais}
+    total_geral = 0.0
+    for dia in range(1, ultimo_dia + 1):
+        celulas = []
+        soma_dia = 0.0
+        for f in filiais:
+            v = valores.get((f["cod_filial"], dia), 0.0)
+            celulas.append(v)
+            total_filial[f["cod_filial"]] += v
+            soma_dia += v
+        total_geral += soma_dia
+        dias.append({
+            "dia": dia,
+            "data": date(ano_sel, mes_sel, dia),
+            "celulas": celulas,
+            "total": soma_dia,
+        })
+
+    nomes_meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+                   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
+
+    return render_template(
+        "cr_recebimentos.html",
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_cr_fiado"),
+        pode_importar=pode_importar,
+        erro=erro,
+        sucesso=sucesso,
+        nao_encontradas=nao_encontradas,
+        filiais=filiais,
+        dias=dias,
+        total_filial=total_filial,
+        total_geral=total_geral,
+        mes_sel=mes_sel,
+        ano_sel=ano_sel,
+        anos=list(range(hoje.year - 3, hoje.year + 2)),
+        meses=list(range(1, 13)),
+        nomes_meses=nomes_meses,
+    )
+
 
 @financeiro_bp.route("/cr/consultas")
 def cr_consultas():

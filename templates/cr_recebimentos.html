@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .pagina-sub    { font-size:15px; color:#666; margin-bottom:24px; }
+
+  .aviso { border-radius:10px; padding:12px 16px; font-size:14px; font-weight:600; margin-bottom:18px; }
+  .aviso.ok  { background:#f0fdf4; border:1px solid #86efac; color:#15803d; }
+  .aviso.err { background:#fef2f2; border:1px solid #fca5a5; color:#b91c1c; }
+  .aviso.warn{ background:#fffbeb; border:1px solid #fcd34d; color:#92400e; }
+
+  .form-importar { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end;
+    background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:18px 20px; margin-bottom:22px; }
+  .form-campo label { display:block; font-size:12px; font-weight:700; color:#555; margin-bottom:5px; }
+  .form-campo input[type=file], .form-campo select {
+    height:38px; border-radius:8px; border:1px solid #cbd5e1; padding:0 10px;
+    font-size:14px; background:#fff; box-sizing:border-box;
+  }
+  .form-campo input[type=file] { padding:6px 10px; }
+  .btn-importar { background:#14114f; color:#fff; border:none; border-radius:8px;
+    padding:0 22px; height:38px; font-size:14px; font-weight:700; cursor:pointer; white-space:nowrap; }
+  .btn-importar:hover { background:#0d0a3a; }
+  .dica { font-size:12px; color:#64748b; margin-top:8px; }
+
+  /* Grade dia × filial: primeira coluna e coluna de total congeladas,
+     as filiais deslizam para o lado (mesmo padrão do matricial) */
+  .grade-wrap { overflow-x:auto; border:1px solid #e2e8f0; border-radius:12px; background:#fff; }
+  table.grade { border-collapse:separate; border-spacing:0; font-size:13px; table-layout:fixed; width:auto; }
+  table.grade th, table.grade td { padding:6px 10px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
+  table.grade thead th { background:#14114f; color:#fff; font-weight:700; font-size:12px;
+    text-align:right; position:sticky; top:0; z-index:3; }
+  table.grade th.col-dia, table.grade td.col-dia {
+    position:sticky; left:0; z-index:2; background:#f8fafc; text-align:left;
+    width:150px; font-weight:700; color:#1e293b;
+  }
+  table.grade thead th.col-dia { background:#14114f; color:#fff; z-index:4; }
+  table.grade th.col-total, table.grade td.col-total {
+    position:sticky; left:150px; z-index:2; background:#eef2ff; text-align:right;
+    width:120px; font-weight:800; color:#14114f;
+  }
+  table.grade thead th.col-total { background:#14114f; color:#fff; z-index:4; }
+  table.grade td.valor { text-align:right; width:110px; color:#1e293b; }
+  table.grade td.zero  { color:#cbd5e1; }
+  table.grade tr.fim-semana td.col-dia { color:#94a3b8; font-style:italic; }
+  table.grade tr:hover td { background:#f8fafc; }
+  table.grade tr:hover td.col-dia { background:#eef2ff; }
+  table.grade tfoot td { background:#f1f5f9; font-weight:800; color:#14114f;
+    border-top:2px solid #cbd5e1; position:sticky; bottom:0; z-index:2; }
+  table.grade tfoot td.col-dia, table.grade tfoot td.col-total { z-index:5; background:#e2e8f0; }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">CR — Recebimentos por Dia</div>
+  <div class="pagina-sub">Empresa: <strong>{{ empresa_ativa }} - {{ nome_empresa_ativa }}</strong></div>
+
+  {% if erro %}<div class="aviso err">{{ erro }}</div>{% endif %}
+  {% if sucesso %}<div class="aviso ok">{{ sucesso }}</div>{% endif %}
+  {% if nao_encontradas %}
+    <div class="aviso warn">
+      Filiais do arquivo sem correspondência no cadastro (não importadas):
+      {{ nao_encontradas | join(", ") }}. Ajuste o campo “Nome na importação” em
+      Configurações → Filiais e importe de novo.
+    </div>
+  {% endif %}
+
+  {% if pode_importar %}
+  <form class="form-importar" method="POST"
+        action="{{ url_for('financeiro.cr_recebimentos', mes=mes_sel, ano=ano_sel) }}"
+        enctype="multipart/form-data">
+    <div class="form-campo">
+      <label>Planilha do relatório (Notas/Duplicatas a Receber)</label>
+      <input type="file" name="arquivo" accept=".xlsx,.xlsm" required>
+      <div class="dica">
+        As datas vêm do próprio arquivo (coluna “Pgto.”) — reimportar uma data
+        substitui aquele dia inteiro.
+      </div>
+    </div>
+    <button type="submit" class="btn-importar">Importar</button>
+  </form>
+  {% endif %}
+
+  <form class="form-importar" method="GET" action="{{ url_for('financeiro.cr_recebimentos') }}">
+    <div class="form-campo">
+      <label>Mês</label>
+      <select name="mes">
+        {% for m in meses %}
+          <option value="{{ m }}" {% if m == mes_sel %}selected{% endif %}>{{ nomes_meses[m-1] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-campo">
+      <label>Ano</label>
+      <select name="ano">
+        {% for a in anos %}
+          <option value="{{ a }}" {% if a == ano_sel %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn-importar">Filtrar</button>
+  </form>
+
+  {% if total_geral > 0 %}
+  <div class="grade-wrap">
+    <table class="grade">
+      <thead>
+        <tr>
+          <th class="col-dia">Dia</th>
+          <th class="col-total">Total do dia</th>
+          {% for f in filiais %}<th>{{ f.nome_filial }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in dias %}
+        <tr {% if d.data.weekday() >= 5 %}class="fim-semana"{% endif %}>
+          <td class="col-dia">{{ "%02d"|format(d.dia) }}/{{ "%02d"|format(mes_sel) }} — {{ ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"][d.data.weekday()] }}</td>
+          <td class="col-total">{{ d.total | br if d.total else "—" }}</td>
+          {% for v in d.celulas %}
+            <td class="valor {% if not v %}zero{% endif %}">{{ v | br if v else "—" }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td class="col-dia">Total do mês</td>
+          <td class="col-total">{{ total_geral | br }}</td>
+          {% for f in filiais %}
+            <td class="valor">{{ total_filial[f.cod_filial] | br if total_filial[f.cod_filial] else "—" }}</td>
+          {% endfor %}
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  {% else %}
+    <div class="aviso warn">Nenhum recebimento importado para {{ nomes_meses[mes_sel-1] }}/{{ ano_sel }}.</div>
+  {% endif %}
+
+  <p style="margin-top:22px;"><a href="{{ url_voltar }}">← Voltar</a></p>
+</div>
+
+{% endblock %}

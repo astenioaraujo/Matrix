@@ -514,6 +514,32 @@ def importar_abastecimentos():
 # ------------------------------------------
 # CONSULTAR ABASTECIMENTOS
 # ------------------------------------------
+def cod_filiais_abastecimentos_usuario(cur, cod_empresa):
+    """Filiais que o usuário enxerga em Consultar Abastecimentos.
+
+    Superusuário vê todas; os demais só as filiais em `usuarios_filiais` —
+    mesma trava de Executar Vistorias. A consulta filtrava só por empresa,
+    então quem tinha a permissão via todos os postos da rede.
+    """
+    if str(session.get("tipo_global") or "").strip().lower() == "superusuario":
+        cur.execute("""
+            SELECT cod_filial
+            FROM filiais
+            WHERE cod_empresa = %s
+              AND ativo = TRUE
+        """, (cod_empresa,))
+        return None, {int(r["cod_filial"]) for r in cur.fetchall() or []}
+
+    cur.execute("""
+        SELECT cod_filial
+        FROM usuarios_filiais
+        WHERE id_usuario = %s
+          AND cod_empresa = %s
+          AND ativo = TRUE
+    """, (session.get("id_usuario"), cod_empresa))
+    return True, {int(r["cod_filial"]) for r in cur.fetchall() or []}
+
+
 @rh_bp.route("/abastecimentos/consultar")
 @permissao_obrigatoria(
     "PERFORMANCES",
@@ -563,6 +589,9 @@ def consultar_abastecimentos():
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
+        restrito, cod_filiais = cod_filiais_abastecimentos_usuario(cur, cod_empresa)
+        sem_vinculo = bool(restrito) and not cod_filiais
+
         cur.execute("""
             SELECT DISTINCT
                 a.cod_filial,
@@ -572,12 +601,22 @@ def consultar_abastecimentos():
               ON f.cod_empresa = a.cod_empresa
              AND f.cod_filial = a.cod_filial
             WHERE a.cod_empresa = %s
+              AND (%s IS FALSE OR a.cod_filial = ANY(%s))
             ORDER BY a.cod_filial
-        """, (cod_empresa,))
+        """, (cod_empresa, bool(restrito), sorted(cod_filiais)))
         filiais = cur.fetchall() or []
 
         filtros = ["a.cod_empresa = %s"]
         params = [cod_empresa]
+
+        # A trava de filial vale no WHERE das tres consultas, nao so no combo:
+        # o cod_filial vem da URL e seria trocado a mao.
+        if restrito:
+            filtros.append("a.cod_filial = ANY(%s)")
+            params.append(sorted(cod_filiais))
+
+            if filial_sel and int(filial_sel) not in cod_filiais:
+                filial_sel = ""
 
         if ano_sel:
             filtros.append("EXTRACT(YEAR FROM a.data_abastecimento) = %s")
@@ -737,6 +776,7 @@ def consultar_abastecimentos():
         filial_sel=filial_sel,
         ordem_sel=ordem_sel,
         filiais=filiais,
+        sem_vinculo=sem_vinculo,
         linhas=linhas,
         totais=totais,
         heatmap=heatmap,

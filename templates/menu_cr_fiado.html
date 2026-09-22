@@ -30,6 +30,9 @@
   {% if pode_importar %}
   <a href="{{ url_for('financeiro.cr_importar_fiado') }}">Importar Fiado</a>
   {% endif %}
+  {% if pode_recebimentos %}
+  <a href="{{ url_for('financeiro.cr_recebimentos') }}">Recebimentos por Dia</a>
+  {% endif %}
   {% if pode_consultar %}
   <a href="{{ url_for('financeiro.cr_consultas') }}">Consultar</a>
   {% endif %}
