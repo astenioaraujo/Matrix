@@ -1,0 +1,313 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 8px; color: #111; }
+  .pagina-subtitulo { font-size: 20px; margin-bottom: 24px; color: #222; }
+
+  .resumo {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .resumo .card {
+    flex: 1;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 16px 20px;
+  }
+  .resumo .card .rotulo { font-size: 13px; color: #666; margin-bottom: 4px; }
+  .resumo .card .valor { font-size: 22px; font-weight: 800; color: #111; }
+  .resumo .card.pago .valor { color: #1e6b34; }
+  .resumo .card.aberto .valor { color: #9f2f2f; }
+
+  .bloco {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 20px;
+  }
+
+  .topo-bloco {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+
+  .btn-novo, .btn-mini {
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .btn-mini { padding: 6px 12px; border-radius: 6px; font-size: 13px; text-decoration: none; display: inline-block; }
+  .btn-mini.excluir { border-color: #c0392b; background: #c0392b; }
+  .btn-mini.ver { border-color: #555; background: #555; }
+  .btn-mini:hover, .btn-novo:hover { filter: brightness(0.92); }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+  th { background: #dbe8f4; }
+  td.num { text-align: right; white-space: nowrap; }
+  td.centro { text-align: center; white-space: nowrap; }
+
+  .barra-progresso {
+    background: #eee;
+    border-radius: 6px;
+    overflow: hidden;
+    height: 16px;
+    width: 100%;
+    min-width: 90px;
+  }
+  .barra-progresso .preenchido {
+    background: #1e6b34;
+    height: 100%;
+  }
+
+  #painelNovoContrato {
+    display: none;
+    background: #f6f8fa;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  #painelNovoContrato .linha-campos {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  #painelNovoContrato .campo { display: flex; flex-direction: column; gap: 4px; }
+  #painelNovoContrato .campo label { font-size: 13px; color: #444; font-weight: 600; }
+  #painelNovoContrato input {
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid #bbb;
+    font-size: 14px;
+  }
+  #painelNovoContrato .campo.descricao { flex: 1 1 320px; }
+
+  .status-msg { font-size: 13px; margin-top: 10px; color: #1e6b34; min-height: 18px; }
+  .status-msg.erro { color: #9f2f2f; }
+
+  .sem-registros { color: #777; padding: 12px 0; }
+</style>
+
+<div class="pagina-titulo">Empréstimos e Financiamentos</div>
+
+<div class="pagina-subtitulo">
+  <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<div class="resumo">
+  <div class="card">
+    <div class="rotulo">Total contratado</div>
+    <div class="valor">R$ {{ formatar_numero_br(total_contratado) }}</div>
+  </div>
+  <div class="card pago">
+    <div class="rotulo">Total pago</div>
+    <div class="valor">R$ {{ formatar_numero_br(total_pago) }}</div>
+  </div>
+  <div class="card aberto">
+    <div class="rotulo">Em aberto</div>
+    <div class="valor">R$ {{ formatar_numero_br(total_em_aberto) }}</div>
+  </div>
+</div>
+
+{% if pode_cadastrar_contratos %}
+<div class="bloco" style="margin-bottom: 16px;">
+  <div class="topo-bloco">
+    <div>Cada contrato gera as parcelas automaticamente, com vencimento mensal no mesmo dia da data base.</div>
+    <button type="button" class="btn-novo" id="btnNovoContrato">+ Novo Contrato</button>
+  </div>
+
+  <div id="painelNovoContrato">
+    <div class="linha-campos">
+      <div class="campo descricao">
+        <label>Descrição do contrato</label>
+        <input type="text" id="campoDescricao" placeholder="Ex.: Financiamento carreta — Banco do Brasil">
+      </div>
+      <div class="campo">
+        <label>Valor contratado</label>
+        <input type="text" id="campoValor" placeholder="0,00">
+      </div>
+      <div class="campo">
+        <label>Quantidade de parcelas</label>
+        <input type="number" id="campoQtdParcelas" min="1" value="12">
+      </div>
+      <div class="campo">
+        <label>1º vencimento</label>
+        <input type="date" id="campoDataInicial">
+      </div>
+      <div class="campo">
+        <label title="Primeiras parcelas sem principal — o valor contratado é dividido só entre as parcelas restantes">Meses de carência</label>
+        <input type="number" id="campoCarencia" min="0" value="0" style="width:90px;">
+      </div>
+      <div class="campo">
+        <label title="Sugerida pela divisão simples do valor contratado — corrija se o banco embutir uma taxa e a parcela real for diferente">Valor da parcela</label>
+        <input type="text" id="campoValorParcela" placeholder="0,00">
+      </div>
+    </div>
+    <button type="button" class="btn-mini" id="btnSalvarContrato">Salvar e gerar parcelas</button>
+    <button type="button" class="btn-mini ver" id="btnCancelarContrato">Cancelar</button>
+    <div class="status-msg" id="statusNovoContrato"></div>
+  </div>
+</div>
+{% endif %}
+
+<div class="bloco">
+  <table>
+    <thead>
+      <tr>
+        <th>Descrição</th>
+        <th style="width:130px">Valor contratado</th>
+        <th style="width:110px">Parcelas</th>
+        <th style="width:130px">1º vencimento</th>
+        <th style="width:140px">Pagas</th>
+        <th style="width:120px">Em aberto</th>
+        <th style="width:170px">Ações</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in contratos %}
+      <tr>
+        <td>{{ c.descricao }}</td>
+        <td class="num">R$ {{ formatar_numero_br(c.valor_contratado) }}</td>
+        <td class="centro">{{ c.qtde_parcelas }}</td>
+        <td class="centro">{{ c.data_primeiro_vencimento.strftime('%d/%m/%Y') }}</td>
+        <td>
+          <div class="barra-progresso">
+            <div class="preenchido" style="width: {{ (c.qtde_pagas / c.qtde_parcelas * 100) if c.qtde_parcelas else 0 }}%;"></div>
+          </div>
+          <div style="font-size:12px; color:#555; margin-top:2px;">{{ c.qtde_pagas }} / {{ c.qtde_parcelas }}</div>
+        </td>
+        <td class="num">R$ {{ formatar_numero_br(c.valor_em_aberto) }}</td>
+        <td class="centro">
+          <a class="btn-mini ver" href="{{ url_for('financeiro.ver_parcelas_emprestimo', id_emprestimo=c.id_emprestimo) }}">Ver parcelas</a>
+          {% if pode_cadastrar_contratos %}
+          <button type="button" class="btn-mini excluir" onclick="excluirContrato({{ c.id_emprestimo }})">Excluir</button>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="sem-registros">Nenhum contrato cadastrado.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="status-msg" id="statusLista"></div>
+</div>
+
+<script>
+  async function fetchJson(url, opcoes) {
+    const resp = await fetch(url, opcoes);
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+    }
+    return resp.json();
+  }
+
+  function mostrarStatus(idStatus, mensagem, erro) {
+    const el = document.getElementById(idStatus);
+    if (!el) return;
+    el.textContent = mensagem;
+    el.classList.toggle("erro", !!erro);
+    if (!erro) setTimeout(() => { el.textContent = ""; }, 2500);
+  }
+
+  function paraNumero(texto) {
+    if (!texto) return 0;
+    return parseFloat(String(texto).replace(/\./g, "").replace(",", ".")) || 0;
+  }
+
+  function formatarMoeda(valor) {
+    return (valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  const btnNovo = document.getElementById("btnNovoContrato");
+  if (btnNovo) {
+    const campoValor = document.getElementById("campoValor");
+    const campoQtdParcelas = document.getElementById("campoQtdParcelas");
+    const campoCarencia = document.getElementById("campoCarencia");
+    const campoValorParcela = document.getElementById("campoValorParcela");
+    let parcelaTocada = false;
+
+    function sugerirValorParcela() {
+      if (parcelaTocada) return;
+      const valorContratado = paraNumero(campoValor.value);
+      const qtd = Number(campoQtdParcelas.value || 0);
+      const carencia = Number(campoCarencia.value || 0);
+      const parcelasComPrincipal = qtd - carencia;
+      if (valorContratado > 0 && parcelasComPrincipal > 0) {
+        campoValorParcela.value = formatarMoeda(valorContratado / parcelasComPrincipal);
+      } else {
+        campoValorParcela.value = "";
+      }
+    }
+
+    campoValor.addEventListener("input", sugerirValorParcela);
+    campoQtdParcelas.addEventListener("input", sugerirValorParcela);
+    campoCarencia.addEventListener("input", sugerirValorParcela);
+    campoValorParcela.addEventListener("input", () => { parcelaTocada = true; });
+
+    btnNovo.addEventListener("click", () => {
+      parcelaTocada = false;
+      document.getElementById("painelNovoContrato").style.display = "block";
+      btnNovo.style.display = "none";
+    });
+    document.getElementById("btnCancelarContrato").addEventListener("click", () => {
+      document.getElementById("painelNovoContrato").style.display = "none";
+      btnNovo.style.display = "inline-block";
+    });
+
+    document.getElementById("btnSalvarContrato").addEventListener("click", async () => {
+      const payload = {
+        descricao: document.getElementById("campoDescricao").value.trim(),
+        valor_contratado: campoValor.value,
+        quantidade_parcelas: Number(campoQtdParcelas.value || 0),
+        data_primeiro_vencimento: document.getElementById("campoDataInicial").value,
+        meses_carencia: Number(campoCarencia.value || 0),
+        valor_parcela: campoValorParcela.value,
+      };
+      try {
+        const data = await fetchJson("/api/emprestimos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (data.ok) {
+          window.location = "{{ url_for('financeiro.ver_parcelas_emprestimo', id_emprestimo=0) }}".replace("/0", "/" + data.id_emprestimo);
+        } else {
+          mostrarStatus("statusNovoContrato", data.erro || "Erro ao salvar.", true);
+        }
+      } catch (e) {
+        mostrarStatus("statusNovoContrato", e.message || "Erro ao salvar.", true);
+      }
+    });
+  }
+
+  async function excluirContrato(id) {
+    if (!await confirmarGlobal("Excluir este contrato e todas as suas parcelas?")) return;
+    try {
+      const data = await fetchJson(`/api/emprestimos/${id}`, { method: "DELETE" });
+      if (data.ok) {
+        window.location.reload();
+      } else {
+        mostrarStatus("statusLista", data.erro || "Erro ao excluir.", true);
+      }
+    } catch (e) {
+      mostrarStatus("statusLista", e.message || "Erro ao excluir.", true);
+    }
+  }
+</script>
+
+{% endblock %}

@@ -36,6 +36,12 @@
   {% if pode_variacoes %}
   <a href="{{ url_for('financeiro.cartoes_variacoes') }}">Variações</a>
   {% endif %}
+  {% if pode_bandeiras %}
+  <a href="{{ url_for('financeiro.cartoes_bandeiras') }}">Posição por Bandeira</a>
+  {% endif %}
+  {% if pode_bandeiras_var %}
+  <a href="{{ url_for('financeiro.cartoes_bandeiras_variacoes') }}">Variações por Bandeira</a>
+  {% endif %}
 </div>
 
 {% endblock %}

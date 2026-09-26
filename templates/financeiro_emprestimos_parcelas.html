@@ -1,411 +1,373 @@
 {% extends "base.html" %}
-
 {% block content %}
 
 {% include "components/nav.html" %}
 
-
-
-<!-- ---------------------------------->
-<!-- ESTILOS -->
-<!-- ---------------------------------->
-
 <style>
+  .pagina-titulo { font-size: 30px; font-weight: 800; margin-bottom: 4px; color: #111; }
+  .pagina-subtitulo { font-size: 18px; margin-bottom: 4px; color: #222; }
+  .pagina-voltar { margin-bottom: 20px; }
+  .pagina-voltar a { color: #1a73e8; text-decoration: none; font-weight: 600; font-size: 14px; }
 
-    .pagina-titulo{
-        font-size:36px;
-        font-weight:800;
-        margin-bottom:10px;
-    }
+  .cabecalho-contrato {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    display: flex;
+    gap: 20px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+  }
+  .cabecalho-contrato .campo { display: flex; flex-direction: column; gap: 4px; }
+  .cabecalho-contrato .campo label { font-size: 12px; color: #666; font-weight: 600; }
+  .cabecalho-contrato .campo .valor-fixo { font-size: 15px; font-weight: 700; color: #111; }
+  .cabecalho-contrato input[type="text"] {
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid #bbb;
+    font-size: 14px;
+    min-width: 320px;
+  }
 
-    .empresa{
-        font-size:20px;
-        margin-bottom:20px;
-    }
+  .bloco { background: #fff; border: 1px solid #d9d9d9; border-radius: 10px; padding: 20px; }
 
-    .card-resumo{
-        background:#fff;
-        border:1px solid #d9d9d9;
-        border-radius:12px;
-        padding:18px;
-        margin-bottom:20px;
-    }
+  .btn-mini {
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .btn-mini:hover { filter: brightness(0.92); }
 
-    .grid{
-        display:grid;
-        grid-template-columns: repeat(4,1fr);
-        gap:14px;
-    }
+  /* Mesmo princípio de conferir_caixas.html: o input não parece caixinha de
+     formulário — fundo transparente, sem borda, do tamanho da própria
+     célula. Só ganha destaque quando o cursor está dentro dele. */
+  table.parcelas { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.parcelas th, table.parcelas td {
+    border: 1px solid #ddd; height: 34px; box-sizing: border-box; text-align: left;
+  }
+  table.parcelas th { background: #dbe8f4; padding: 6px 8px; }
+  table.parcelas td.centro { text-align: center; white-space: nowrap; padding: 0 8px; }
+  table.parcelas td.num { text-align: right; padding: 0 10px; }
 
-    .campo{
-        display:flex;
-        flex-direction:column;
-    }
+  /* Zebra — mesma cor de conferir_caixas.html */
+  table.parcelas tbody tr:nth-child(even) td { background: #f9f9f9; }
+  table.parcelas tbody tr:hover td { background: #fffbea; }
 
-    .linha-passada td{
-        color:#7bb874;
-        opacity:0.90;
-    }
-    .campo label{
-        font-size:12px;
-        font-weight:700;
-        color:#666;
-        margin-bottom:4px;
-    }
+  table.parcelas td.td-valor, table.parcelas td.td-data-cel { text-align: right; padding: 0; }
+  table.parcelas td.td-valor input, table.parcelas td.td-data-cel input {
+    width: 100%; min-width: 0; height: 34px; border: none; background: transparent;
+    text-align: right; padding: 0 8px; font-size: 13px; font-family: Arial, sans-serif;
+    outline: none; box-sizing: border-box;
+  }
+  table.parcelas td.td-data-cel input { text-align: left; color: #333; }
+  table.parcelas td.td-valor input:focus,
+  table.parcelas td.td-data-cel input:focus {
+    background: #fffde7; box-shadow: inset 0 0 0 2px #facc15;
+  }
 
-    .campo span{
-        font-size:15px;
-        font-weight:600;
-    }
+  table.parcelas td.total-calc { text-align: right; padding: 0 10px; font-weight: 700; background: #eff6ff !important; color: #1d4ed8; }
 
-    table{
-        width:100%;
-        border-collapse:collapse;
-        background:#fff;
-    }
+  /* Linha de carência/paga sobrepõe a zebra — precisa vir depois no CSS */
+  table.parcelas tr.linha-carencia td { background: #fff8e6 !important; }
+  table.parcelas tr.linha-paga td { background: #f1f9f3 !important; }
+  table.parcelas tr.linha-carencia.linha-paga td { background: #f3f6e6 !important; }
+  table.parcelas tr.linha-carencia td.td-valor input:focus,
+  table.parcelas tr.linha-paga td.td-valor input:focus,
+  table.parcelas tr.linha-carencia td.td-data-cel input:focus,
+  table.parcelas tr.linha-paga td.td-data-cel input:focus { background: #fffde7; }
 
-    th{
-        background:#3b6fb6;
-        color:white;
-        padding:8px;
-        font-size:13px;
-        text-align:center;
-    }
+  table.parcelas tfoot td { font-weight: 800; background: #eef3f8; padding: 0 10px; }
+  table.parcelas tfoot td.num { text-align: right; }
 
-    td{
-        border:1px solid #ddd;
-        padding:7px;
-        font-size:13px;
-    }
+  /* Coluna de somas — não cards lado a lado, e sim uma linha por total,
+     empilhadas, valores alinhados à direita (padrão de fechamento de nota). */
+  .resumo-pagamento {
+    margin: 16px 0 0 auto;
+    max-width: 360px;
+    background: #fafafa;
+    border: 1px solid #e2e2e2;
+    border-radius: 10px;
+    padding: 4px 18px;
+  }
+  .resumo-pagamento .linha-resumo {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+    padding: 10px 0;
+    border-bottom: 1px solid #e6e6e6;
+  }
+  .resumo-pagamento .linha-resumo:last-child { border-bottom: none; }
+  .resumo-pagamento .rotulo { font-size: 13px; color: #666; font-weight: 600; }
+  .resumo-pagamento .valor { font-size: 18px; font-weight: 800; color: #111; }
+  .resumo-pagamento .linha-resumo.pago .valor { color: #1e6b34; }
+  .resumo-pagamento .linha-resumo.aberto .valor { color: #9f2f2f; }
 
-    tr:nth-child(even){
-        background:#fafafa;
-    }
+  .status-msg { font-size: 13px; margin-top: 10px; color: #1e6b34; min-height: 18px; }
+  .status-msg.erro { color: #9f2f2f; }
 
-    .centro{
-        text-align:center;
-    }
-
-    .direita{
-        text-align:right;
-    }
-
-    .situacao-aberta{
-        color:#c62828;
-        font-weight:800;
-    }
-
-    .situacao-paga{
-        color:#16833a;
-        font-weight:800;
-    }
-
-    .linha-carencia td {
-        background: #fff8e1;
-        color: #7a5500;
-        font-style: italic;
-    }
-
-    .badge-carencia {
-        background: #ffe082;
-        color: #7a5500;
-        font-size: 11px;
-        font-weight: 800;
-        border-radius: 4px;
-        padding: 2px 6px;
-    }
-
-    .input-parcela {
-        width: 90px;
-        text-align: right;
-        border: 1px solid #bbb;
-        border-radius: 5px;
-        padding: 3px 6px;
-        font-size: 13px;
-    }
-
-    .btn-salvar-parcela {
-        background: #1d4ed8;
-        color: #fff;
-        border: none;
-        border-radius: 6px;
-        padding: 4px 12px;
-        font-size: 12px;
-        font-weight: 700;
-        cursor: pointer;
-        white-space: nowrap;
-    }
-
-    .btn-salvar-parcela:hover { background: #1e40af; }
-        .acoes-topo{
-        display:flex;
-        gap:10px;
-        align-items:center;
-        margin-bottom:18px;
-        flex-wrap:wrap;
-    }
-
-    .btn-excluir-parcelas{
-        background:#c62828;
-        color:white;
-        height:42px;
-        min-width:190px;
-        padding:0 18px;
-        border:none;
-        border-radius:10px;
-        font-size:14px;
-        font-weight:800;
-        cursor:pointer;
-    }
-
-    .btn-excluir-parcelas:hover{
-        background:#a91f1f;
-    }
-
-    .btn-desabilitado{
-        background:#c7c7c7 !important;
-        color:#666 !important;
-        cursor:not-allowed !important;
-    }
-
-
+  /* Aviso de salvo/erro flutuante, no lugar de recarregar a página a cada
+     campo — mesmo princípio de conferir_caixas.html. */
+  .badge-salvo, .badge-erro {
+    display: none; font-size: 12px; font-weight: 700; position: fixed; bottom: 20px; right: 24px;
+    background: #fff; border-radius: 8px; padding: 8px 14px; box-shadow: 0 3px 10px rgba(0,0,0,.15); z-index: 999;
+  }
+  .badge-salvo { color: #16a34a; border: 1px solid #16a34a; }
+  .badge-erro { color: #dc2626; border: 1px solid #dc2626; }
 </style>
 
-<!-- ---------------------------------->
-<!-- CLASSES -->
-<!-- ---------------------------------->
+<div class="pagina-titulo">Parcelas do Contrato</div>
+<div class="pagina-subtitulo"><strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}</div>
+<div class="pagina-voltar"><a href="{{ url_voltar }}">← Voltar</a></div>
 
-
-<div class="pagina-titulo">
-    Parcelas do Contrato
-</div>
-
-<div class="empresa">
-    <strong>Empresa:</strong>
-    {{ empresa_ativa }} - {{ nome_empresa_ativa }}
-</div>
-
-{% set ns = namespace(todas_abertas=true) %}
-
-{% for p in parcelas %}
-  {% if p.situacao != 'EM_ABERTO' %}
-    {% set ns.todas_abertas = false %}
-  {% endif %}
-{% endfor %}
-
-<div class="acoes-topo">
-
-    {% if parcelas and ns.todas_abertas %}
-
-        <form method="POST"
-            id="form-excluir-parcelas"
-            action="{{ url_for('financeiro.excluir_todas_parcelas_emprestimo_financiamento',
-                                id_emprestimo=contrato.id_emprestimo) }}">
-
-            <button type="button"
-                    class="btn-excluir-parcelas"
-                    onclick="mostrarConfirmacaoGlobal(
-                    'ATENÇÃO',
-                    'Todas as parcelas deste contrato serão excluídas permanentemente.<br><br>Esta ação não poderá ser desfeita.<br><br>Deseja continuar?',
-                    function(){ document.getElementById('form-excluir-parcelas').submit(); }
-                    )">
-                Excluir Parcelas
-            </button>
-
-        </form>
-
+<div class="cabecalho-contrato">
+  <div class="campo" style="flex:1;">
+    <label>Descrição do contrato</label>
+    {% if pode_cadastrar_contratos %}
+      <input type="text" id="campoDescricao" value="{{ contrato.descricao }}">
     {% else %}
-
-        <button type="button"
-                class="btn-excluir-parcelas btn-desabilitado"
-                disabled>
-        Excluir Parcelas
-        </button>
-
+      <div class="valor-fixo">{{ contrato.descricao }}</div>
     {% endif %}
-
-</div>
-
-<div class="card-resumo">
-
-
-  <div class="grid">
-
-    <div class="campo">
-      <label>Código</label>
-      <span>{{ contrato.codigo }}</span>
-    </div>
-
-    <div class="campo">
-      <label>Instituição</label>
-      <span>{{ contrato.instituicao }}</span>
-    </div>
-
-    <div class="campo">
-      <label>Tipo</label>
-      <span>{{ contrato.tipo }}</span>
-    </div>
-
-    <div class="campo">
-      <label>Situação</label>
-      <span>{{ contrato.situacao }}</span>
-    </div>
-
-    <div class="campo">
-      <label>Valor Contratado</label>
-      <span>{{ formatar_numero_br(contrato.valor_contratado) }}</span>
-    </div>
-
-    <div class="campo">
-      <label>Valor Parcela</label>
-      <span>{{ formatar_numero_br(contrato.valor_parcela) }}</span>
-    </div>
-
-    <div class="campo">
-      <label>Quantidade Parcelas</label>
-      <span>{{ contrato.quantidade_parcelas }}</span>
-    </div>
-
-    <div class="campo">
-      <label>Saldo Devedor</label>
-      <span>{{ formatar_numero_br(contrato.saldo_devedor) }}</span>
-    </div>
-
   </div>
+  <div class="campo">
+    <label>Valor contratado</label>
+    <div class="valor-fixo">R$ {{ formatar_numero_br(contrato.valor_contratado) }}</div>
+  </div>
+  <div class="campo">
+    <label>Quantidade de parcelas</label>
+    <div class="valor-fixo">{{ contrato.quantidade_parcelas }}</div>
+  </div>
+  {% if contrato.meses_carencia %}
+  <div class="campo">
+    <label title="Primeiras parcelas sem principal">Carência</label>
+    <div class="valor-fixo">{{ contrato.meses_carencia }} {{ 'mês' if contrato.meses_carencia == 1 else 'meses' }}</div>
+  </div>
+  {% endif %}
+  <div class="campo">
+    <label>Pagas</label>
+    <div class="valor-fixo" id="contadorPagas">{{ qtde_pagas }} / {{ parcelas|length }}</div>
+  </div>
+  {% if pode_cadastrar_contratos %}
+  <div class="campo">
+    <button type="button" class="btn-mini" id="btnSalvarDescricao">Salvar descrição</button>
+  </div>
+  {% endif %}
+</div>
+<div class="status-msg" id="statusCabecalho"></div>
 
+<div class="bloco">
+  <table class="parcelas">
+    <thead>
+      <tr>
+        <th style="width:50px">Nº</th>
+        <th style="width:150px">Vencimento</th>
+        <th style="width:150px">Principal</th>
+        <th style="width:150px">Juros</th>
+        <th style="width:150px">Total</th>
+        <th style="width:70px">Pago</th>
+        <th style="width:110px">Data pgto.</th>
+      </tr>
+    </thead>
+    <tbody id="corpoParcelas">
+      {% for p in parcelas %}
+      <tr class="{{ 'linha-paga' if p.pago else '' }} {{ 'linha-carencia' if p.numero_parcela <= contrato.meses_carencia else '' }}" data-id="{{ p.id_parcela }}">
+        <td class="centro">{{ p.numero_parcela }}{% if p.numero_parcela <= contrato.meses_carencia %} <span title="Carência — sem principal">🕓</span>{% endif %}</td>
+        <td class="{{ 'td-data-cel' if pode_cadastrar_contratos else 'centro' }}">
+          {% if pode_cadastrar_contratos %}
+            <input type="date" class="input-vencimento" value="{{ p.data_vencimento.isoformat() }}" onchange="salvarParcela(this)">
+          {% else %}
+            {{ p.data_vencimento.strftime('%d/%m/%Y') }}
+          {% endif %}
+        </td>
+        <td class="{{ 'td-valor' if pode_cadastrar_contratos else 'num' }}">
+          {% if pode_cadastrar_contratos %}
+            <input type="text" class="input-principal" value="{{ formatar_numero_br(p.valor_principal) }}"
+                   onfocus="this.select()" onblur="salvarParcela(this)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">
+          {% else %}
+            {{ formatar_numero_br(p.valor_principal) }}
+          {% endif %}
+        </td>
+        <td class="{{ 'td-valor' if pode_cadastrar_contratos else 'num' }}">
+          {% if pode_cadastrar_contratos %}
+            <input type="text" class="input-juros" value="{{ formatar_numero_br(p.valor_juros) }}"
+                   onfocus="this.select()" onblur="salvarParcela(this)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">
+          {% else %}
+            {{ formatar_numero_br(p.valor_juros) }}
+          {% endif %}
+        </td>
+        <td class="total-calc">{{ formatar_numero_br(p.valor_principal + p.valor_juros) }}</td>
+        <td class="centro">
+          <input type="checkbox" class="input-pago" {{ 'checked' if p.pago else '' }}
+                 {% if pode_cadastrar_contratos %}onchange="salvarParcela(this)"{% else %}disabled{% endif %}>
+        </td>
+        <td class="centro dado-pagamento">{{ p.data_pagamento.strftime('%d/%m/%Y') if p.data_pagamento else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="2">Total</td>
+        <td class="num" id="totalPrincipalRodape">{{ formatar_numero_br(total_principal) }}</td>
+        <td class="num" id="totalJurosRodape">{{ formatar_numero_br(total_juros) }}</td>
+        <td class="num" id="totalGeralRodape">{{ formatar_numero_br(total_principal + total_juros) }}</td>
+        <td colspan="2"></td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="resumo-pagamento">
+    <div class="linha-resumo">
+      <span class="rotulo">Valor total</span>
+      <span class="valor" id="resumoValorTotal">R$ {{ formatar_numero_br(total_principal + total_juros) }}</span>
+    </div>
+    <div class="linha-resumo pago">
+      <span class="rotulo">Valor pago</span>
+      <span class="valor" id="resumoValorPago">R$ {{ formatar_numero_br(total_pago) }}</span>
+    </div>
+    <div class="linha-resumo aberto">
+      <span class="rotulo">Falta pagar</span>
+      <span class="valor" id="resumoValorAberto">R$ {{ formatar_numero_br(total_em_aberto) }}</span>
+    </div>
+  </div>
 </div>
 
-<table>
+<div class="badge-salvo" id="badge-salvo">✓ Salvo</div>
+<div class="badge-erro" id="badge-erro">Erro ao salvar</div>
 
-  <thead>
-    <tr>
-      <th>Parcela</th>
-      <th>Tipo</th>
-      <th>Vencimento</th>
-      <th>Saldo Inicial</th>
-      <th>Amortização</th>
-      <th>Juros</th>
-      <th>Valor Parcela</th>
-      <th>Valor Pago</th>
-      <th>Saldo Final</th>
-      <th>Taxa</th>
-      <th>Pagamento</th>
-      <th>Situação</th>
-      <th>Observação</th>
-    </tr>
-  </thead>
+<script>
+  async function fetchJson(url, opcoes) {
+    const resp = await fetch(url, opcoes);
+    const contentType = resp.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw new Error("Sessão expirada. Atualize a página e faça login novamente.");
+    }
+    return resp.json();
+  }
 
-  <tbody>
+  function mostrarStatus(idStatus, mensagem, erro) {
+    const el = document.getElementById(idStatus);
+    if (!el) return;
+    el.textContent = mensagem;
+    el.classList.toggle("erro", !!erro);
+    if (!erro) setTimeout(() => { el.textContent = ""; }, 2500);
+  }
 
-    {% for p in parcelas %}
-        {% set is_carencia = p.tipo_parcela == 'CARENCIA' %}
-        {% set pode_editar = editavel and not is_carencia and p.situacao == 'EM_ABERTO' %}
-        <tr class="{% if is_carencia %}linha-carencia{% elif p.data_vencimento and p.data_vencimento < hoje %}linha-passada{% endif %}">
+  function badge(ok, mensagem) {
+    const el = document.getElementById(ok ? "badge-salvo" : "badge-erro");
+    if (!ok) el.textContent = mensagem || "Erro ao salvar";
+    el.style.display = "block";
+    setTimeout(() => { el.style.display = "none"; }, 1800);
+  }
 
-            <td class="centro">{{ p.numero_parcela }}</td>
+  function paraNumero(texto) {
+    if (!texto) return 0;
+    return parseFloat(String(texto).replace(/\./g, "").replace(",", ".")) || 0;
+  }
 
-            <td class="centro">
-                {% if is_carencia %}
-                    <span class="badge-carencia">CARÊNCIA</span>
-                {% else %}
-                    {{ p.tipo_parcela }}
-                {% endif %}
-            </td>
+  function formatarMoeda(valor) {
+    return (valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
 
-            <td class="centro">
-                {{ p.data_vencimento.strftime('%d/%m/%Y') if p.data_vencimento else '' }}
-            </td>
+  const btnDescricao = document.getElementById("btnSalvarDescricao");
+  if (btnDescricao) {
+    btnDescricao.addEventListener("click", async () => {
+      const descricao = document.getElementById("campoDescricao").value.trim();
+      try {
+        const data = await fetchJson("{{ url_for('financeiro.api_editar_emprestimo', id_emprestimo=contrato.id_emprestimo) }}", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ descricao }),
+        });
+        mostrarStatus("statusCabecalho", data.ok ? "Salvo com sucesso." : (data.erro || "Erro ao salvar."), !data.ok);
+      } catch (e) {
+        mostrarStatus("statusCabecalho", e.message || "Erro ao salvar.", true);
+      }
+    });
+  }
 
-            <td class="direita">{{ formatar_numero_br(p.saldo_inicial) }}</td>
+  function recalcularLinha(tr) {
+    const principal = paraNumero(tr.querySelector(".input-principal").value);
+    const juros = paraNumero(tr.querySelector(".input-juros").value);
+    tr.querySelector(".total-calc").textContent = formatarMoeda(principal + juros);
+  }
 
-            {% if pode_editar %}
-            <form method="POST"
-                  action="{{ url_for('financeiro.editar_parcela_emprestimo_financiamento', id_parcela=p.id_parcela) }}"
-                  style="display:contents;">
-              <input type="hidden" name="id_emprestimo" value="{{ contrato.id_emprestimo }}">
-              <td class="direita">
-                {% if modalidade == 'PARCELA_INFORMADA' %}
-                  <input class="input-parcela" name="valor_principal"
-                         value="{{ formatar_numero_br(p.valor_principal) }}">
-                {% else %}
-                  {{ formatar_numero_br(p.valor_principal) }}
-                  <input type="hidden" name="valor_principal" value="{{ formatar_numero_br(p.valor_principal) }}">
-                {% endif %}
-              </td>
-              <td class="direita">
-                <input class="input-parcela" name="valor_juros"
-                       value="{{ formatar_numero_br(p.valor_juros) }}">
-              </td>
-              <td class="direita">{{ formatar_numero_br(p.valor_parcela) }}</td>
-              <td class="direita">{{ formatar_numero_br(p.valor_pago) }}</td>
-              <td class="direita">{{ formatar_numero_br(p.saldo_final) }}</td>
-              <td class="direita">{{ formatar_numero_br(p.taxa_juros) }}%</td>
-              <td class="centro">
-                  {{ p.data_pagamento.strftime('%d/%m/%Y') if p.data_pagamento else '' }}
-              </td>
-              <td class="centro">
-                  <span class="situacao-aberta">{{ p.situacao }}</span>
-              </td>
-              <td>
-                  <button type="submit" class="btn-salvar-parcela">Salvar</button>
-              </td>
-            </form>
-            {% else %}
-            <td class="direita">{{ formatar_numero_br(p.valor_principal) }}</td>
-            <td class="direita">{{ formatar_numero_br(p.valor_juros) }}</td>
-            <td class="direita">{{ formatar_numero_br(p.valor_parcela) }}</td>
-            <td class="direita">{{ formatar_numero_br(p.valor_pago) }}</td>
-            <td class="direita">{{ formatar_numero_br(p.saldo_final) }}</td>
-            <td class="direita">{{ formatar_numero_br(p.taxa_juros) }}%</td>
-            <td class="centro">
-                {{ p.data_pagamento.strftime('%d/%m/%Y') if p.data_pagamento else '' }}
-            </td>
-            <td class="centro">
-                {% if p.situacao == 'PAGO' %}
-                    <span class="situacao-paga">{{ p.situacao }}</span>
-                {% else %}
-                    <span class="situacao-aberta">{{ p.situacao }}</span>
-                {% endif %}
-            </td>
-            <td>{{ p.observacao or '' }}</td>
-            {% endif %}
+  function recalcularRodape() {
+    let totalPrincipal = 0, totalJuros = 0, pagas = 0, total = 0, valorPago = 0, valorAberto = 0;
+    document.querySelectorAll("#corpoParcelas tr").forEach(tr => {
+      const principal = paraNumero(tr.querySelector(".input-principal").value);
+      const juros = paraNumero(tr.querySelector(".input-juros").value);
+      totalPrincipal += principal;
+      totalJuros += juros;
+      total++;
+      if (tr.querySelector(".input-pago").checked) {
+        pagas++;
+        valorPago += principal + juros;
+      } else {
+        valorAberto += principal + juros;
+      }
+    });
+    document.getElementById("totalPrincipalRodape").textContent = formatarMoeda(totalPrincipal);
+    document.getElementById("totalJurosRodape").textContent = formatarMoeda(totalJuros);
+    document.getElementById("totalGeralRodape").textContent = formatarMoeda(totalPrincipal + totalJuros);
+    const contador = document.getElementById("contadorPagas");
+    if (contador) contador.textContent = `${pagas} / ${total}`;
+    const resumoTotal = document.getElementById("resumoValorTotal");
+    if (resumoTotal) resumoTotal.textContent = "R$ " + formatarMoeda(totalPrincipal + totalJuros);
+    const resumoPago = document.getElementById("resumoValorPago");
+    if (resumoPago) resumoPago.textContent = "R$ " + formatarMoeda(valorPago);
+    const resumoAberto = document.getElementById("resumoValorAberto");
+    if (resumoAberto) resumoAberto.textContent = "R$ " + formatarMoeda(valorAberto);
+  }
 
-        </tr>
-    {% endfor %}
+  function hojeFormatado() {
+    const d = new Date();
+    return String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0") + "/" + d.getFullYear();
+  }
 
-    {% if not parcelas %}
-    <tr>
-      <td colspan="13" class="centro">
-        Nenhuma parcela gerada.
-      </td>
-    </tr>
-    {% endif %}
+  async function salvarParcela(campo) {
+    const tr = campo.closest("tr");
+    const id = tr.dataset.id;
 
-  </tbody>
+    // Reformata o campo de valor que acabou de perder o foco (o de digitação
+    // ao lado fica intocado até ele também ser editado).
+    if (campo.classList.contains("input-principal") || campo.classList.contains("input-juros")) {
+      campo.value = formatarMoeda(paraNumero(campo.value));
+    }
 
-  {% if parcelas %}
-  {% set ns2 = namespace(
-      tot_principal=0, tot_juros=0, tot_parcela=0, tot_pago=0
-  ) %}
-  {% for p in parcelas %}
-    {% set ns2.tot_principal = ns2.tot_principal + (p.valor_principal | float) %}
-    {% set ns2.tot_juros     = ns2.tot_juros     + (p.valor_juros     | float) %}
-    {% set ns2.tot_parcela   = ns2.tot_parcela   + (p.valor_parcela   | float) %}
-    {% set ns2.tot_pago      = ns2.tot_pago      + (p.valor_pago      | float) %}
-  {% endfor %}
-  <tfoot>
-    <tr style="background:#14114f; color:#fff; font-weight:800; font-size:13px;">
-      <td colspan="4" style="padding:8px 7px; text-align:right; border:1px solid #14114f;">TOTAL</td>
-      <td class="direita" style="border:1px solid #14114f;">{{ formatar_numero_br(ns2.tot_principal) }}</td>
-      <td class="direita" style="border:1px solid #14114f;">{{ formatar_numero_br(ns2.tot_juros) }}</td>
-      <td class="direita" style="border:1px solid #14114f;">{{ formatar_numero_br(ns2.tot_parcela) }}</td>
-      <td class="direita" style="border:1px solid #14114f;">{{ formatar_numero_br(ns2.tot_pago) }}</td>
-      <td colspan="5" style="border:1px solid #14114f;"></td>
-    </tr>
-  </tfoot>
-  {% endif %}
+    const inputPago = tr.querySelector(".input-pago");
+    const pago = inputPago.checked;
 
-</table>
+    const payload = {
+      data_vencimento: tr.querySelector(".input-vencimento").value,
+      valor_principal: tr.querySelector(".input-principal").value,
+      valor_juros: tr.querySelector(".input-juros").value,
+      pago,
+    };
 
+    recalcularLinha(tr);
+    tr.classList.toggle("linha-paga", pago);
+    const celData = tr.querySelector(".dado-pagamento");
+    celData.textContent = pago ? (celData.textContent !== "—" ? celData.textContent : hojeFormatado()) : "—";
+    recalcularRodape();
+
+    try {
+      const data = await fetchJson(`/api/emprestimos/parcelas/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      badge(!!data.ok, data.erro);
+    } catch (e) {
+      badge(false, e.message || "Erro ao salvar.");
+    }
+  }
+</script>
 
 {% endblock %}

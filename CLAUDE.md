@@ -95,6 +95,16 @@ Primeiro item do menu do Financeiro. Tabelas em `migrations/criar_tabelas_saldos
 - **Antecipação de Dividendos duplicando linhas (2026-09-01)**: a identidade da linha é `(empresa, filial, data, observação)`, e o campo de observação gravava a cada tecla (debounce de `input`) — cada prefixo digitado virava uma linha nova no banco, todas com o mesmo valor ("Baixa", "Baixa Fiado", "Baixa Fiado ore"…). O rename por `observacao_anterior` deveria evitar isso, mas com duas gravações em voo (debounce + `blur`) as duas liam o mesmo texto anterior e a segunda inseria em vez de renomear — foi essa corrida que também zerou uma linha vizinha. Agora: a observação **só grava ao sair do campo** (`obsParaGravar` devolve `_obsSalva` enquanto o campo está em foco, para que os valores digitados caiam na linha que já existe) e há **uma gravação de cada vez por linha** (fila em `tr._fila`). O DELETE devolve `removidos` — responder `ok` para uma linha inexistente fazia a linha sumir da tela e continuar no banco.
 - **Fuso horário nas datas**: `formatarDataISO` usava `toISOString()` (UTC) — à noite o dia saía errado. Agora usa data local, com `parseDataISO` para o caminho inverso.
 
+## CR Cartões — totalização por bandeira
+
+O Excel "Movimentação de Cartões" traz a bandeira na coluna **Administradora** (col[1]). A importação existente (`cartoes_importar`) passou a gravar, na mesma transação, `cartoes_bandeiras` (filial × bandeira, `migrations/criar_cartoes_bandeiras.sql`) além de `cartoes_filiais` — a soma das duas fecha com `total_geral`. Guardado por filial para as telas filtrarem por área.
+
+- `_nome_bandeira` tira acento e espaço duplo: o arquivo grafa "PERSONAL CARD COMBUSTÍVEL" e "COMBUSTIVEL" (viravam duas fatias). "GOLDI CARD" × "GOLDICARD" continuam separadas — não é acento, e juntar por palpite esconderia bandeira nova.
+- **Posição por Bandeira** (`/cr/cartoes/bandeiras`, `CARTOES_BANDEIRAS` 1480): data + área, tabela com saldo, participação e variação contra a importação anterior, e pizza (Chart.js) com as 7 maiores + "Outras" (`BANDEIRAS_NO_GRAFICO`). O quadradinho da tabela repete a cor da fatia.
+- **Variações por Bandeira** (`/cr/cartoes/bandeiras/variacoes`, `CARTOES_BANDEIRAS_VARIACOES` 1490): período + área + modo R$/%; gráfico de linhas (mesmas 7 + Outras) e grade data × bandeira com mapa de calor por coluna.
+- Participação e variação são calculadas na consulta, nunca gravadas. As permissões foram concedidas a quem já tinha `CARTOES_CONSULTAR` / `CARTOES_VARIACOES`.
+- **Histórico**: o arquivo não é guardado, então importações antigas não têm bandeira. Só 24/09/2026 (EMP010) foi preenchida, a partir do mesmo arquivo. As datas antigas só entram reimportando — e a reimportação é barrada se Saldos já importou aquela data.
+
 ## Fluxo de Caixa Projetado
 
 `GET /fluxo-caixa-projetado`. Jan→mês atual é real, do mês atual em diante é projetado pela média dos N meses realizados. Dois tipos de análise (Fluxo de Caixa = todos os grupos; Margem Bruta = grupos 4/5/6 + linha de MB).
@@ -113,6 +123,74 @@ Botão vinho no menu do Financeiro, ao lado do CR (`GET /credito/menu`). Duas op
 - **Análise decidida não volta a ser editada** — a trava está no POST de `credito_analise_form` (não só no `disabled` dos campos), para que o que valeu na decisão fique como estava.
 - Rotas em `routes/financeiro_routes.py`, seção "CRÉDITO"; as listas de opção ficam em `CREDITO_OPCOES` (tela e gravação leem a mesma lista; no banco são `character varying` livres). Templates: `menu_credito.html`, `credito_analises.html`, `credito_analise_form.html`, `credito_aprovacoes.html`, `credito_decisao.html`.
 - `base.html` **não** renderiza flash — cada tela renderiza o seu bloco `get_flashed_messages`. Sem isso, `flash()` some sem aviso.
+
+## Empréstimos e Financiamentos
+
+Reconstruído do zero em 23/09/2026 — o modelo antigo (carência, modalidade de cálculo PRICE/SAC,
+indexador/spread) nunca tinha migration versionada e virou um modelo de **planilha**, a pedido do
+cliente. Botão no menu do Financeiro (`GET /emprestimos-financiamentos/menu`).
+
+- Duas tabelas (`migrations/refazer_emprestimos_financiamentos.sql`): `financeiro_emprestimos`
+  (contrato: empresa, descrição, valor contratado, quantidade de parcelas, data do primeiro
+  vencimento, ativo) e `financeiro_emprestimos_parcelas` (uma linha por parcela: nº, vencimento,
+  principal, juros, `pago`, data de pagamento). **Total nunca é coluna** — é sempre
+  `valor_principal + valor_juros`, calculado na consulta (convenção do projeto).
+- **Cadastrar o contrato gera as parcelas na hora**, não é um passo separado como era antes
+  (`services/emprestimos_service.py`, `gerar_parcelas`). Vencimentos no mesmo dia do mês da data
+  base (`somar_meses`, dia clampado ao fim do mês quando o mês de chegada é mais curto — base dia
+  31 cai em 30/11, depois 31/12). Cada linha é editável depois, célula a célula, como planilha —
+  inclusive o vencimento sugerido.
+- **"Valor da parcela" é sugestão editável, não é só a divisão travada** (pedido do cliente,
+  23/09/2026): o campo nasce com `valor_contratado / (quantidade_parcelas - meses_carencia)`,
+  recalculado ao vivo em JS enquanto o usuário mexe em valor/quantidade/carência — mas ao digitar
+  direto nele a sugestão para de se sobrescrever (`parcelaTocada`, zerado só ao abrir "+ Novo
+  Contrato" de novo). O banco frequentemente embute uma taxa e a parcela real não bate com a
+  divisão pura; o valor que estiver no campo na hora de salvar (sugerido ou corrigido à mão) vai
+  **igual para todas as parcelas sem carência** — sem tentar reconciliar com o valor contratado
+  (a diferença é o próprio motivo de existir o campo). Backend recalcula a mesma divisão como
+  fallback, se a tela mandar `valor_parcela` vazio/zero.
+- **Carência** (`meses_carencia` em `financeiro_emprestimos`, `migrations/adicionar_carencia_emprestimos.sql`):
+  as primeiras N linhas geradas nascem com `valor_principal = 0` — o valor contratado é dividido
+  só entre as `quantidade_parcelas - meses_carencia` linhas restantes (`quantidade_parcelas`
+  continua sendo o total de linhas, carência incluída). **Não existe carência de juros separada**:
+  `valor_juros` nunca é calculado automaticamente neste modelo — nasce zerado em toda linha e é
+  digitado à mão —, então um segundo campo não teria efeito nenhum na geração (decisão do
+  cliente). Na grade, as linhas de carência ganham fundo amarelo claro e um 🕓 ao lado do número.
+- Não existe mais tela de "Pagamentos" separada: **pago é o checkbox da própria parcela**
+  (`PUT /api/emprestimos/parcelas/<id>`), que também grava `data_pagamento` (mantém a data já
+  gravada se já estava paga; limpa se desmarcar). Excluir contrato é **soft delete** (`ativo =
+  false`) — nunca apaga parcela.
+- **Grade de parcelas no mesmo princípio visual de Conferir Caixas** (pedido do cliente,
+  23/09/2026, `templates/financeiro_emprestimos_parcelas.html`): a primeira versão desenhava
+  `<input>` com borda e fundo próprios, parecendo formulário dentro da tabela. Agora o `<input>`
+  é sem borda e com fundo transparente — só a `<td>` tem cor —, então a célula parece texto normal
+  e só se revela como campo de digitação no clique (fundo amarelo claro + contorno,
+  `box-shadow: inset`). Zebra no corpo da tabela (par/ímpar), linhas pagas/carência sobrepõem a
+  zebra por virem depois no CSS. **Salva no blur/change, sem recarregar a página** — Total da
+  linha, rodapé (soma de principal/juros) e o contador "Pagas" são recalculados em JS na hora,
+  e um aviso flutuante no canto (`badge-salvo`/`badge-erro`, mesmo padrão de Conferir Caixas)
+  confirma o resultado. O botão "Salvar" por linha que existia antes foi removido — cada campo
+  salva sozinho ao perder o foco (texto) ou ao mudar (data, checkbox).
+- **Valor total / valor pago / falta pagar** no final da tela: não em cards lado a lado, e sim
+  numa coluna só (um bloco alinhado à direita, uma linha por total — padrão de fechamento de
+  nota), cor neutra/verde/vermelho. Soma de `principal + juros` de todas as parcelas, das
+  marcadas e das não marcadas como pagas. `pago + em_aberto`
+  fecha sempre com a soma de todas as parcelas (não necessariamente com `valor_contratado`, que é
+  só o valor original do contrato — ver "Valor da parcela" acima). Calculado no backend na
+  primeira carga e recalculado em JS (`recalcularRodape`) a cada edição, sem reload.
+- Permissões (`FINANCEIRO`): `CADASTRO_EMPRESTIMOS_FINANCIAMENTOS` 68, `CONSULTA_EMPRESTIMOS_FINANCIAMENTOS`
+  69 (existiam no banco desde antes, sem migration — a reconstrução as versionou pela primeira
+  vez, com `ON CONFLICT DO NOTHING` para não invalidar concessões já feitas). A trava vale nos 4
+  endpoints de gravação (`POST/PUT/DELETE /api/emprestimos*`, 403), não só no menu.
+- **Os 16 contratos reais da Vilela (EMP011) e da 30 Set CZ (EMP012)** — R$ 14,8 milhões
+  contratados — foram migrados automaticamente para o modelo novo, não descartados. As 3 tabelas
+  antigas viram `financeiro_emprestimos_legado` / `_parcelas_legado` / `_pagamentos_legado`
+  (arquivo morto, fora do alcance da aplicação, RLS mantido) em vez de serem apagadas — sem seed
+  nem migration anterior para reconstruir se o DROP desse errado. Instituição (Santander, BB,
+  CEF...) não virou campo próprio — ficou dentro da descrição (`"VILELA LA — SANTANDER"`), anexada
+  na migração.
+- Templates: `financeiro_emprestimos.html` (lista de contratos + resumo + "+ Novo Contrato" inline)
+  e `financeiro_emprestimos_parcelas.html` (grid da planilha, um contrato por vez).
 
 ## Importação Analítica do Fluxo de Caixa (WebPostos)
 
@@ -837,4 +915,3 @@ Cada slot tem `situacao` no JSON de `agenda_blocos.slots`: vazio, `cumprido` ou 
 
 1. Investigar/preencher o gap de **30-31/05/2026** no seed de Saldos (precisa das planilhas originais).
 2. Conferir se sobraram **zeros espúrios** em `valores_informados`/`saldos_*` gravados antes da correção do bug de digitação.
-3. Demais itens do menu Financeiro: Empréstimos e Financiamentos.

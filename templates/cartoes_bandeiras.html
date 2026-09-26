@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .pagina-sub    { font-size:15px; color:#666; margin-bottom:20px; }
+
+  .filtro-bar { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap;
+    background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px;
+    padding:16px 20px; margin-bottom:24px; }
+  .filtro-campo label { display:block; font-size:12px; font-weight:700; color:#555; margin-bottom:5px; }
+  .filtro-campo select { height:36px; border-radius:8px; border:1px solid #cbd5e1;
+    padding:0 10px; font-size:14px; background:#fff; }
+  .btn-filtrar { background:#0f766e; color:#fff; border:none; border-radius:8px;
+    padding:0 20px; height:36px; font-size:14px; font-weight:700; cursor:pointer; }
+  .btn-filtrar:hover { background:#065f46; }
+
+  .bandeiras-grid { display:grid; grid-template-columns:minmax(0, 1fr) 420px; gap:28px; align-items:start; }
+  @media (max-width: 1100px) { .bandeiras-grid { grid-template-columns:1fr; } }
+
+  .total-destaque { font-size:13px; color:#475569; margin-bottom:10px; }
+  .total-destaque strong { font-size:22px; color:#0f172a; margin-left:6px; }
+
+  .tbl-wrap { overflow-x:auto; }
+  table.band { border-collapse:collapse; width:100%; font-size:13px; }
+  table.band th, table.band td { border:1px solid #e2e8f0; padding:7px 12px; white-space:nowrap; }
+  table.band thead th { background:#065f46; color:#fff; font-weight:700; text-align:right; }
+  table.band thead th:first-child { text-align:left; }
+  table.band tbody tr:nth-child(even) { background:#f8fafc; }
+  table.band tbody tr:hover td { background:#fffbea; }
+  table.band tbody td { text-align:right; color:#1e293b; font-variant-numeric:tabular-nums; }
+  table.band tbody td:first-child { text-align:left; font-weight:600; color:#374151; }
+  table.band tfoot td { background:#f0fdf4; font-weight:800; color:#15803d;
+    border-top:2px solid #86efac; text-align:right; font-variant-numeric:tabular-nums; }
+  table.band tfoot td:first-child { text-align:left; }
+  .pos { color:#15803d; } .neg { color:#b91c1c; }
+
+  .swatch { display:inline-block; width:10px; height:10px; border-radius:3px;
+    margin-right:8px; vertical-align:middle; }
+  .barra-perc { display:inline-block; height:6px; border-radius:3px; background:#0d9488;
+    vertical-align:middle; margin-right:6px; opacity:.55; }
+
+  .grafico-box { border:1px solid #e2e8f0; border-radius:12px; padding:16px; background:#fff; }
+  .grafico-titulo { font-size:14px; font-weight:800; color:#0f172a; margin-bottom:10px; }
+  .grafico-canvas { position:relative; height:380px; }
+
+  .sem-dados { color:#94a3b8; font-size:15px; margin-top:20px; }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">CR — Posição por Bandeira</div>
+  <div class="pagina-sub">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+  {% if datas %}
+  <form class="filtro-bar" method="GET">
+    <div class="filtro-campo">
+      <label>Data de referência</label>
+      <select name="data_referencia">
+        {% for d in datas|reverse %}
+          <option value="{{ d.isoformat() }}" {% if d == data_sel %}selected{% endif %}>{{ d.strftime('%d/%m/%Y') }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filtro-campo">
+      <label>Área</label>
+      <select name="area">
+        <option value="todas" {% if filtro_area == 'todas' %}selected{% endif %}>Todas</option>
+        {% for id_area, nome_area in areas %}
+          <option value="{{ id_area }}" {% if filtro_area == id_area|string %}selected{% endif %}>{{ nome_area }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn-filtrar">Consultar</button>
+  </form>
+
+  {% if linhas %}
+  <div class="bandeiras-grid">
+    <div>
+      <div class="total-destaque">Total em {{ data_sel.strftime('%d/%m/%Y') }}:<strong>R$ {{ total|br }}</strong></div>
+      <div class="tbl-wrap">
+        <table class="band">
+          <thead>
+            <tr>
+              <th>Bandeira</th>
+              <th>Saldo (R$)</th>
+              <th>Participação</th>
+              {% if data_ant %}
+              <th>Anterior ({{ data_ant.strftime('%d/%m') }})</th>
+              <th>Variação</th>
+              {% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for l in linhas %}
+            <tr>
+              <td><span class="swatch" data-fatia="{{ l.fatia if l.fatia is not none else '' }}"></span>{{ l.bandeira }}</td>
+              <td>{{ l.saldo|br }}</td>
+              <td><span class="barra-perc" style="width:{{ (l.perc * 0.8)|round(1) }}px"></span>{{ l.perc|br }}%</td>
+              {% if data_ant %}
+              <td>{{ l.anterior|br }}</td>
+              <td class="{{ 'pos' if l.variacao > 0.005 else ('neg' if l.variacao < -0.005 else '') }}">
+                {{ ('+' if l.variacao > 0.005 else '') }}{{ l.variacao|br }}
+              </td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>TOTAL</td>
+              <td>{{ total|br }}</td>
+              <td>100,00%</td>
+              {% if data_ant %}
+              <td>{{ total_ant|br }}</td>
+              <td>{{ ('+' if total - total_ant > 0.005 else '') }}{{ (total - total_ant)|br }}</td>
+              {% endif %}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <div class="grafico-box">
+      <div class="grafico-titulo">Participação por bandeira — {{ data_sel.strftime('%d/%m/%Y') }}</div>
+      <div class="grafico-canvas"><canvas id="grafico-pizza" aria-label="Participação por bandeira" role="img"></canvas></div>
+    </div>
+  </div>
+  {% else %}
+  <p class="sem-dados">Nenhum saldo de cartão para esta data/área.</p>
+  {% endif %}
+
+  {% else %}
+  <p class="sem-dados">Nenhuma importação com bandeiras ainda. As bandeiras passam a ser totalizadas a partir da próxima importação em <strong>Importar Cartões</strong>.</p>
+  {% endif %}
+</div>
+
+{% if fatias %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  // Paleta categórica fixa (validada para daltonismo); "Outras" sempre cinza.
+  const PALETA = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7'];
+  const OUTRAS = '#94a3b8';
+  const fatias = {{ fatias|tojson }};
+  const cores = fatias.map((f, i) => f.rotulo === 'Outras' ? OUTRAS : PALETA[i % PALETA.length]);
+  const total = fatias.reduce((s, f) => s + f.valor, 0);
+  const brl = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Mesma cor no quadradinho da tabela (as bandeiras fora do top vão para "Outras").
+  document.querySelectorAll('.swatch').forEach(el => {
+    const i = parseInt(el.dataset.fatia, 10);
+    if (!isNaN(i) && cores[i]) el.style.background = cores[i];
+  });
+
+  new Chart(document.getElementById('grafico-pizza'), {
+    type: 'pie',
+    data: {
+      labels: fatias.map(f => f.rotulo),
+      datasets: [{ data: fatias.map(f => f.valor), backgroundColor: cores,
+                   borderColor: '#ffffff', borderWidth: 2, hoverOffset: 6 }]
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            boxWidth: 10, boxHeight: 10, color: '#334155', font: { size: 12 },
+            generateLabels(chart) {
+              return chart.data.labels.map((rot, i) => ({
+                text: `${rot}  ${brl(fatias[i].valor / total * 100)}%`,
+                fillStyle: cores[i], strokeStyle: cores[i], index: i,
+                hidden: !chart.getDataVisibility(i)
+              }));
+            }
+          },
+          onClick(e, item, legend) { legend.chart.toggleDataVisibility(item.index); legend.chart.update(); }
+        },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` R$ ${brl(ctx.parsed)}  (${brl(ctx.parsed / total * 100)}%)`
+          }
+        }
+      }
+    }
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

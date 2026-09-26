@@ -14,6 +14,7 @@ from security_helpers import usuario_tem_permissao, permissao_obrigatoria
 from services.dashboard_service import montar_dashboard
 from services.estoques_service import totais_estoque_rs
 from services.bloqueios_service import datas_bloqueio_pendentes
+from services.emprestimos_service import gerar_parcelas
 from utils.formatters import formatar_numero_br, formatar_int
 
 financeiro_bp = Blueprint("financeiro", __name__)
@@ -2687,8 +2688,12 @@ def exclusoes():
 
 
 #---------------------------------------------------------
-# MENU EMPRÉSTIMOS E FINANCIAMENTOS
+# EMPRÉSTIMOS E FINANCIAMENTOS
 #---------------------------------------------------------
+# Modelo de planilha: um contrato (empresa, descrição, valor, quantidade de
+# parcelas, data base do primeiro vencimento) e uma parcela por linha
+# (nº, vencimento, principal, juros, pago). Total nunca é coluna — é sempre
+# principal + juros, calculado aqui na consulta.
 
 @financeiro_bp.route("/emprestimos-financiamentos/menu")
 def menu_emprestimos_financiamentos():
@@ -2705,52 +2710,17 @@ def menu_emprestimos_financiamentos():
     if tipo_global == "superusuario":
         pode_cadastrar_contratos = True
         pode_consultar_emprestimos_financiamentos = True
-        pode_registrar_pagamentos_emprestimos_financiamentos = True
     else:
         pode_cadastrar_contratos = usuario_tem_permissao(
-            id_usuario,
-            cod_empresa,
-            "FINANCEIRO",
-            "CADASTRO_EMPRESTIMOS_FINANCIAMENTOS"
+            id_usuario, cod_empresa, "FINANCEIRO", "CADASTRO_EMPRESTIMOS_FINANCIAMENTOS"
         )
-
         pode_consultar_emprestimos_financiamentos = usuario_tem_permissao(
-            id_usuario,
-            cod_empresa,
-            "FINANCEIRO",
-            "CONSULTA_EMPRESTIMOS_FINANCIAMENTOS"
+            id_usuario, cod_empresa, "FINANCEIRO", "CONSULTA_EMPRESTIMOS_FINANCIAMENTOS"
         )
 
-        pode_registrar_pagamentos_emprestimos_financiamentos = usuario_tem_permissao(
-            id_usuario,
-            cod_empresa,
-            "FINANCEIRO",
-            "REGISTRAR_PAGAMENTOS_EMPRESTIMOS_FINANCIAMENTOS"
-        )
-
-    return render_template(
-        "menu_emprestimos_financiamentos.html",
-        empresa_ativa=cod_empresa,
-        nome_empresa_ativa=session["nome_empresa"],
-        url_voltar=url_for("financeiro.menu_empresa"),
-        pode_cadastrar_contratos=pode_cadastrar_contratos,
-        pode_consultar_emprestimos_financiamentos=pode_consultar_emprestimos_financiamentos,
-        pode_registrar_pagamentos_emprestimos_financiamentos=pode_registrar_pagamentos_emprestimos_financiamentos
-    )
-
-#---------------------------------------------------------
-# CADASTRO E CONSULTA DE EMPRÉSTIMOS E FINANCIAMENTOS
-#---------------------------------------------------------
-
-@financeiro_bp.route("/emprestimos-financiamentos/cadastro")
-def cadastro_emprestimos_financiamentos():
-    if "id_usuario" not in session:
-        return redirect(url_for("auth.index"))
-
-    if "cod_empresa" not in session:
-        return redirect(url_for("auth.index"))
-
-    cod_empresa = str(session["cod_empresa"]).strip()
+    if not (pode_cadastrar_contratos or pode_consultar_emprestimos_financiamentos):
+        flash("Você não tem permissão para acessar Empréstimos e Financiamentos.", "error")
+        return redirect(url_for("financeiro.menu_empresa"))
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -2759,151 +2729,46 @@ def cadastro_emprestimos_financiamentos():
         cur.execute("""
             SELECT
                 e.id_emprestimo,
-                e.codigo,
                 e.descricao,
-                e.instituicao,
-                e.tipo,
                 e.valor_contratado,
-                e.valor_parcela,
                 e.quantidade_parcelas,
-                e.meses_carencia,
-                e.data_contratacao,
                 e.data_primeiro_vencimento,
-                e.data_ultima_parcela,
-                e.saldo_devedor,
-                e.situacao,
                 e.ativo,
-
-                COALESCE(p.qtde_parcelas_geradas, 0) AS qtde_parcelas_geradas
-
-            FROM financeiro_emprestimos e
-
-            LEFT JOIN (
-                SELECT
-                    id_emprestimo,
-                    COUNT(*) AS qtde_parcelas_geradas
-                FROM financeiro_emprestimos_parcelas
-                GROUP BY id_emprestimo
-            ) p
-                ON p.id_emprestimo = e.id_emprestimo
-
-            WHERE e.cod_empresa = %s
-
-            ORDER BY
-                e.ativo DESC,
-                e.id_emprestimo DESC
-        """, (cod_empresa,))
-
-        contratos = cur.fetchall()
-
-    finally:
-        cur.close()
-        conn.close()
-
-    return render_template(
-        "financeiro_emprestimos_cadastro.html",
-        empresa_ativa=cod_empresa,
-        nome_empresa_ativa=session["nome_empresa"],
-        contratos=contratos,
-        formatar_numero_br=formatar_numero_br,
-        url_voltar=url_for("financeiro.menu_emprestimos_financiamentos")
-    )
-
-# =========================================================
-# CONSULTA DE EMPRÉSTIMOS E FINANCIAMENTOS
-# =================================================
-
-@financeiro_bp.route("/emprestimos-financiamentos/consulta")
-def consulta_emprestimos_financiamentos():
-    if "id_usuario" not in session:
-        return redirect(url_for("auth.index"))
-
-    if "cod_empresa" not in session:
-        return redirect(url_for("auth.index"))
-
-    cod_empresa = str(session["cod_empresa"]).strip()
-
-    conn = get_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-
-    try:
-        cur.execute("""
-            SELECT
-                e.id_emprestimo,
-                e.codigo,
-                e.descricao,
-                e.instituicao,
-                e.tipo,
-                e.valor_contratado,
-                e.valor_parcela,
-                e.quantidade_parcelas,
-                e.situacao,
-                e.ativo,
-
-                COUNT(p.id_parcela) AS qtde_parcelas_geradas,
-
-                COALESCE(SUM(
-                    CASE WHEN p.situacao = 'PAGO'
-                    THEN 1 ELSE 0 END
-                ), 0) AS parcelas_pagas,
-
-                COALESCE(SUM(
-                    CASE WHEN p.situacao = 'PAGO'
-                    THEN p.valor_pago ELSE 0 END
-                ), 0) AS valor_pago,
-
-                COALESCE(SUM(
-                    CASE WHEN p.situacao <> 'PAGO'
-                    THEN 1 ELSE 0 END
-                ), 0) AS parcelas_restantes,
-
-                COALESCE(SUM(
-                    CASE WHEN p.situacao <> 'PAGO'
-                    THEN p.valor_parcela ELSE 0 END
-                ), 0) AS valor_a_pagar
-
+                COUNT(p.id_parcela) AS qtde_parcelas,
+                COALESCE(SUM(CASE WHEN p.pago THEN 1 ELSE 0 END), 0) AS qtde_pagas,
+                COALESCE(SUM(p.valor_principal + p.valor_juros), 0) AS valor_total,
+                COALESCE(SUM(CASE WHEN p.pago THEN p.valor_principal + p.valor_juros ELSE 0 END), 0) AS valor_pago,
+                COALESCE(SUM(CASE WHEN NOT p.pago THEN p.valor_principal + p.valor_juros ELSE 0 END), 0) AS valor_em_aberto
             FROM financeiro_emprestimos e
             LEFT JOIN financeiro_emprestimos_parcelas p
               ON p.id_emprestimo = e.id_emprestimo
-             AND p.cod_empresa = e.cod_empresa
-
             WHERE e.cod_empresa = %s
               AND e.ativo = TRUE
-
-            GROUP BY
-                e.id_emprestimo,
-                e.codigo,
-                e.descricao,
-                e.instituicao,
-                e.tipo,
-                e.valor_contratado,
-                e.valor_parcela,
-                e.quantidade_parcelas,
-                e.situacao,
-                e.ativo
-
-            ORDER BY e.codigo
+            GROUP BY e.id_emprestimo
+            ORDER BY e.id_emprestimo DESC
         """, (cod_empresa,))
 
         contratos = cur.fetchall()
-        total_valor_contratado = sum(float(c["valor_contratado"] or 0) for c in contratos)
-        total_valor_pago = sum(float(c["valor_pago"] or 0) for c in contratos)
-        total_valor_a_pagar = sum(float(c["valor_a_pagar"] or 0) for c in contratos)
 
     finally:
         cur.close()
         conn.close()
 
+    total_contratado = sum(float(c["valor_contratado"] or 0) for c in contratos)
+    total_pago = sum(float(c["valor_pago"] or 0) for c in contratos)
+    total_em_aberto = sum(float(c["valor_em_aberto"] or 0) for c in contratos)
+
     return render_template(
-        "financeiro_emprestimos_consulta.html",
+        "financeiro_emprestimos.html",
         empresa_ativa=cod_empresa,
         nome_empresa_ativa=session["nome_empresa"],
         contratos=contratos,
-        total_valor_contratado=total_valor_contratado,
-        total_valor_pago=total_valor_pago,
-        total_valor_a_pagar=total_valor_a_pagar,
+        total_contratado=total_contratado,
+        total_pago=total_pago,
+        total_em_aberto=total_em_aberto,
+        pode_cadastrar_contratos=pode_cadastrar_contratos,
         formatar_numero_br=formatar_numero_br,
-        url_voltar=url_for("financeiro.menu_emprestimos_financiamentos")
+        url_voltar=url_for("financeiro.menu_empresa"),
     )
 
 # =========================
@@ -2970,569 +2835,227 @@ def menu_fluxo_caixa():
         pode_cr_fiado=pode_cr_fiado,
     )
 #---------------------------------------------------------
-# NOVO EMPRÉSTIMOS E FINANCIAMENTOS
+# NOVO CONTRATO (API)
 #---------------------------------------------------------
 
-@financeiro_bp.route("/emprestimos-financiamentos/novo", methods=["GET", "POST"])
-def novo_emprestimo_financiamento():
-    if "id_usuario" not in session:
-        return redirect(url_for("auth.index"))
+@financeiro_bp.route("/api/emprestimos", methods=["POST"])
+def api_criar_emprestimo():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
 
-    if "cod_empresa" not in session:
-        return redirect(url_for("auth.index"))
-
+    id_usuario = session["id_usuario"]
     cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
 
-    if request.method == "POST":
-        descricao = (request.form.get("descricao") or "").strip()
-        if not descricao:
-            raise ValueError("Informe a descrição do contrato.")
-        instituicao = (request.form.get("instituicao") or "").strip()
-        tipo = (request.form.get("tipo") or "").strip()
+    if tipo_global != "superusuario" and not usuario_tem_permissao(
+        id_usuario, cod_empresa, "FINANCEIRO", "CADASTRO_EMPRESTIMOS_FINANCIAMENTOS"
+    ):
+        return jsonify({"ok": False, "erro": "Sem permissão para cadastrar."}), 403
 
-        data_contratacao = validar_data_contrato(
-            request.form.get("data_contratacao"),
-            "Data da contratação"
-        )
-
-        data_primeiro_vencimento = validar_data_contrato(
-            request.form.get("data_primeiro_vencimento"),
-            "Primeiro vencimento"
-        )
-
-        valor_contratado = converter_numero_br(request.form.get("valor_contratado"))
-        valor_parcela = converter_numero_br(request.form.get("valor_parcela"))
-        taxa_juros = converter_numero_br(request.form.get("taxa_juros"))
-
-        quantidade_parcelas = int(request.form.get("quantidade_parcelas") or 0)
-        meses_carencia = int(request.form.get("meses_carencia") or 0)
-
-        saldo_devedor = valor_contratado
-        situacao = request.form.get("situacao") or "ATIVO"
-        ativo = True if request.form.get("ativo") == "true" else False
-        observacoes = request.form.get("observacoes") or None
-
-        possui_carencia = meses_carencia > 0
-        valor_juros_carencia = 0
-
-        conn = get_connection()
-        cur = conn.cursor()
-
-        try:
-            cur.execute("""
-                SELECT COALESCE(MAX(id_emprestimo), 0) + 1
-                FROM financeiro_emprestimos
-                WHERE cod_empresa = %s
-            """, (cod_empresa,))
-
-            proximo_id = cur.fetchone()[0]
-            codigo = f"EF{proximo_id:06d}"
-
-            cur.execute("""
-                INSERT INTO financeiro_emprestimos (
-                    cod_empresa,
-                    codigo,
-                    descricao,
-                    instituicao,
-                    tipo,
-                    valor_contratado,
-                    valor_parcela,
-                    taxa_juros,
-                    quantidade_parcelas,
-                    possui_carencia,
-                    meses_carencia,
-                    valor_juros_carencia,
-                    data_contratacao,
-                    data_primeiro_vencimento,
-                    saldo_devedor,
-                    situacao,
-                    observacoes,
-                    ativo
-                )
-                VALUES (
-                    %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s,
-                    %s, %s, %s,
-                    %s, %s,
-                    %s, %s, %s, %s
-                )
-                RETURNING id_emprestimo
-            """, (
-                cod_empresa,
-                codigo,
-                descricao,
-                instituicao,
-                tipo,
-                valor_contratado,
-                valor_parcela,
-                taxa_juros,
-                quantidade_parcelas,
-                possui_carencia,
-                meses_carencia,
-                valor_juros_carencia,
-                data_contratacao,
-                data_primeiro_vencimento,
-                saldo_devedor,
-                situacao,
-                observacoes,
-                ativo
-            ))
-
-            id_emprestimo = cur.fetchone()[0]
-            conn.commit()
-
-        except Exception as e:
-            conn.rollback()
-            cur.close()
-            conn.close()
-            return f"Erro ao salvar contrato: {str(e)}", 400
-
-        finally:
-            try:
-                cur.close()
-                conn.close()
-            except Exception:
-                pass
-
-        return redirect(url_for("financeiro.cadastro_emprestimos_financiamentos"))
-
-    return render_template(
-        "financeiro_emprestimos_form.html",
-        empresa_ativa=session["cod_empresa"],
-        nome_empresa_ativa=session["nome_empresa"],
-        contrato=None,
-        modo="novo",
-        url_voltar=url_for("financeiro.cadastro_emprestimos_financiamentos"),
-        formatar_numero_br=formatar_numero_br
-    )
-#---------------------------------------------------------
-# EDIÇÃO DE EMPRÉSTIMOS E FINANCIAMENTOS
-#---------------------------------------------------------
-
-@financeiro_bp.route("/emprestimos-financiamentos/editar/<int:id_emprestimo>", methods=["GET", "POST"])
-def editar_emprestimo_financiamento(id_emprestimo):
-    if "id_usuario" not in session:
-        return redirect(url_for("auth.index"))
-
-    if "cod_empresa" not in session:
-        return redirect(url_for("auth.index"))
-
-    cod_empresa = str(session["cod_empresa"]).strip()
-
-    conn = get_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
+    dados = request.get_json(silent=True) or {}
+    descricao = (dados.get("descricao") or "").strip()
+    valor_contratado = converter_numero_br(dados.get("valor_contratado"))
+    quantidade_parcelas = int(dados.get("quantidade_parcelas") or 0)
+    meses_carencia = int(dados.get("meses_carencia") or 0)
+    valor_parcela = converter_numero_br(dados.get("valor_parcela"))
 
     try:
-        if request.method == "POST":
-            descricao = (request.form.get("descricao") or "").strip()
-            instituicao = (request.form.get("instituicao") or "").strip()
-            observacoes = request.form.get("observacoes") or None
+        data_primeiro_vencimento = datetime.strptime(
+            dados.get("data_primeiro_vencimento") or "", "%Y-%m-%d"
+        ).date()
+    except ValueError:
+        return jsonify({"ok": False, "erro": "Data do primeiro vencimento inválida."}), 400
 
-            cur.execute("""
-                SELECT COUNT(*) AS qtde
-                FROM financeiro_emprestimos_parcelas
-                WHERE id_emprestimo = %s
-                AND cod_empresa = %s
-            """, (id_emprestimo, cod_empresa))
+    if not descricao:
+        return jsonify({"ok": False, "erro": "Informe a descrição do contrato."}), 400
+    if valor_contratado <= 0:
+        return jsonify({"ok": False, "erro": "Informe o valor do contrato."}), 400
+    if quantidade_parcelas <= 0:
+        return jsonify({"ok": False, "erro": "Informe a quantidade de parcelas."}), 400
+    if meses_carencia < 0 or meses_carencia >= quantidade_parcelas:
+        return jsonify({"ok": False, "erro": "A carência precisa ser menor que a quantidade de parcelas."}), 400
 
-            qtde_parcelas_geradas = int(cur.fetchone()["qtde"] or 0)
+    # Sugestão automática (divisão simples) quando a tela não manda um valor
+    # de parcela corrigido — o banco costuma embutir uma taxa e a parcela
+    # real não bate com a divisão pura, por isso a tela deixa editar esse
+    # valor antes de gerar.
+    if valor_parcela <= 0:
+        valor_parcela = round(valor_contratado / (quantidade_parcelas - meses_carencia), 2)
 
-            if qtde_parcelas_geradas > 0:
-                cur.execute("""
-                    UPDATE financeiro_emprestimos
-                       SET descricao = %s,
-                           instituicao = %s,
-                           observacoes = %s,
-                           atualizado_em = now()
-                     WHERE id_emprestimo = %s
-                       AND cod_empresa = %s
-                """, (
-                    descricao,
-                    instituicao,
-                    observacoes,
-                    id_emprestimo,
-                    cod_empresa
-                ))
-
-            else:
-                codigo = (request.form.get("codigo") or "").strip()
-                tipo = (request.form.get("tipo") or "").strip()
-
-                data_contratacao = validar_data_contrato(
-                    request.form.get("data_contratacao"),
-                    "Data da contratação"
-                )
-
-                data_primeiro_vencimento = validar_data_contrato(
-                    request.form.get("data_primeiro_vencimento"),
-                    "Primeiro vencimento"
-                )
-
-                valor_contratado = converter_numero_br(request.form.get("valor_contratado"))
-                valor_parcela = converter_numero_br(request.form.get("valor_parcela"))
-                taxa_juros = converter_numero_br(request.form.get("taxa_juros"))
-
-                quantidade_parcelas = int(request.form.get("quantidade_parcelas") or 0)
-                meses_carencia = int(request.form.get("meses_carencia") or 0)
-                modalidade_calculo = request.form.get("modalidade_calculo") or "PARCELA_FIXA"
-
-                saldo_devedor = valor_contratado
-                situacao = request.form.get("situacao") or "ATIVO"
-                ativo = True if request.form.get("ativo") == "true" else False
-                possui_carencia = meses_carencia > 0
-
-                cur.execute("""
-                    UPDATE financeiro_emprestimos
-                       SET codigo = %s,
-                           descricao = %s,
-                           instituicao = %s,
-                           tipo = %s,
-                           valor_contratado = %s,
-                           valor_parcela = %s,
-                           taxa_juros = %s,
-                           quantidade_parcelas = %s,
-                           possui_carencia = %s,
-                           meses_carencia = %s,
-                           data_contratacao = %s,
-                           data_primeiro_vencimento = %s,
-                           saldo_devedor = %s,
-                           situacao = %s,
-                           observacoes = %s,
-                           ativo = %s,
-                           modalidade_calculo = %s,
-                           atualizado_em = now()
-                     WHERE id_emprestimo = %s
-                       AND cod_empresa = %s
-                """, (
-                    codigo,
-                    descricao,
-                    instituicao,
-                    tipo,
-                    valor_contratado,
-                    valor_parcela,
-                    taxa_juros,
-                    quantidade_parcelas,
-                    possui_carencia,
-                    meses_carencia,
-                    data_contratacao,
-                    data_primeiro_vencimento,
-                    saldo_devedor,
-                    situacao,
-                    observacoes,
-                    ativo,
-                    modalidade_calculo,
-                    id_emprestimo,
-                    cod_empresa
-                ))
-
-            conn.commit()
-
-            return redirect(url_for("financeiro.cadastro_emprestimos_financiamentos"))
-
-        cur.execute("""
-            SELECT
-                e.id_emprestimo,
-                e.cod_empresa,
-                e.codigo,
-                e.descricao,
-                e.instituicao,
-                e.tipo,
-                e.valor_contratado,
-                e.valor_parcela,
-                e.taxa_juros,
-                e.quantidade_parcelas,
-                e.possui_carencia,
-                e.meses_carencia,
-                e.valor_juros_carencia,
-                e.data_contratacao,
-                e.data_primeiro_vencimento,
-                e.data_ultima_parcela,
-                e.saldo_devedor,
-                e.situacao,
-                e.observacoes,
-                e.ativo,
-                (
-                    SELECT COUNT(*)
-                    FROM financeiro_emprestimos_parcelas p
-                    WHERE p.id_emprestimo = e.id_emprestimo
-                ) AS qtde_parcelas_geradas
-            FROM financeiro_emprestimos e
-            WHERE e.id_emprestimo = %s
-              AND e.cod_empresa = %s
-        """, (id_emprestimo, cod_empresa))
-
-        contrato = cur.fetchone()
-
-        if not contrato:
-            return "Contrato não encontrado.", 404
-
-    finally:
-        cur.close()
-        conn.close()
-
-    return render_template(
-        "financeiro_emprestimos_form.html",
-        empresa_ativa=cod_empresa,
-        nome_empresa_ativa=session["nome_empresa"],
-        contrato=contrato,
-        modo="editar",
-        url_voltar=url_for("financeiro.cadastro_emprestimos_financiamentos"),
-        formatar_numero_br=formatar_numero_br
-    )
-
-
-
-#---------------------------------------------------------
-# EXCLUSÃO DE EMPRÉSTIMOS E FINANCIAMENTOS
-#---------------------------------------------------------
-
-@financeiro_bp.route("/emprestimos-financiamentos/excluir/<int:id_emprestimo>", methods=["POST"])
-def excluir_emprestimo_financiamento(id_emprestimo):
-    if "id_usuario" not in session:
-        return redirect(url_for("auth.index"))
-
-    if "cod_empresa" not in session:
-        return redirect(url_for("auth.index"))
-
-    cod_empresa = str(session["cod_empresa"]).strip()
+    parcelas = gerar_parcelas(valor_parcela, quantidade_parcelas, data_primeiro_vencimento, meses_carencia)
 
     conn = get_connection()
     cur = conn.cursor()
 
     try:
         cur.execute("""
-            SELECT COUNT(*)
-            FROM financeiro_emprestimos_parcelas
-            WHERE id_emprestimo = %s
-        """, (id_emprestimo,))
+            INSERT INTO financeiro_emprestimos (
+                cod_empresa, descricao, valor_contratado,
+                quantidade_parcelas, data_primeiro_vencimento, meses_carencia
+            )
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id_emprestimo
+        """, (cod_empresa, descricao, valor_contratado, quantidade_parcelas, data_primeiro_vencimento, meses_carencia))
 
-        qtde_parcelas = cur.fetchone()[0]
+        id_emprestimo = cur.fetchone()[0]
 
-        if qtde_parcelas > 0:
-            return "Este contrato possui parcelas geradas e não pode ser excluído.", 400
-
-        cur.execute("""
-            DELETE FROM financeiro_emprestimos
-            WHERE id_emprestimo = %s
-              AND cod_empresa = %s
-        """, (id_emprestimo, cod_empresa))
-
-        conn.commit()
-
-    except Exception as e:
-        conn.rollback()
-        return f"Erro ao excluir contrato: {str(e)}", 400
-
-    finally:
-        cur.close()
-        conn.close()
-
-    return redirect(url_for("financeiro.cadastro_emprestimos_financiamentos"))
-#---------------------------------------------------------
-# GERAR PARCELAS DO EMPRÉSTIMO / FINANCIAMENTO
-#---------------------------------------------------------
-
-@financeiro_bp.route("/emprestimos-financiamentos/gerar-parcelas/<int:id_emprestimo>", methods=["POST"])
-def gerar_parcelas_emprestimo_financiamento(id_emprestimo):
-    if "id_usuario" not in session:
-        return redirect(url_for("auth.index"))
-
-    if "cod_empresa" not in session:
-        return redirect(url_for("auth.index"))
-
-    cod_empresa = str(session["cod_empresa"]).strip()
-
-    conn = get_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-
-    try:
-        cur.execute("""
-            SELECT
-                id_emprestimo,
-                valor_contratado,
-                quantidade_parcelas,
-                valor_parcela,
-                taxa_juros,
-                modalidade_calculo,
-                data_primeiro_vencimento,
-                meses_carencia
-            FROM financeiro_emprestimos
-            WHERE id_emprestimo = %s
-              AND cod_empresa = %s
-        """, (id_emprestimo, cod_empresa))
-
-        contrato = cur.fetchone()
-
-        if not contrato:
-            return "Contrato não encontrado.", 404
-
-        valor_contratado = float(contrato["valor_contratado"] or 0)
-        quantidade_parcelas = int(contrato["quantidade_parcelas"] or 0)
-        valor_principal_base = float(contrato["valor_parcela"] or 0)
-        taxa_juros = float(contrato["taxa_juros"] or 0)
-        modalidade_calculo = contrato["modalidade_calculo"] or "PARCELA_FIXA"
-        data_primeiro_vencimento = contrato["data_primeiro_vencimento"]
-        meses_carencia = int(contrato["meses_carencia"] or 0)
-
-        if valor_contratado <= 0:
-            return "Valor contratado inválido.", 400
-        if quantidade_parcelas <= 0:
-            return "Quantidade de parcelas inválida.", 400
-        if modalidade_calculo == "PARCELA_FIXA" and valor_principal_base <= 0:
-            return "Valor da parcela inválido para modalidade Parcela Fixa.", 400
-        if not data_primeiro_vencimento:
-            return "Informe o primeiro vencimento antes de gerar as parcelas.", 400
-
-        # Segurança: não permite gerar novamente se já existirem parcelas
-        cur.execute("""
-            SELECT COUNT(*) AS qtde
-            FROM financeiro_emprestimos_parcelas
-            WHERE id_emprestimo = %s
-        """, (id_emprestimo,))
-        if int(cur.fetchone()["qtde"] or 0) > 0:
-            return "Este contrato já possui parcelas geradas. Exclua as parcelas antes de gerar novamente.", 400
-
-        taxa_mensal = taxa_juros / 100.0
-        saldo_atual = valor_contratado
-
-        # Pré-calcula PMT para PRICE
-        if modalidade_calculo == "PRICE":
-            if taxa_mensal > 0:
-                pmt = valor_contratado * taxa_mensal / (1 - (1 + taxa_mensal) ** (-quantidade_parcelas))
-            else:
-                pmt = valor_contratado / quantidade_parcelas
-
-        # Principal fixo para SAC
-        if modalidade_calculo == "SAC":
-            principal_sac = valor_contratado / quantidade_parcelas
-
-        # Contador global de sequência (carência + normais)
-        seq = 0
-
-        def inserir_parcela(numero, tipo, saldo_ini, principal, juros, total, saldo_fin, taxa):
-            nonlocal seq
-            seq += 1
+        for p in parcelas:
             cur.execute("""
                 INSERT INTO financeiro_emprestimos_parcelas (
-                    id_emprestimo, cod_empresa, numero_parcela, tipo_parcela,
-                    data_vencimento, saldo_inicial, valor_principal, valor_juros,
-                    valor_parcela, valor_pago, saldo_final, taxa_juros, situacao
-                ) VALUES (
-                    %s, %s, %s, %s,
-                    (%s::date + ((%s - 1) * interval '1 month'))::date,
-                    %s, %s, %s, %s, 0, %s, %s, 'EM_ABERTO'
+                    id_emprestimo, cod_empresa, numero_parcela,
+                    data_vencimento, valor_principal, valor_juros
                 )
+                VALUES (%s, %s, %s, %s, %s, %s)
             """, (
-                id_emprestimo, cod_empresa, numero, tipo,
-                data_primeiro_vencimento, seq,
-                saldo_ini, principal, juros, total, saldo_fin, taxa
+                id_emprestimo, cod_empresa, p["numero_parcela"],
+                p["data_vencimento"], p["valor_principal"], p["valor_juros"]
             ))
-
-        # --- Fase 1: Carência ---
-        for m in range(1, meses_carencia + 1):
-            if modalidade_calculo == "PARCELA_FIXA":
-                juros_car = 0.0
-            else:
-                juros_car = round(saldo_atual * taxa_mensal, 2)
-            inserir_parcela(m, 'CARENCIA', saldo_atual, 0.0, juros_car, juros_car, saldo_atual, taxa_juros)
-
-        # --- Fase 2: Parcelas normais ---
-        for i in range(1, quantidade_parcelas + 1):
-            numero = meses_carencia + i
-            saldo_inicial = saldo_atual
-
-            if modalidade_calculo == "PARCELA_FIXA":
-                valor_principal = min(valor_principal_base, saldo_inicial)
-                valor_juros = 0.0
-                taxa_parcela = 0.0
-
-            elif modalidade_calculo == "PRICE":
-                valor_juros = round(saldo_atual * taxa_mensal, 2)
-                valor_principal = round(pmt - valor_juros, 2)
-                if valor_principal > saldo_atual:
-                    valor_principal = round(saldo_atual, 2)
-                taxa_parcela = taxa_juros
-
-            elif modalidade_calculo == "SAC":
-                valor_principal = round(min(principal_sac, saldo_atual), 2)
-                valor_juros = round(saldo_atual * taxa_mensal, 2)
-                taxa_parcela = taxa_juros
-
-            elif modalidade_calculo in ("PARCELA_INFORMADA", "JUROS_VARIAVEIS"):
-                valor_principal = 0.0
-                valor_juros = 0.0
-                taxa_parcela = taxa_juros
-
-            else:
-                valor_principal = min(valor_principal_base, saldo_inicial)
-                valor_juros = 0.0
-                taxa_parcela = 0.0
-
-            valor_parcela_total = round(valor_principal + valor_juros, 2)
-            saldo_final = round(saldo_inicial - valor_principal, 2)
-
-            inserir_parcela(numero, 'NORMAL', saldo_inicial, valor_principal,
-                            valor_juros, valor_parcela_total, saldo_final, taxa_parcela)
-
-            saldo_atual = saldo_final
-            if saldo_atual <= 0:
-                break
 
         conn.commit()
 
     except Exception as e:
         conn.rollback()
-        return f"Erro ao gerar parcelas: {str(e)}", 400
+        return jsonify({"ok": False, "erro": f"Erro ao salvar contrato: {e}"}), 400
 
     finally:
         cur.close()
         conn.close()
 
-    return redirect(url_for("financeiro.cadastro_emprestimos_financiamentos"))
+    return jsonify({"ok": True, "id_emprestimo": id_emprestimo})
+
 
 #---------------------------------------------------------
-# VISUALIZAR PARCELAS DO EMPRÉSTIMO / FINANCIAMENTO
+# EDITAR DESCRIÇÃO / EXCLUIR CONTRATO (API)
 #---------------------------------------------------------
 
-@financeiro_bp.route("/emprestimos-financiamentos/parcelas/<int:id_emprestimo>")
-def visualizar_parcelas_emprestimo_financiamento(id_emprestimo):
+@financeiro_bp.route("/api/emprestimos/<int:id_emprestimo>", methods=["PUT"])
+def api_editar_emprestimo(id_emprestimo):
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global != "superusuario" and not usuario_tem_permissao(
+        id_usuario, cod_empresa, "FINANCEIRO", "CADASTRO_EMPRESTIMOS_FINANCIAMENTOS"
+    ):
+        return jsonify({"ok": False, "erro": "Sem permissão para editar."}), 403
+
+    dados = request.get_json(silent=True) or {}
+    descricao = (dados.get("descricao") or "").strip()
+
+    if not descricao:
+        return jsonify({"ok": False, "erro": "Informe a descrição do contrato."}), 400
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            UPDATE financeiro_emprestimos
+               SET descricao = %s, atualizado_em = now()
+             WHERE id_emprestimo = %s AND cod_empresa = %s
+        """, (descricao, id_emprestimo, cod_empresa))
+
+        if cur.rowcount == 0:
+            conn.rollback()
+            return jsonify({"ok": False, "erro": "Contrato não encontrado."}), 404
+
+        conn.commit()
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": f"Erro ao salvar: {e}"}), 400
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True})
+
+
+@financeiro_bp.route("/api/emprestimos/<int:id_emprestimo>", methods=["DELETE"])
+def api_excluir_emprestimo(id_emprestimo):
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global != "superusuario" and not usuario_tem_permissao(
+        id_usuario, cod_empresa, "FINANCEIRO", "CADASTRO_EMPRESTIMOS_FINANCIAMENTOS"
+    ):
+        return jsonify({"ok": False, "erro": "Sem permissão para excluir."}), 403
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            UPDATE financeiro_emprestimos
+               SET ativo = FALSE, atualizado_em = now()
+             WHERE id_emprestimo = %s AND cod_empresa = %s
+        """, (id_emprestimo, cod_empresa))
+
+        if cur.rowcount == 0:
+            conn.rollback()
+            return jsonify({"ok": False, "erro": "Contrato não encontrado."}), 404
+
+        conn.commit()
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": f"Erro ao excluir: {e}"}), 400
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({"ok": True})
+
+
+#---------------------------------------------------------
+# PARCELAS DO CONTRATO (planilha)
+#---------------------------------------------------------
+
+@financeiro_bp.route("/emprestimos-financiamentos/<int:id_emprestimo>")
+def ver_parcelas_emprestimo(id_emprestimo):
     if "id_usuario" not in session:
         return redirect(url_for("auth.index"))
 
     if "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
 
+    id_usuario = session["id_usuario"]
     cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global == "superusuario":
+        pode_cadastrar_contratos = True
+        pode_consultar_emprestimos_financiamentos = True
+    else:
+        pode_cadastrar_contratos = usuario_tem_permissao(
+            id_usuario, cod_empresa, "FINANCEIRO", "CADASTRO_EMPRESTIMOS_FINANCIAMENTOS"
+        )
+        pode_consultar_emprestimos_financiamentos = usuario_tem_permissao(
+            id_usuario, cod_empresa, "FINANCEIRO", "CONSULTA_EMPRESTIMOS_FINANCIAMENTOS"
+        )
+
+    if not (pode_cadastrar_contratos or pode_consultar_emprestimos_financiamentos):
+        flash("Você não tem permissão para acessar Empréstimos e Financiamentos.", "error")
+        return redirect(url_for("financeiro.menu_empresa"))
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
         cur.execute("""
-            SELECT
-                id_emprestimo,
-                codigo,
-                descricao,
-                instituicao,
-                tipo,
-                valor_contratado,
-                valor_parcela,
-                taxa_juros,
-                quantidade_parcelas,
-                possui_carencia,
-                meses_carencia,
-                valor_juros_carencia,
-                data_contratacao,
-                data_primeiro_vencimento,
-                data_ultima_parcela,
-                saldo_devedor,
-                situacao,
-                observacoes,
-                ativo,
-                COALESCE(modalidade_calculo, 'PARCELA_FIXA') AS modalidade_calculo
+            SELECT id_emprestimo, descricao, valor_contratado,
+                   quantidade_parcelas, data_primeiro_vencimento, ativo, meses_carencia
             FROM financeiro_emprestimos
-            WHERE id_emprestimo = %s
-              AND cod_empresa = %s
+            WHERE id_emprestimo = %s AND cod_empresa = %s
         """, (id_emprestimo, cod_empresa))
 
         contrato = cur.fetchone()
@@ -3541,24 +3064,11 @@ def visualizar_parcelas_emprestimo_financiamento(id_emprestimo):
             return "Contrato não encontrado.", 404
 
         cur.execute("""
-            SELECT
-                id_parcela,
-                numero_parcela,
-                tipo_parcela,
-                data_vencimento,
-                saldo_inicial,
-                valor_principal,
-                valor_juros,
-                valor_parcela,
-                valor_pago,
-                saldo_final,
-                taxa_juros,
-                data_pagamento,
-                situacao,
-                observacao
+            SELECT id_parcela, numero_parcela, data_vencimento,
+                   valor_principal, valor_juros, pago, data_pagamento
             FROM financeiro_emprestimos_parcelas
             WHERE id_emprestimo = %s
-            ORDER BY numero_parcela, data_vencimento
+            ORDER BY numero_parcela
         """, (id_emprestimo,))
 
         parcelas = cur.fetchall()
@@ -3567,8 +3077,11 @@ def visualizar_parcelas_emprestimo_financiamento(id_emprestimo):
         cur.close()
         conn.close()
 
-    modalidade = contrato["modalidade_calculo"] if contrato else "PARCELA_FIXA"
-    editavel = modalidade in ("PARCELA_INFORMADA", "JUROS_VARIAVEIS")
+    total_principal = sum(float(p["valor_principal"] or 0) for p in parcelas)
+    total_juros = sum(float(p["valor_juros"] or 0) for p in parcelas)
+    qtde_pagas = sum(1 for p in parcelas if p["pago"])
+    total_pago = sum(float(p["valor_principal"] or 0) + float(p["valor_juros"] or 0) for p in parcelas if p["pago"])
+    total_em_aberto = sum(float(p["valor_principal"] or 0) + float(p["valor_juros"] or 0) for p in parcelas if not p["pago"])
 
     return render_template(
         "financeiro_emprestimos_parcelas.html",
@@ -3576,510 +3089,78 @@ def visualizar_parcelas_emprestimo_financiamento(id_emprestimo):
         nome_empresa_ativa=session["nome_empresa"],
         contrato=contrato,
         parcelas=parcelas,
-        hoje=date.today(),
+        total_principal=total_principal,
+        total_juros=total_juros,
+        qtde_pagas=qtde_pagas,
+        total_pago=total_pago,
+        total_em_aberto=total_em_aberto,
+        pode_cadastrar_contratos=pode_cadastrar_contratos,
         formatar_numero_br=formatar_numero_br,
-        url_voltar=url_for("financeiro.cadastro_emprestimos_financiamentos"),
-        editavel=editavel,
-        modalidade=modalidade,
+        url_voltar=url_for("financeiro.menu_emprestimos_financiamentos"),
     )
 
-#---------------------------------------------------------
-# EXCLUIR TODAS AS PARCELAS DO CONTRATO
-#---------------------------------------------------------
 
-@financeiro_bp.route("/emprestimos-financiamentos/parcelas/excluir-todas/<int:id_emprestimo>", methods=["POST"])
-def excluir_todas_parcelas_emprestimo_financiamento(id_emprestimo):
-    if "id_usuario" not in session:
-        return redirect(url_for("auth.index"))
+@financeiro_bp.route("/api/emprestimos/parcelas/<int:id_parcela>", methods=["PUT"])
+def api_editar_parcela_emprestimo(id_parcela):
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
 
-    if "cod_empresa" not in session:
-        return redirect(url_for("auth.index"))
-
+    id_usuario = session["id_usuario"]
     cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global != "superusuario" and not usuario_tem_permissao(
+        id_usuario, cod_empresa, "FINANCEIRO", "CADASTRO_EMPRESTIMOS_FINANCIAMENTOS"
+    ):
+        return jsonify({"ok": False, "erro": "Sem permissão para editar."}), 403
+
+    dados = request.get_json(silent=True) or {}
+    valor_principal = converter_numero_br(dados.get("valor_principal"))
+    valor_juros = converter_numero_br(dados.get("valor_juros"))
+    pago = bool(dados.get("pago"))
+
+    try:
+        data_vencimento = datetime.strptime(
+            dados.get("data_vencimento") or "", "%Y-%m-%d"
+        ).date()
+    except ValueError:
+        return jsonify({"ok": False, "erro": "Data de vencimento inválida."}), 400
+
+    data_pagamento_hoje = date.today() if pago else None
 
     conn = get_connection()
     cur = conn.cursor()
 
     try:
         cur.execute("""
-            SELECT COUNT(*)
-            FROM financeiro_emprestimos
-            WHERE id_emprestimo = %s
-              AND cod_empresa = %s
-        """, (id_emprestimo, cod_empresa))
-
-        if cur.fetchone()[0] == 0:
-            return "Contrato não encontrado.", 404
-
-        cur.execute("""
-            SELECT COUNT(*)
-            FROM financeiro_emprestimos_parcelas
-            WHERE id_emprestimo = %s
-              AND situacao <> 'EM_ABERTO'
-        """, (id_emprestimo,))
-
-        qtde_nao_abertas = cur.fetchone()[0]
-
-        if qtde_nao_abertas > 0:
-            return "Não é possível excluir as parcelas. Existem parcelas que não estão em aberto.", 400
-
-        cur.execute("""
-            DELETE FROM financeiro_emprestimos_parcelas
-            WHERE id_emprestimo = %s
-        """, (id_emprestimo,))
-
-        conn.commit()
-
-    except Exception as e:
-        conn.rollback()
-        return f"Erro ao excluir parcelas: {str(e)}", 400
-
-    finally:
-        cur.close()
-        conn.close()
-
-    return redirect(url_for(
-        "financeiro.visualizar_parcelas_emprestimo_financiamento",
-        id_emprestimo=id_emprestimo
-    ))
-
-#---------------------------------------------------------
-# EDITAR PARCELA INDIVIDUAL (PARCELA_INFORMADA / JUROS_VARIAVEIS)
-#---------------------------------------------------------
-
-@financeiro_bp.route("/emprestimos-financiamentos/parcelas/editar/<int:id_parcela>", methods=["POST"])
-def editar_parcela_emprestimo_financiamento(id_parcela):
-    if "id_usuario" not in session or "cod_empresa" not in session:
-        return redirect(url_for("auth.index"))
-
-    cod_empresa = str(session["cod_empresa"]).strip()
-
-    def conv(v):
-        try:
-            return float((v or "0").replace(".", "").replace(",", "."))
-        except ValueError:
-            return 0.0
-
-    valor_principal = conv(request.form.get("valor_principal"))
-    valor_juros     = conv(request.form.get("valor_juros"))
-    valor_parcela   = round(valor_principal + valor_juros, 2)
-    id_emprestimo   = int(request.form.get("id_emprestimo") or 0)
-
-    conn = get_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    try:
-        # Busca saldo_inicial da parcela anterior para calcular saldo_final
-        cur.execute("""
-            SELECT p.saldo_inicial,
-                   (SELECT p2.saldo_final FROM financeiro_emprestimos_parcelas p2
-                    WHERE p2.id_emprestimo = p.id_emprestimo
-                      AND p2.numero_parcela < p.numero_parcela
-                      AND p2.tipo_parcela = 'NORMAL'
-                    ORDER BY p2.numero_parcela DESC LIMIT 1) AS saldo_anterior
-            FROM financeiro_emprestimos_parcelas p
-            WHERE p.id_parcela = %s AND p.id_emprestimo IN (
-                SELECT id_emprestimo FROM financeiro_emprestimos WHERE cod_empresa = %s
-            )
-        """, (id_parcela, cod_empresa))
-        row = cur.fetchone()
-        if not row:
-            return "Parcela não encontrada.", 404
-
-        saldo_ini = float(row["saldo_anterior"] or row["saldo_inicial"] or 0)
-        saldo_fin = round(saldo_ini - valor_principal, 2)
-
-        cur.execute("""
             UPDATE financeiro_emprestimos_parcelas
                SET valor_principal = %s,
-                   valor_juros     = %s,
-                   valor_parcela   = %s,
-                   saldo_inicial   = %s,
-                   saldo_final     = %s
-             WHERE id_parcela = %s
-        """, (valor_principal, valor_juros, valor_parcela, saldo_ini, saldo_fin, id_parcela))
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        return f"Erro: {str(e)}", 400
-    finally:
-        cur.close()
-        conn.close()
-
-    return redirect(url_for("financeiro.visualizar_parcelas_emprestimo_financiamento",
-                            id_emprestimo=id_emprestimo))
-
-
-#---------------------------------------------------------
-# PAGAMENTOS DE PARCELAS DE EMPRÉSTIMOS / FINANCIAMENTOS
-#---------------------------------------------------------
-
-@financeiro_bp.route("/emprestimos-financiamentos/pagamentos", methods=["GET", "POST"])
-def pagamentos_emprestimos_financiamentos():
-    if "id_usuario" not in session:
-        return redirect(url_for("auth.index"))
-
-    if "cod_empresa" not in session:
-        return redirect(url_for("auth.index"))
-
-    cod_empresa = str(session["cod_empresa"]).strip()
-    hoje = datetime.now()
-
-    ano_sel = int(request.values.get("ano") or hoje.year)
-    mes_sel = int(request.values.get("mes") or hoje.month)
-
-    mensagem = ""
-    erro = ""
-
-    conn = get_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-
-    try:
-        if request.method == "POST":
-            try:
-                id_parcela = int(request.form.get("id_parcela") or 0)
-                valor_pago = converter_numero_br(request.form.get("valor_pago"))
-                data_pagamento = request.form.get("data_pagamento") or None
-
-                if id_parcela <= 0:
-                    raise ValueError("Selecione uma parcela.")
-
-                if valor_pago <= 0:
-                    raise ValueError("Informe o valor pago.")
-
-                if not data_pagamento:
-                    raise ValueError("Informe a data de pagamento.")
-
-                cur.execute("""
-                    SELECT
-                        p.id_parcela,
-                        p.id_emprestimo,
-                        p.valor_principal,
-                        p.valor_juros,
-                        p.valor_parcela
-                    FROM financeiro_emprestimos_parcelas p
-                    JOIN financeiro_emprestimos e
-                    ON e.id_emprestimo = p.id_emprestimo
-                    WHERE p.id_parcela = %s
-                    AND e.cod_empresa = %s
-                    AND p.situacao = 'EM_ABERTO'
-                    AND date_trunc('month', p.data_vencimento)
-                        <= date_trunc('month', CURRENT_DATE)
-                """, (id_parcela, cod_empresa))
-
-                parcela = cur.fetchone()
-
-                if not parcela:
-                    raise ValueError("Parcela não encontrada, já paga ou com vencimento futuro.")
-
-                cur.execute("""
-                    INSERT INTO financeiro_emprestimos_pagamentos (
-                        id_emprestimo,
-                        id_parcela,
-                        data_pagamento,
-                        valor_principal_pago,
-                        valor_juros_pago,
-                        valor_pago,
-                        observacao
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (
-                    parcela["id_emprestimo"],
-                    parcela["id_parcela"],
-                    data_pagamento,
-                    parcela["valor_principal"] or 0,
-                    parcela["valor_juros"] or 0,
-                    valor_pago,
-                    request.form.get("observacao") or None
-                ))
-
-                cur.execute("""
-                    UPDATE financeiro_emprestimos_parcelas
-                    SET valor_pago = %s,
-                        data_pagamento = %s,
-                        situacao = 'PAGO',
-                        atualizado_em = now()
-                    WHERE id_parcela = %s
-                    AND situacao = 'EM_ABERTO'
-                """, (
-                    valor_pago,
-                    data_pagamento,
-                    id_parcela
-                ))
-
-                conn.commit()
-                mensagem = "Pagamento registrado com sucesso."
-
-            except Exception as e:
-                conn.rollback()
-                erro = str(e)
-
-        # Contratos ativos com parcelas em aberto
-        cur.execute("""
-            SELECT
-                e.id_emprestimo,
-                e.codigo,
-                e.descricao,
-                e.instituicao,
-                p.id_parcela,
-                p.numero_parcela,
-                p.data_vencimento,
-                p.valor_parcela
-            FROM financeiro_emprestimos e
-            JOIN LATERAL (
-                SELECT
-                    id_parcela,
-                    numero_parcela,
-                    data_vencimento,
-                    valor_parcela
-                FROM financeiro_emprestimos_parcelas
-                WHERE id_emprestimo = e.id_emprestimo
-                AND situacao = 'EM_ABERTO'
-                AND date_trunc('month', data_vencimento)
-                    <= date_trunc('month', CURRENT_DATE)
-                ORDER BY numero_parcela
-                LIMIT 1
-            ) p ON TRUE
-            WHERE e.cod_empresa = %s
-              AND e.ativo = TRUE
-            ORDER BY e.codigo
-        """, (cod_empresa,))
-
-        contratos = cur.fetchall()
-
-        # Pagamentos já realizados no mês/ano filtrado
-        cur.execute("""
-            SELECT
-                pg.id_pagamento,
-                e.codigo,
-                e.descricao,
-                e.instituicao,
-                p.numero_parcela,
-                p.data_vencimento,
-                p.valor_parcela,
-                pg.valor_pago,
-                pg.data_pagamento,
-                p.situacao
-            FROM financeiro_emprestimos_pagamentos pg
-            JOIN financeiro_emprestimos_parcelas p
-            ON p.id_parcela = pg.id_parcela
-            JOIN financeiro_emprestimos e
-            ON e.id_emprestimo = pg.id_emprestimo
-            WHERE e.cod_empresa = %s
-            AND EXTRACT(YEAR FROM pg.data_pagamento) = %s
-            AND EXTRACT(MONTH FROM pg.data_pagamento) = %s
-            ORDER BY pg.data_pagamento DESC, e.codigo, p.numero_parcela
+                   valor_juros = %s,
+                   data_vencimento = %s,
+                   pago = %s,
+                   data_pagamento = CASE WHEN %s THEN COALESCE(data_pagamento, %s) ELSE NULL END,
+                   atualizado_em = now()
+             WHERE id_parcela = %s AND cod_empresa = %s
         """, (
-            cod_empresa,
-            ano_sel,
-            mes_sel
+            valor_principal, valor_juros, data_vencimento, pago,
+            pago, data_pagamento_hoje, id_parcela, cod_empresa
         ))
 
-        pagamentos = cur.fetchall()
-
-    finally:
-        cur.close()
-        conn.close()
-
-    return render_template(
-        "financeiro_emprestimos_pagamentos.html",
-        empresa_ativa=cod_empresa,
-        nome_empresa_ativa=session["nome_empresa"],
-        contratos=contratos,
-        pagamentos=pagamentos,
-        ano_sel=ano_sel,
-        mes_sel=mes_sel,
-        mensagem=mensagem,
-        erro=erro,
-        hoje=hoje.date(),
-        formatar_numero_br=formatar_numero_br,
-        url_voltar=url_for("financeiro.menu_emprestimos_financiamentos")
-    )
-
-#---------------------------------------------------------
-# EXCLUIR PAGAMENTO DE PARCELA
-#---------------------------------------------------------
-
-@financeiro_bp.route("/emprestimos-financiamentos/pagamentos/excluir/<int:id_pagamento>", methods=["POST"])
-def excluir_pagamento_emprestimo_financiamento(id_pagamento):
-    if "id_usuario" not in session:
-        return redirect(url_for("auth.index"))
-
-    if "cod_empresa" not in session:
-        return redirect(url_for("auth.index"))
-
-    cod_empresa = str(session["cod_empresa"]).strip()
-    hoje = datetime.now()
-
-    conn = get_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-
-    try:
-        cur.execute("""
-            SELECT
-                pg.id_pagamento,
-                pg.id_parcela,
-                pg.data_pagamento
-            FROM financeiro_emprestimos_pagamentos pg
-            JOIN financeiro_emprestimos e
-              ON e.id_emprestimo = pg.id_emprestimo
-            WHERE pg.id_pagamento = %s
-              AND e.cod_empresa = %s
-        """, (id_pagamento, cod_empresa))
-
-        pagamento = cur.fetchone()
-
-        if not pagamento:
-            raise ValueError("Pagamento não encontrado.")
-
-        if pagamento["data_pagamento"].year != hoje.year or pagamento["data_pagamento"].month != hoje.month:
-            raise ValueError("Só é permitido excluir pagamentos do mês atual.")
-
-        cur.execute("""
-            DELETE FROM financeiro_emprestimos_pagamentos
-            WHERE id_pagamento = %s
-        """, (id_pagamento,))
-
-        cur.execute("""
-            UPDATE financeiro_emprestimos_parcelas
-               SET valor_pago = 0,
-                   data_pagamento = NULL,
-                   situacao = 'EM_ABERTO',
-                   atualizado_em = now()
-             WHERE id_parcela = %s
-        """, (pagamento["id_parcela"],))
+        if cur.rowcount == 0:
+            conn.rollback()
+            return jsonify({"ok": False, "erro": "Parcela não encontrada."}), 404
 
         conn.commit()
 
     except Exception as e:
         conn.rollback()
-        return f"Erro ao excluir pagamento: {str(e)}", 400
+        return jsonify({"ok": False, "erro": f"Erro ao salvar parcela: {e}"}), 400
 
     finally:
         cur.close()
         conn.close()
 
-    return redirect(url_for("financeiro.pagamentos_emprestimos_financiamentos"))
-
-#---------------------------------------------------------
-# CONSULTA FLUXO DE PAGAMENTOS DE EMPRÉSTIMOS / FINANCIAMENTOS
-#---------------------------------------------------------
-
-@financeiro_bp.route("/emprestimos-financiamentos/fluxo-pagamentos")
-def consulta_fluxo_pagamentos_emprestimos_financiamentos():
-    if "id_usuario" not in session:
-        return redirect(url_for("auth.index"))
-
-    if "cod_empresa" not in session:
-        return redirect(url_for("auth.index"))
-
-    cod_empresa = str(session["cod_empresa"]).strip()
-    ano_atual = datetime.now().year
-    mes_atual = datetime.now().month
-
-    conn = get_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-
-    try:
-        cur.execute("""
-            SELECT
-                e.id_emprestimo,
-                e.codigo,
-                e.descricao,
-                e.instituicao,
-                EXTRACT(YEAR FROM p.data_vencimento)::int AS ano,
-                COALESCE(SUM(p.valor_parcela - p.valor_pago), 0) AS valor_aberto
-            FROM financeiro_emprestimos_parcelas p
-            JOIN financeiro_emprestimos e
-              ON e.id_emprestimo = p.id_emprestimo
-            WHERE e.cod_empresa = %s
-             AND e.ativo = TRUE
-             AND COALESCE(p.valor_parcela, 0) > COALESCE(p.valor_pago, 0)
-            GROUP BY
-                e.id_emprestimo,
-                e.codigo,
-                e.descricao,
-                e.instituicao,
-                EXTRACT(YEAR FROM p.data_vencimento)
-            ORDER BY
-                e.codigo,
-                ano
-        """, (cod_empresa,))
-
-        registros = cur.fetchall()
-
-    finally:
-        cur.close()
-        conn.close()
-
-    anos = sorted({int(r["ano"]) for r in registros})
-
-    linhas_mapa = {}
-
-    for r in registros:
-        id_emprestimo = r["id_emprestimo"]
-        ano = int(r["ano"])
-        valor = float(r["valor_aberto"] or 0)
-
-        if id_emprestimo not in linhas_mapa:
-            linhas_mapa[id_emprestimo] = {
-                "codigo": r["codigo"],
-                "descricao": r["descricao"],
-                "instituicao": r["instituicao"],
-                "valores": {a: 0 for a in anos},
-                "total": 0
-            }
-
-        linhas_mapa[id_emprestimo]["valores"][ano] = valor
-        linhas_mapa[id_emprestimo]["total"] += valor
-
-    linhas = list(linhas_mapa.values())
-
-    totais_por_ano = {ano: 0 for ano in anos}
-    total_geral = 0
-
-    for linha in linhas:
-        for ano in anos:
-            valor = linha["valores"].get(ano, 0)
-            totais_por_ano[ano] += valor
-            total_geral += valor
-
-    media_mensal_por_ano = {}
-
-    for ano in anos:
-        if ano == ano_atual:
-            meses_restantes = 13 - mes_atual
-        else:
-            meses_restantes = 12
-
-        if meses_restantes <= 0:
-            meses_restantes = 12
-
-        media_mensal_por_ano[ano] = (
-            totais_por_ano[ano] / meses_restantes
-            if totais_por_ano[ano] else 0
-        )
-
-    media_mensal_total = (
-        total_geral / sum(
-            13 - mes_atual if ano == ano_atual else 12
-            for ano in anos
-        )
-        if anos else 0
-    )
-
-    return render_template(
-        "financeiro_emprestimos_fluxo_pagamentos.html",
-        empresa_ativa=cod_empresa,
-        nome_empresa_ativa=session["nome_empresa"],
-        anos=anos,
-        linhas=linhas,
-        totais_por_ano=totais_por_ano,
-        total_geral=total_geral,
-        media_mensal_por_ano=media_mensal_por_ano,
-        media_mensal_total=media_mensal_total,
-        formatar_numero_br=formatar_numero_br,
-        url_voltar=url_for("financeiro.menu_emprestimos_financiamentos")
-    )
+    return jsonify({"ok": True})
 
 #---------------------------------------------------------
 # FLUXO DE CAIXA PROJETADO
@@ -9113,8 +8194,12 @@ def menu_cr_cartoes():
         pode_importar  = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CARTOES_IMPORTAR")
         pode_consultar = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CARTOES_CONSULTAR")
         pode_variacoes = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CARTOES_VARIACOES")
+    pode_bandeiras = _pode_cartoes("CARTOES_BANDEIRAS")
+    pode_bandeiras_var = _pode_cartoes("CARTOES_BANDEIRAS_VARIACOES")
     return render_template(
         "menu_cr_cartoes.html",
+        pode_bandeiras=pode_bandeiras,
+        pode_bandeiras_var=pode_bandeiras_var,
         empresa_ativa=session["cod_empresa"],
         nome_empresa_ativa=session.get("nome_empresa", ""),
         url_voltar=url_for("financeiro.menu_cr"),
@@ -10173,7 +9258,9 @@ def _parse_cartoes_xlsx(fileobj, data_ref):
     - Filial: col[0]="Filial:", nome em col[2]
     - Linhas de detalhe: col[13] numérico = linha válida, col[12]=Total Líquido
     - Sem filtro de data (igual ao VBA ResumirCartoes)
-    Retorna {nome_filial_upper: total_liquido}
+    - Bandeira: col[1] (Administradora), normalizada por _nome_bandeira
+    Retorna ({nome_filial_upper: total_liquido},
+             {(nome_filial_upper, bandeira): total_liquido})
     """
     import openpyxl
 
@@ -10181,6 +9268,7 @@ def _parse_cartoes_xlsx(fileobj, data_ref):
     ws = wb.active
     filial_atual = None
     filiais = defaultdict(float)
+    bandeiras = defaultdict(float)
 
     for row in ws.iter_rows(values_only=True):
         c0 = str(row[0] or "").strip()
@@ -10198,8 +9286,17 @@ def _parse_cartoes_xlsx(fileobj, data_ref):
         if not isinstance(liquido, (int, float)) or liquido == 0:
             continue
         filiais[filial_atual] += float(liquido)
+        bandeiras[(filial_atual, _nome_bandeira(admin))] += float(liquido)
 
-    return dict(filiais)
+    return dict(filiais), dict(bandeiras)
+
+
+def _nome_bandeira(admin):
+    """O arquivo grafa a mesma bandeira com e sem acento ("PERSONAL CARD
+    COMBUSTÍVEL" / "COMBUSTIVEL") — sem normalizar viravam duas fatias."""
+    import unicodedata
+    sem_acento = unicodedata.normalize("NFKD", admin).encode("ascii", "ignore").decode()
+    return " ".join(sem_acento.upper().split())
 
 
 @financeiro_bp.route("/cr/cartoes/importar", methods=["GET", "POST"])
@@ -10237,7 +9334,7 @@ def cartoes_importar():
         if arquivo and not erro:
             try:
                 conteudo = arquivo.read()
-                filiais_saldo = _parse_cartoes_xlsx(io.BytesIO(conteudo), data_ref)
+                filiais_saldo, bandeiras_saldo = _parse_cartoes_xlsx(io.BytesIO(conteudo), data_ref)
                 total_geral = sum(filiais_saldo.values())
 
                 cur.execute("""
@@ -10255,8 +9352,16 @@ def cartoes_importar():
                         INSERT INTO cartoes_filiais (id_importacao, cod_empresa, nome_filial_import, saldo)
                         VALUES (%s,%s,%s,%s)
                     """, (id_imp, cod_empresa, nome, saldo))
+                cur.execute("DELETE FROM cartoes_bandeiras WHERE id_importacao=%s", (id_imp,))
+                execute_batch(cur, """
+                    INSERT INTO cartoes_bandeiras (id_importacao, cod_empresa, nome_filial_import, bandeira, saldo)
+                    VALUES (%s,%s,%s,%s,%s)
+                """, [(id_imp, cod_empresa, fil, band, round(v, 2))
+                      for (fil, band), v in bandeiras_saldo.items()])
                 conn.commit()
-                sucesso = f"Importação de {data_ref.strftime('%d/%m/%Y')} salva — {len(filiais_saldo)} filiais, total R$ {total_geral:,.2f}."
+                qtd_bandeiras = len({b for _, b in bandeiras_saldo})
+                sucesso = (f"Importação de {data_ref.strftime('%d/%m/%Y')} salva — {len(filiais_saldo)} filiais, "
+                           f"{qtd_bandeiras} bandeiras, total R$ {total_geral:,.2f}.")
             except Exception as e:
                 conn.rollback()
                 erro = f"Erro ao processar arquivo: {e}"
@@ -10437,6 +9542,192 @@ def cartoes_variacoes():
         datas=datas, areas=areas, ids_area=ids_area,
         pivot=pivot, filtro_area=filtro_area,
         data_ini=data_ini, data_fin=data_fin, hoje=hoje.isoformat())
+
+
+# =========================
+# CR — CARTÕES POR BANDEIRA
+# =========================
+#
+# A importação grava cartoes_bandeiras (filial × bandeira) junto com
+# cartoes_filiais. Participação e variação são calculadas aqui, nunca gravadas.
+# Só existem datas importadas depois da criação da tabela.
+
+BANDEIRAS_NO_GRAFICO = 7   # o resto vira "Outras" — 8 fatias/linhas no máximo
+
+
+def _cartoes_filtro_area(cur, cod_empresa, filtro_area):
+    """Áreas para o combo + nomes de importação das filiais da área escolhida
+    (None = todas, sem filtro — inclui filial sem área, para fechar com o total)."""
+    cur.execute("""
+        SELECT a.id_area, a.nome_area, UPPER(f.nome_filial_importacao) AS nome_import
+        FROM areas a
+        JOIN areas_filiais af ON af.id_area=a.id_area AND af.cod_empresa=a.cod_empresa
+        JOIN filiais f ON f.cod_filial=af.cod_filial AND f.cod_empresa=af.cod_empresa
+        WHERE a.cod_empresa=%s AND a.ativo=TRUE ORDER BY a.id_area, af.ordem
+    """, (cod_empresa,))
+    linhas = cur.fetchall()
+    areas = list(OrderedDict((r["id_area"], r["nome_area"]) for r in linhas).items())
+    if filtro_area == "todas":
+        return areas, None
+    try:
+        id_a = int(filtro_area)
+    except ValueError:
+        return areas, None
+    return areas, [r["nome_import"] for r in linhas if r["id_area"] == id_a and r["nome_import"]]
+
+
+def _cartoes_saldos_bandeira(cur, cod_empresa, datas, filiais_import):
+    """{data: {bandeira: saldo}} para as datas pedidas."""
+    if not datas:
+        return {}
+    sql = """
+        SELECT ci.data_referencia, cb.bandeira, SUM(cb.saldo) AS saldo
+        FROM cartoes_bandeiras cb JOIN cartoes_importacoes ci ON ci.id=cb.id_importacao
+        WHERE ci.cod_empresa=%s AND ci.data_referencia=ANY(%s)
+    """
+    params = [cod_empresa, list(datas)]
+    if filiais_import is not None:
+        sql += " AND UPPER(cb.nome_filial_import)=ANY(%s)"
+        params.append(filiais_import)
+    sql += " GROUP BY ci.data_referencia, cb.bandeira"
+    cur.execute(sql, params)
+    saldos = defaultdict(dict)
+    for r in cur.fetchall():
+        saldos[r["data_referencia"]][r["bandeira"]] = float(r["saldo"])
+    return saldos
+
+
+def _cartoes_datas_com_bandeira(cur, cod_empresa):
+    cur.execute("""
+        SELECT DISTINCT ci.data_referencia
+        FROM cartoes_importacoes ci
+        WHERE ci.cod_empresa=%s
+          AND EXISTS (SELECT 1 FROM cartoes_bandeiras cb WHERE cb.id_importacao=ci.id)
+        ORDER BY ci.data_referencia
+    """, (cod_empresa,))
+    return [r["data_referencia"] for r in cur.fetchall()]
+
+
+def _pode_cartoes(opcao):
+    if str(session.get("tipo_global") or "").strip().lower() == "superusuario":
+        return True
+    return usuario_tem_permissao(session["id_usuario"], str(session["cod_empresa"]).strip(),
+                                 "FINANCEIRO", opcao)
+
+
+@financeiro_bp.route("/cr/cartoes/bandeiras")
+def cartoes_bandeiras():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+    if not _pode_cartoes("CARTOES_BANDEIRAS"):
+        return redirect(url_for("financeiro.menu_cr_cartoes"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    filtro_area = request.args.get("area", "todas")
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    datas = _cartoes_datas_com_bandeira(cur, cod_empresa)
+    areas, filiais_import = _cartoes_filtro_area(cur, cod_empresa, filtro_area)
+
+    data_sel = None
+    try:
+        data_sel = datetime.strptime(request.args.get("data_referencia", ""), "%Y-%m-%d").date()
+    except ValueError:
+        pass
+    if data_sel not in datas:
+        data_sel = datas[-1] if datas else None
+    anteriores = [d for d in datas if data_sel and d < data_sel]
+    data_ant = anteriores[-1] if anteriores else None
+
+    saldos = _cartoes_saldos_bandeira(cur, cod_empresa, [d for d in (data_sel, data_ant) if d], filiais_import)
+    atual = saldos.get(data_sel, {})
+    anterior = saldos.get(data_ant, {})
+    total = sum(atual.values())
+    total_ant = sum(anterior.values())
+
+    linhas = []
+    for bandeira in sorted(set(atual) | set(anterior), key=lambda b: -atual.get(b, 0)):
+        v, a = atual.get(bandeira, 0.0), anterior.get(bandeira, 0.0)
+        linhas.append({"bandeira": bandeira, "saldo": v,
+                       "perc": (v / total * 100) if total else 0,
+                       "anterior": a, "variacao": v - a})
+
+    fatias = [{"rotulo": l["bandeira"], "valor": l["saldo"]}
+              for l in linhas[:BANDEIRAS_NO_GRAFICO] if l["saldo"] > 0]
+    outras = sum(l["saldo"] for l in linhas[BANDEIRAS_NO_GRAFICO:] if l["saldo"] > 0)
+    if outras:
+        fatias.append({"rotulo": "Outras", "valor": outras})
+    # Índice da fatia de cada linha, para a tabela repetir a cor do gráfico.
+    for i, l in enumerate(linhas):
+        if l["saldo"] <= 0:
+            l["fatia"] = None
+        elif i < BANDEIRAS_NO_GRAFICO:
+            l["fatia"] = i
+        else:
+            l["fatia"] = len(fatias) - 1
+
+    cur.close(); conn.close()
+    return render_template("cartoes_bandeiras.html",
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_cr_cartoes"),
+        datas=datas, data_sel=data_sel, data_ant=data_ant,
+        areas=areas, filtro_area=filtro_area,
+        linhas=linhas, total=total, total_ant=total_ant, fatias=fatias)
+
+
+@financeiro_bp.route("/cr/cartoes/bandeiras/variacoes")
+def cartoes_bandeiras_variacoes():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+    if not _pode_cartoes("CARTOES_BANDEIRAS_VARIACOES"):
+        return redirect(url_for("financeiro.menu_cr_cartoes"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    hoje = date.today()
+    filtro_area = request.args.get("area", "todas")
+    modo = "percentual" if request.args.get("modo") == "percentual" else "valor"
+    try:
+        data_ini = datetime.strptime(request.args.get("data_ini", ""), "%Y-%m-%d").date()
+        data_fin = datetime.strptime(request.args.get("data_fin", ""), "%Y-%m-%d").date()
+    except ValueError:
+        data_ini, data_fin = hoje - timedelta(days=60), hoje
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    areas, filiais_import = _cartoes_filtro_area(cur, cod_empresa, filtro_area)
+    datas = [d for d in _cartoes_datas_com_bandeira(cur, cod_empresa) if data_ini <= d <= data_fin]
+    saldos = _cartoes_saldos_bandeira(cur, cod_empresa, datas, filiais_import)
+    cur.close(); conn.close()
+
+    # Colunas na ordem da posição mais recente do período (as maiores primeiro).
+    ultima = saldos.get(datas[-1], {}) if datas else {}
+    todas = set(b for d in datas for b in saldos.get(d, {}))
+    bandeiras = sorted(todas, key=lambda b: (-ultima.get(b, 0), b))
+
+    totais = {d: sum(saldos.get(d, {}).values()) for d in datas}
+    linhas = []
+    for d in datas:
+        linha = {"data": d, "total": totais[d], "valores": {}}
+        for b in bandeiras:
+            v = saldos.get(d, {}).get(b, 0.0)
+            linha["valores"][b] = {"saldo": v, "perc": (v / totais[d] * 100) if totais[d] else 0}
+        linhas.append(linha)
+
+    campo = "perc" if modo == "percentual" else "saldo"
+    principais = bandeiras[:BANDEIRAS_NO_GRAFICO]
+    series = [{"rotulo": b, "valores": [l["valores"][b][campo] for l in linhas]} for b in principais]
+    if len(bandeiras) > BANDEIRAS_NO_GRAFICO:
+        series.append({"rotulo": "Outras", "valores": [
+            sum(l["valores"][b][campo] for b in bandeiras[BANDEIRAS_NO_GRAFICO:]) for l in linhas]})
+
+    return render_template("cartoes_bandeiras_variacoes.html",
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_cr_cartoes"),
+        datas=datas, bandeiras=bandeiras, linhas=linhas, series=series,
+        rotulos_datas=[d.strftime("%d/%m") for d in datas],
+        areas=areas, filtro_area=filtro_area, modo=modo,
+        data_ini=data_ini, data_fin=data_fin)
 
 
 # =========================================================

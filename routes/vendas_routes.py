@@ -3546,6 +3546,13 @@ def vendas_painel_diarias():
         cur.close()
         conn.close()
 
+    # Posto sem nenhuma venda lançada (novo, ainda não aberto) não vira coluna —
+    # aparece sozinho no mês em que a primeira movimentação chegar.
+    filiais_com_venda = {
+        int(r["cod_filial"]) for r in (regs_qtd + regs_val + regs_mb)
+    }
+    filiais = [f for f in filiais if int(f["cod_filial"]) in filiais_com_venda]
+
     grade_unidades = montar_grade_sintetica(filiais, regs_qtd, "quantidade_vendida")
     grade_valores = montar_grade_sintetica(filiais, regs_val, "valor_vendido")
     grade_mb = montar_grade_sintetica(filiais, regs_mb, "margem_bruta")

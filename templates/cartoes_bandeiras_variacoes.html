@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .pagina-sub    { font-size:15px; color:#666; margin-bottom:20px; }
+
+  .filtro-bar { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap;
+    background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px;
+    padding:16px 20px; margin-bottom:24px; }
+  .filtro-campo label { display:block; font-size:12px; font-weight:700; color:#555; margin-bottom:5px; }
+  .filtro-campo input[type=date], .filtro-campo select {
+    height:36px; border-radius:8px; border:1px solid #cbd5e1;
+    padding:0 10px; font-size:14px; background:#fff; box-sizing:border-box; }
+  .btn-filtrar { background:#0f766e; color:#fff; border:none; border-radius:8px;
+    padding:0 20px; height:36px; font-size:14px; font-weight:700; cursor:pointer; }
+  .btn-filtrar:hover { background:#065f46; }
+
+  .grafico-box { border:1px solid #e2e8f0; border-radius:12px; padding:16px; background:#fff; margin-bottom:24px; }
+  .grafico-titulo { font-size:14px; font-weight:800; color:#0f172a; margin-bottom:4px; }
+  .grafico-nota { font-size:12px; color:#64748b; margin-bottom:10px; }
+  .grafico-canvas { position:relative; height:360px; }
+
+  /* O .container do base cresce com o conteúdo: sem teto, as 20+ colunas
+     alargariam a página e o gráfico junto. A tabela rola dentro do bloco. */
+  .tbl-wrap { overflow:auto; max-width:calc(100vw - 110px); max-height:70vh; }
+  table.var { border-collapse:collapse; width:auto; font-size:13px; }
+  table.var th, table.var td { border:1px solid #e2e8f0; padding:6px 10px; white-space:nowrap; }
+  table.var thead th { background:#065f46; color:#fff; font-weight:700; font-size:12px; text-align:right;
+    position:sticky; top:0; z-index:2; }
+  table.var thead th:first-child { text-align:left; background:#374151; left:0; z-index:3; }
+  table.var thead th.th-total { background:#064e3b; }
+  table.var tbody tr:nth-child(even) { background:#f8fafc; }
+  table.var tbody tr:hover td { background:#fffbea !important; }
+  table.var tbody td { text-align:right; color:#1e293b; font-variant-numeric:tabular-nums; }
+  table.var tbody td:first-child { text-align:left; font-weight:600; color:#374151;
+    position:sticky; left:0; background:#fff; z-index:1; }
+  table.var tbody td.td-total { font-weight:800; color:#064e3b; background:#dbeafe; }
+  .col-sep { border-left:4px solid #94a3b8 !important; }
+
+  .sem-dados { color:#94a3b8; font-size:15px; margin-top:20px; }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">CR — Variações por Bandeira</div>
+  <div class="pagina-sub">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+  <form class="filtro-bar" method="GET">
+    <div class="filtro-campo">
+      <label>Data inicial</label>
+      <input type="date" name="data_ini" value="{{ data_ini.isoformat() }}">
+    </div>
+    <div class="filtro-campo">
+      <label>Data final</label>
+      <input type="date" name="data_fin" value="{{ data_fin.isoformat() }}">
+    </div>
+    <div class="filtro-campo">
+      <label>Área</label>
+      <select name="area">
+        <option value="todas" {% if filtro_area == 'todas' %}selected{% endif %}>Todas</option>
+        {% for id_area, nome_area in areas %}
+          <option value="{{ id_area }}" {% if filtro_area == id_area|string %}selected{% endif %}>{{ nome_area }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filtro-campo">
+      <label>Exibir</label>
+      <select name="modo">
+        <option value="valor" {% if modo == 'valor' %}selected{% endif %}>Saldo (R$)</option>
+        <option value="percentual" {% if modo == 'percentual' %}selected{% endif %}>Participação (%)</option>
+      </select>
+    </div>
+    <button type="submit" class="btn-filtrar">Consultar</button>
+  </form>
+
+  {% if datas %}
+  <div class="grafico-box">
+    <div class="grafico-titulo">
+      {{ 'Participação (%)' if modo == 'percentual' else 'Saldo (R$)' }} por bandeira ao longo do tempo
+    </div>
+    <div class="grafico-nota">As maiores bandeiras da última data do período{% if bandeiras|length > series|length %}; as demais somadas em "Outras"{% endif %}. Clique na legenda para esconder/mostrar uma linha.</div>
+    <div class="grafico-canvas"><canvas id="grafico-linhas" aria-label="Variação por bandeira" role="img"></canvas></div>
+  </div>
+
+  <div class="tbl-wrap">
+    <table class="var" id="tbl-var">
+      <thead>
+        <tr>
+          <th>Data</th>
+          {% for b in bandeiras %}<th>{{ b }}</th>{% endfor %}
+          <th class="th-total col-sep">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in linhas %}
+        <tr>
+          <td>{{ l.data.strftime('%d/%m/%Y') }}</td>
+          {% for b in bandeiras %}
+            {% set v = l.valores[b] %}
+            {% if modo == 'percentual' %}
+              <td class="td-band" data-val="{{ v.perc }}" title="R$ {{ v.saldo|br }}">{% if v.saldo %}{{ v.perc|br }}%{% else %}—{% endif %}</td>
+            {% else %}
+              <td class="td-band" data-val="{{ v.saldo }}" title="{{ v.perc|br }}% do total">{% if v.saldo %}{{ v.saldo|br }}{% else %}—{% endif %}</td>
+            {% endif %}
+          {% endfor %}
+          <td class="td-total col-sep">{{ l.total|br }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="sem-dados">Nenhuma importação com bandeiras no período. As bandeiras passam a ser totalizadas a partir da próxima importação em <strong>Importar Cartões</strong>.</p>
+  {% endif %}
+</div>
+
+{% if datas %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  const PALETA = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7'];
+  const OUTRAS = '#94a3b8';
+  const percentual = {{ 'true' if modo == 'percentual' else 'false' }};
+  const rotulos = {{ rotulos_datas|tojson }};
+  const series = {{ series|tojson }};
+  const fmt = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  new Chart(document.getElementById('grafico-linhas'), {
+    type: 'line',
+    data: {
+      labels: rotulos,
+      datasets: series.map((s, i) => {
+        const cor = s.rotulo === 'Outras' ? OUTRAS : PALETA[i % PALETA.length];
+        return { label: s.rotulo, data: s.valores, borderColor: cor, backgroundColor: cor,
+                 borderWidth: 2, pointRadius: rotulos.length > 40 ? 0 : 3, pointHoverRadius: 5,
+                 tension: 0.2, borderDash: s.rotulo === 'Outras' ? [5, 4] : [] };
+      })
+    },
+    options: {
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#64748b', maxRotation: 0, autoSkip: true } },
+        y: { beginAtZero: true, grid: { color: '#eef2f6' },
+             ticks: { color: '#64748b', callback: v => percentual ? v + '%' : v.toLocaleString('pt-BR') } }
+      },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, boxHeight: 10, color: '#334155', font: { size: 12 } } },
+        tooltip: {
+          itemSort: (a, b) => b.parsed.y - a.parsed.y,
+          callbacks: { label: ctx => ` ${ctx.dataset.label}: ${percentual ? fmt(ctx.parsed.y) + '%' : 'R$ ' + fmt(ctx.parsed.y)}` }
+        }
+      }
+    }
+  });
+
+  // Mapa de calor por coluna (cada bandeira comparada com ela mesma no tempo),
+  // mesma curva de cartoes_variacoes.html.
+  function getColorExcel(ratio) {
+    let r, g, b;
+    if (ratio <= 0.5) { const t = ratio / 0.5; r = 248 + 7 * t; g = 105 + 130 * t; b = 107 + 25 * t; }
+    else { const t = (ratio - 0.5) / 0.5; r = 255 - 156 * t; g = 235 - 45 * t; b = 132 - 9 * t; }
+    return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+  }
+  const linhas = Array.from(document.querySelectorAll('#tbl-var tbody tr'));
+  if (linhas.length < 2) return;
+  const nCols = linhas[0].querySelectorAll('td.td-band').length;
+  for (let c = 0; c < nCols; c++) {
+    const cels = linhas.map(tr => tr.querySelectorAll('td.td-band')[c]);
+    const vals = cels.map(td => { const v = parseFloat(td.dataset.val); return isNaN(v) || v === 0 ? null : v; });
+    const nums = vals.filter(v => v !== null);
+    if (nums.length < 2) continue;
+    const min = Math.min(...nums), max = Math.max(...nums);
+    cels.forEach((td, i) => {
+      if (vals[i] === null) return;
+      const ratio = Math.round(((vals[i] - min) / ((max - min) || 1)) * 50) / 50;
+      td.style.background = getColorExcel(1 - ratio);
+    });
+  }
+})();
+</script>
+{% endif %}
+{% endblock %}
