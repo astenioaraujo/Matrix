@@ -3,6 +3,7 @@ from datetime import datetime, date, timedelta, timezone
 from zoneinfo import ZoneInfo
 from collections import defaultdict, OrderedDict
 import math
+import re
 import io
 from psycopg2.extras import RealDictCursor, execute_batch
 from db import get_connection
@@ -8579,6 +8580,10 @@ def _parse_recebimentos_xlsx(fileobj):
 
     wb = openpyxl.load_workbook(fileobj, data_only=True, read_only=True)
     ws = wb.active
+    # O WebPostos grava a dimensão da planilha como "A1:A1". Em read_only o
+    # openpyxl confia nela e devolve só a primeira célula — a importação lia
+    # zero linhas. Descartar a dimensão declarada faz ele ler até o fim.
+    ws.reset_dimensions()
 
     resultado = defaultdict(lambda: [0.0, 0])
     filial = None
@@ -8590,8 +8595,11 @@ def _parse_recebimentos_xlsx(fileobj):
         if isinstance(primeira, str) and primeira.strip().upper().startswith("FILIAL:"):
             filial = primeira.split(":", 1)[1].strip().upper()
             continue
-        # linha de duplicata: a primeira coluna é o número do documento
-        if not (isinstance(primeira, str) and primeira.strip().isdigit()):
+        # linha de duplicata: a primeira coluna é o número do documento —
+        # só dígitos ("000000000001483") ou com prefixo de letras quando a
+        # duplicata nasceu de NF-e ("Nfe000000004781"). Exigir só dígitos
+        # descartava essas em silêncio (R$ 80 mil no arquivo de 26/09/2026).
+        if not (isinstance(primeira, str) and re.fullmatch(r"[A-Za-z]*\d+", primeira.strip())):
             continue
         if filial is None or len(linha) <= COL_PAGO:
             continue
