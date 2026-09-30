@@ -60,7 +60,8 @@
     numa única linha no resumo por origem do dinheiro, nas abas de totais do Conferir Caixas. Deixe em branco para a forma
     aparecer sozinha no resumo, com o próprio nome.
     A marca <strong>Fiado</strong> diz qual forma é venda a prazo (nota/vale): é ela que entra como fiado novo em
-    CR → Fiado → Movimento do Fiado por Dia.
+    CR → Fiado → Movimento do Fiado por Dia. A marca <strong>Cartão</strong> diz quais formas entram em
+    CR → Cartões → Vendas por Dia por Cartão.
   </p>
   <table style="table-layout:fixed;">
     <thead>
@@ -69,6 +70,7 @@
         <th style="width:160px;">Agrupamento</th>
         <th style="width:100px; text-align:center;">Ordem</th>
         <th style="width:70px; text-align:center;">Fiado</th>
+        <th style="width:70px; text-align:center;">Cartão</th>
         <th style="width:90px; text-align:center;">Status</th>
         <th style="width:220px;"></th>
       </tr>
@@ -96,6 +98,10 @@
                  {% if f.eh_fiado %}checked{% endif %}>
         </td>
         <td style="text-align:center;">
+          <input type="checkbox" name="eh_cartao_editar" value="1" form="form-editar-{{ f.id }}"
+                 {% if f.eh_cartao %}checked{% endif %}>
+        </td>
+        <td style="text-align:center;">
           {% if f.ativo %}<span class="badge-ativo">ATIVO</span>{% else %}<span class="badge-inativo">INATIVO</span>{% endif %}
         </td>
         <td style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -115,7 +121,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" style="text-align:center; color:#888; font-style:italic; padding:18px;">Nenhuma forma cadastrada.</td></tr>
+      <tr><td colspan="7" style="text-align:center; color:#888; font-style:italic; padding:18px;">Nenhuma forma cadastrada.</td></tr>
       {% endfor %}
 
       <tr class="nova-linha">
@@ -132,6 +138,9 @@
         </td>
         <td style="text-align:center;">
           <input type="checkbox" name="eh_fiado" value="1" form="form-nova">
+        </td>
+        <td style="text-align:center;">
+          <input type="checkbox" name="eh_cartao" value="1" form="form-nova">
         </td>
         <td>
             <button type="submit" form="form-nova" class="btn-incluir">Incluir</button>

@@ -430,22 +430,34 @@
   /* Célula elegível durante o modo soma: a caixinha fica no canto superior
      direito e o input para de receber clique (senão o clique cai no campo
      de digitação em vez de marcar). */
-  tr.linha-somando td.som-alvo { position:relative; cursor:pointer; }
-  tr.linha-somando td.som-alvo > input { pointer-events:none; }
-  tr.linha-somando td.som-alvo::before {
+  td.som-alvo { position:relative; cursor:pointer; }
+  td.som-alvo > input { pointer-events:none; }
+  td.som-alvo::before {
     content:''; position:absolute; top:1px; right:1px;
     width:9px; height:9px; border:1px solid #ea580c; border-radius:2px;
     background:#fff; box-sizing:border-box;
   }
-  tr.linha-somando td.som-alvo.som-marcada {
+  td.som-alvo.som-marcada {
     background:#ffedd5 !important; box-shadow:inset 0 0 0 1px #ea580c;
   }
-  tr.linha-somando td.som-alvo.som-marcada::before {
+  td.som-alvo.som-marcada::before {
     background:#ea580c;
     /* o "tique" é desenhado com uma borda em L girada */
     box-shadow:inset 0 0 0 1px #ea580c;
   }
-  tr.linha-somando td.som-alvo.som-marcada > input { color:#9a3412; font-weight:700; }
+  td.som-alvo.som-marcada > input { color:#9a3412; font-weight:700; }
+
+  /* Σ da coluna: embaixo do nome, no cabeçalho escuro — por isso branco
+     translúcido, que só aparece de verdade no hover ou ligado. */
+  .btn-somar-col {
+    display:block; margin:3px auto 0; background:none;
+    border:1px solid rgba(255,255,255,.35); border-radius:4px;
+    width:16px; height:16px; line-height:1; font-size:10px; font-weight:700;
+    color:rgba(255,255,255,.6); cursor:pointer; padding:0;
+  }
+  .btn-somar-col:hover { border-color:#fdba74; color:#fff; background:rgba(255,255,255,.12); }
+  .btn-somar-col.ativo { background:#fed7aa; border-color:#ea580c; color:#9a3412; }
+  th.col-fechada .btn-somar-col { display:none !important; }
 
   #barra-soma {
     display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
@@ -897,11 +909,12 @@
             {% else %}
               <span class="th-nome">{{ f.nome }}</span>
             {% endif %}
+            <button type="button" class="btn-somar-col" onclick="alternarSomaColuna(this)" title="Somar células desta coluna">Σ</button>
           </th>
         {% endfor %}
-        <th class="col-total">TOTAL</th>
-        <th class="col-totalcx">TOTAL CX</th>
-        <th class="col-faltas">FALTAS / SOBRAS</th>
+        <th class="col-total">TOTAL<button type="button" class="btn-somar-col" onclick="alternarSomaColuna(this)" title="Somar células desta coluna">Σ</button></th>
+        <th class="col-totalcx">TOTAL CX<button type="button" class="btn-somar-col" onclick="alternarSomaColuna(this)" title="Somar células desta coluna">Σ</button></th>
+        <th class="col-faltas">FALTAS / SOBRAS<button type="button" class="btn-somar-col" onclick="alternarSomaColuna(this)" title="Somar células desta coluna">Σ</button></th>
         {% if controles %}
           <th class="col-sep"></th>
           <th class="col-data">DATA</th>
@@ -924,6 +937,7 @@
               {% else %}
                 <span class="th-nome">{{ c.nome }}</span>
               {% endif %}
+              <button type="button" class="btn-somar-col" onclick="alternarSomaColuna(this)" title="Somar células desta coluna">Σ</button>
             </th>
           {% endfor %}
         {% endif %}
@@ -1248,8 +1262,32 @@
       marcadas.length === 0 ? 'nenhuma célula marcada'
       : marcadas.length === 1 ? '1 célula marcada'
       : marcadas.length + ' células marcadas';
-    const algumaLinha = document.querySelector('tr.linha-somando');
-    barra.classList.toggle('visivel', !!algumaLinha);
+    const algumModo = document.querySelector('tr.linha-somando') || colunasSomando.size;
+    barra.classList.toggle('visivel', !!algumModo);
+  }
+
+  /* Colunas com o Σ ligado, pela posição (cellIndex). As linhas de dia não
+     têm colspan, então a posição do <th> da linha de nomes é a mesma da
+     célula em cada dia — um critério só para formas, TOTAL, TOTAL CX,
+     FALTAS e controles. */
+  const colunasSomando = new Set();
+
+  /* A célula é alvo se a linha OU a coluna dela estiver somando. Recalcular
+     tudo de uma vez evita que desligar a linha apague a caixinha de uma
+     célula cuja coluna continua ligada (e vice-versa). */
+  function recalcularAlvosSoma() {
+    document.querySelectorAll('table.caixas tbody tr[data-data]').forEach(tr => {
+      const linhaOn = tr.classList.contains('linha-somando');
+      tr.querySelectorAll(CEL_SOMAVEL).forEach(td => {
+        /* coluna fechada fica comprimida numa tira de 24px — não dá pra
+           marcar o que não se enxerga */
+        const alvo = !td.classList.contains('col-fechada')
+                     && (linhaOn || colunasSomando.has(td.cellIndex));
+        td.classList.toggle('som-alvo', alvo);
+        if (!alvo) td.classList.remove('som-marcada');
+      });
+    });
+    atualizarBarraSoma();
   }
 
   function alternarSomaLinha(botao) {
@@ -1257,14 +1295,15 @@
     const ligando = !tr.classList.contains('linha-somando');
     tr.classList.toggle('linha-somando', ligando);
     botao.classList.toggle('ativo', ligando);
-    tr.querySelectorAll(CEL_SOMAVEL).forEach(td => {
-      /* coluna fechada fica comprimida numa tira de 24px — não dá pra
-         marcar o que não se enxerga */
-      if (td.classList.contains('col-fechada')) return;
-      td.classList.toggle('som-alvo', ligando);
-      if (!ligando) td.classList.remove('som-marcada');
-    });
-    atualizarBarraSoma();
+    recalcularAlvosSoma();
+  }
+
+  function alternarSomaColuna(botao) {
+    const idx = botao.closest('th').cellIndex;
+    const ligando = !colunasSomando.has(idx);
+    if (ligando) colunasSomando.add(idx); else colunasSomando.delete(idx);
+    botao.classList.toggle('ativo', ligando);
+    recalcularAlvosSoma();
   }
 
   function limparSomaSelecao() {
@@ -1276,13 +1315,16 @@
   /* Fecha o modo em todas as linhas de uma vez — evita ter que voltar em
      cada Σ ligado. */
   function encerrarSoma() {
-    document.querySelectorAll('tr.linha-somando .btn-somar-dia.ativo')
-            .forEach(b => alternarSomaLinha(b));
+    document.querySelectorAll('tr.linha-somando').forEach(tr => tr.classList.remove('linha-somando'));
+    document.querySelectorAll('.btn-somar-dia.ativo, .btn-somar-col.ativo')
+            .forEach(b => b.classList.remove('ativo'));
+    colunasSomando.clear();
+    recalcularAlvosSoma();
   }
 
   document.addEventListener('click', function (ev) {
     const td = ev.target.closest ? ev.target.closest('td.som-alvo') : null;
-    if (!td || !td.closest('tr.linha-somando')) return;
+    if (!td) return;
     ev.preventDefault();
     td.classList.toggle('som-marcada');
     atualizarBarraSoma();
@@ -1602,6 +1644,7 @@
     const attr = tipo === 'forma' ? 'data-col' : 'data-col-ctrl';
     const celulas = () => document.querySelectorAll(`[${attr}="${idItem}"]`);
     celulas().forEach(el => el.classList.toggle('col-fechada', !mostrar));
+    recalcularAlvosSoma(); // coluna fechada sai da soma (e volta ao abrir)
 
     const fd = new FormData();
     fd.append('cod_filial', FILIAL_ATUAL);

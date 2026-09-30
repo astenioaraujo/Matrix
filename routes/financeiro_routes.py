@@ -4993,11 +4993,12 @@ def configuracoes_caixas():
                 agrupamento = (request.form.get("agrupamento") or "").strip().upper() or None
                 ordem = int(request.form.get("ordem") or 0)
                 eh_fiado = bool(request.form.get("eh_fiado"))
+                eh_cartao = bool(request.form.get("eh_cartao"))
                 if nome:
                     cur.execute("""
-                        INSERT INTO caixas_formas_recebimento (cod_empresa, nome, agrupamento, ordem, eh_fiado)
-                        VALUES (%s, %s, %s, %s, %s)
-                    """, (cod_empresa, nome, agrupamento, ordem, eh_fiado))
+                        INSERT INTO caixas_formas_recebimento (cod_empresa, nome, agrupamento, ordem, eh_fiado, eh_cartao)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (cod_empresa, nome, agrupamento, ordem, eh_fiado, eh_cartao))
                     conn.commit()
                     flash("Forma de recebimento incluída.", "success")
 
@@ -5007,12 +5008,13 @@ def configuracoes_caixas():
                 agrupamento = (request.form.get("agrupamento_editar") or "").strip().upper() or None
                 ordem = int(request.form.get("ordem_editar") or 0)
                 eh_fiado = bool(request.form.get("eh_fiado_editar"))
+                eh_cartao = bool(request.form.get("eh_cartao_editar"))
                 if id_ed and nome:
                     cur.execute("""
                         UPDATE caixas_formas_recebimento
-                        SET nome = %s, agrupamento = %s, ordem = %s, eh_fiado = %s
+                        SET nome = %s, agrupamento = %s, ordem = %s, eh_fiado = %s, eh_cartao = %s
                         WHERE id = %s AND cod_empresa = %s
-                    """, (nome, agrupamento, ordem, eh_fiado, id_ed, cod_empresa))
+                    """, (nome, agrupamento, ordem, eh_fiado, eh_cartao, id_ed, cod_empresa))
                     conn.commit()
                     flash("Forma de recebimento atualizada.", "success")
 
@@ -5079,7 +5081,7 @@ def configuracoes_caixas():
                     flash("Status do controle adicional alterado.", "success")
 
         cur.execute("""
-            SELECT id, nome, agrupamento, ordem, ativo, eh_fiado FROM caixas_formas_recebimento
+            SELECT id, nome, agrupamento, ordem, ativo, eh_fiado, eh_cartao FROM caixas_formas_recebimento
             WHERE cod_empresa = %s ORDER BY ordem, nome
         """, (cod_empresa,))
         formas = cur.fetchall()
@@ -8205,8 +8207,10 @@ def menu_cr_cartoes():
         pode_variacoes = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CARTOES_VARIACOES")
     pode_bandeiras = _pode_cartoes("CARTOES_BANDEIRAS")
     pode_bandeiras_var = _pode_cartoes("CARTOES_BANDEIRAS_VARIACOES")
+    pode_vendas_dia = _pode_cartoes("CARTOES_VENDAS_DIA")
     return render_template(
         "menu_cr_cartoes.html",
+        pode_vendas_dia=pode_vendas_dia,
         pode_bandeiras=pode_bandeiras,
         pode_bandeiras_var=pode_bandeiras_var,
         empresa_ativa=session["cod_empresa"],
@@ -9867,6 +9871,141 @@ def cartoes_bandeiras_variacoes():
         rotulos_datas=[d.strftime("%d/%m") for d in datas],
         areas=areas, filtro_area=filtro_area, modo=modo,
         data_ini=data_ini, data_fin=data_fin)
+
+
+@financeiro_bp.route("/cr/cartoes/vendas-dia")
+def cartoes_vendas_dia():
+    """
+    Vendas por dia por bandeira, no desenho de Perdas e Sobras: uma linha por
+    bandeira, uma coluna por dia do mês (do 1 ao último) e o total do mês.
+
+    A venda é o que os caixas lançaram em Conferir Caixas (`caixas_lancamentos`),
+    nas formas de recebimento marcadas como cartão
+    (`caixas_formas_recebimento.eh_cartao`). As bandeiras vêm agrupadas pelo
+    tipo (o `agrupamento` da forma: DÉBITO, CRÉDITO, CARTÃO FROTA), com
+    subtotal por tipo e total geral. Nada gravado.
+    """
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+    if not _pode_cartoes("CARTOES_VENDAS_DIA"):
+        return redirect(url_for("financeiro.menu_cr_cartoes"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    filtro_area = request.args.get("area", "todas")
+    hoje = datetime.now(ZoneInfo("America/Recife")).date()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT id, nome, agrupamento FROM caixas_formas_recebimento
+            WHERE cod_empresa = %s AND eh_cartao
+            ORDER BY ordem, nome
+        """, (cod_empresa,))
+        formas = cur.fetchall()
+        ids_formas = [f["id"] for f in formas]
+
+        cur.execute("""
+            SELECT a.id_area, a.nome_area, af.cod_filial
+            FROM areas a
+            JOIN areas_filiais af ON af.id_area = a.id_area AND af.cod_empresa = a.cod_empresa
+            WHERE a.cod_empresa = %s AND a.ativo = TRUE
+            ORDER BY a.id_area, af.ordem
+        """, (cod_empresa,))
+        linhas_area = cur.fetchall()
+        areas = list(OrderedDict((r["id_area"], r["nome_area"]) for r in linhas_area).items())
+        if filtro_area.isdigit() and int(filtro_area) in dict(areas):
+            cod_filiais = [r["cod_filial"] for r in linhas_area if r["id_area"] == int(filtro_area)]
+        else:
+            filtro_area, cod_filiais = "todas", None
+
+        cur.execute("""
+            SELECT DISTINCT EXTRACT(YEAR FROM data)::int AS ano FROM caixas_lancamentos
+            WHERE cod_empresa = %s ORDER BY 1 DESC
+        """, (cod_empresa,))
+        anos = [r["ano"] for r in cur.fetchall()] or [hoje.year]
+
+        # Mês: o pedido, ou o do último dia com cartão lançado.
+        try:
+            mes, ano = int(request.args.get("mes")), int(request.args.get("ano"))
+            date(ano, mes, 1)
+        except (TypeError, ValueError):
+            cur.execute("""
+                SELECT MAX(data) AS d FROM caixas_lancamentos
+                WHERE cod_empresa = %s AND id_forma = ANY(%s) AND valor <> 0
+            """, (cod_empresa, ids_formas))
+            ultimo = (cur.fetchone() or {}).get("d") or hoje
+            mes, ano = ultimo.month, ultimo.year
+        if ano not in anos:
+            anos = sorted(set(anos) | {ano}, reverse=True)
+
+        ini = date(ano, mes, 1)
+        fim = date(ano + (mes == 12), mes % 12 + 1, 1) - timedelta(days=1)
+
+        valores = defaultdict(float)   # (id_forma, dia) -> valor
+        if ids_formas:
+            sql = """
+                SELECT id_forma, EXTRACT(DAY FROM data)::int AS dia, SUM(valor) AS valor
+                FROM caixas_lancamentos
+                WHERE cod_empresa = %s AND data BETWEEN %s AND %s AND id_forma = ANY(%s)
+            """
+            params = [cod_empresa, ini, fim, ids_formas]
+            if cod_filiais is not None:
+                sql += " AND cod_filial = ANY(%s)"
+                params.append(cod_filiais)
+            cur.execute(sql + " GROUP BY id_forma, dia", params)
+            for r in cur.fetchall():
+                valores[(r["id_forma"], r["dia"])] += float(r["valor"] or 0)
+    finally:
+        cur.close()
+        conn.close()
+
+    dias = list(range(1, fim.day + 1))
+    nomes_dia = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+    cabecalho_dias = [{"dia": d, "semana": nomes_dia[date(ano, mes, d).weekday()],
+                       "fds": date(ano, mes, d).weekday() >= 5} for d in dias]
+
+    def _vazia():
+        return {"dias": {d: 0.0 for d in dias}, "total": 0.0}
+
+    # Bandeira = nome da forma (duas formas com o mesmo nome somam numa linha só),
+    # agrupada pelo tipo na ordem do cadastro. Forma sem tipo vira bloco próprio.
+    blocos = OrderedDict()
+    for f in formas:
+        tipo = (f["agrupamento"] or f["nome"]).strip()
+        bloco = blocos.setdefault(tipo, {"tipo": tipo, "linhas": OrderedDict(), "total": _vazia()})
+        linha = bloco["linhas"].setdefault(f["nome"], dict(_vazia(), bandeira=f["nome"]))
+        for d in dias:
+            v = valores.get((f["id"], d), 0.0)
+            linha["dias"][d] += v
+            linha["total"] += v
+            bloco["total"]["dias"][d] += v
+            bloco["total"]["total"] += v
+
+    total_geral = _vazia()
+    lista_blocos = []
+    for b in blocos.values():
+        # Bandeira sem venda no mês não vira linha; bloco vazio some. Dentro do
+        # bloco, da maior para a menor venda do mês.
+        b["linhas"] = sorted((l for l in b["linhas"].values() if l["total"]),
+                             key=lambda l: -l["total"])
+        if not b["linhas"]:
+            continue
+        lista_blocos.append(b)
+        for d in dias:
+            total_geral["dias"][d] += b["total"]["dias"][d]
+        total_geral["total"] += b["total"]["total"]
+
+    return render_template("cartoes_vendas_dia.html",
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_cr_cartoes"),
+        tem_formas=bool(formas),
+        blocos=lista_blocos, total_geral=total_geral,
+        dias=dias, cabecalho_dias=cabecalho_dias,
+        areas=areas, filtro_area=filtro_area,
+        mes=mes, ano=ano, anos=anos,
+        nomes_meses=["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho",
+                     "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"])
 
 
 # =========================================================

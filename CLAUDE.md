@@ -103,6 +103,7 @@ O Excel "Movimentação de Cartões" traz a bandeira na coluna **Administradora*
 - **Posição por Bandeira** (`/cr/cartoes/bandeiras`, `CARTOES_BANDEIRAS` 1480): data + área, tabela com saldo, participação e variação contra a importação anterior, e pizza (Chart.js) com as 7 maiores + "Outras" (`BANDEIRAS_NO_GRAFICO`). O quadradinho da tabela repete a cor da fatia.
 - **Variações por Bandeira** (`/cr/cartoes/bandeiras/variacoes`, `CARTOES_BANDEIRAS_VARIACOES` 1490): período + área + modo R$/%; gráfico de linhas (mesmas 7 + Outras) e grade data × bandeira com mapa de calor por coluna.
 - Participação e variação são calculadas na consulta, nunca gravadas. As permissões foram concedidas a quem já tinha `CARTOES_CONSULTAR` / `CARTOES_VARIACOES`.
+- **Vendas por Dia por Bandeira** (`/cr/cartoes/vendas-dia`, `CARTOES_VENDAS_DIA` 1495, `migrations/criar_cartoes_vendas_dia.sql`): **outra fonte** — não é o arquivo de Movimentação (que é saldo a receber), e sim o que os caixas lançaram em Conferir Caixas (`caixas_lancamentos`). Entram as formas com `caixas_formas_recebimento.eh_cartao`, checkbox "Cartão" em Conferir Caixas → Configurações, ao lado de "Fiado". Não se usa o `agrupamento` para decidir: na EMP010 o CHEQUE está em "CARTÃO FROTA" e na EMP012 nada tem agrupamento. Desenho de **Perdas e Sobras**: filtro mês/ano + área, uma linha por bandeira (a forma do caixa), **todos** os dias do mês nas colunas (1 ao 30/31, fim de semana sombreado) e o total. As linhas vêm em blocos pelo tipo (o `agrupamento`: DÉBITO, CRÉDITO, CARTÃO FROTA), com subtotal e TOTAL GERAL. Dentro do bloco, as bandeiras vêm da **maior para a menor** venda do mês, Dois mapas de calor **independentes**, cada um com a sua escala: nos dias, por linha (a bandeira contra ela mesma no mês); na coluna Total, por bloco (as bandeiras do mesmo grupo entre si — bloco de uma linha só fica sem cor). Não misturar as duas escalas. Bandeira sem venda no mês não vira linha. **O caixa não separa Master/Visa/Elo/Amex** — vêm somadas em DB REDE / CRD REDE (o detalhamento do caixa também não traz a bandeira); só os cartões frota casam um a um com a Posição por Bandeira. Nada gravado, e a permissão não foi concedida a ninguém.
 - **Histórico**: o arquivo não é guardado, então importações antigas não têm bandeira. Só 24/09/2026 (EMP010) foi preenchida, a partir do mesmo arquivo. As datas antigas só entram reimportando — e a reimportação é barrada se Saldos já importou aquela data.
 
 ## CR Fiado — Recebimentos e Movimento por Dia
@@ -356,6 +357,13 @@ detalhamento, nas formas de recebimento **ou** nos controles adicionais — bast
 Exigia mais de uma linha ("a célula é uma soma"), e a despesa única dos controles (R$ 45 com a
 explicação, Serra Grande 18/09/2026) deixava o olho apagado. Ao salvar no ✎,
 `atualizarCelulaGrade` acende/apaga o olho do dia na hora.
+
+**Σ de linha e de coluna** (só na tela, nada gravado): o Σ ao lado do olho liga caixinhas nas
+células do dia; o Σ embaixo do nome de cada coluna (formas, TOTAL, TOTAL CX, FALTAS e controles)
+liga na coluna inteira. A barra flutuante soma o que estiver marcado. A coluna é identificada
+pela posição (`cellIndex` — as linhas de dia não têm colspan) em `colunasSomando`, e
+`recalcularAlvosSoma` decide cada célula como "linha ligada **ou** coluna ligada": desligar a
+linha não pode apagar a marca de uma célula cuja coluna continua somando.
 
 Duas armadilhas dessa tela:
 
