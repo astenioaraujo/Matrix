@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .pagina-sub    { font-size:15px; color:#666; margin-bottom:24px; }
+
+  .aviso { border-radius:10px; padding:12px 16px; font-size:14px; font-weight:600; margin-bottom:18px; }
+  .aviso.warn{ background:#fffbeb; border:1px solid #fcd34d; color:#92400e; }
+
+  .filtros { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end;
+    background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:18px 20px; margin-bottom:10px; }
+  .form-campo label { display:block; font-size:12px; font-weight:700; color:#555; margin-bottom:5px; }
+  .form-campo input, .form-campo select {
+    height:38px; border-radius:8px; border:1px solid #cbd5e1; padding:0 10px;
+    font-size:14px; background:#fff; box-sizing:border-box;
+  }
+  .btn-filtrar { background:#14114f; color:#fff; border:none; border-radius:8px;
+    padding:0 22px; height:38px; font-size:14px; font-weight:700; cursor:pointer; }
+  .btn-filtrar:hover { background:#0d0a3a; }
+  .dica { font-size:12px; color:#64748b; margin-bottom:20px; }
+
+  .grade-wrap { overflow-x:auto; border:1px solid #e2e8f0; border-radius:12px; background:#fff; width:fit-content; max-width:100%; }
+  table.grade { border-collapse:separate; border-spacing:0; font-size:14px; }
+  table.grade th, table.grade td { padding:7px 14px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
+  table.grade thead th { background:#14114f; color:#fff; font-weight:700; font-size:12px;
+    text-align:right; position:sticky; top:0; }
+  table.grade thead th.col-dia { text-align:left; }
+  table.grade td.col-dia { font-weight:700; color:#1e293b; background:#f8fafc; width:170px; }
+  table.grade td.valor { text-align:right; width:150px; color:#1e293b; }
+  table.grade td.zero  { color:#cbd5e1; }
+  table.grade td.pos   { color:#b91c1c; }   /* fiado cresceu: entrou mais do que saiu */
+  table.grade td.neg   { color:#15803d; }   /* fiado encolheu: recebeu mais do que vendeu */
+  table.grade td.col-saldo { font-weight:800; background:#fafafa; }
+  table.grade tr.fim-semana td.col-dia { color:#94a3b8; font-style:italic; }
+  table.grade tbody tr:hover td { background:#eef2ff; }
+  table.grade tfoot td { background:#e2e8f0; font-weight:800; color:#14114f;
+    border-top:2px solid #cbd5e1; position:sticky; bottom:0; }
+  table.grade tfoot td.pos { color:#b91c1c; }
+  table.grade tfoot td.neg { color:#15803d; }
+</style>
+
+{% macro cor(v) %}{% if not v %}zero{% elif v > 0 %}pos{% else %}neg{% endif %}{% endmacro %}
+
+<div class="card">
+  <div class="pagina-titulo">CR — Movimento do Fiado por Dia</div>
+  <div class="pagina-sub">Empresa: <strong>{{ empresa_ativa }} - {{ nome_empresa_ativa }}</strong></div>
+
+  {% for categoria, msg in get_flashed_messages(with_categories=true) %}
+    <div class="aviso warn">{{ msg }}</div>
+  {% endfor %}
+
+  <form class="filtros" method="GET" action="{{ url_for('financeiro.cr_movimento_fiado') }}">
+    <div class="form-campo">
+      <label>Posto</label>
+      <select name="filial">
+        <option value="">Geral (todos os postos)</option>
+        {% for f in filiais %}
+          <option value="{{ f.cod_filial }}" {% if f.cod_filial == filial_sel %}selected{% endif %}>{{ f.nome_filial }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-campo">
+      <label>De</label>
+      <input type="date" name="data_ini" value="{{ data_ini.isoformat() }}">
+    </div>
+    <div class="form-campo">
+      <label>Até</label>
+      <input type="date" name="data_fim" value="{{ data_fim.isoformat() }}">
+    </div>
+    <button type="submit" class="btn-filtrar">Filtrar</button>
+  </form>
+  <div class="dica">
+    <strong>Entradas</strong>: fiado novo lançado nos caixas
+    ({{ formas_fiado | join(", ") if formas_fiado else "nenhuma forma marcada" }}).
+    <strong>Saídas</strong>: recebimentos importados em Recebimentos por Dia.
+    <strong>Saldo</strong> = entradas − saídas — vermelho quando o fiado cresceu, verde quando diminuiu.
+  </div>
+
+  {% if not formas_fiado %}
+    <div class="aviso warn">
+      Nenhuma forma de recebimento do caixa está marcada como fiado — as entradas saem zeradas.
+      Marque a coluna “Fiado” em Conferir Caixas → Configurações.
+    </div>
+  {% endif %}
+
+  <div class="grade-wrap">
+    <table class="grade">
+      <thead>
+        <tr>
+          <th class="col-dia">Dia</th>
+          <th>Entradas (fiado novo)</th>
+          <th>Saídas (recebido)</th>
+          <th>Saldo do dia</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in dias %}
+        <tr {% if d.data.weekday() >= 5 %}class="fim-semana"{% endif %}>
+          <td class="col-dia">{{ d.data.strftime("%d/%m/%Y") }} — {{ ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"][d.data.weekday()] }}</td>
+          <td class="valor {% if not d.entrada %}zero{% endif %}">{{ d.entrada | br if d.entrada else "—" }}</td>
+          <td class="valor {% if not d.saida %}zero{% endif %}">{{ d.saida | br if d.saida else "—" }}</td>
+          <td class="valor col-saldo {{ cor(d.saldo) }}">{{ d.saldo | br if d.saldo else "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td>Total</td>
+          <td class="valor">{{ tot_entrada | br }}</td>
+          <td class="valor">{{ tot_saida | br }}</td>
+          <td class="valor {{ cor(tot_saldo) }}">{{ tot_saldo | br }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <p style="margin-top:22px;"><a href="{{ url_voltar }}">← Voltar</a></p>
+</div>
+
+{% endblock %}

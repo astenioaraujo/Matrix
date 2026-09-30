@@ -105,6 +105,18 @@ O Excel "Movimentação de Cartões" traz a bandeira na coluna **Administradora*
 - Participação e variação são calculadas na consulta, nunca gravadas. As permissões foram concedidas a quem já tinha `CARTOES_CONSULTAR` / `CARTOES_VARIACOES`.
 - **Histórico**: o arquivo não é guardado, então importações antigas não têm bandeira. Só 24/09/2026 (EMP010) foi preenchida, a partir do mesmo arquivo. As datas antigas só entram reimportando — e a reimportação é barrada se Saldos já importou aquela data.
 
+## CR Fiado — Recebimentos e Movimento por Dia
+
+**Recebimentos por Dia** (`/cr/recebimentos`, `_parse_recebimentos_xlsx`) importa o relatório Notas/Duplicatas a Receber do WebPostos para `cr_recebimentos_dia`. Duas armadilhas do arquivo:
+
+- A planilha declara a dimensão `A1:A1`, e em `read_only` o openpyxl lia **só a primeira célula**. Por isso o `ws.reset_dimensions()`.
+- Duplicata que nasceu de NF-e tem documento `Nfe000000004781`; exigir só dígitos descartava R$ 80 mil calado. Conferência: a soma tem que fechar com os `Subtotais` do próprio relatório.
+
+**Movimento do Fiado por Dia** (`/cr/movimento-fiado`, `FIADO_MOVIMENTO_DIA` 2120, `migrations/criar_cr_movimento_fiado_dia.sql`): posto ou geral, período, uma linha por dia com entradas × saídas × saldo e totais no rodapé. Nada gravado.
+
+- **Entrada** = fiado novo dos caixas (`caixas_lancamentos`) nas formas marcadas com `caixas_formas_recebimento.eh_fiado` — checkbox "Fiado" em Conferir Caixas → Configurações. Só **NOTA / VALE da EMP010** está marcada; nas outras empresas é preciso decidir qual forma é fiado (CLIENTES? VALES?).
+- **Saída** = `cr_recebimentos_dia`.
+
 ## Fluxo de Caixa Projetado
 
 `GET /fluxo-caixa-projetado`. Jan→mês atual é real, do mês atual em diante é projetado pela média dos N meses realizados. Dois tipos de análise (Fluxo de Caixa = todos os grupos; Margem Bruta = grupos 4/5/6 + linha de MB).
@@ -338,6 +350,12 @@ O nome só fica clicável quando há detalhamento no mês (`colunas_com_detalhe_
 `_controle`, tiradas da mesma consulta que já marcava as células) — senão o clique abriria uma
 janela vazia. Um endpoint só serve os dois: `GET /api/caixas/detalhe-item`, com `data` para a
 célula e `ano`/`mes` para a coluna.
+
+**Olho do dia** (botão 👁 da linha, `dias_com_soma`): fica verde quando o dia tem **qualquer**
+detalhamento, nas formas de recebimento **ou** nos controles adicionais — basta uma linha.
+Exigia mais de uma linha ("a célula é uma soma"), e a despesa única dos controles (R$ 45 com a
+explicação, Serra Grande 18/09/2026) deixava o olho apagado. Ao salvar no ✎,
+`atualizarCelulaGrade` acende/apaga o olho do dia na hora.
 
 Duas armadilhas dessa tela:
 

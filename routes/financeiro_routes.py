@@ -4130,7 +4130,7 @@ def conferir_caixas():
         if cod_filial_atual:
             # Uma consulta por tabela de detalhe resolve as duas coisas: quais
             # células têm detalhamento (para a marca na grade) e em que dias
-            # algum item recebeu MAIS DE UM lançamento (para o olho verde).
+            # há algum detalhamento (para o olho verde).
             # Antes eram três idas ao banco lendo as mesmas duas tabelas.
             for tabela, campo, destino, destino_coluna in (
                 ("caixas_lancamentos_detalhe", "id_forma",
@@ -4149,9 +4149,12 @@ def conferir_caixas():
                     dia = r["data"].isoformat()
                     destino.add((dia, r["id_item"]))
                     destino_coluna.add(r["id_item"])
-                    # mais de uma linha = o valor da célula é uma soma
-                    if r["linhas"] > 1:
-                        dias_com_soma.add(dia)
+                    # Qualquer detalhamento acende o olho do dia, nas formas
+                    # ou nos controles adicionais. Exigia mais de uma linha
+                    # ("a célula é uma soma"), e o detalhe único — a despesa
+                    # de R$ 45 com a explicação dela, típica dos controles —
+                    # deixava o olho apagado com coisa a mostrar.
+                    dias_com_soma.add(dia)
 
         # ---- quais colunas ficam abertas ----
         # Vale para as formas de recebimento e para os controles adicionais.
@@ -4989,11 +4992,12 @@ def configuracoes_caixas():
                 nome  = (request.form.get("nome") or "").strip().upper()
                 agrupamento = (request.form.get("agrupamento") or "").strip().upper() or None
                 ordem = int(request.form.get("ordem") or 0)
+                eh_fiado = bool(request.form.get("eh_fiado"))
                 if nome:
                     cur.execute("""
-                        INSERT INTO caixas_formas_recebimento (cod_empresa, nome, agrupamento, ordem)
-                        VALUES (%s, %s, %s, %s)
-                    """, (cod_empresa, nome, agrupamento, ordem))
+                        INSERT INTO caixas_formas_recebimento (cod_empresa, nome, agrupamento, ordem, eh_fiado)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, (cod_empresa, nome, agrupamento, ordem, eh_fiado))
                     conn.commit()
                     flash("Forma de recebimento incluída.", "success")
 
@@ -5002,11 +5006,13 @@ def configuracoes_caixas():
                 nome  = (request.form.get("nome_editar") or "").strip().upper()
                 agrupamento = (request.form.get("agrupamento_editar") or "").strip().upper() or None
                 ordem = int(request.form.get("ordem_editar") or 0)
+                eh_fiado = bool(request.form.get("eh_fiado_editar"))
                 if id_ed and nome:
                     cur.execute("""
                         UPDATE caixas_formas_recebimento
-                        SET nome = %s, agrupamento = %s, ordem = %s WHERE id = %s AND cod_empresa = %s
-                    """, (nome, agrupamento, ordem, id_ed, cod_empresa))
+                        SET nome = %s, agrupamento = %s, ordem = %s, eh_fiado = %s
+                        WHERE id = %s AND cod_empresa = %s
+                    """, (nome, agrupamento, ordem, eh_fiado, id_ed, cod_empresa))
                     conn.commit()
                     flash("Forma de recebimento atualizada.", "success")
 
@@ -5073,7 +5079,7 @@ def configuracoes_caixas():
                     flash("Status do controle adicional alterado.", "success")
 
         cur.execute("""
-            SELECT id, nome, agrupamento, ordem, ativo FROM caixas_formas_recebimento
+            SELECT id, nome, agrupamento, ordem, ativo, eh_fiado FROM caixas_formas_recebimento
             WHERE cod_empresa = %s ORDER BY ordem, nome
         """, (cod_empresa,))
         formas = cur.fetchall()
@@ -8156,7 +8162,7 @@ def menu_cr_fiado():
     tipo_global = str(session.get("tipo_global") or "").strip().lower()
     if tipo_global == "superusuario":
         pode_importar = pode_consultar = pode_variacoes = pode_por_filial = pode_por_filial_cli = pode_por_cliente = True
-        pode_recebimentos = True
+        pode_recebimentos = pode_movimento = True
     else:
         pode_importar      = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_IMPORTAR")
         pode_consultar     = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_CONSULTAR")
@@ -8165,6 +8171,7 @@ def menu_cr_fiado():
         pode_por_filial_cli= usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_POR_FILIAL_CLIENTE")
         pode_por_cliente   = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_POR_CLIENTE")
         pode_recebimentos  = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "RECEBIMENTOS_DIA")
+        pode_movimento     = usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "FIADO_MOVIMENTO_DIA")
     return render_template(
         "menu_cr_fiado.html",
         empresa_ativa=session["cod_empresa"],
@@ -8177,6 +8184,7 @@ def menu_cr_fiado():
         pode_por_filial_cli=pode_por_filial_cli,
         pode_por_cliente=pode_por_cliente,
         pode_recebimentos=pode_recebimentos,
+        pode_movimento=pode_movimento,
     )
 
 
@@ -8814,6 +8822,129 @@ def cr_recebimentos():
         anos=list(range(hoje.year - 3, hoje.year + 2)),
         meses=list(range(1, 13)),
         nomes_meses=nomes_meses,
+    )
+
+
+# -----------------------------------------------------------
+# CR — MOVIMENTO DO FIADO POR DIA
+# -----------------------------------------------------------
+
+@financeiro_bp.route("/cr/movimento-fiado")
+def cr_movimento_fiado():
+    """
+    Entradas × saídas do fiado, dia a dia, de um posto ou da empresa toda.
+
+    - Entrada: fiado novo, lançado nos caixas (Conferir Caixas) nas formas de
+      recebimento marcadas como fiado (`caixas_formas_recebimento.eh_fiado`).
+    - Saída: o que foi recebido, de `cr_recebimentos_dia` (importação do
+      relatório de Notas/Duplicatas a Receber).
+    - Saldo do dia = entrada − saída. Nada disso é gravado.
+    """
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    id_usuario  = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    superusuario = str(session.get("tipo_global") or "").strip().lower() == "superusuario"
+
+    if not (superusuario or usuario_tem_permissao(
+            id_usuario, cod_empresa, "FINANCEIRO", "FIADO_MOVIMENTO_DIA")):
+        flash("Sem permissão para acessar Movimento do Fiado por Dia.", "error")
+        return redirect(url_for("financeiro.menu_cr_fiado"))
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT cod_filial, nome_filial
+            FROM filiais
+            WHERE cod_empresa = %s AND ativo = TRUE
+            ORDER BY cod_filial
+        """, (cod_empresa,))
+        filiais = cur.fetchall() or []
+
+        cur.execute("""
+            SELECT nome FROM caixas_formas_recebimento
+            WHERE cod_empresa = %s AND eh_fiado
+            ORDER BY ordem, nome
+        """, (cod_empresa,))
+        formas_fiado = [r["nome"] for r in cur.fetchall()]
+
+        # posto: vazio = geral (todas as filiais somadas)
+        try:
+            filial_sel = int(request.args.get("filial") or 0) or None
+        except ValueError:
+            filial_sel = None
+        if filial_sel and filial_sel not in {f["cod_filial"] for f in filiais}:
+            filial_sel = None
+
+        # período: o pedido, ou o mês da última data com recebimento importado
+        def _data(nome):
+            try:
+                return datetime.strptime(request.args.get(nome) or "", "%Y-%m-%d").date()
+            except ValueError:
+                return None
+
+        data_fim = _data("data_fim")
+        data_ini = _data("data_ini")
+        if not data_fim:
+            cur.execute("SELECT MAX(data) AS d FROM cr_recebimentos_dia WHERE cod_empresa = %s",
+                        (cod_empresa,))
+            data_fim = (cur.fetchone() or {}).get("d") or datetime.now(ZoneInfo("America/Recife")).date()
+        if not data_ini:
+            data_ini = data_fim.replace(day=1)
+        if data_ini > data_fim:
+            data_ini, data_fim = data_fim, data_ini
+
+        filtro_filial = " AND cod_filial = %s" if filial_sel else ""
+        params = [cod_empresa, data_ini, data_fim] + ([filial_sel] if filial_sel else [])
+
+        cur.execute(f"""
+            SELECT data, SUM(valor) AS valor
+            FROM caixas_lancamentos
+            WHERE cod_empresa = %s AND data BETWEEN %s AND %s {filtro_filial}
+              AND id_forma IN (SELECT id FROM caixas_formas_recebimento
+                               WHERE cod_empresa = caixas_lancamentos.cod_empresa AND eh_fiado)
+            GROUP BY data
+        """, params)
+        entradas = {r["data"]: float(r["valor"] or 0) for r in cur.fetchall()}
+
+        cur.execute(f"""
+            SELECT data, SUM(valor) AS valor
+            FROM cr_recebimentos_dia
+            WHERE cod_empresa = %s AND data BETWEEN %s AND %s {filtro_filial}
+            GROUP BY data
+        """, params)
+        saidas = {r["data"]: float(r["valor"] or 0) for r in cur.fetchall()}
+    finally:
+        cur.close()
+        conn.close()
+
+    dias = []
+    tot_entrada = tot_saida = 0.0
+    d = data_ini
+    while d <= data_fim:
+        e = entradas.get(d, 0.0)
+        s = saidas.get(d, 0.0)
+        dias.append({"data": d, "entrada": e, "saida": s, "saldo": e - s})
+        tot_entrada += e
+        tot_saida += s
+        d += timedelta(days=1)
+
+    return render_template(
+        "cr_movimento_fiado.html",
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session.get("nome_empresa", ""),
+        url_voltar=url_for("financeiro.menu_cr_fiado"),
+        filiais=filiais,
+        filial_sel=filial_sel,
+        formas_fiado=formas_fiado,
+        data_ini=data_ini,
+        data_fim=data_fim,
+        dias=dias,
+        tot_entrada=tot_entrada,
+        tot_saida=tot_saida,
+        tot_saldo=tot_entrada - tot_saida,
     )
 
 

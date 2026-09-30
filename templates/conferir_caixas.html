@@ -403,9 +403,8 @@
   .btn-visualizar-dia:not(.tem-soma) { opacity:.35; border-color:#e2e8f0; }
   .btn-visualizar-dia:not(.tem-soma):hover { opacity:1; }
 
-  /* olho verde: neste dia algum item recebeu mais de um lançamento, ou seja,
-     o valor da célula é uma soma. Mesmo critério da chave "só com
-     detalhamento" do painel de visualização. */
+  /* olho verde: neste dia há detalhamento (✎) em alguma forma de
+     recebimento OU em algum controle adicional — basta uma linha. */
   .btn-visualizar-dia.tem-soma {
     background:#dcfce7; border-color:#16a34a; color:#15803d; font-weight:700;
   }
@@ -969,7 +968,7 @@
             {% set tem_soma = d.strftime('%Y-%m-%d') in dias_com_soma %}
             <button type="button" class="btn-visualizar-dia {{ 'tem-soma' if tem_soma else '' }}"
               onclick="abrirVisualizar('{{ d.strftime('%Y-%m-%d') }}')"
-              title="{% if tem_soma %}Este dia tem item com mais de um lançamento (soma){% else %}Ver o detalhamento deste dia{% endif %}">👁</button>
+              title="{% if tem_soma %}Este dia tem detalhamento{% else %}Ver o detalhamento deste dia{% endif %}">👁</button>
             {% endif %}
             {# Somatório da linha: liga as caixinhas de seleção nas células
                deste dia e mostra a soma do que for marcado. #}
@@ -1923,6 +1922,15 @@
       td.appendChild(olho);
     } else if (!temLinhas && olhoAtual) {
       olhoAtual.remove();
+    }
+
+    /* O olho do dia acompanha: verde enquanto alguma célula da linha
+       (forma ou controle) tiver detalhamento. */
+    const btnDia = tr.querySelector('.btn-visualizar-dia');
+    if (btnDia) {
+      const diaTemDet = !!tr.querySelector('td.tem-detalhe');
+      btnDia.classList.toggle('tem-soma', diaTemDet);
+      btnDia.title = diaTemDet ? 'Este dia tem detalhamento' : 'Ver o detalhamento deste dia';
     }
 
     /* Passou a ter detalhamento: a célula vira soma e trava na hora, sem

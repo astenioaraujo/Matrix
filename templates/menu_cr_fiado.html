@@ -33,6 +33,9 @@
   {% if pode_recebimentos %}
   <a href="{{ url_for('financeiro.cr_recebimentos') }}">Recebimentos por Dia</a>
   {% endif %}
+  {% if pode_movimento %}
+  <a href="{{ url_for('financeiro.cr_movimento_fiado') }}">Movimento do Fiado por Dia</a>
+  {% endif %}
   {% if pode_consultar %}
   <a href="{{ url_for('financeiro.cr_consultas') }}">Consultar</a>
   {% endif %}
