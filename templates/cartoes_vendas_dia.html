@@ -81,7 +81,9 @@
     <button type="submit" class="btn-filtrar">Consultar</button>
   </form>
   <div class="dica">Vendas lançadas em Conferir Caixas, nas formas de recebimento marcadas como <strong>Cartão</strong>
-    (Conferir Caixas → Configurações). Master, Visa, Elo e Amex não são separadas no caixa: vêm somadas no débito e no crédito da maquininha.</div>
+    (Conferir Caixas → Configurações). Onde a célula tem detalhamento, vale a linha <strong>PORTAL</strong>
+    (sem ela, as linhas positivas) — vales, pagamentos e recebimentos lançados ali ficam de fora. Personal Card soma a célula inteira.
+    Master, Visa, Elo e Amex não são separadas no caixa: vêm somadas no débito e no crédito da maquininha.</div>
 
   {% if not tem_formas %}
   <p class="sem-dados">Nenhuma forma de recebimento está marcada como <strong>Cartão</strong> nesta empresa.

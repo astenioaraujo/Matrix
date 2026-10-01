@@ -9873,6 +9873,11 @@ def cartoes_bandeiras_variacoes():
         data_ini=data_ini, data_fin=data_fin)
 
 
+# Cartões em que o grid do caixa já é a venda (não recebem desconto no
+# caixa): somam o valor inteiro, sem a regra do PORTAL. Casado por trecho do nome.
+CARTOES_SOMA_GRID = ("PERSONAL",)
+
+
 @financeiro_bp.route("/cr/cartoes/vendas-dia")
 def cartoes_vendas_dia():
     """
@@ -9942,18 +9947,42 @@ def cartoes_vendas_dia():
         ini = date(ano, mes, 1)
         fim = date(ano + (mes == 12), mes % 12 + 1, 1) - timedelta(days=1)
 
+        # Venda de cada célula (posto × dia × cartão) — o grid NÃO é a venda:
+        # ele guarda a diferença, e o caixa lança ali vales, pagamentos e
+        # recebimentos (linhas negativas do detalhamento). Regra:
+        #   - cartão em CARTOES_SOMA_GRID (Personal Card): o grid, que é a soma;
+        #   - célula sem detalhamento: o grid (não houve desconto);
+        #   - com linha "PORTAL" no detalhamento: só as linhas PORTAL;
+        #   - sem PORTAL: as linhas positivas (a venda vem sem nome, "SITE",
+        #     "BON II"…; os negativos são as despesas).
         valores = defaultdict(float)   # (id_forma, dia) -> valor
         if ids_formas:
-            sql = """
-                SELECT id_forma, EXTRACT(DAY FROM data)::int AS dia, SUM(valor) AS valor
-                FROM caixas_lancamentos
-                WHERE cod_empresa = %s AND data BETWEEN %s AND %s AND id_forma = ANY(%s)
-            """
-            params = [cod_empresa, ini, fim, ids_formas]
-            if cod_filiais is not None:
-                sql += " AND cod_filial = ANY(%s)"
-                params.append(cod_filiais)
-            cur.execute(sql + " GROUP BY id_forma, dia", params)
+            filtro_fil = " AND cod_filial = ANY(%s)" if cod_filiais is not None else ""
+            p_fil = [cod_filiais] if cod_filiais is not None else []
+            ids_soma_grid = [f["id"] for f in formas
+                             if any(n in f["nome"].upper() for n in CARTOES_SOMA_GRID)]
+            cur.execute(f"""
+                WITH det AS (
+                    SELECT cod_filial, data, id_forma,
+                           SUM(valor) FILTER (WHERE observacao ILIKE '%%portal%%') AS portal,
+                           SUM(valor) FILTER (WHERE valor > 0)                    AS positivos
+                    FROM caixas_lancamentos_detalhe
+                    WHERE cod_empresa = %s AND data BETWEEN %s AND %s AND id_forma = ANY(%s) {filtro_fil}
+                    GROUP BY cod_filial, data, id_forma
+                )
+                SELECT l.id_forma, EXTRACT(DAY FROM l.data)::int AS dia,
+                       SUM(CASE WHEN l.id_forma = ANY(%s)     THEN l.valor
+                                WHEN det.id_forma IS NULL      THEN l.valor
+                                WHEN det.portal IS NOT NULL    THEN det.portal
+                                ELSE COALESCE(det.positivos, 0) END) AS valor
+                FROM caixas_lancamentos l
+                LEFT JOIN det ON det.cod_filial = l.cod_filial AND det.data = l.data
+                             AND det.id_forma = l.id_forma
+                WHERE l.cod_empresa = %s AND l.data BETWEEN %s AND %s AND l.id_forma = ANY(%s)
+                      {filtro_fil.replace("cod_filial", "l.cod_filial")}
+                GROUP BY l.id_forma, dia
+            """, [cod_empresa, ini, fim, ids_formas] + p_fil + [ids_soma_grid]
+                 + [cod_empresa, ini, fim, ids_formas] + p_fil)
             for r in cur.fetchall():
                 valores[(r["id_forma"], r["dia"])] += float(r["valor"] or 0)
     finally:
