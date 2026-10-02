@@ -39,47 +39,60 @@
     padding: 0 10px;
   }
 
-  .btn-vendas {
+  .btn-consultar {
     background: #1e5aa8;
     border: 1px solid #1e5aa8;
   }
 
-  .btn-vendas:hover {
+  .btn-consultar:hover {
     background: #184a8c;
-    border-color: #184a8c;
   }
 
-  .btn-metas {
+  .btn-informar {
     background: #2e9b57;
     border: 1px solid #2e9b57;
   }
 
-  .btn-metas:hover {
+  .btn-informar:hover {
     background: #25834a;
-    border-color: #25834a;
+  }
+
+  .flash-msg {
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-weight: 600;
+    background: #fdeaea;
+    color: #9f2f2f;
+    border: 1px solid #efc2c2;
+    max-width: 720px;
   }
 </style>
 
-<div class="pagina-titulo">Performance de Gerentes</div>
+<div class="pagina-titulo">Metas de Vendas</div>
 
 <div class="empresa">
   <strong>Empresa:</strong> {{ nome_empresa }}
 </div>
 
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="flash-msg">{{ message }}</div>
+  {% endfor %}
+{% endwith %}
+
 <div class="menu-botoes">
-
-  {% if pode_vendas %}
-    <a href="{{ url_for('performances.gerentes_vendas') }}" class="btn-vendas">
-      Vendas
+  {% if pode_consultar %}
+    <a href="{{ url_for('performances.consultar_metas') }}" class="btn-consultar">
+      Consultar Metas
     </a>
   {% endif %}
 
-  {% if pode_metas %}
-    <a href="{{ url_for('performances.menu_metas') }}" class="btn-metas">
-      Metas
+  {% if pode_informar %}
+    <a href="{{ url_for('performances.informar_metas') }}" class="btn-informar">
+      Informar Metas
     </a>
   {% endif %}
-
 </div>
 
 {% endblock %}

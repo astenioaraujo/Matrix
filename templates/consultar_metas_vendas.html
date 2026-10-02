@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  body {
+    overflow-x: auto;
+  }
+
+  .card {
+    overflow-x: visible;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .filtro {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    font-size: 15px;
+    flex-wrap: wrap;
+  }
+
+  .filtro label {
+    font-weight: 700;
+  }
+
+  .filtro select {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #c7c7c7;
+    background: #fff;
+    font-size: 15px;
+  }
+
+  .btn-topo {
+    display: inline-block;
+    padding: 9px 14px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    border: 1px solid #2e9b57;
+    background: #2e9b57;
+    color: #fff;
+    margin-left: 10px;
+  }
+
+  .btn-topo:hover {
+    background: #25834a;
+  }
+
+  .bloco-titulo {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    color: #b02a37;
+  }
+
+  .tabela-wrap {
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    background: #fff;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: max-content;
+    min-width: max-content;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #dddddd;
+    padding: 7px 10px;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  th {
+    background: #dbe8f4;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .col-mes {
+    width: 110px;
+    min-width: 110px;
+    max-width: 110px;
+  }
+
+  .col-filial {
+    width: 120px;
+    min-width: 120px;
+    max-width: 120px;
+  }
+
+  .col-total {
+    width: 140px;
+    min-width: 140px;
+    max-width: 140px;
+    font-weight: 700;
+    background: #faf7dd;
+    border-left: 3px solid #2c2c2c;
+  }
+
+  th:first-child,
+  td:first-child {
+    text-align: left;
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: #fff;
+  }
+
+  thead th:first-child {
+    background: #dbe8f4;
+    z-index: 3;
+  }
+
+  tbody tr:nth-child(even) {
+    background: #fafafa;
+  }
+
+  td.col-mes a {
+    color: #1f3c88;
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  td.col-mes a:hover {
+    text-decoration: underline;
+  }
+
+  .linha-total td {
+    background: #eef3f8;
+    font-weight: 700;
+    border-top: 4px solid #2c2c2c;
+  }
+
+  .numero-filial {
+    font-size: 11px;
+    color: #1f6fb2;
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  .nome-filial {
+    font-size: 12px;
+    color: #333;
+    display: block;
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  .legenda {
+    font-size: 13px;
+    color: #666;
+    margin-top: 10px;
+  }
+</style>
+
+<div class="pagina-titulo">Consultar Metas de Vendas</div>
+<div class="pagina-subtitulo"><strong>Empresa:</strong> {{ nome_empresa }}</div>
+
+<form class="filtro" method="get">
+  <label for="ano">Ano:</label>
+  <select id="ano" name="ano" onchange="this.form.submit()">
+    {% for a in anos %}
+      <option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>
+    {% endfor %}
+  </select>
+  <noscript><button type="submit">Aplicar</button></noscript>
+  {% if pode_informar %}
+    <a class="btn-topo" href="{{ url_for('performances.informar_metas', ano=ano) }}">Informar Metas</a>
+  {% endif %}
+</form>
+
+<div class="bloco-titulo">Metas de quantidade (litros) — {{ ano }}</div>
+
+<div class="tabela-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th class="col-mes">MÊS</th>
+        {% for filial in filiais %}
+          <th class="col-filial">
+            <span class="numero-filial">{{ filial.cod_filial }}</span>
+            <span class="nome-filial">{{ filial.nome_filial }}</span>
+          </th>
+        {% endfor %}
+        <th class="col-total">TOTAL</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for linha in linhas %}
+        <tr>
+          <td class="col-mes">
+            {% if pode_informar %}
+              <a href="{{ url_for('performances.informar_metas', ano=ano, mes=linha.mes) }}"
+                 title="Informar / editar as metas deste mês">{{ linha.periodo }}</a>
+            {% else %}
+              {{ linha.periodo }}
+            {% endif %}
+          </td>
+          {% for valor in linha.valores %}
+            <td class="col-filial" style="background: {{ linha.cores[loop.index0] }};">
+              {% if valor %}{{ formatar_numero_br(valor, 0) }}{% endif %}
+            </td>
+          {% endfor %}
+          <td class="col-total" style="background: {{ linha.total_cor }};">
+            {% if linha.total %}{{ formatar_numero_br(linha.total, 0) }}{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+
+    <tfoot>
+      <tr class="linha-total">
+        <td class="col-mes">TOTAL</td>
+        {% for valor in linha_total.valores %}
+          <td class="col-filial">{% if valor %}{{ formatar_numero_br(valor, 0) }}{% endif %}</td>
+        {% endfor %}
+        <td class="col-total">{% if linha_total.total %}{{ formatar_numero_br(linha_total.total, 0) }}{% endif %}</td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+
+<div class="legenda">
+  Mapa de calor coluna por coluna: cada posto é comparado com ele mesmo ao longo do ano.
+  {% if pode_informar %}Clique no mês para informar ou editar as metas.{% endif %}
+</div>
+
+{% endblock %}

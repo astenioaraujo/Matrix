@@ -184,6 +184,86 @@
     line-height: 1.2;
   }
 
+  .col-meta {
+    width: 130px;
+    min-width: 130px;
+    max-width: 130px;
+    background: #dcecfb;
+  }
+
+  .col-pct {
+    width: 110px;
+    min-width: 110px;
+    max-width: 110px;
+    font-weight: 700;
+  }
+
+  /* A célula do % é pintada pela faixa atingida. */
+  .pct-supermeta { background: #1e7b3a !important; color: #fff; }
+  .pct-verde { background: #a9dc9a !important; color: #14532d; }
+  .pct-amarelo { background: #ffe680 !important; color: #6b5200; }
+  .pct-vermelho { background: #f4a3a3 !important; color: #7f1d1d; }
+
+  .amostra {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    vertical-align: middle;
+    margin-right: 4px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.15);
+  }
+
+  /* Mesmas setas do matricial. */
+  .btn-posto-nav {
+    width: 38px;
+    height: 38px;
+    border: 1px solid #c7c7c7;
+    border-radius: 9px;
+    background: #c8e6c9;
+    color: #111;
+    font-size: 18px;
+    font-weight: 900;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+  }
+
+  .btn-posto-nav:hover {
+    background: #a5d6a7;
+  }
+
+  .btn-posto-nav.desabilitado {
+    opacity: .35;
+    cursor: default;
+  }
+
+  .btn-posto-nav.desabilitado:hover {
+    background: #c8e6c9;
+  }
+
+  .tag-proj {
+    font-size: 10px;
+    font-weight: 700;
+    color: #fff;
+    background: #1f6fb2;
+    border-radius: 4px;
+    padding: 1px 4px;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+
+  .legenda-meta {
+    font-size: 13px;
+    color: #555;
+    margin-top: 10px;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
   @media (max-width: 700px) {
     .pagina-titulo { font-size: 24px; }
     .pagina-subtitulo { font-size: 16px; }
@@ -211,8 +291,12 @@
 {% if filiais_disponiveis|length > 1 %}
   <form class="filtro" method="get">
     <label for="cod_filial">Posto:</label>
+    {% if filial_anterior %}
+      <a class="btn-posto-nav" href="{{ url_for('performances.gerentes_vendas', cod_filial=filial_anterior) }}" title="Posto anterior">←</a>
+    {% else %}
+      <span class="btn-posto-nav desabilitado">←</span>
+    {% endif %}
     <select id="cod_filial" name="cod_filial" onchange="this.form.submit()">
-      <option value="" {% if not cod_filial_sel %}selected{% endif %}>Todos</option>
       {% for filial in filiais_disponiveis %}
         <option value="{{ filial.cod_filial }}"
                 {% if cod_filial_sel == filial.cod_filial|string %}selected{% endif %}>
@@ -220,6 +304,11 @@
         </option>
       {% endfor %}
     </select>
+    {% if filial_proxima %}
+      <a class="btn-posto-nav" href="{{ url_for('performances.gerentes_vendas', cod_filial=filial_proxima) }}" title="Próximo posto">→</a>
+    {% else %}
+      <span class="btn-posto-nav desabilitado">→</span>
+    {% endif %}
     <noscript><button type="submit">Aplicar</button></noscript>
   </form>
 {% endif %}
@@ -247,6 +336,8 @@
           <th class="grupo {% if mostrar_colunas_posto %}inicio-comb{% endif %}" colspan="{{ grade.combustiveis|length }}">QUANTIDADE POR COMBUSTÍVEL</th>
         {% endif %}
         <th class="col-total" rowspan="2">TOTAL</th>
+        <th class="col-meta" rowspan="2">META</th>
+        <th class="col-pct" rowspan="2">% ATINGIDO</th>
       </tr>
       <tr>
         {% if mostrar_colunas_posto %}
@@ -267,7 +358,10 @@
       {% for linha in grade.linhas %}
         {% set mudou_ano = loop.index0 > 0 and grade.linhas[loop.index0 - 1].ano != linha.ano %}
         <tr class="{% if mudou_ano %}linha-novo-ano{% endif %}">
-          <td class="col-mes">{{ linha.periodo }}</td>
+          <td class="col-mes">
+            {{ linha.periodo }}
+            {% if projecao and linha.ano == projecao.ano and linha.mes == projecao.mes %}<span class="tag-proj" title="Projetado: acumulado de {{ projecao.dia_base }} dia(s) ÷ {{ projecao.dia_base }} × {{ projecao.dias_mes }}">proj.</span>{% endif %}
+          </td>
 
           {% if mostrar_colunas_posto %}
             {% for valor in linha.valores_filiais %}
@@ -277,14 +371,25 @@
             {% endfor %}
           {% endif %}
 
+          {# Clique abre as vendas dia a dia do mês: no combustível, só ele; no
+             TOTAL, todos. A tela é sempre de um posto (filiais[0]). #}
           {% for valor in linha.valores_comb %}
-            <td class="col-comb {% if loop.first and mostrar_colunas_posto %}inicio-comb{% endif %}" style="background: {{ linha.valores_comb_cores[loop.index0] }};">
+            <td class="col-comb {% if loop.first and mostrar_colunas_posto %}inicio-comb{% endif %} {% if valor %}clicavel{% endif %}" style="background: {{ linha.valores_comb_cores[loop.index0] }};"
+                {% if valor %}title="Ver {{ grade.combustiveis[loop.index0] }} dia a dia"
+                onclick='abrirDetalhe({ano: {{ linha.ano }}, mes: {{ linha.mes }}, filial: {{ filiais[0].cod_filial }}, produto: {{ grade.combustiveis[loop.index0]|tojson }}})'{% endif %}>
               {% if valor %}{{ formatar_numero_br(valor) }}{% endif %}
             </td>
           {% endfor %}
 
-          <td class="col-total" style="background: {{ linha.total_cor }};">
+          <td class="col-total {% if linha.total %}clicavel{% endif %}" style="background: {{ linha.total_cor }};"
+              {% if linha.total %}title="Ver as vendas do mês dia a dia"
+              onclick="abrirDetalhe({ano: {{ linha.ano }}, mes: {{ linha.mes }}, filial: {{ filiais[0].cod_filial }}})"{% endif %}>
             {% if linha.total %}{{ formatar_numero_br(linha.total) }}{% endif %}
+          </td>
+
+          <td class="col-meta">{% if linha.meta %}{{ formatar_numero_br(linha.meta, 0) }}{% endif %}</td>
+          <td class="col-pct {% if linha.status_meta %}pct-{{ linha.status_meta }}{% endif %}">
+            {% if linha.pct_meta is not none %}{{ formatar_numero_br(linha.pct_meta, 1) }}%{% endif %}
           </td>
         </tr>
       {% endfor %}
@@ -304,6 +409,7 @@
         <td class="col-total">
           {% if grade.linha_total.total %}{{ formatar_numero_br(grade.linha_total.total) }}{% endif %}
         </td>
+        <td class="col-meta"></td><td class="col-pct"></td>
       </tr>
 
       <tr class="linha-med">
@@ -319,11 +425,25 @@
         <td class="col-total">
           {% if grade.linha_med_12m.total %}{{ formatar_numero_br(grade.linha_med_12m.total) }}{% endif %}
         </td>
+        <td class="col-meta"></td><td class="col-pct"></td>
       </tr>
     </tfoot>
   </table>
 </div>
 
+<div class="legenda-meta">
+  <span>% ATINGIDO = TOTAL ÷ META.{% if projecao %} O mês corrente (<span class="tag-proj">proj.</span>) é projetado como em Consultar Vendas Sintéticas: {{ projecao.dia_base }} dia(s) com venda de {{ projecao.dias_mes }}.{% endif %}</span>
+  <span><span class="amostra pct-supermeta"></span> supermeta (120% ou mais)</span>
+  <span><span class="amostra pct-verde"></span> de 100% a 120%</span>
+  <span><span class="amostra pct-amarelo"></span> de 90% a 100%</span>
+  <span><span class="amostra pct-vermelho"></span> abaixo de 90%</span>
+</div>
+
+{% endif %}
+
+{% if filiais %}
+  {% set vpd_url = url_for('performances.gerentes_vendas_detalhe') %}
+  {% include "components/detalhe_vendas_diarias.html" %}
 {% endif %}
 
 {% endblock %}

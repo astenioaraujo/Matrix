@@ -512,6 +512,23 @@ Sem filtro de Status — todas as linhas entram. A projeção do mês é a médi
 
 ---
 
+# Módulo Performances
+
+## Metas de Vendas (Performance de Gerentes → Metas)
+
+Meta de venda em **quantidade (litros)** por posto e mês: `vendas_metas` (`migrations/criar_metas_vendas.sql`, única por empresa/filial/ano/mês). Rotas em `routes/performances_routes.py`, seção "METAS DE VENDAS". Permissões `PERFORMANCES/METAS_CONSULTAR` 1190 e `METAS_INFORMAR` 1195 — nenhuma concedida; o submenu (`/performances/gerentes/metas`) abre com qualquer uma das duas.
+
+- **Consultar Metas** (`consultar_metas_vendas.html`): filtro de ano, linhas = 12 meses, colunas = postos + TOTAL, mesmo desenho do bloco de quantidades do painel de Vendas. Mapa de calor **coluna por coluna** (cada posto contra ele mesmo no ano), TOTAL com escala própria. Clicar no mês abre o Informar daquele mês.
+- **Informar Metas** (`informar_metas_vendas.html`): mês/ano + todos os postos numa coluna, com a meta do mês anterior e a venda do mesmo mês no ano anterior como referência. Grava o mês inteiro num POST só (sem gravação por tecla). Campo vazio ou zero **apaga** a meta do posto. Valida tudo antes de gravar — um valor inválido não grava nada.
+- **Armadilha (01/10/2026)**: sem `ano`/`mes` no corpo o padrão era o mês corrente, e um POST vazio apagou as 23 metas de outubro. Agora o POST sem mês/ano é recusado e **só mexe no posto cujo campo veio no formulário** (`campo not in request.form` → fica como está).
+- **Na tela de Vendas do gerente** (`gerentes_vendas`): colunas META e % ATINGIDO, **sempre visíveis**, e a célula do % é pintada pela faixa (`status_meta`): verde-escuro = **supermeta** (≥ 120%, `META_SUPERMETA`), verde ≥ 100%, amarelo de 90% a 100%, vermelho < 90%. % = venda ÷ meta, com o mês corrente **projetado**. **A venda sai de `_agregar_diarias_sintetico`**, a mesma função de Vendas → Consultar Vendas Sintéticas (`/vendas/painel-diarias`) — não de `vendas_unidades_sintetico`, que depende da importação do painel: parada desde 04/09/2026, deixava outubro vazio e setembro com a projeção de 3 dias (Bonito I: 110.038 contra 80.168 real). As colunas de combustível usam o mesmo `FILTRO_SQL_COMBUSTIVEL` e o mesmo fator no mês corrente, para fecharem com o TOTAL; o mês projetado leva o selo `proj.`. O mês corrente com meta entra como linha **antes** da primeira importação (mês futuro não); sem venda, o % fica em branco em vez de um 0% vermelho. A tela é sempre de **um posto só** (a opção "Todos" saiu em 01/10/2026: sem soma, não fazia sentido): quem tem mais de um escolhe, e sem escolha abre o primeiro. `montar_grade_gerente` ainda aceita vários postos — soma as metas e usa só a venda dos que têm meta. Rodapé (TOTAL/MED 12M) fica sem meta: somaria meses sem meta contra meses com meta.
+- **Setas ← →** trocam de posto (vizinhos na lista de acesso do usuário, sem dar a volta); só aparecem para quem enxerga mais de um posto.
+- **Detalhamento ao clicar** (`GET /performances/gerentes/vendas/detalhe`): TOTAL do mês → vendas dia a dia de todos os combustíveis do posto; célula de combustível → dia a dia só daquele combustível. Reaproveita `_detalhe_mes_filial` de `vendas_routes.py` (parâmetros `normalizar` e `produto`, que juntam "GASOLINA COMUM FROTA" e "...FROTA." como a tela faz) — mesma grade, MÉDIA/DIA e projeção da janela de Consultar Vendas Sintéticas. O endpoint confere o posto contra `cod_filiais_gerente` (403), não só a tela.
+- **A janela é componente compartilhado**, `templates/components/detalhe_vendas_diarias.html` (CSS + markup + JS de `abrirDetalhe`), usado por `vendas_painel_diarias.html` e `gerentes_vendas.html`. Cada tela define `vpd_url` (o endpoint) antes do `{% include %}`.
+- **Carga de outubro/2026 (EMP010)**: 23 postos, 2.482.000 L, da planilha `Metas_Rede_Lucena_Outubro_2026.xlsx`. Os postos foram casados **pela ordem**, que é a do cadastro; três nomes vieram diferentes: "Zona Grande" = 4 Serra Grande, "Itaporimim" = 22 Ipaumirim, "Campina Grande" = 23 Catingueira (este último a confirmar).
+
+---
+
 # Módulo Logística
 
 Montagem de carregamentos: o supervisor liga para as distribuidoras, faz o pedido e monta a carga. Botão 🚛 no menu principal, logo depois de Vendas. `routes/logistica_routes.py` (prefixo `/logistica`), templates em `templates/logistica/`, migration `migrations/criar_modulo_logistica.sql`. Permissões (`LOGISTICA`): `MENU` 2000, `CARREGAMENTOS` 2010, `CONFIGURACOES` 2020 — nenhuma concedida, só bypass de superusuário.

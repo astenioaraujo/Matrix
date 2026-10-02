@@ -1,0 +1,323 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .filtro {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+    font-size: 15px;
+    flex-wrap: wrap;
+  }
+
+  .filtro label {
+    font-weight: 700;
+  }
+
+  .filtro select {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #c7c7c7;
+    background: #fff;
+    font-size: 15px;
+  }
+
+  .situacao {
+    font-size: 14px;
+    color: #555;
+    margin-bottom: 14px;
+  }
+
+  .flash-msg {
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-weight: 600;
+    max-width: 760px;
+  }
+
+  .flash-success {
+    background: #e6f4ea;
+    color: #1e6b34;
+    border: 1px solid #b7dfc2;
+  }
+
+  .flash-error {
+    background: #fdeaea;
+    color: #9f2f2f;
+    border: 1px solid #efc2c2;
+  }
+
+  .tabela-wrap {
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    background: #fff;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  table {
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #dddddd;
+    padding: 6px 10px;
+    white-space: nowrap;
+  }
+
+  th {
+    background: #dbe8f4;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  td.num {
+    text-align: right;
+    color: #666;
+    width: 130px;
+  }
+
+  td.col-meta {
+    width: 150px;
+    padding: 0;
+    background: #fffdf2;
+  }
+
+  /* Célula com cara de planilha: o campo não tem borda, só se revela no foco. */
+  td.col-meta input {
+    width: 100%;
+    box-sizing: border-box;
+    border: none;
+    background: transparent;
+    padding: 6px 10px;
+    font-size: 14px;
+    text-align: right;
+    font-weight: 600;
+  }
+
+  td.col-meta input:focus {
+    outline: none;
+    background: #fff7c2;
+    box-shadow: inset 0 0 0 2px #e0b400;
+  }
+
+  tbody tr:nth-child(even) td:not(.col-meta) {
+    background: #fafafa;
+  }
+
+  .numero-filial {
+    color: #1f6fb2;
+    font-size: 12px;
+    margin-right: 6px;
+  }
+
+  .linha-total td {
+    background: #eef3f8;
+    font-weight: 700;
+    border-top: 3px solid #2c2c2c;
+    text-align: right;
+  }
+
+  .linha-total td:first-child {
+    text-align: left;
+  }
+
+  .acoes {
+    margin-top: 18px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .btn-acao {
+    display: inline-block;
+    padding: 10px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    border: 1px solid #c7c7c7;
+    background: #f7f7f7;
+    color: #1f3c88;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .btn-salvar {
+    background: #2e9b57;
+    color: #fff;
+    border-color: #2e9b57;
+  }
+
+  .btn-salvar:hover {
+    background: #25834a;
+  }
+
+  .obs {
+    font-size: 13px;
+    color: #666;
+    margin-top: 10px;
+    max-width: 760px;
+  }
+</style>
+
+<div class="pagina-titulo">Informar Metas de Vendas</div>
+<div class="pagina-subtitulo"><strong>Empresa:</strong> {{ nome_empresa }}</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endwith %}
+
+<form class="filtro" method="get">
+  <label for="mes">Mês:</label>
+  <select id="mes" name="mes" onchange="this.form.submit()">
+    {% for nome in nomes_meses %}
+      <option value="{{ loop.index }}" {% if loop.index == mes %}selected{% endif %}>{{ nome }}</option>
+    {% endfor %}
+  </select>
+  <label for="ano">Ano:</label>
+  <select id="ano" name="ano" onchange="this.form.submit()">
+    {% for a in anos %}
+      <option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>
+    {% endfor %}
+  </select>
+  <noscript><button type="submit">Aplicar</button></noscript>
+</form>
+
+<div class="situacao">
+  {% if ja_informado %}
+    Metas de <strong>{{ nomes_meses[mes - 1] }}/{{ ano }}</strong> já informadas — altere o que precisar e salve.
+  {% else %}
+    Nenhuma meta informada para <strong>{{ nomes_meses[mes - 1] }}/{{ ano }}</strong>.
+  {% endif %}
+</div>
+
+<form method="post" id="form-metas">
+  <input type="hidden" name="ano" value="{{ ano }}">
+  <input type="hidden" name="mes" value="{{ mes }}">
+
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>POSTO</th>
+          <th>META (litros)</th>
+          <th>META {{ rotulo_mes_anterior }}</th>
+          <th>VENDA {{ rotulo_ano_anterior }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for linha in linhas %}
+          <tr>
+            <td><span class="numero-filial">{{ linha.cod_filial }}</span>{{ linha.nome_filial }}</td>
+            <td class="col-meta">
+              <input type="text" inputmode="decimal" autocomplete="off"
+                     name="meta_{{ linha.cod_filial }}" value="{{ linha.valor }}"
+                     data-anterior="{{ linha.meta_anterior or '' }}">
+            </td>
+            <td class="num">{% if linha.meta_anterior %}{{ formatar_numero_br(linha.meta_anterior, 0) }}{% endif %}</td>
+            <td class="num">{% if linha.venda_ano_anterior %}{{ formatar_numero_br(linha.venda_ano_anterior, 0) }}{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="linha-total">
+          <td>TOTAL</td>
+          <td id="total-meta"></td>
+          {% set ns = namespace(meta_ant=0, venda_ant=0) %}
+          {% for linha in linhas %}
+            {% set ns.meta_ant = ns.meta_ant + (linha.meta_anterior or 0) %}
+            {% set ns.venda_ant = ns.venda_ant + (linha.venda_ano_anterior or 0) %}
+          {% endfor %}
+          <td>{% if ns.meta_ant %}{{ formatar_numero_br(ns.meta_ant, 0) }}{% endif %}</td>
+          <td>{% if ns.venda_ant %}{{ formatar_numero_br(ns.venda_ant, 0) }}{% endif %}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <div class="acoes">
+    <button type="submit" class="btn-acao btn-salvar">Salvar metas</button>
+    <button type="button" class="btn-acao" id="btn-copiar">Copiar metas de {{ rotulo_mes_anterior }} nos campos vazios</button>
+    <a class="btn-acao" href="{{ url_for('performances.consultar_metas', ano=ano) }}">Consultar Metas</a>
+  </div>
+
+  <div class="obs">
+    Campo vazio (ou zero) deixa o posto sem meta no mês. Aceita “80000”, “80.000” ou “80.000,50”.
+  </div>
+</form>
+
+<script>
+  (function () {
+    const campos = Array.from(document.querySelectorAll('td.col-meta input'));
+    const totalEl = document.getElementById('total-meta');
+
+    function paraNumero(texto) {
+      let t = String(texto || '').replace(/\s/g, '');
+      if (!t) return 0;
+      if (t.includes(',')) {
+        t = t.replace(/\./g, '').replace(/,/g, '.');
+      } else if (/\.\d{3}$/.test(t)) {
+        t = t.replace(/\./g, '');
+      }
+      const n = parseFloat(t);
+      return isNaN(n) ? 0 : n;
+    }
+
+    function formatar(n) {
+      return n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+
+    function recalcular() {
+      const total = campos.reduce((s, c) => s + paraNumero(c.value), 0);
+      totalEl.textContent = total ? formatar(total) : '';
+    }
+
+    campos.forEach((campo, i) => {
+      campo.addEventListener('input', recalcular);
+      // Formata só ao sair do campo — nunca no meio da digitação.
+      campo.addEventListener('blur', () => {
+        const n = paraNumero(campo.value);
+        if (campo.value.trim() && n) campo.value = formatar(n);
+      });
+      // Enter desce para o próximo posto, como numa planilha.
+      campo.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const prox = campos[i + 1];
+          if (prox) { prox.focus(); prox.select(); }
+        }
+      });
+    });
+
+    document.getElementById('btn-copiar').addEventListener('click', () => {
+      campos.forEach((campo) => {
+        const anterior = parseFloat(campo.dataset.anterior || '0');
+        if (!campo.value.trim() && anterior) campo.value = formatar(anterior);
+      });
+      recalcular();
+    });
+
+    recalcular();
+  })();
+</script>
+
+{% endblock %}

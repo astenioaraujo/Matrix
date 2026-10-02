@@ -3816,8 +3816,14 @@ def _cabecalho_projecao(cur, cod_empresa, ano, mes, acum, metrica, acum_colunas)
     }
 
 
-def _detalhe_mes_filial(cur, cod_empresa, metrica, ano, mes, cod_filial, nomes):
-    """Produtos × dias de um posto no mês."""
+def _detalhe_mes_filial(cur, cod_empresa, metrica, ano, mes, cod_filial, nomes,
+                        normalizar=None, produto=None):
+    """Produtos × dias de um posto no mês.
+
+    `normalizar` junta as variações de nome do mesmo produto (a Performance de
+    Gerentes agrupa assim as colunas); `produto`, já normalizado, restringe a
+    grade a um combustível só.
+    """
     cur.execute(f"""
         SELECT
             descricao,
@@ -3836,15 +3842,23 @@ def _detalhe_mes_filial(cur, cod_empresa, metrica, ano, mes, cod_filial, nomes):
     """, (cod_empresa, cod_filial, ano, mes))
     linhas = cur.fetchall()
 
+    if normalizar:
+        for r in linhas:
+            r["descricao"] = normalizar(r["descricao"])
+    if produto:
+        linhas = [r for r in linhas if r["descricao"] == produto]
+
     dias = sorted({int(r["dia"]) for r in linhas})
     produtos = sorted({r["descricao"] for r in linhas})
 
-    celulas = {
-        (int(r["dia"]), r["descricao"]): (
-            float(r["qtd"] or 0), float(r["valor"] or 0), float(r["mb"] or 0)
+    # Soma, não atribui: com `normalizar`, duas descrições viram a mesma célula.
+    celulas = {}
+    for r in linhas:
+        chave = (int(r["dia"]), r["descricao"])
+        q, v, m = celulas.get(chave, (0.0, 0.0, 0.0))
+        celulas[chave] = (
+            q + float(r["qtd"] or 0), v + float(r["valor"] or 0), m + float(r["mb"] or 0)
         )
-        for r in linhas
-    }
 
     corpo, total, acum, acum_colunas = _montar_grade_detalhe(metrica, dias, produtos, celulas)
 
@@ -3854,7 +3868,8 @@ def _detalhe_mes_filial(cur, cod_empresa, metrica, ano, mes, cod_filial, nomes):
     return {
         "titulo": f"{METRICAS_PAINEL[metrica]['rotulo']} — "
                   f"{cod_filial} {nomes.get(cod_filial, '')}",
-        "subtitulo": f"{obter_nome_mes_abrev(mes)}/{ano} · por dia e combustível",
+        "subtitulo": f"{obter_nome_mes_abrev(mes)}/{ano} · "
+                     + (f"{produto} por dia" if produto else "por dia e combustível"),
         "rotulo_coluna": "DIA",
         "colunas": produtos,
         "linhas": corpo,

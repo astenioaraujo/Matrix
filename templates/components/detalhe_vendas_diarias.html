@@ -1,0 +1,303 @@
+{#
+  Janela de detalhamento das vendas diárias (CSS + markup + JS), compartilhada
+  por Vendas → Consultar Vendas Sintéticas e Performance de Gerentes → Vendas.
+  Antes do include, a tela define `vpd_url`: o endpoint que devolve a grade
+  ({titulo, subtitulo, colunas, linhas, linha_total, media, projecao, casas}).
+  A tela chama abrirDetalhe({...parâmetros do endpoint...}).
+#}
+<style>
+  /* Tudo o que abre detalhe se anuncia no hover, como no matricial. */
+  .clicavel { cursor: pointer; }
+  .clicavel:hover { outline: 2px solid #26418f; outline-offset: -2px; }
+  .resumo-topo.clicavel:hover, .resumo-linha.clicavel:hover { outline-offset: 0; }
+
+  #modal-vpd {
+    display: none; position: fixed; inset: 0; z-index: 9000;
+    background: rgba(0,0,0,.45); align-items: center; justify-content: center;
+  }
+  #modal-vpd.aberto { display: flex; }
+  .vpd-caixa {
+    background: #fff; border-radius: 14px; width: 98vw; height: 94vh;
+    display: flex; flex-direction: column; box-shadow: 0 18px 50px rgba(0,0,0,.3);
+  }
+  .vpd-topo {
+    padding: 14px 20px; border-bottom: 1px solid #e3e3e3;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+  }
+  .vpd-titulo { font-size: 18px; font-weight: 800; }
+  .vpd-sub { font-size: 13px; color: #666; margin-top: 4px; }
+  .vpd-fechar {
+    border: none; background: transparent; font-size: 26px; cursor: pointer;
+    line-height: 1; color: #666;
+  }
+  /* Sem padding lateral: a coluna congelada gruda em left:0 do container de
+     rolagem, e o padding deixaria uma faixa da coluna vizinha por baixo dela. */
+  .vpd-corpo { flex: 1; overflow: auto; padding: 12px 0 20px; }
+  /* Largura fixa em todas as colunas: sem isso cada coluna se ajusta ao
+     título ("DIESEL S10" estreita, "GASOLINA COMUM" larga) e a grade perde o
+     alinhamento de leitura que o painel tem. */
+  .vpd-grade { border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+  .vpd-grade th, .vpd-grade td { width: 96px; }
+  .vpd-grade thead th { overflow: hidden; text-overflow: ellipsis; }
+  .vpd-grade th, .vpd-grade td {
+    border: 1px solid #ddd; padding: 5px 8px; white-space: nowrap;
+  }
+  .vpd-grade thead th {
+    background: #f2f2f2; position: sticky; top: 0; z-index: 2; text-align: center;
+    font-size: 11px; letter-spacing: -.2px;
+  }
+  /* z-index explícito nas colunas congeladas: sem ele as células comuns, que
+     vêm depois no DOM, passam por cima delas ao rolar. */
+  .vpd-grade td.rot, .vpd-grade th.rot {
+    position: sticky; left: 0; background: #fff; text-align: left; z-index: 2;
+    width: 130px; overflow: hidden; text-overflow: ellipsis;
+  }
+  .vpd-grade thead th.rot { z-index: 4; background: #f2f2f2; }
+  .vpd-grade td.tot, .vpd-grade th.tot {
+    position: sticky; left: 130px; background: #fff; z-index: 2;
+    width: 118px; border-right: 3px solid #8f8f8f;
+    font-weight: 800; text-align: right;
+  }
+  .vpd-grade thead th.tot { z-index: 4; background: #f2f2f2; }
+  .vpd-fil {
+    display: block; font-size: 10px; font-weight: 400; color: #666;
+    margin-top: 2px; overflow: hidden; text-overflow: ellipsis;
+  }
+  .vpd-grade td.n {
+    text-align: right; font-family: Consolas, Menlo, monospace;
+  }
+  .vpd-grade tr.total td {
+    font-weight: 800; background: #f3f3f3 !important;
+    border-top: 2px solid #9a9a9a;
+  }
+  /* A média liga o realizado à projeção: total ÷ períodos, e a projeção é a
+     média vezes os dias do mês. */
+  .vpd-grade tr.media td {
+    font-weight: 700; background: #eef2fb !important;
+    border-top: 1px solid #b9c6e2;
+  }
+  .vpd-grade tr.projecao td {
+    font-weight: 800; background: #fff3cd !important;
+    border-top: 2px solid #d6b656; border-bottom: 2px solid #d6b656;
+  }
+  /* O mês dia a dia tem seis colunas só: ocupa a largura toda. */
+  .vpd-periodo { width: 100%; table-layout: auto; }
+  .vpd-vazio { padding: 24px; color: #666; }
+  .vpd-nota { padding: 8px 20px 0; font-size: 12px; color: #666; }
+</style>
+
+<div id="modal-vpd" onclick="if (event.target === this) fecharDetalhe()">
+  <div class="vpd-caixa">
+    <div class="vpd-topo">
+      <div>
+        <div class="vpd-titulo" id="vpd-titulo">Detalhamento</div>
+        <div class="vpd-sub" id="vpd-sub"></div>
+      </div>
+      <button type="button" class="vpd-fechar" onclick="fecharDetalhe()">&times;</button>
+    </div>
+    <div class="vpd-corpo" id="vpd-corpo"></div>
+  </div>
+</div>
+
+<script>
+  const VPD_URL = "{{ vpd_url }}";
+
+  function vpdNum(v, casas) {
+    if (v === null || v === undefined || v === "") return "";
+    return Number(v).toLocaleString("pt-BR", {
+      minimumFractionDigits: casas, maximumFractionDigits: casas
+    });
+  }
+
+  // Mede o texto na fonte real do cabeçalho: 11px bold para o título e para o
+  // número do posto, 10px normal para o nome discreto embaixo.
+  function vpdLarguraColuna(colunas) {
+    const ctx = document.createElement("canvas").getContext("2d");
+    const fonte = getComputedStyle(document.body).fontFamily;
+    let maior = 0;
+
+    colunas.forEach(c => {
+      const m = /^(\d+) - (.*)$/.exec(c);
+      const partes = m
+        ? [["bold 11px " + fonte, m[1]], ["10px " + fonte, m[2]]]
+        : [["bold 11px " + fonte, c]];
+
+      partes.forEach(([f, texto]) => {
+        ctx.font = f;
+        maior = Math.max(maior, ctx.measureText(texto).width);
+      });
+    });
+
+    return Math.max(96, Math.ceil(maior) + 18);
+  }
+
+  function vpdEscape(t) {
+    return String(t === null || t === undefined ? "" : t)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function fecharDetalhe() {
+    document.getElementById("modal-vpd").classList.remove("aberto");
+  }
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") fecharDetalhe();
+  });
+
+  async function abrirDetalhe(params) {
+    const modal = document.getElementById("modal-vpd");
+    const corpo = document.getElementById("vpd-corpo");
+
+    document.getElementById("vpd-titulo").textContent = "Carregando...";
+    document.getElementById("vpd-sub").textContent = "";
+    corpo.innerHTML = '<div class="vpd-vazio">Buscando os dados...</div>';
+    modal.classList.add("aberto");
+
+    const q = new URLSearchParams();
+    Object.keys(params).forEach(k => q.set(k, params[k]));
+
+    let dados;
+    try {
+      const r = await fetch(VPD_URL + "?" + q.toString());
+      dados = await r.json();
+    } catch (e) {
+      corpo.innerHTML = '<div class="vpd-vazio">Não foi possível carregar.</div>';
+      return;
+    }
+
+    if (dados.erro) {
+      document.getElementById("vpd-titulo").textContent = "Detalhamento";
+      corpo.innerHTML = '<div class="vpd-vazio">' + vpdEscape(dados.erro) + "</div>";
+      return;
+    }
+
+    document.getElementById("vpd-titulo").textContent = dados.titulo || "";
+    document.getElementById("vpd-sub").textContent = dados.subtitulo || "";
+
+    corpo.innerHTML = dados.tipo === "periodo"
+      ? montarPeriodo(dados)
+      : montarGrade(dados);
+  }
+
+  function montarGrade(d) {
+    if (!d.linhas || !d.linhas.length) {
+      return '<div class="vpd-vazio">Sem lançamentos nesse recorte.</div>';
+    }
+
+    const casas = d.casas;
+    // Todas as colunas saem na largura do título mais largo — "GASOLINA COMUM"
+    // decide o passo, e as demais o acompanham. Medido de verdade na fonte do
+    // cabeçalho, senão um nome comprido transborda a célula.
+    const larguraCol = vpdLarguraColuna(d.colunas);
+    const largura = 130 + 118 + larguraCol * d.colunas.length;
+    let h = '<table class="vpd-grade" style="width:' + largura + 'px">';
+    h += "<colgroup><col style=\"width:130px\"><col style=\"width:118px\">";
+    d.colunas.forEach(() => {
+      h += '<col style="width:' + larguraCol + 'px">';
+    });
+    h += "</colgroup><thead><tr>";
+    h += '<th class="rot">' + vpdEscape(d.rotulo_coluna) + "</th>";
+    h += '<th class="tot">TOTAL</th>';
+    // Coluna de posto: o número manda, o nome fica embaixo em corpo menor —
+    // o mesmo desenho do cabeçalho das grades da tela.
+    d.colunas.forEach(c => {
+      const m = /^(\d+) - (.*)$/.exec(c);
+      h += "<th>" + (m
+        ? vpdEscape(m[1]) + '<span class="vpd-fil">' + vpdEscape(m[2]) + "</span>"
+        : vpdEscape(c)) + "</th>";
+    });
+    h += "</tr></thead><tbody>";
+
+    d.linhas.forEach(l => {
+      h += '<tr><td class="rot">' + vpdEscape(l.rotulo) + "</td>";
+      const ct = l.cor_total ? ' style="background:' + l.cor_total + '"' : "";
+      h += '<td class="tot n"' + ct + ">" + vpdNum(l.total, casas) + "</td>";
+      l.valores.forEach((v, i) => {
+        const cor = l.cores[i] ? ' style="background:' + l.cores[i] + '"' : "";
+        h += '<td class="n"' + cor + ">" + vpdNum(v, casas) + "</td>";
+      });
+      h += "</tr>";
+    });
+
+    h += '<tr class="total"><td class="rot">TOTAL</td>';
+    h += '<td class="tot n">' + vpdNum(d.linha_total.total, casas) + "</td>";
+    d.linha_total.valores.forEach(v => {
+      h += '<td class="n">' + vpdNum(v, casas) + "</td>";
+    });
+    h += "</tr>";
+
+    if (d.media) {
+      h += '<tr class="media"><td class="rot">' + d.media.rotulo;
+      h += '<span class="vpd-fil">' + d.media.periodos + " períodos</span></td>";
+      h += '<td class="tot n">' + vpdNum(d.media.valor, casas) + "</td>";
+      d.media.valores.forEach(v => {
+        h += '<td class="n">' + vpdNum(v, casas) + "</td>";
+      });
+      h += "</tr>";
+    }
+
+    if (d.projecao) {
+      const rot = d.projecao.razao
+        ? "PROJEÇÃO (razão)"
+        : "PROJEÇÃO " + d.projecao.dias_mes + " DIAS";
+      h += '<tr class="projecao"><td class="rot">' + rot;
+      h += '<span class="vpd-fil">' + d.projecao.dia_base + " de ";
+      h += d.projecao.dias_mes + " dias lançados</span></td>";
+      h += '<td class="tot n">' + vpdNum(d.projecao.valor, casas) + "</td>";
+      d.projecao.valores.forEach(v => {
+        h += '<td class="n">' + vpdNum(v, casas) + "</td>";
+      });
+      h += "</tr>";
+    }
+
+    return h + "</tbody></table>";
+  }
+
+  function montarPeriodo(d) {
+    if (!d.dias || !d.dias.length) {
+      return '<div class="vpd-vazio">Sem vendas nesse mês.</div>';
+    }
+
+    let h = '<table class="vpd-grade vpd-periodo"><thead><tr>';
+    h += '<th class="rot">DATA</th><th>DIA</th>';
+    h += "<th>QUANTIDADE</th><th>VALORES</th><th>MB</th><th>MUN</th>";
+    h += "</tr></thead><tbody>";
+
+    d.dias.forEach(l => {
+      h += '<tr><td class="rot">' + vpdEscape(l.data) + "</td>";
+      h += "<td>" + vpdEscape(l.dia_semana) + "</td>";
+      ["qtd", "valor", "mb"].forEach(c => {
+        const cor = l[c + "_cor"] ? ' style="background:' + l[c + "_cor"] + '"' : "";
+        h += '<td class="n"' + cor + ">" + vpdNum(l[c], 2) + "</td>";
+      });
+      const cm = l.mun_cor ? ' style="background:' + l.mun_cor + '"' : "";
+      h += '<td class="n"' + cm + ">" + vpdNum(l.mun, 2) + "</td></tr>";
+    });
+
+    h += '<tr class="total"><td class="rot">TOTAL</td><td></td>';
+    h += '<td class="n">' + vpdNum(d.totais.qtd, 2) + "</td>";
+    h += '<td class="n">' + vpdNum(d.totais.valor, 2) + "</td>";
+    h += '<td class="n">' + vpdNum(d.totais.mb, 2) + "</td>";
+    h += '<td class="n">' + vpdNum(d.totais.mun, 2) + "</td></tr>";
+
+    if (d.media) {
+      h += '<tr class="media"><td class="rot">MÉDIA/DIA</td>';
+      h += "<td>" + d.media.periodos + "d</td>";
+      h += '<td class="n">' + vpdNum(d.media.qtd, 2) + "</td>";
+      h += '<td class="n">' + vpdNum(d.media.valor, 2) + "</td>";
+      h += '<td class="n">' + vpdNum(d.media.mb, 2) + "</td>";
+      h += '<td class="n">' + vpdNum(d.media.mun, 2) + "</td></tr>";
+    }
+
+    if (d.projecao) {
+      h += '<tr class="projecao"><td class="rot">PROJEÇÃO</td>';
+      h += "<td>" + d.projecao.dias_mes + "d</td>";
+      h += '<td class="n">' + vpdNum(d.projecao.qtd, 2) + "</td>";
+      h += '<td class="n">' + vpdNum(d.projecao.valor, 2) + "</td>";
+      h += '<td class="n">' + vpdNum(d.projecao.mb, 2) + "</td>";
+      h += '<td class="n">' + vpdNum(d.projecao.mun, 2) + "</td></tr>";
+    }
+
+    return h + "</tbody></table>";
+  }
+</script>

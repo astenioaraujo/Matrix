@@ -11,6 +11,7 @@ from importa_web_postos import (
     Importa_Web_Postos,
     Importa_Web_Postos_Arquivos,
     classificar_lancamentos_importados,
+    propagar_classificacao_detalhamento,
 )
 
 importacoes_bp = Blueprint("importacoes", __name__)
@@ -644,6 +645,12 @@ def transferir_importacoes():
                 f"Transferência negada. Existem {pendentes} lançamento(s) sem grupo e/ou conta."
             )
             return redirect(url_for("importacoes.listar_importacoes"))
+
+        # A classificação feita na tela depois da importação só mexe em
+        # `importacoes`: sem repassá-la aqui, o detalhe iria para
+        # lancamentos_detalhamento com o grupo/conta antigos (ou vazios) e a
+        # célula do matricial, que o procura por (grupo, conta), abriria vazia.
+        propagar_classificacao_detalhamento(conn, cod_empresa)
 
         # O detalhamento analítico só vira definitivo se fechar com a conta
         # sintética. Divergência aqui é erro de leitura do PDF: transferir
