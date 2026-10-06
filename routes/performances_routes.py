@@ -227,12 +227,19 @@ def menu_performance_gerentes():
 
     if tipo_global == "superusuario":
         pode_vendas = True
+        pode_acompanhamento = True
     else:
         pode_vendas = usuario_tem_permissao(
             session["id_usuario"],
             str(session["cod_empresa"]).strip(),
             "PERFORMANCES",
             "GERENTES_VENDAS",
+        )
+        pode_acompanhamento = usuario_tem_permissao(
+            session["id_usuario"],
+            str(session["cod_empresa"]).strip(),
+            "PERFORMANCES",
+            "ACOMPANHAMENTO_METAS",
         )
 
     pode_consultar_metas, pode_informar_metas = permissoes_metas()
@@ -243,6 +250,7 @@ def menu_performance_gerentes():
         url_voltar=url_for("performances.menu_performances"),
         texto_voltar="← Voltar",
         pode_vendas=pode_vendas,
+        pode_acompanhamento=pode_acompanhamento,
         pode_metas=pode_consultar_metas or pode_informar_metas,
     )
 
@@ -918,6 +926,134 @@ def informar_metas():
         rotulo_ano_anterior=f"{obter_nome_mes_abrev(mes)}/{str(ano - 1)[-2:]}",
         linhas=linhas,
         ja_informado=bool(metas_mes),
+        formatar_numero_br=formatar_numero_br,
+    )
+
+
+# ---------------------------------------
+# ACOMPANHAMENTO DE METAS (ranking dos postos no mês)
+# ---------------------------------------
+@performances_bp.route("/gerentes/acompanhamento-metas")
+@permissao_obrigatoria(
+    "PERFORMANCES",
+    "ACOMPANHAMENTO_METAS",
+    redirecionar_para="performances.menu_performance_gerentes",
+)
+def acompanhamento_metas():
+    """Um mês, uma linha por posto: vendido × meta × % atingido, do maior
+    percentual para o menor. A venda é a MESMA da tela de Vendas do gerente
+    (`_agregar_diarias_sintetico`), com o mês corrente projetado — senão o
+    ranking daqui e o % de lá divergiriam."""
+    cod_empresa = str(session["cod_empresa"]).strip()
+    hoje = date.today()
+
+    try:
+        ano = int(request.args.get("ano") or hoje.year)
+        mes = int(request.args.get("mes") or hoje.month)
+        if not 1 <= mes <= 12:
+            raise ValueError
+    except ValueError:
+        ano, mes = hoje.year, hoje.month
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        filiais = cod_filiais_gerente(cur, cod_empresa)
+        cods = [int(f["cod_filial"]) for f in filiais]
+
+        regs_qtd, _, _, projecao = _agregar_diarias_sintetico(cur, cod_empresa)
+
+        cur.execute("""
+            SELECT cod_filial, meta_quantidade
+            FROM vendas_metas
+            WHERE cod_empresa = %s
+              AND ano = %s
+              AND mes = %s
+        """, (cod_empresa, ano, mes))
+        mapa_meta = {int(r["cod_filial"]): float(r["meta_quantidade"]) for r in cur.fetchall()}
+
+        cur.execute("""
+            SELECT DISTINCT ano FROM vendas_metas WHERE cod_empresa = %s
+        """, (cod_empresa,))
+        anos = sorted({int(r["ano"]) for r in cur.fetchall()} | {hoje.year, ano})
+    finally:
+        cur.close()
+        conn.close()
+
+    # A venda que vem da função já é projetada no último mês com venda; o
+    # realizado é a mesma conta desfeita pelo fator.
+    projetado = bool(
+        projecao and projecao["projetado"]
+        and (projecao["ano"], projecao["mes"]) == (ano, mes)
+    )
+    fator = projecao["dias_mes"] / projecao["dia_base"] if projetado else 1.0
+
+    mapa_venda = {
+        int(r["cod_filial"]): float(r["quantidade_vendida"] or 0)
+        for r in regs_qtd
+        if (int(r["ano"]), int(r["mes"])) == (ano, mes)
+    }
+
+    linhas = []
+    for filial in filiais:
+        cod = int(filial["cod_filial"])
+        venda = mapa_venda.get(cod)
+        meta = mapa_meta.get(cod)
+        if not venda and not meta:
+            continue
+        pct = venda / meta * 100 if meta and venda else None
+        linhas.append({
+            "cod_filial": cod,
+            "nome_filial": filial["nome_filial"],
+            "realizado": venda / fator if venda else None,
+            "projecao": venda if projetado else None,
+            "meta": meta,
+            "pct": pct,
+            "falta": meta - venda if meta and (venda or 0) < meta else None,
+            "status_meta": status_meta(pct),
+        })
+
+    # Maior percentual primeiro; posto sem meta (ou sem venda) vai para o fim.
+    linhas.sort(key=lambda l: (l["pct"] is None, -(l["pct"] or 0), l["cod_filial"]))
+
+    # Mapa de calor de 51 faixas no % atingido — os postos entre si.
+    pcts = [l["pct"] for l in linhas if l["pct"] is not None]
+    for posicao, linha in enumerate(linhas, start=1):
+        linha["posicao"] = posicao if linha["pct"] is not None else None
+        linha["pct_cor"] = (
+            cor_excel_51(linha["pct"], min(pcts), max(pcts))
+            if linha["pct"] is not None else ""
+        )
+
+    # Total: só os postos que têm meta, como na tela do gerente — posto sem
+    # meta somando na venda inflaria o atingido.
+    com_meta = [l for l in linhas if l["meta"]]
+    venda_total = sum((l["projecao"] if projetado else l["realizado"]) or 0 for l in com_meta)
+    meta_total = sum(l["meta"] for l in com_meta)
+    pct_total = venda_total / meta_total * 100 if meta_total and venda_total else None
+    total = {
+        "realizado": sum(l["realizado"] or 0 for l in com_meta) or None,
+        "projecao": venda_total if projetado else None,
+        "meta": meta_total or None,
+        "pct": pct_total,
+        "falta": meta_total - venda_total if meta_total and venda_total < meta_total else None,
+        "status_meta": status_meta(pct_total),
+    }
+
+    return render_template(
+        "acompanhamento_metas.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("performances.menu_performance_gerentes"),
+        texto_voltar="← Voltar",
+        ano=ano,
+        mes=mes,
+        anos=anos,
+        nomes_meses=NOMES_MESES[:12],
+        linhas=linhas,
+        total=total,
+        projetado=projetado,
+        projecao=projecao if projetado else None,
+        sem_meta=not mapa_meta,
         formatar_numero_br=formatar_numero_br,
     )
 

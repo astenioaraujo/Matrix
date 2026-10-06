@@ -1289,18 +1289,31 @@ def informar_compras_combustiveis():
                 ))
 
             else:
-                # o índice único de filial não enxerga a compra de coligada
-                # (cod_filial fica nulo, e NULL não conflita); a coligada tem
-                # o seu próprio índice parcial.
-                if id_coligada is not None:
-                    conflito = (
-                        "(cod_empresa, data_compra, id_coligada, cod_produto, id_fornecedor) "
-                        "WHERE id_coligada IS NOT NULL"
-                    )
-                else:
-                    conflito = "(cod_empresa, data_compra, cod_filial, cod_produto, id_fornecedor)"
+                # Pode haver mais de um pedido do mesmo produto para a mesma
+                # ponta no mesmo dia (caminhões e preços diferentes) — cada um
+                # é uma linha própria. Antes um índice único + ON CONFLICT
+                # fazia o segundo sobrescrever o primeiro, calado. Agora o
+                # repetido só entra com a confirmação da tela.
+                cur.execute("""
+                    SELECT COUNT(*) AS qtd
+                    FROM compras_combustiveis
+                    WHERE cod_empresa = %s
+                      AND data_compra = %s
+                      AND cod_produto = %s
+                      AND cod_filial IS NOT DISTINCT FROM %s
+                      AND id_coligada IS NOT DISTINCT FROM %s
+                """, (cod_empresa, data_sel, cod_produto, cod_filial, id_coligada))
+                ja_existem = cur.fetchone()["qtd"]
 
-                cur.execute(f"""
+                if ja_existem and request.form.get("confirmar_repetido") != "1":
+                    flash(
+                        "Já existe pedido deste produto para esta ponta nesta data. "
+                        "Confirme a inclusão de mais um pedido.",
+                        "error",
+                    )
+                    return redirect(url_for("operacoes.informar_compras_combustiveis", data=data_sel))
+
+                cur.execute("""
                     INSERT INTO compras_combustiveis (
                         cod_empresa,
                         data_compra,
@@ -1316,12 +1329,6 @@ def informar_compras_combustiveis():
                         atualizado_em
                     )
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'ABERTA', NOW(), NOW())
-                    ON CONFLICT {conflito}
-                    DO UPDATE SET
-                        quantidade_comprada = EXCLUDED.quantidade_comprada,
-                        preco_unitario = EXCLUDED.preco_unitario,
-                        valor_comprado = EXCLUDED.valor_comprado,
-                        atualizado_em = NOW()
                 """, (
                     cod_empresa,
                     data_sel,

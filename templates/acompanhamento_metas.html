@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .filtro {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    font-size: 15px;
+    flex-wrap: wrap;
+  }
+
+  .filtro label {
+    font-weight: 700;
+  }
+
+  .filtro select {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #c7c7c7;
+    background: #fff;
+    font-size: 15px;
+  }
+
+  .bloco-titulo {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    color: #b02a37;
+  }
+
+  .selo-proj {
+    display: inline-block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #8a5a00;
+    background: #fff3d6;
+    border: 1px solid #f0d08a;
+    border-radius: 6px;
+    padding: 2px 8px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+
+  .tabela-wrap {
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    background: #fff;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  table {
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #dddddd;
+    padding: 7px 12px;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  th {
+    background: #dbe8f4;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .col-pos {
+    text-align: center;
+    width: 50px;
+    color: #555;
+  }
+
+  .col-posto {
+    text-align: left;
+    min-width: 220px;
+  }
+
+  .col-posto .numero-filial {
+    color: #1f6fb2;
+    font-size: 12px;
+    margin-right: 6px;
+  }
+
+  .col-num {
+    min-width: 120px;
+  }
+
+  .col-pct {
+    min-width: 110px;
+    font-weight: 700;
+    border-left: 3px solid #2c2c2c;
+  }
+
+  tbody tr:nth-child(even) {
+    background: #fafafa;
+  }
+
+  .linha-total td {
+    background: #eef3f8;
+    font-weight: 700;
+    border-top: 4px solid #2c2c2c;
+  }
+
+  .sem-meta td {
+    color: #888;
+  }
+
+  .aviso {
+    background: #fff8e1;
+    border: 1px solid #f0d08a;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    font-size: 14px;
+  }
+
+  .colunas {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+    font-size: 14px;
+  }
+
+  .colunas strong {
+    margin-right: 2px;
+  }
+
+  .colunas label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+  }
+
+  .oculta-vendido [data-col="vendido"],
+  .oculta-projecao [data-col="projecao"],
+  .oculta-meta [data-col="meta"],
+  .oculta-falta [data-col="falta"] {
+    display: none;
+  }
+
+  .legenda {
+    font-size: 13px;
+    color: #666;
+    margin-top: 10px;
+    max-width: 900px;
+  }
+</style>
+
+<div class="pagina-titulo">Acompanhamento de Metas</div>
+<div class="pagina-subtitulo"><strong>Empresa:</strong> {{ nome_empresa }}</div>
+
+<form class="filtro" method="get">
+  <label for="mes">Mês:</label>
+  <select id="mes" name="mes" onchange="this.form.submit()">
+    {% for nome in nomes_meses %}
+      <option value="{{ loop.index }}" {% if loop.index == mes %}selected{% endif %}>{{ nome }}</option>
+    {% endfor %}
+  </select>
+
+  <label for="ano">Ano:</label>
+  <select id="ano" name="ano" onchange="this.form.submit()">
+    {% for a in anos %}
+      <option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>
+    {% endfor %}
+  </select>
+  <noscript><button type="submit">Aplicar</button></noscript>
+</form>
+
+<div class="bloco-titulo">
+  {{ nomes_meses[mes - 1] }}/{{ ano }} — litros
+  {% if projetado %}
+    <span class="selo-proj">projetado: {{ projecao.dia_base }} de {{ projecao.dias_mes }} dias com venda</span>
+  {% endif %}
+</div>
+
+{% if sem_meta %}
+  <div class="aviso">Nenhuma meta informada para {{ nomes_meses[mes - 1] }}/{{ ano }}.</div>
+{% endif %}
+
+{% if linhas %}
+{# Os checkboxes ficam FORA da tabela: copiada ou fotografada para mandar ao
+   grupo, ela sai limpa, só com as colunas que ficaram marcadas. #}
+<div class="colunas">
+  <strong>Mostrar:</strong>
+  <label><input type="checkbox" data-alvo="vendido" checked> Vendido</label>
+  {% if projetado %}<label><input type="checkbox" data-alvo="projecao" checked> Projeção</label>{% endif %}
+  <label><input type="checkbox" data-alvo="meta" checked> Meta</label>
+  <label><input type="checkbox" data-alvo="falta" checked> Falta</label>
+</div>
+
+<div class="tabela-wrap" id="tabela-acompanhamento">
+  <table>
+    <thead>
+      <tr>
+        <th class="col-pos">#</th>
+        <th class="col-posto">POSTO</th>
+        <th class="col-num" data-col="vendido">VENDIDO</th>
+        {% if projetado %}<th class="col-num" data-col="projecao">PROJEÇÃO</th>{% endif %}
+        <th class="col-num" data-col="meta">META</th>
+        <th class="col-num" data-col="falta">FALTA</th>
+        <th class="col-pct">% ATINGIDO</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for l in linhas %}
+        <tr class="{% if not l.meta %}sem-meta{% endif %}">
+          <td class="col-pos">{% if l.posicao %}{{ l.posicao }}º{% endif %}</td>
+          <td class="col-posto">
+            <span class="numero-filial">{{ l.cod_filial }}</span>{{ l.nome_filial }}
+          </td>
+          <td class="col-num" data-col="vendido">{% if l.realizado %}{{ formatar_numero_br(l.realizado, 0) }}{% endif %}</td>
+          {% if projetado %}
+            <td class="col-num" data-col="projecao">{% if l.projecao %}{{ formatar_numero_br(l.projecao, 0) }}{% endif %}</td>
+          {% endif %}
+          <td class="col-num" data-col="meta">{% if l.meta %}{{ formatar_numero_br(l.meta, 0) }}{% else %}sem meta{% endif %}</td>
+          <td class="col-num" data-col="falta">{% if l.falta %}{{ formatar_numero_br(l.falta, 0) }}{% endif %}</td>
+          <td class="col-pct" style="background: {{ l.pct_cor }};">
+            {% if l.pct is not none %}{{ formatar_numero_br(l.pct, 1) }}%{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+
+    <tfoot>
+      <tr class="linha-total">
+        <td class="col-pos"></td>
+        <td class="col-posto">TOTAL</td>
+        <td class="col-num" data-col="vendido">{% if total.realizado %}{{ formatar_numero_br(total.realizado, 0) }}{% endif %}</td>
+        {% if projetado %}
+          <td class="col-num" data-col="projecao">{% if total.projecao %}{{ formatar_numero_br(total.projecao, 0) }}{% endif %}</td>
+        {% endif %}
+        <td class="col-num" data-col="meta">{% if total.meta %}{{ formatar_numero_br(total.meta, 0) }}{% endif %}</td>
+        <td class="col-num" data-col="falta">{% if total.falta %}{{ formatar_numero_br(total.falta, 0) }}{% endif %}</td>
+        <td class="col-pct">{% if total.pct is not none %}{{ formatar_numero_br(total.pct, 1) }}%{% endif %}</td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+{% else %}
+  <div class="aviso">Sem venda nem meta neste mês.</div>
+{% endif %}
+
+<div class="legenda">
+  Do maior para o menor percentual. Mapa de calor de 51 faixas no % atingido, os postos comparados entre si.
+  {% if projetado %}O % e a falta usam a <strong>projeção</strong> do mês (vendido ÷ dias com venda × dias do mês), como na tela de Vendas do gerente.{% endif %}
+  O total soma só os postos com meta.
+</div>
+
+<script>
+  (function () {
+    // Só esconde na tela — nada é gravado. A escolha fica lembrada neste
+    // navegador, para quem sempre manda a mesma versão ao grupo.
+    const CHAVE = "acompanhamento_metas_ocultas";
+    const tabela = document.getElementById("tabela-acompanhamento");
+    if (!tabela) return;
+
+    let ocultas = [];
+    try { ocultas = JSON.parse(localStorage.getItem(CHAVE) || "[]"); } catch (e) { ocultas = []; }
+
+    document.querySelectorAll(".colunas input[data-alvo]").forEach(function (cb) {
+      const col = cb.dataset.alvo;
+      cb.checked = !ocultas.includes(col);
+      tabela.classList.toggle("oculta-" + col, !cb.checked);
+
+      cb.addEventListener("change", function () {
+        tabela.classList.toggle("oculta-" + col, !cb.checked);
+        ocultas = ocultas.filter(function (c) { return c !== col; });
+        if (!cb.checked) ocultas.push(col);
+        try { localStorage.setItem(CHAVE, JSON.stringify(ocultas)); } catch (e) {}
+      });
+    });
+  })();
+</script>
+
+{% endblock %}

@@ -90,6 +90,10 @@
 
   .coligada { color: #6a1b9a; font-weight: 700; }
   .nota-coligada { font-size: 13px; color: #6a1b9a; margin-top: 8px; }
+
+  .flash-msg { max-width: 900px; padding: 10px 14px; border-radius: 8px; margin-bottom: 15px; font-weight: 600; }
+  .flash-success { background: #e6f4ea; color: #1e6b34; border: 1px solid #b7dfc2; }
+  .flash-error { background: #fdeaea; color: #9f2f2f; border: 1px solid #efc2c2; }
 </style>
 
 <div class="pagina-titulo">Informar Compras de Combustíveis</div>
@@ -97,6 +101,12 @@
 <div class="empresa">
   <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
 </div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endwith %}
 
 {% if bloqueada %}
   <div style="max-width:900px;background:#fdecea;border:1px solid #f5c6c2;color:#7d2119;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-weight:600;">
@@ -144,8 +154,9 @@
 
 <!-- NOVO -->
 <tr>
-<form method="post">
+<form method="post" id="form_novo" onsubmit="return confirmarPedidoRepetido(this)">
 <input type="hidden" name="data" value="{{ data_sel }}">
+<input type="hidden" name="confirmar_repetido" value="">
 
 <td>Novo</td>
 
@@ -352,6 +363,41 @@ Coligada: {{ cg.nome_fantasia or cg.nome }}
 </div>
 
 <script>
+// pedidos já lançados no dia, para avisar antes de incluir outro do mesmo
+// produto na mesma ponta (o servidor recusa o repetido sem a confirmação)
+const comprasDoDia = [
+{% for c in compras %}
+  { parte: "{% if c.id_coligada %}C:{{ c.id_coligada }}{% else %}F:{{ c.cod_filial }}{% endif %}",
+    produto: {{ (c.cod_produto or '') | tojson }},
+    qtd: {{ (c.quantidade_comprada or 0) | float }},
+    preco: {{ (c.preco_unitario or 0) | float }} },
+{% endfor %}
+];
+
+function confirmarPedidoRepetido(form){
+  if (form.confirmar_repetido.value === "1") return true;
+
+  const parte = form.parte.value;
+  const produto = form.cod_produto.value;
+  const iguais = comprasDoDia.filter(c => c.parte === parte && c.produto === produto);
+  if (!iguais.length) return true;
+
+  const nomeParte = form.parte.options[form.parte.selectedIndex].text.trim();
+  const nomeProduto = form.cod_produto.options[form.cod_produto.selectedIndex].text.trim();
+  const lista = iguais.map(c =>
+    `• ${c.qtd.toLocaleString("pt-BR",{minimumFractionDigits:2})} L a ` +
+    `${c.preco.toLocaleString("pt-BR",{minimumFractionDigits:4})}`
+  ).join("<br>");
+
+  mostrarConfirmacaoGlobal(
+    "Pedido repetido",
+    `Já existe pedido de <b>${nomeProduto}</b> para <b>${nomeParte}</b> nesta data:<br>${lista}` +
+    `<br><br>Confirma a inclusão de mais um pedido?`,
+    () => { form.confirmar_repetido.value = "1"; form.submit(); }
+  );
+  return false;
+}
+
 function parseBR(v){ return parseFloat(v.replace(/\./g,"").replace(",", ".")) || 0; }
 
 function formatBR(v){

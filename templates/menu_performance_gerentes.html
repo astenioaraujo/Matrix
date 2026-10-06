@@ -49,6 +49,16 @@
     border-color: #184a8c;
   }
 
+  .btn-acompanhamento {
+    background: #d97706;
+    border: 1px solid #d97706;
+  }
+
+  .btn-acompanhamento:hover {
+    background: #b86405;
+    border-color: #b86405;
+  }
+
   .btn-metas {
     background: #2e9b57;
     border: 1px solid #2e9b57;
@@ -71,6 +81,12 @@
   {% if pode_vendas %}
     <a href="{{ url_for('performances.gerentes_vendas') }}" class="btn-vendas">
       Vendas
+    </a>
+  {% endif %}
+
+  {% if pode_acompanhamento %}
+    <a href="{{ url_for('performances.acompanhamento_metas') }}" class="btn-acompanhamento">
+      Acompanhamento de Metas
     </a>
   {% endif %}
 

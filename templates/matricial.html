@@ -405,7 +405,12 @@
                     data-descricao="{{ linha.descricao_conta }}"
                     onclick="abrirDetalhamentoLargo(this, 'conta')"
                     title="Ver esta conta em todas as filiais">{{ linha.descricao_conta }}</td>
-                <td class="num col-total-separador">
+                <td class="num col-total-separador celula-detalhavel"
+                    data-grupo="{{ linha.grupo }}"
+                    data-conta="{{ linha.conta }}"
+                    data-descricao="{{ linha.descricao_conta }}"
+                    onclick="abrirDetalhamentoLargo(this, 'conta')"
+                    title="Ver esta conta em todas as filiais">
                   {{ formatar_numero_br(linha.total) }}
                 </td>
         
