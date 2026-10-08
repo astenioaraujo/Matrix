@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, session, redirect, url_for, request, flash, g
 from security_helpers import permissao_obrigatoria
+from db import copiar_linhas
 import psycopg2
 from psycopg2.extras import RealDictCursor, execute_values
 from openpyxl import load_workbook
@@ -723,6 +724,11 @@ def ler_csv_ocloset(conteudo_bytes, data_inicial=None, data_final=None):
 
 # Colunas usadas na leitura diária (item a item, agrupado por dia x produto).
 COLUNA_CSV_OCLOSET_PRODUTO = "Produto"
+
+COLUNAS_VENDAS_DIARIAS = (
+    "cod_empresa", "cod_filial", "data", "dia_semana", "codigo_produto",
+    "descricao", "custo", "preco_venda", "quantidade", "valor", "margem_bruta",
+)
 
 DIAS_SEMANA_PT = {
     0: "Segunda", 1: "Terça", 2: "Quarta", 3: "Quinta",
@@ -2074,27 +2080,7 @@ def importar_diarias_ocloset(cod_empresa, nome_empresa):
             cur, conn, cod_empresa, resumo["data_inicial"], resumo["data_final"]
         )
 
-        execute_values(
-            cur,
-            """
-            INSERT INTO vendas_diarias (
-                cod_empresa,
-                cod_filial,
-                data,
-                dia_semana,
-                codigo_produto,
-                descricao,
-                custo,
-                preco_venda,
-                quantidade,
-                valor,
-                margem_bruta
-            )
-            VALUES %s
-            """,
-            dados,
-            page_size=5000
-        )
+        copiar_linhas(cur, "vendas_diarias", COLUNAS_VENDAS_DIARIAS, dados)
 
         conn.commit()
 
@@ -2434,32 +2420,11 @@ def vendas_importar_diarias():
         conn.commit()
 
         lote = 5000
-        sql_insert = """
-            INSERT INTO vendas_diarias (
-                cod_empresa,
-                cod_filial,
-                data,
-                dia_semana,
-                codigo_produto,
-                descricao,
-                custo,
-                preco_venda,
-                quantidade,
-                valor,
-                margem_bruta
-            )
-            VALUES %s
-        """
 
         for i in range(0, len(dados), lote):
             bloco = dados[i:i + lote]
 
-            execute_values(
-                cur,
-                sql_insert,
-                bloco,
-                page_size=lote
-            )
+            copiar_linhas(cur, "vendas_diarias", COLUNAS_VENDAS_DIARIAS, bloco)
 
             processados = min(i + len(bloco), len(dados))
             percentual = 70 + int((processados / len(dados)) * 25)
@@ -2941,6 +2906,10 @@ def vendas_margem_unitaria():
     data_txt = (request.args.get("data") or "").strip()
     data_sel = para_data_excel(data_txt) if data_txt else None
 
+    # Vazio = todos os postos.
+    filial_txt = (request.args.get("filial") or "").strip()
+    filial_sel = int(filial_txt) if filial_txt.isdigit() else None
+
     # Os checkboxes só valem quando o formulário foi enviado; na primeira
     # abertura os três vêm marcados.
     if request.args.get("filtrado"):
@@ -3086,10 +3055,31 @@ def vendas_margem_unitaria():
                 "blocos": blocos,
             })
 
+    # Seletor de posto: o mapa de calor acima já foi calculado com a rede
+    # inteira, então a cor da célula continua dizendo onde o posto está em
+    # relação aos demais. Aqui só se recortam as colunas.
+    filiais_visiveis = filiais
+    if filial_sel is not None and filial_sel in codigos_filiais:
+        indice = codigos_filiais.index(filial_sel)
+        filiais_visiveis = [filiais[indice]]
+        recortadas = []
+        for linha in linhas:
+            for bloco in linha["blocos"]:
+                bloco["celulas"] = [bloco["celulas"][indice]]
+            # Produto que o posto não vendeu no dia não vira linha.
+            if any(c["valor"] is not None
+                   for bloco in linha["blocos"] for c in bloco["celulas"]):
+                recortadas.append(linha)
+        linhas = recortadas
+    else:
+        filial_sel = None
+
     return render_template(
         "vendas_margem_unitaria.html",
         nome_empresa=nome_empresa,
-        filiais=filiais,
+        filiais=filiais_visiveis,
+        todas_filiais=filiais,
+        filial_sel=filial_sel,
         linhas=linhas,
         mostrar=mostrar,
         sem_cadastro=sem_cadastro,

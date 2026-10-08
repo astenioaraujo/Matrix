@@ -1,3 +1,4 @@
+import io
 import os
 from dotenv import load_dotenv
 import psycopg2
@@ -94,3 +95,32 @@ def fechar_conexao_da_requisicao(_exc=None):
         conexao.fechar_de_verdade()
     except Exception:
         pass
+
+
+def _campo_copy(valor):
+    if valor is None:
+        return ""  # vazio sem aspas = NULL no COPY ... CSV
+    if hasattr(valor, "isoformat"):
+        valor = valor.isoformat()
+    return '"' + str(valor).replace('"', '""') + '"'
+
+
+def copiar_linhas(cur, tabela, colunas, linhas):
+    """Grava linhas em lote com COPY, no lugar de execute_values.
+
+    O INSERT ... VALUES de muitas linhas fica guardado no pg_stat_statements
+    como um texto com um $n por campo — um lote de 5.000 linhas virava 414 KB,
+    e cada lote de tamanho diferente, uma entrada nova. A importação de vendas
+    chegou a 19 MB de texto ali, e o coletor de métricas do Supabase, que lê
+    essa tabela a cada poucos segundos, derramava ~24 MB em disco por leitura
+    (~100 GB/dia de Disk IO, out/2026). O COPY é registrado como um comando só.
+    """
+    buffer = io.StringIO()
+    for linha in linhas:
+        buffer.write(",".join(_campo_copy(v) for v in linha))
+        buffer.write("\n")
+    buffer.seek(0)
+    cur.copy_expert(
+        f"COPY {tabela} ({', '.join(colunas)}) FROM STDIN WITH (FORMAT csv)",
+        buffer,
+    )

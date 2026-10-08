@@ -25,7 +25,7 @@
 
   .grid-filtros {
     display: grid;
-    grid-template-columns: 260px auto auto;
+    grid-template-columns: 260px 260px auto auto;
     gap: 18px;
     align-items: end;
     justify-content: start;
@@ -37,7 +37,8 @@
     margin-bottom: 6px;
   }
 
-  .campo input[type="date"] {
+  .campo input[type="date"],
+  .campo select {
     width: 100%;
     box-sizing: border-box;
     padding: 10px 12px;
@@ -234,6 +235,19 @@
       </div>
 
       <div class="campo">
+        <label for="filial">Posto</label>
+        <select id="filial" name="filial" onchange="this.form.submit()">
+          <option value="">Todos os postos</option>
+          {% for filial in todas_filiais %}
+          <option value="{{ filial.cod_filial }}"
+                  {% if filial_sel == filial.cod_filial|int %}selected{% endif %}>
+            {{ filial.cod_filial }} - {{ filial.nome_filial }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="campo">
         <label>Mostrar</label>
         <div class="caixas-mostrar">
           <label>
@@ -311,7 +325,7 @@
   </div>
   {% else %}
   <div class="sem-dados">
-    Nenhuma venda encontrada para a data informada.
+    Nenhuma venda encontrada para {% if filial_sel %}o posto e {% endif %}a data informada.
   </div>
   {% endif %}
 </div>

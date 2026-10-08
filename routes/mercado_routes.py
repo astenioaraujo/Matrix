@@ -5,9 +5,9 @@ from datetime import datetime
 
 from flask import (Blueprint, render_template, redirect, url_for, session,
                    flash, request)
-from psycopg2.extras import RealDictCursor, execute_values
+from psycopg2.extras import RealDictCursor
 
-from db import get_connection
+from db import get_connection, copiar_linhas
 from security_helpers import usuario_tem_permissao
 
 mercado_bp = Blueprint("mercado", __name__, url_prefix="/mercado")
@@ -63,8 +63,6 @@ COLUNAS_ANP = [
     "ENDERECO", "COMPLEMENTO", "BAIRRO", "CEP", "UF", "MUNICIPIO", "BANDEIRA",
     "DATAVINCULACAO",
 ]
-
-LOTE_INSERCAO = 2000
 
 
 def _texto(valor, limite=None):
@@ -225,18 +223,13 @@ def importar_csv_anp():
         cur.execute("DELETE FROM mercado_anp_postos")
         substituidos = cur.rowcount or 0
 
-        sql_insert = """
-            INSERT INTO mercado_anp_postos (
-                id_anp_importacao, codigo_isimp, autorizacao,
-                data_publicacao, razao_social, cnpj, endereco, complemento,
-                bairro, cep, uf, municipio, bandeira, data_vinculacao
-            ) VALUES %s
-        """
-        dados = [(id_importacao,) + l for l in linhas]
-
-        for i in range(0, len(dados), LOTE_INSERCAO):
-            execute_values(cur, sql_insert, dados[i:i + LOTE_INSERCAO],
-                           page_size=LOTE_INSERCAO)
+        # COPY, e não INSERT ... VALUES em lote: ver db.copiar_linhas
+        copiar_linhas(cur, "mercado_anp_postos", (
+            "id_anp_importacao", "codigo_isimp", "autorizacao",
+            "data_publicacao", "razao_social", "cnpj", "endereco",
+            "complemento", "bairro", "cep", "uf", "municipio", "bandeira",
+            "data_vinculacao",
+        ), [(id_importacao,) + l for l in linhas])
 
         conn.commit()
     except Exception as e:
