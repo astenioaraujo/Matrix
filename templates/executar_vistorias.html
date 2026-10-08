@@ -95,6 +95,8 @@
   }
 
   .acao-executar:hover { background: #1e40af; text-decoration: none; }
+  .acao-notas { background: #7c3aed; margin-left: 4px; }
+  .acao-notas:hover { background: #6d28d9; }
 
   .bloqueado { color: #777; font-weight: 700; }
   .vazio { color: #777; padding: 14px 8px; }
@@ -166,7 +168,7 @@
         <th style="width:180px">Executor</th>
         <th style="width:150px">Status</th>
         <th style="width:80px">Nota</th>
-        <th style="width:130px">Ação</th>
+        <th style="width:270px">Ações</th>
       </tr>
     </thead>
 
@@ -217,7 +219,11 @@
           {% if v.pode_editar %}
             <a class="acao-executar"
                href="{{ url_for('vistorias.preencher_vistoria', id_execucao=v.id_execucao) }}">
-              ▶ Executar
+              ✅ Checklist
+            </a>
+            <a class="acao-executar acao-notas"
+               href="{{ url_for('vistorias.notas_prazo_vistoria', id_execucao=v.id_execucao) }}">
+              🧾 Notas a Prazo
             </a>
           {% else %}
             <span class="bloqueado">🔒 Bloqueada</span>

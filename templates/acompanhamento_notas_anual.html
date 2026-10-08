@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .filtro {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    font-size: 15px;
+    flex-wrap: wrap;
+  }
+
+  .filtro label {
+    font-weight: 700;
+  }
+
+  .filtro select {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #c7c7c7;
+    background: #fff;
+    font-size: 15px;
+  }
+
+  .cabecalho-bloco {
+    display: flex;
+    align-items: flex-end;
+    gap: 24px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .bloco-titulo {
+    font-size: 22px;
+    font-weight: 700;
+    color: #5C6B3A;
+  }
+
+  .media-geral {
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    background: #fff;
+    padding: 8px 16px;
+    line-height: 1.2;
+  }
+
+  .media-geral .rotulo {
+    font-size: 12px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+  }
+
+  .media-geral .valor {
+    font-size: 26px;
+    font-weight: 800;
+  }
+
+  .media-geral .detalhe {
+    font-size: 12px;
+    color: #666;
+  }
+
+  .tabela-wrap {
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    background: #fff;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: max-content;
+    font-size: 13px;
+  }
+
+  th, td {
+    border: 1px solid #dddddd;
+    padding: 6px 6px;
+    white-space: nowrap;
+    text-align: center;
+  }
+
+  th {
+    background: #dbe8f4;
+    font-weight: 700;
+    vertical-align: bottom;
+  }
+
+  /* Mês e MÉDIA ficam congelados; os postos deslizam para o lado. */
+  .col-mes {
+    width: 100px;
+    min-width: 100px;
+    max-width: 100px;
+    text-align: left;
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: #fff;
+  }
+
+  .col-media {
+    width: 80px;
+    min-width: 80px;
+    max-width: 80px;
+    font-weight: 700;
+    position: sticky;
+    left: 100px;
+    z-index: 2;
+    background: #faf7dd;
+    border-right: 3px solid #2c2c2c;
+  }
+
+  thead .col-mes,
+  thead .col-media {
+    background: #dbe8f4;
+    z-index: 3;
+  }
+
+  .col-posto {
+    width: 74px;
+    min-width: 74px;
+    max-width: 74px;
+  }
+
+  .numero-filial {
+    font-size: 11px;
+    color: #1f6fb2;
+    display: block;
+    margin-bottom: 2px;
+  }
+
+  .nome-filial {
+    font-size: 11px;
+    color: #333;
+    display: block;
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  .col-posto a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .col-posto a:hover {
+    text-decoration: underline;
+  }
+
+  .varias {
+    font-size: 10px;
+    color: #555;
+  }
+
+  td.em-vistoria {
+    background: #fff3c4;
+  }
+
+  .em-vistoria-texto {
+    color: #8a6d00;
+    font-weight: 700;
+    font-size: 10px;
+    line-height: 1.15;
+    white-space: normal;
+    display: block;
+  }
+
+  .em-vistoria-texto a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .vazio {
+    color: #ccc;
+  }
+
+  .linha-futura td {
+    color: #bbb;
+  }
+
+  .linha-total td {
+    background: #eef3f8;
+    font-weight: 700;
+    border-top: 4px solid #2c2c2c;
+  }
+
+  .linha-total .col-mes,
+  .linha-total .col-media {
+    background: #eef3f8;
+  }
+
+  .aviso {
+    background: #fff8e1;
+    border: 1px solid #f0d08a;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    font-size: 14px;
+  }
+
+  .legenda {
+    font-size: 13px;
+    color: #666;
+    margin-top: 10px;
+    max-width: 900px;
+  }
+</style>
+
+<div class="pagina-titulo">Vistorias - Acompanhamento de Notas Anual</div>
+<div class="pagina-subtitulo"><strong>Empresa:</strong> {{ nome_empresa }}</div>
+
+<form class="filtro" method="get">
+  <label for="ano">Ano:</label>
+  <select id="ano" name="ano" onchange="this.form.submit()">
+    {% for a in anos %}
+      <option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>
+    {% endfor %}
+  </select>
+  <noscript><button type="submit">Aplicar</button></noscript>
+</form>
+
+{% if sem_filial %}
+  <div class="aviso">Você não tem filial vinculada — não há posto para mostrar.</div>
+{% else %}
+
+<div class="cabecalho-bloco">
+  <div class="bloco-titulo">Notas de {{ ano }}</div>
+  <div class="media-geral">
+    <div class="rotulo">Média geral da empresa no ano</div>
+    <div class="valor">{% if media_geral is not none %}{{ formatar_numero_br(media_geral, 2) }}{% else %}—{% endif %}</div>
+    <div class="detalhe">
+      {{ qtde_notas }} {% if qtde_notas == 1 %}vistoria finalizada{% else %}vistorias finalizadas{% endif %}
+      {% if qtde_em_vistoria %}· <span style="color:#8a6d00;font-weight:700;">{{ qtde_em_vistoria }} em vistoria</span>{% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="tabela-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th class="col-mes">MÊS</th>
+        <th class="col-media">MÉDIA</th>
+        {% for p in postos %}
+          <th class="col-posto">
+            <span class="numero-filial">{{ p.cod_filial }}</span>
+            <span class="nome-filial">{{ p.nome_filial }}</span>
+          </th>
+        {% endfor %}
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for l in linhas %}
+        <tr class="{% if l.futuro %}linha-futura{% endif %}">
+          <td class="col-mes">{{ l.nome_mes }}</td>
+          <td class="col-media" {% if l.media_cor %}style="background: {{ l.media_cor }};"{% endif %}>
+            {% if l.media is not none %}{{ formatar_numero_br(l.media, 2) }}{% endif %}
+          </td>
+          {% for c in l.celulas %}
+            {% if c.nota is not none %}
+              <td class="col-posto" style="background: {{ c.cor }};">
+                {%- if pode_visualizar -%}
+                  <a href="{{ url_for('vistorias.visualizar_vistoria', id_execucao=c.id_execucao) }}">{{ formatar_numero_br(c.nota, 2) }}</a>
+                {%- else -%}
+                  {{ formatar_numero_br(c.nota, 2) }}
+                {%- endif -%}
+                {% if c.qtde > 1 %}<span class="varias" title="{{ c.qtde }} vistorias finalizadas no mês — vale a mais recente">({{ c.qtde }})</span>{% endif %}
+              </td>
+            {% elif c.em_vistoria_desde %}
+              <td class="col-posto em-vistoria" title="Em vistoria desde {{ c.em_vistoria_desde.strftime('%d/%m/%Y') }} — fora das médias">
+                <span class="em-vistoria-texto">
+                  {%- if pode_visualizar -%}
+                    <a href="{{ url_for('vistorias.visualizar_vistoria', id_execucao=c.id_em_vistoria) }}">EM VISTORIA<br>{{ c.em_vistoria_desde.strftime('%d/%m') }}</a>
+                  {%- else -%}
+                    EM VISTORIA<br>{{ c.em_vistoria_desde.strftime('%d/%m') }}
+                  {%- endif -%}
+                </span>
+              </td>
+            {% else %}
+              <td class="col-posto"><span class="vazio">-</span></td>
+            {% endif %}
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+
+    <tfoot>
+      <tr class="linha-total">
+        <td class="col-mes">MÉDIA ANO</td>
+        <td class="col-media">{% if media_geral is not none %}{{ formatar_numero_br(media_geral, 2) }}{% endif %}</td>
+        {% for m in medias_posto %}
+          <td class="col-posto">{% if m is not none %}{{ formatar_numero_br(m, 2) }}{% endif %}</td>
+        {% endfor %}
+      </tr>
+    </tfoot>
+  </table>
+</div>
+
+<div class="legenda">
+  Dois mapas de calor de 51 faixas, independentes: um só para todas as notas dos postos (o ano inteiro junto)
+  e outro só na coluna MÉDIA (a média da rede em cada mês).
+  Só entra nota de vistoria <strong>finalizada</strong>; em amarelo, a vistoria começada e não fechada, com a data em que começou — fora das médias.
+  A média geral é a média dos postos (a linha MÉDIA ANO), só dos que têm vistoria finalizada.
+  Com mais de uma vistoria finalizada no mês vale a mais recente — o número entre parênteses diz quantas houve.
+</div>
+
+{% endif %}
+
+{% endblock %}

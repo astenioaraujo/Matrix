@@ -108,6 +108,71 @@
   .barra-acoes {
     margin-bottom: 16px;
   }
+
+  .relatorio-bloco {
+    margin-top: 24px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+
+  .relatorio-bloco h2 {
+    margin: 0 0 4px;
+    font-size: 18px;
+  }
+
+  .relatorio-dica {
+    color: #666;
+    font-size: 13px;
+    margin-bottom: 10px;
+  }
+
+  #relatorio {
+    width: 100%;
+    min-height: 0;
+    box-sizing: border-box;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 10px 12px;
+    border: 1px solid #c8d3e0;
+    border-radius: 8px;
+    resize: vertical;
+  }
+
+  #relatorio:focus {
+    outline: none;
+    border-color: #2f66e0;
+    box-shadow: 0 0 0 3px rgba(47, 102, 224, .15);
+  }
+
+  .relatorio-acoes {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 10px;
+  }
+
+  .btn-sec {
+    padding: 9px 14px;
+    border-radius: 10px;
+    border: 1px solid #c8d3e0;
+    background: #f4f7fb;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  #relatorio-status {
+    font-size: 13px;
+    font-weight: 700;
+    margin-left: 6px;
+  }
+
+  #relatorio-status.pendente { color: #b45309; }
+  #relatorio-status.ok { color: #15803d; }
+  #relatorio-status.erro { color: #b91c1c; }
 </style>
 
 <div class="topo">
@@ -183,6 +248,27 @@
       {% endfor %}
     </tbody>
   </table>
+
+  {% set finalizada = execucao.status == 'FINALIZADA' %}
+  <div class="relatorio-bloco">
+    <h2>Relatório da vistoria</h2>
+    <div class="relatorio-dica">
+      Texto livre — escreva ou cole (Ctrl+V) o que precisar. Não salva sozinho: use o botão
+      <strong>Salvar relatório</strong> (ou Ctrl+S dentro do campo).
+    </div>
+
+    <textarea id="relatorio" name="relatorio" rows="20"
+              {% if finalizada %}readonly{% endif %}>{{ execucao.relatorio or "" }}</textarea>
+
+    <div class="relatorio-acoes">
+      {% if not finalizada %}
+        <button type="button" class="btn-salvar" id="btn-salvar-relatorio">💾 Salvar relatório</button>
+        <button type="button" class="btn-sec" id="btn-colar-relatorio">📥 Colar</button>
+      {% endif %}
+      <button type="button" class="btn-sec" id="btn-copiar-relatorio">📋 Copiar tudo</button>
+      <span id="relatorio-status">{% if finalizada %}Vistoria finalizada — somente leitura.{% endif %}</span>
+    </div>
+  </div>
 
 </form>
 
@@ -277,6 +363,114 @@
         salvarItemAjax(id);
       }, 700);
     });
+  });
+
+
+  // ---------- Relatório (texto livre) ----------
+  const campoRelatorio = document.getElementById("relatorio");
+  const statusRelatorio = document.getElementById("relatorio-status");
+  let relatorioSalvo = campoRelatorio.value;
+  let salvandoRelatorio = false;
+
+  function marcarStatusRelatorio(texto, classe) {
+    statusRelatorio.textContent = texto;
+    statusRelatorio.className = classe || "";
+  }
+
+  function relatorioPendente() {
+    return !campoRelatorio.readOnly && campoRelatorio.value !== relatorioSalvo;
+  }
+
+  campoRelatorio.addEventListener("input", function() {
+    if (relatorioPendente()) {
+      marcarStatusRelatorio("● Alterações não salvas", "pendente");
+    } else {
+      marcarStatusRelatorio("", "");
+    }
+  });
+
+  async function salvarRelatorio() {
+    if (salvandoRelatorio) return;
+    salvandoRelatorio = true;
+    const texto = campoRelatorio.value;
+    marcarStatusRelatorio("Salvando...", "");
+
+    try {
+      const resposta = await fetch("{{ url_for('vistorias.salvar_relatorio_vistoria', id_execucao=execucao.id_execucao) }}", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
+        body: JSON.stringify({ relatorio: texto })
+      });
+      const retorno = await resposta.json().catch(function() { return {}; });
+
+      if (!resposta.ok || !retorno.ok) {
+        marcarStatusRelatorio("Erro ao salvar: " + (retorno.erro || "erro desconhecido"), "erro");
+        return;
+      }
+
+      relatorioSalvo = texto;
+      const agora = new Date();
+      const hora = String(agora.getHours()).padStart(2, "0") + ":" + String(agora.getMinutes()).padStart(2, "0");
+      if (relatorioPendente()) {
+        marcarStatusRelatorio("● Alterações não salvas", "pendente");
+      } else {
+        marcarStatusRelatorio("✔ Salvo às " + hora, "ok");
+      }
+    } catch (erro) {
+      marcarStatusRelatorio("Erro de conexão — o texto NÃO foi salvo.", "erro");
+    } finally {
+      salvandoRelatorio = false;
+    }
+  }
+
+  const btnSalvarRelatorio = document.getElementById("btn-salvar-relatorio");
+  if (btnSalvarRelatorio) btnSalvarRelatorio.addEventListener("click", salvarRelatorio);
+
+  campoRelatorio.addEventListener("keydown", function(ev) {
+    if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") {
+      ev.preventDefault();
+      if (!campoRelatorio.readOnly) salvarRelatorio();
+    }
+  });
+
+  document.getElementById("btn-copiar-relatorio").addEventListener("click", async function() {
+    try {
+      await navigator.clipboard.writeText(campoRelatorio.value);
+    } catch (e) {
+      campoRelatorio.select();
+      document.execCommand("copy");
+    }
+    marcarStatusRelatorio("Texto copiado.", "ok");
+  });
+
+  const btnColarRelatorio = document.getElementById("btn-colar-relatorio");
+  if (btnColarRelatorio) {
+    btnColarRelatorio.addEventListener("click", async function() {
+      try {
+        const texto = await navigator.clipboard.readText();
+        const ini = campoRelatorio.selectionStart;
+        const fim = campoRelatorio.selectionEnd;
+        campoRelatorio.setRangeText(texto, ini, fim, "end");
+        campoRelatorio.focus();
+        campoRelatorio.dispatchEvent(new Event("input"));
+      } catch (e) {
+        campoRelatorio.focus();
+        marcarStatusRelatorio("O navegador não liberou o botão Colar — clique no campo e use Ctrl+V.", "pendente");
+      }
+    });
+  }
+
+  // O "Salvar Vistoria" do topo também leva o relatório.
+  document.querySelector("form").addEventListener("submit", function() {
+    relatorioSalvo = campoRelatorio.value;
+  });
+
+  window.addEventListener("beforeunload", function(ev) {
+    if (relatorioPendente()) {
+      ev.preventDefault();
+      ev.returnValue = "";
+    }
   });
 
   recalcularNota();

@@ -125,4 +125,11 @@
 </table>
 </div>
 
+{% if execucao.relatorio %}
+<div style="margin-top:24px;background:#fff;border:1px solid #ddd;border-radius:10px;padding:14px 16px;">
+  <h2 style="margin:0 0 10px;font-size:18px;">Relatório da vistoria</h2>
+  <div style="white-space:pre-wrap;line-height:1.5;font-size:14px;">{{ execucao.relatorio }}</div>
+</div>
+{% endif %}
+
 {% endblock %}

@@ -1,9 +1,11 @@
 from flask import Blueprint, render_template, session, redirect, url_for, request, flash, jsonify
 from psycopg2.extras import RealDictCursor, execute_batch
 from datetime import date
+import re
 
 from db import get_connection
 from security_helpers import permissao_obrigatoria, usuario_tem_permissao
+from routes.vendas_routes import cor_excel_51, formatar_numero_br
 
 # Combos de período das telas de vistoria (ano e mês são escolha, não digitação).
 NOMES_MESES = [
@@ -78,11 +80,13 @@ def menu_vistorias():
         pode_programar_vistorias = True
         pode_executar_vistorias = True
         pode_consultar_vistorias = True
+        pode_acompanhamento_notas = True
     else:
         pode_configurar_checklists = usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "CONFIGURAR_CHECKLISTS")
         pode_programar_vistorias = usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "PROGRAMAR_VISTORIAS")
         pode_executar_vistorias = usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "EXECUTAR_VISTORIAS")
         pode_consultar_vistorias = usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "CONSULTAR_VISTORIAS")
+        pode_acompanhamento_notas = usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "ACOMPANHAMENTO_NOTAS")
 
     return render_template(
         "menu_vistorias.html",
@@ -92,7 +96,8 @@ def menu_vistorias():
         pode_configurar_checklists=pode_configurar_checklists,
         pode_programar_vistorias=pode_programar_vistorias,
         pode_executar_vistorias=pode_executar_vistorias,
-        pode_consultar_vistorias=pode_consultar_vistorias,        
+        pode_consultar_vistorias=pode_consultar_vistorias,
+        pode_acompanhamento_notas=pode_acompanhamento_notas,
     )
 
 
@@ -993,6 +998,16 @@ def preencher_vistoria(id_execucao):
                   session.get("id_usuario"), nome_executor,
                   id_execucao, cod_empresa))
 
+            # O relatório vai junto no "Salvar Vistoria" — só se o campo veio no
+            # formulário, para um POST sem ele não apagar o texto.
+            if "relatorio" in request.form:
+                cur.execute("""
+                    UPDATE vistorias_execucoes
+                    SET relatorio = %s
+                    WHERE id_execucao = %s
+                      AND cod_empresa = %s
+                """, (request.form.get("relatorio") or None, id_execucao, cod_empresa))
+
             conn.commit()
             flash("Vistoria salva com sucesso.", "success")
 
@@ -1223,6 +1238,351 @@ def consultar_vistorias():
     )
 
 # ---------------------------------------
+# ACOMPANHAMENTO DE NOTAS (ranking dos postos pela nota da vistoria)
+# ---------------------------------------
+def _vistorias_respondidas_do_ano(cur, cod_empresa, ano, cod_filiais):
+    """Situação de cada posto em cada mês do ano: {(cod_filial, mes): {...}}.
+
+    - FINALIZADA → tem nota e entra no ranking e nas médias. Com mais de uma
+      no mês vale a MAIS RECENTE; `qtde` diz quantas houve.
+    - ABERTA com algum item respondido (SIM ou NÃO) → "em vistoria desde" a
+      data da vistoria, sem nota: não entra em estatística nenhuma.
+    - ABERTA sem nada respondido → programada e não começada; fica de fora,
+      e a tela mostra "não vistoriado" (a nota zero dela diria que o posto
+      foi mal, quando ele nem foi visto).
+
+    A data de início é `data_vistoria`, não o horário dos itens: os itens
+    guardam só a última gravação, que não diz quando a vistoria começou."""
+    cur.execute("""
+        SELECT
+            e.id_execucao,
+            e.cod_filial,
+            e.data_vistoria,
+            UPPER(COALESCE(e.status, '')) = 'FINALIZADA' AS finalizada,
+            COALESCE(e.nota, 0) AS nota
+        FROM vistorias_execucoes e
+        WHERE e.cod_empresa = %s
+          AND e.data_vistoria >= %s
+          AND e.data_vistoria < %s
+          AND e.cod_filial = ANY(%s)
+          AND EXISTS (
+              SELECT 1
+              FROM vistorias_execucao_itens i
+              WHERE i.id_execucao = e.id_execucao
+                AND i.tipo_linha = 'ITEM'
+                AND i.atendido IN ('SIM', 'NAO')
+          )
+        ORDER BY e.data_vistoria DESC, e.id_execucao DESC
+    """, (cod_empresa, date(ano, 1, 1), date(ano + 1, 1, 1), list(cod_filiais)))
+
+    situacao = {}
+    for r in cur.fetchall() or []:
+        s = situacao.setdefault((int(r["cod_filial"]), r["data_vistoria"].month), {
+            "id_execucao": None,
+            "data": None,
+            "nota": None,
+            "qtde": 0,
+            "em_vistoria_desde": None,
+            "id_em_vistoria": None,
+        })
+        if r["finalizada"]:
+            s["qtde"] += 1
+            if s["nota"] is None:
+                s["nota"] = float(r["nota"])
+                s["data"] = r["data_vistoria"]
+                s["id_execucao"] = r["id_execucao"]
+        else:
+            # Vem em ordem decrescente: a última sobrescrita é a mais antiga,
+            # que é quando o posto entrou em vistoria.
+            s["em_vistoria_desde"] = r["data_vistoria"]
+            s["id_em_vistoria"] = r["id_execucao"]
+
+    # Fechada no mês, a nota é o que vale; a aberta ao lado não muda nada.
+    for s in situacao.values():
+        if s["nota"] is not None:
+            s["em_vistoria_desde"] = s["id_em_vistoria"] = None
+    return situacao
+
+
+VAZIO_VISTORIA = {
+    "id_execucao": None, "data": None, "nota": None, "qtde": 0,
+    "em_vistoria_desde": None, "id_em_vistoria": None,
+}
+
+
+def _pintar(itens, campo="nota", campo_cor="cor"):
+    """Mapa de calor de 51 faixas (o do matricial) entre os itens com nota."""
+    valores = [i[campo] for i in itens if i.get(campo) is not None]
+    for item in itens:
+        item[campo_cor] = (
+            cor_excel_51(item[campo], min(valores), max(valores))
+            if item.get(campo) is not None else ""
+        )
+
+
+def _media(valores):
+    valores = [v for v in valores if v is not None]
+    return sum(valores) / len(valores) if valores else None
+
+
+@vistorias_bp.route("/acompanhamento-notas")
+@permissao_obrigatoria(
+    "VISTORIAS",
+    "ACOMPANHAMENTO_NOTAS",
+    redirecionar_para="vistorias.menu_vistorias",
+)
+def acompanhamento_notas():
+    """Três leituras da mesma base, decididas pelo filtro:
+
+    - mês, sem posto  → uma linha por posto, da maior nota para a menor;
+      quem não foi vistoriado entra no fim, em vermelho;
+    - ano todo, sem posto → postos × janeiro a dezembro + média do ano;
+    - um posto        → janeiro a dezembro daquele posto (o mês é ignorado).
+
+    A média geral considera só os postos vistoriados. Nada é gravado."""
+    cod_empresa = str(session["cod_empresa"]).strip()
+    hoje = date.today()
+
+    try:
+        ano = int(request.args.get("ano") or hoje.year)
+    except ValueError:
+        ano = hoje.year
+
+    # "mes" ausente = primeira abertura, abre no mês corrente; "mes" vazio =
+    # o usuário escolheu "Ano todo".
+    mes_arg = request.args.get("mes")
+    try:
+        mes = hoje.month if mes_arg is None else (int(mes_arg) if mes_arg else None)
+        if mes is not None and not 1 <= mes <= 12:
+            raise ValueError
+    except ValueError:
+        mes = hoje.month
+
+    try:
+        filial_sel = int(request.args.get("filial") or 0) or None
+    except ValueError:
+        filial_sel = None
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cod_filiais = cod_filiais_vistorias_usuario(cur, cod_empresa)
+        anos = anos_com_vistorias(cur, cod_empresa, ano)
+
+        postos = []
+        if cod_filiais:
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s
+                  AND ativo = TRUE
+                  AND cod_filial = ANY(%s)
+                ORDER BY cod_filial
+            """, (cod_empresa, list(cod_filiais)))
+            postos = [
+                {"cod_filial": int(r["cod_filial"]), "nome_filial": r["nome_filial"]}
+                for r in cur.fetchall() or []
+            ]
+
+        if filial_sel and filial_sel not in {p["cod_filial"] for p in postos}:
+            filial_sel = None
+
+        cods = [filial_sel] if filial_sel else [p["cod_filial"] for p in postos]
+        notas = _vistorias_respondidas_do_ano(cur, cod_empresa, ano, cods) if cods else {}
+    finally:
+        cur.close()
+        conn.close()
+
+    modo = "posto" if filial_sel else ("mes" if mes else "ano")
+    linhas = []
+
+    if modo == "posto":
+        for numero, nome in NOMES_MESES:
+            v = notas.get((filial_sel, numero))
+            linhas.append({
+                "mes": numero,
+                "nome_mes": nome,
+                **(v or VAZIO_VISTORIA),
+                "futuro": (ano, numero) > (hoje.year, hoje.month),
+            })
+        _pintar(linhas)
+        media_geral = _media(l["nota"] for l in linhas)
+        qtde_vistoriados = sum(1 for l in linhas if l["nota"] is not None)
+        qtde_em_vistoria = sum(1 for l in linhas if l["em_vistoria_desde"])
+
+    elif modo == "mes":
+        for p in postos:
+            v = notas.get((p["cod_filial"], mes))
+            linhas.append({**p, **(v or VAZIO_VISTORIA)})
+        # Nota da maior para a menor; depois quem está em vistoria; por
+        # último quem não foi vistoriado.
+        linhas.sort(key=lambda l: (
+            l["nota"] is None,
+            l["em_vistoria_desde"] is None,
+            -(l["nota"] or 0),
+            l["cod_filial"],
+        ))
+        _pintar(linhas)
+        media_geral = _media(l["nota"] for l in linhas)
+        qtde_vistoriados = sum(1 for l in linhas if l["nota"] is not None)
+        qtde_em_vistoria = sum(1 for l in linhas if l["em_vistoria_desde"])
+
+    else:
+        for p in postos:
+            celulas = []
+            for numero, _ in NOMES_MESES:
+                v = notas.get((p["cod_filial"], numero))
+                celulas.append(dict(v or VAZIO_VISTORIA))
+            linhas.append({
+                **p,
+                "celulas": celulas,
+                "media": _media(c["nota"] for c in celulas),
+                "em_vistoria": any(c["em_vistoria_desde"] for c in celulas),
+            })
+        linhas.sort(key=lambda l: (
+            l["media"] is None,
+            not l["em_vistoria"],
+            -(l["media"] or 0),
+            l["cod_filial"],
+        ))
+
+        # Cada mês é uma coluna e se pinta sozinho (os postos entre si naquele
+        # mês); a média do ano tem a sua própria escala.
+        for indice in range(12):
+            _pintar([l["celulas"][indice] for l in linhas])
+        _pintar(linhas, "media", "media_cor")
+
+        media_geral = _media(l["media"] for l in linhas)
+        qtde_vistoriados = sum(1 for l in linhas if l["media"] is not None)
+        qtde_em_vistoria = sum(1 for l in linhas if l["em_vistoria"])
+        medias_mes = [_media(l["celulas"][i]["nota"] for l in linhas) for i in range(12)]
+
+    posicao = 0
+    for l in linhas:
+        valor = l.get("media") if modo == "ano" else l.get("nota")
+        if modo != "posto" and valor is not None:
+            posicao += 1
+            l["posicao"] = posicao
+
+    nome_posto = next((p["nome_filial"] for p in postos if p["cod_filial"] == filial_sel), "")
+
+    return render_template(
+        "acompanhamento_notas.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("vistorias.menu_vistorias"),
+        texto_voltar="← Voltar",
+        ano=ano,
+        mes=mes,
+        anos=anos,
+        nomes_meses=NOMES_MESES,
+        postos=postos,
+        filial_sel=filial_sel,
+        nome_posto=nome_posto,
+        modo=modo,
+        linhas=linhas,
+        medias_mes=medias_mes if modo == "ano" else [],
+        media_geral=media_geral,
+        qtde_vistoriados=qtde_vistoriados,
+        qtde_em_vistoria=qtde_em_vistoria,
+        qtde_linhas=len(linhas),
+        sem_filial=not cod_filiais,
+        pode_visualizar=usuario_tem_permissao(
+            session.get("id_usuario"), cod_empresa, "VISTORIAS", "CONSULTAR_VISTORIAS"
+        ) or str(session.get("tipo_global") or "").strip().lower() == "superusuario",
+        formatar_numero_br=formatar_numero_br,
+    )
+
+
+@vistorias_bp.route("/acompanhamento-notas/anual")
+@permissao_obrigatoria(
+    "VISTORIAS",
+    "ACOMPANHAMENTO_NOTAS",
+    redirecionar_para="vistorias.menu_vistorias",
+)
+def acompanhamento_notas_anual():
+    """Matricial do ano: janeiro a dezembro nas linhas, os postos nas colunas
+    (o desenho do painel de Vendas) e, antes deles, a MÉDIA da rede no mês.
+
+    Dois mapas de calor que não se misturam: um único para todas as células
+    de posto (o ano inteiro, todos os postos juntos) e outro só na coluna
+    MÉDIA. Mesmas regras da tela mensal: só vistoria finalizada tem nota; a
+    começada e não fechada aparece em amarelo, fora de qualquer conta."""
+    cod_empresa = str(session["cod_empresa"]).strip()
+    hoje = date.today()
+
+    try:
+        ano = int(request.args.get("ano") or hoje.year)
+    except ValueError:
+        ano = hoje.year
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cod_filiais = cod_filiais_vistorias_usuario(cur, cod_empresa)
+        anos = anos_com_vistorias(cur, cod_empresa, ano)
+
+        postos = []
+        if cod_filiais:
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s
+                  AND ativo = TRUE
+                  AND cod_filial = ANY(%s)
+                ORDER BY cod_filial
+            """, (cod_empresa, list(cod_filiais)))
+            postos = [
+                {"cod_filial": int(r["cod_filial"]), "nome_filial": r["nome_filial"]}
+                for r in cur.fetchall() or []
+            ]
+
+        cods = [p["cod_filial"] for p in postos]
+        notas = _vistorias_respondidas_do_ano(cur, cod_empresa, ano, cods) if cods else {}
+    finally:
+        cur.close()
+        conn.close()
+
+    linhas = []
+    for numero, nome in NOMES_MESES:
+        celulas = [dict(notas.get((p["cod_filial"], numero)) or VAZIO_VISTORIA) for p in postos]
+        linhas.append({
+            "mes": numero,
+            "nome_mes": nome,
+            "celulas": celulas,
+            "media": _media(c["nota"] for c in celulas),
+            "futuro": (ano, numero) > (hoje.year, hoje.month),
+        })
+
+    _pintar([c for l in linhas for c in l["celulas"]])
+    _pintar(linhas, "media", "media_cor")
+
+    medias_posto = [_media(l["celulas"][i]["nota"] for l in linhas) for i in range(len(postos))]
+    # Média dos postos, como na tela mensal (ano todo): um posto vistoriado
+    # todo mês não pesa mais que um vistoriado uma vez.
+    media_geral = _media(medias_posto)
+
+    return render_template(
+        "acompanhamento_notas_anual.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("vistorias.menu_vistorias"),
+        texto_voltar="← Voltar",
+        ano=ano,
+        anos=anos,
+        postos=postos,
+        linhas=linhas,
+        medias_posto=medias_posto,
+        media_geral=media_geral,
+        qtde_notas=sum(1 for l in linhas for c in l["celulas"] if c["nota"] is not None),
+        qtde_em_vistoria=sum(1 for l in linhas for c in l["celulas"] if c["em_vistoria_desde"]),
+        sem_filial=not cod_filiais,
+        pode_visualizar=usuario_tem_permissao(
+            session.get("id_usuario"), cod_empresa, "VISTORIAS", "CONSULTAR_VISTORIAS"
+        ) or str(session.get("tipo_global") or "").strip().lower() == "superusuario",
+        formatar_numero_br=formatar_numero_br,
+    )
+
+
+# ---------------------------------------
 # VISUALIZAR VISTORIA - SOMENTE LEITURA
 # ---------------------------------------
 @vistorias_bp.route("/execucao/<int:id_execucao>/visualizar")
@@ -1389,6 +1749,260 @@ def salvar_item_vistoria_ajax():
         conn.commit()
 
         return jsonify({"ok": True, "nota": nota, "pontuacao": pontuacao})
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+# ---------------------------------------
+# RELATÓRIO DA VISTORIA (texto livre ao final do checklist)
+# ---------------------------------------
+@vistorias_bp.route("/execucao/<int:id_execucao>/relatorio", methods=["POST"])
+def salvar_relatorio_vistoria(id_execucao):
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return jsonify({"ok": False, "erro": "Sessão expirada"}), 401
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global != "superusuario":
+        if not usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "EXECUTAR_VISTORIAS"):
+            return jsonify({"ok": False, "erro": "Sem permissão para executar vistorias"}), 403
+
+    dados = request.get_json(silent=True) or {}
+    if "relatorio" not in dados:
+        return jsonify({"ok": False, "erro": "Relatório não informado"}), 400
+
+    relatorio = dados.get("relatorio") or ""
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT cod_filial, status
+            FROM vistorias_execucoes
+            WHERE id_execucao = %s
+              AND cod_empresa = %s
+        """, (id_execucao, cod_empresa))
+        execucao = cur.fetchone()
+
+        if not execucao:
+            return jsonify({"ok": False, "erro": "Vistoria não encontrada"}), 404
+
+        if execucao["status"] == "FINALIZADA":
+            return jsonify({"ok": False, "erro": "Vistoria finalizada"}), 403
+
+        if int(execucao["cod_filial"]) not in cod_filiais_vistorias_usuario(cur, cod_empresa):
+            return jsonify({"ok": False, "erro": "Vistoria de outra filial"}), 403
+
+        cur.execute("""
+            UPDATE vistorias_execucoes
+               SET relatorio = %s,
+                   atualizado_em = NOW()
+             WHERE id_execucao = %s
+               AND cod_empresa = %s
+        """, (relatorio if relatorio.strip() else None, id_execucao, cod_empresa))
+
+        conn.commit()
+        return jsonify({"ok": True})
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+# ---------------------------------------
+# NOTAS A PRAZO (conferência do fiado na vistoria)
+# ---------------------------------------
+# O campo de valor aceita uma soma digitada, como a fórmula da planilha:
+# "309,40+278,60-50". Cada termo no formato brasileiro (1.234,56) ou com
+# ponto decimal (309.4). A MESMA regra está em _valorDigitado no JS da tela.
+def _termo_numero(texto):
+    t = texto.strip().replace(" ", "")
+    if not t:
+        raise ValueError("termo vazio")
+    if "," in t:
+        t = t.replace(".", "").replace(",", ".")
+    elif t.count(".") > 1:
+        t = t.replace(".", "")
+    elif "." in t and len(t.split(".")[1]) == 3:
+        t = t.replace(".", "")  # 1.500 = mil e quinhentos
+    return float(t)
+
+
+def valor_digitado(texto):
+    """Devolve (valor, composicao). composicao só existe quando há conta."""
+    t = (texto or "").strip().lstrip("=").replace(" ", "")
+    if not t:
+        return 0.0, None
+    partes = re.split(r"(?<=\d)([+-])", t)
+    total = _termo_numero(partes[0])
+    for i in range(1, len(partes), 2):
+        n = _termo_numero(partes[i + 1])
+        total = total + n if partes[i] == "+" else total - n
+    composicao = t if re.search(r"(?<=\d)[+-]", t) else None
+    return round(total, 2), composicao
+
+
+def _execucao_notas_prazo(cur, id_execucao, cod_empresa):
+    """Vistoria + se pode gravar. None se não existe ou não é de filial do usuário."""
+    cur.execute("""
+        SELECT e.id_execucao, e.cod_filial, e.data_vistoria, e.status,
+               f.nome_filial, c.codigo_checklist, c.descricao AS checklist_descricao
+        FROM vistorias_execucoes e
+        LEFT JOIN filiais f
+          ON f.cod_empresa = e.cod_empresa AND f.cod_filial = e.cod_filial
+        LEFT JOIN vistorias_checklists c ON c.id_checklist = e.id_checklist
+        WHERE e.id_execucao = %s AND e.cod_empresa = %s
+    """, (id_execucao, cod_empresa))
+    execucao = cur.fetchone()
+    if not execucao or int(execucao["cod_filial"]) not in cod_filiais_vistorias_usuario(cur, cod_empresa):
+        return None
+    execucao["pode_editar"] = (
+        execucao["status"] != "FINALIZADA"
+        and pode_editar_vistoria_data(execucao["data_vistoria"])
+    )
+    return execucao
+
+
+@vistorias_bp.route("/execucao/<int:id_execucao>/notas-prazo", methods=["GET"])
+@permissao_obrigatoria("VISTORIAS", "EXECUTAR_VISTORIAS", redirecionar_para="vistorias.menu_vistorias")
+def notas_prazo_vistoria(id_execucao):
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        execucao = _execucao_notas_prazo(cur, id_execucao, cod_empresa)
+        if not execucao:
+            flash("Esta vistoria não é de uma filial sua.", "error")
+            return redirect(url_for("vistorias.executar_vistorias"))
+
+        cur.execute("""
+            SELECT id_nota_prazo, cliente, valor_notas, composicao_notas,
+                   valor_sistema, composicao_sistema, observacao
+            FROM vistorias_notas_prazo
+            WHERE id_execucao = %s AND cod_empresa = %s
+            ORDER BY ordem, id_nota_prazo
+        """, (id_execucao, cod_empresa))
+        linhas = [
+            {
+                "cliente": l["cliente"],
+                "valor_notas": float(l["valor_notas"] or 0),
+                "composicao_notas": l["composicao_notas"],
+                "valor_sistema": float(l["valor_sistema"] or 0),
+                "composicao_sistema": l["composicao_sistema"],
+                "observacao": l["observacao"] or "",
+            }
+            for l in cur.fetchall() or []
+        ]
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "vistorias_notas_prazo.html",
+        execucao=execucao,
+        linhas=linhas,
+        url_voltar=url_for("vistorias.executar_vistorias"),
+        texto_voltar="← Voltar",
+    )
+
+
+@vistorias_bp.route("/execucao/<int:id_execucao>/notas-prazo", methods=["POST"])
+def salvar_notas_prazo_vistoria(id_execucao):
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return jsonify({"ok": False, "erro": "Sessão expirada"}), 401
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global != "superusuario":
+        if not usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "EXECUTAR_VISTORIAS"):
+            return jsonify({"ok": False, "erro": "Sem permissão para executar vistorias"}), 403
+
+    dados = request.get_json(silent=True) or {}
+    # Sem a lista no corpo não se mexe em nada: um POST vazio não pode
+    # apagar a conferência inteira.
+    if not isinstance(dados.get("linhas"), list):
+        return jsonify({"ok": False, "erro": "Linhas não informadas"}), 400
+
+    # Valida tudo antes de gravar — uma linha inválida não grava nada.
+    registros = []
+    for n, l in enumerate(dados["linhas"], start=1):
+        cliente = str(l.get("cliente") or "").strip()
+        notas_txt = str(l.get("notas") or "")
+        sistema_txt = str(l.get("sistema") or "")
+        observacao = str(l.get("observacao") or "").strip()
+
+        if not cliente and not notas_txt.strip() and not sistema_txt.strip() and not observacao:
+            continue  # linha em branco
+
+        if not cliente:
+            return jsonify({"ok": False, "erro": f"Linha {n}: informe o cliente."}), 400
+
+        try:
+            valor_notas, comp_notas = valor_digitado(notas_txt)
+            valor_sistema, comp_sistema = valor_digitado(sistema_txt)
+        except (ValueError, IndexError):
+            return jsonify({"ok": False, "erro": f"Linha {n} ({cliente}): valor inválido."}), 400
+
+        registros.append((
+            cod_empresa, id_execucao, cliente[:200],
+            valor_notas, comp_notas, valor_sistema, comp_sistema,
+            observacao or None, len(registros) + 1,
+        ))
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        execucao = _execucao_notas_prazo(cur, id_execucao, cod_empresa)
+        if not execucao:
+            return jsonify({"ok": False, "erro": "Vistoria de outra filial"}), 403
+        if not execucao["pode_editar"]:
+            return jsonify({"ok": False, "erro": "Vistoria finalizada ou fora do período de edição"}), 403
+
+        # A tela manda a conferência inteira e ela é reescrita numa transação
+        # só. A trava na vistoria enfileira duas gravações simultâneas (a
+        # automática e a da saída da página, ou duas abas): sem ela as duas
+        # apagariam a mesma lista e ambas inseririam — linhas em dobro.
+        cur.execute("""
+            SELECT 1 FROM vistorias_execucoes
+            WHERE id_execucao = %s AND cod_empresa = %s
+            FOR UPDATE
+        """, (id_execucao, cod_empresa))
+
+        cur.execute("""
+            DELETE FROM vistorias_notas_prazo
+            WHERE id_execucao = %s AND cod_empresa = %s
+        """, (id_execucao, cod_empresa))
+
+        if registros:
+            execute_batch(cur, """
+                INSERT INTO vistorias_notas_prazo
+                    (cod_empresa, id_execucao, cliente,
+                     valor_notas, composicao_notas, valor_sistema, composicao_sistema,
+                     observacao, ordem)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, registros, page_size=100)
+
+        conn.commit()
+        return jsonify({"ok": True, "linhas": len(registros)})
 
     except Exception as e:
         conn.rollback()

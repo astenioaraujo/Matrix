@@ -1,0 +1,435 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .filtro {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    font-size: 15px;
+    flex-wrap: wrap;
+  }
+
+  .filtro label {
+    font-weight: 700;
+  }
+
+  .filtro select {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #c7c7c7;
+    background: #fff;
+    font-size: 15px;
+  }
+
+  .cabecalho-bloco {
+    display: flex;
+    align-items: flex-end;
+    gap: 24px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .bloco-titulo {
+    font-size: 22px;
+    font-weight: 700;
+    color: #5C6B3A;
+  }
+
+  .media-geral {
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    background: #fff;
+    padding: 8px 16px;
+    line-height: 1.2;
+  }
+
+  .media-geral .rotulo {
+    font-size: 12px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+  }
+
+  .media-geral .valor {
+    font-size: 26px;
+    font-weight: 800;
+  }
+
+  .media-geral .detalhe {
+    font-size: 12px;
+    color: #666;
+  }
+
+  .tabela-wrap {
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    background: #fff;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  table {
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #dddddd;
+    padding: 7px 12px;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  th {
+    background: #dbe8f4;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .col-pos {
+    text-align: center;
+    width: 50px;
+    color: #555;
+  }
+
+  .col-posto {
+    text-align: left;
+    min-width: 220px;
+  }
+
+  .col-posto .numero-filial {
+    color: #1f6fb2;
+    font-size: 12px;
+    margin-right: 6px;
+  }
+
+  .col-data {
+    text-align: center;
+    min-width: 100px;
+    color: #555;
+  }
+
+  .col-nota {
+    min-width: 90px;
+    text-align: center;
+    font-weight: 700;
+  }
+
+  .col-media {
+    border-left: 3px solid #2c2c2c;
+  }
+
+  .col-nota a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .col-nota a:hover {
+    text-decoration: underline;
+  }
+
+  .varias {
+    font-size: 11px;
+    font-weight: 400;
+    color: #555;
+    margin-left: 3px;
+  }
+
+  tbody tr:nth-child(even) {
+    background: #fafafa;
+  }
+
+  .nao-vistoriado {
+    color: #c62828;
+    font-weight: 700;
+    font-size: 12px;
+  }
+
+  /* Em vistoria: começou e não foi fechada. Amarelo, sem nota e fora de
+     qualquer estatística. */
+  td.em-vistoria {
+    background: #fff3c4;
+  }
+
+  .em-vistoria-texto {
+    color: #8a6d00;
+    font-weight: 700;
+    font-size: 12px;
+    line-height: 1.25;
+  }
+
+  .em-vistoria-texto a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .em-vistoria-texto .desde {
+    display: block;
+    font-weight: 400;
+    font-size: 11px;
+  }
+
+  .linha-nao-vistoriada .col-posto {
+    color: #888;
+  }
+
+  .linha-futura td {
+    color: #aaa;
+  }
+
+  .vazio {
+    color: #bbb;
+  }
+
+  .linha-total td {
+    background: #eef3f8;
+    font-weight: 700;
+    border-top: 4px solid #2c2c2c;
+  }
+
+  .aviso {
+    background: #fff8e1;
+    border: 1px solid #f0d08a;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    font-size: 14px;
+  }
+
+  .legenda {
+    font-size: 13px;
+    color: #666;
+    margin-top: 10px;
+    max-width: 900px;
+  }
+</style>
+
+<div class="pagina-titulo">Vistorias - Acompanhamento de Notas</div>
+<div class="pagina-subtitulo"><strong>Empresa:</strong> {{ nome_empresa }}</div>
+
+<form class="filtro" method="get">
+  <label for="mes">Mês:</label>
+  <select id="mes" name="mes" onchange="this.form.submit()" {% if filial_sel %}disabled title="Com um posto escolhido a tela mostra o ano inteiro"{% endif %}>
+    <option value="" {% if not mes %}selected{% endif %}>Ano todo</option>
+    {% for numero, nome in nomes_meses %}
+      <option value="{{ numero }}" {% if numero == mes %}selected{% endif %}>{{ nome }}</option>
+    {% endfor %}
+  </select>
+  {# Select desabilitado não vai no envio: sem isto, voltar para "Todos os
+     postos" reabriria no mês corrente em vez do mês que estava escolhido. #}
+  {% if filial_sel %}<input type="hidden" name="mes" value="{{ mes or '' }}">{% endif %}
+
+  <label for="ano">Ano:</label>
+  <select id="ano" name="ano" onchange="this.form.submit()">
+    {% for a in anos %}
+      <option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>
+    {% endfor %}
+  </select>
+
+  <label for="filial">Posto:</label>
+  <select id="filial" name="filial" onchange="this.form.submit()">
+    <option value="">Todos os postos</option>
+    {% for p in postos %}
+      <option value="{{ p.cod_filial }}" {% if p.cod_filial == filial_sel %}selected{% endif %}>{{ p.cod_filial }} - {{ p.nome_filial }}</option>
+    {% endfor %}
+  </select>
+  <noscript><button type="submit">Aplicar</button></noscript>
+</form>
+
+{% macro em_vistoria(desde, id_execucao) -%}
+  <span class="em-vistoria-texto" title="Começou e ainda não foi finalizada — fora da média e do ranking">
+    {%- if pode_visualizar and id_execucao -%}
+      <a href="{{ url_for('vistorias.visualizar_vistoria', id_execucao=id_execucao) }}">EM VISTORIA</a>
+    {%- else -%}EM VISTORIA{%- endif -%}
+    <span class="desde">desde {{ desde.strftime('%d/%m/%Y') }}</span>
+  </span>
+{%- endmacro %}
+
+{% macro celula_nota(nota, cor, id_execucao, qtde) -%}
+  {% if nota is not none %}
+    {% if pode_visualizar and id_execucao %}
+      <a href="{{ url_for('vistorias.visualizar_vistoria', id_execucao=id_execucao) }}">{{ formatar_numero_br(nota, 2) }}</a>
+    {%- else -%}
+      {{ formatar_numero_br(nota, 2) }}
+    {%- endif %}
+    {% if qtde > 1 %}<span class="varias" title="{{ qtde }} vistorias no mês — vale a mais recente">({{ qtde }})</span>{% endif %}
+  {% endif %}
+{%- endmacro %}
+
+{% if sem_filial %}
+  <div class="aviso">Você não tem filial vinculada — não há posto para mostrar.</div>
+{% else %}
+
+<div class="cabecalho-bloco">
+  <div class="bloco-titulo">
+    {% if modo == "posto" %}
+      {{ filial_sel }} - {{ nome_posto }} — {{ ano }}
+    {% elif modo == "mes" %}
+      {{ nomes_meses[mes - 1][1] }}/{{ ano }}
+    {% else %}
+      Ano de {{ ano }}
+    {% endif %}
+  </div>
+
+  <div class="media-geral">
+    <div class="rotulo">{% if modo == "posto" %}Média do posto no ano{% else %}Média geral da empresa{% endif %}</div>
+    <div class="valor">{% if media_geral is not none %}{{ formatar_numero_br(media_geral, 2) }}{% else %}—{% endif %}</div>
+    <div class="detalhe">
+      {% if modo == "posto" %}
+        {{ qtde_vistoriados }} {% if qtde_vistoriados == 1 %}mês vistoriado{% else %}meses vistoriados{% endif %}
+      {% else %}
+        {{ qtde_vistoriados }} de {{ qtde_linhas }} postos vistoriados
+      {% endif %}
+      {% if qtde_em_vistoria %}· <span class="em-vistoria-texto">{{ qtde_em_vistoria }} em vistoria</span>{% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="tabela-wrap">
+  <table>
+  {% if modo == "posto" %}
+    <thead>
+      <tr>
+        <th class="col-posto">MÊS</th>
+        <th class="col-data">DATA</th>
+        <th class="col-nota">NOTA</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in linhas %}
+        <tr class="{% if l.futuro %}linha-futura{% elif l.nota is none %}linha-nao-vistoriada{% endif %}">
+          <td class="col-posto">{{ l.nome_mes }}</td>
+          <td class="col-data">{% if l.data %}{{ l.data.strftime('%d/%m/%Y') }}{% endif %}</td>
+          <td class="col-nota{% if l.nota is none and l.em_vistoria_desde %} em-vistoria{% endif %}" style="background: {{ l.cor }};">
+            {% if l.nota is not none %}
+              {{ celula_nota(l.nota, l.cor, l.id_execucao, l.qtde) }}
+            {% elif l.em_vistoria_desde %}
+              {{ em_vistoria(l.em_vistoria_desde, l.id_em_vistoria) }}
+            {% elif l.futuro %}
+              <span class="vazio">-</span>
+            {% else %}
+              <span class="nao-vistoriado">NÃO VISTORIADO</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr class="linha-total">
+        <td class="col-posto">MÉDIA</td>
+        <td class="col-data"></td>
+        <td class="col-nota">{% if media_geral is not none %}{{ formatar_numero_br(media_geral, 2) }}{% endif %}</td>
+      </tr>
+    </tfoot>
+
+  {% elif modo == "mes" %}
+    <thead>
+      <tr>
+        <th class="col-pos">#</th>
+        <th class="col-posto">POSTO</th>
+        <th class="col-data">DATA</th>
+        <th class="col-nota">NOTA</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in linhas %}
+        <tr class="{% if l.nota is none %}linha-nao-vistoriada{% endif %}">
+          <td class="col-pos">{% if l.posicao %}{{ l.posicao }}º{% endif %}</td>
+          <td class="col-posto"><span class="numero-filial">{{ l.cod_filial }}</span>{{ l.nome_filial }}</td>
+          <td class="col-data">{% if l.data %}{{ l.data.strftime('%d/%m/%Y') }}{% else %}-{% endif %}</td>
+          <td class="col-nota{% if l.nota is none and l.em_vistoria_desde %} em-vistoria{% endif %}" style="background: {{ l.cor }};">
+            {% if l.nota is not none %}
+              {{ celula_nota(l.nota, l.cor, l.id_execucao, l.qtde) }}
+            {% elif l.em_vistoria_desde %}
+              {{ em_vistoria(l.em_vistoria_desde, l.id_em_vistoria) }}
+            {% else %}
+              <span class="nao-vistoriado">NÃO VISTORIADO</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr class="linha-total">
+        <td class="col-pos"></td>
+        <td class="col-posto">MÉDIA GERAL</td>
+        <td class="col-data"></td>
+        <td class="col-nota">{% if media_geral is not none %}{{ formatar_numero_br(media_geral, 2) }}{% endif %}</td>
+      </tr>
+    </tfoot>
+
+  {% else %}
+    <thead>
+      <tr>
+        <th class="col-pos">#</th>
+        <th class="col-posto">POSTO</th>
+        {% for numero, nome in nomes_meses %}
+          <th class="col-nota">{{ nome[:3] | upper }}</th>
+        {% endfor %}
+        <th class="col-nota col-media">MÉDIA</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in linhas %}
+        <tr class="{% if l.media is none %}linha-nao-vistoriada{% endif %}">
+          <td class="col-pos">{% if l.posicao %}{{ l.posicao }}º{% endif %}</td>
+          <td class="col-posto"><span class="numero-filial">{{ l.cod_filial }}</span>{{ l.nome_filial }}</td>
+          {% for c in l.celulas %}
+            <td class="col-nota{% if c.nota is none and c.em_vistoria_desde %} em-vistoria{% endif %}" style="background: {{ c.cor }};">
+              {% if c.nota is not none %}{{ celula_nota(c.nota, c.cor, c.id_execucao, c.qtde) }}
+              {%- elif c.em_vistoria_desde %}{{ em_vistoria(c.em_vistoria_desde, c.id_em_vistoria) }}
+              {%- else %}<span class="vazio">-</span>{% endif %}
+            </td>
+          {% endfor %}
+          <td class="col-nota col-media{% if l.media is none and l.em_vistoria %} em-vistoria{% endif %}" style="background: {{ l.media_cor }};">
+            {% if l.media is not none %}{{ formatar_numero_br(l.media, 2) }}{% elif l.em_vistoria %}<span class="em-vistoria-texto">EM VISTORIA</span>{% else %}<span class="nao-vistoriado">NÃO VISTORIADO</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr class="linha-total">
+        <td class="col-pos"></td>
+        <td class="col-posto">MÉDIA GERAL</td>
+        {% for m in medias_mes %}
+          <td class="col-nota">{% if m is not none %}{{ formatar_numero_br(m, 2) }}{% endif %}</td>
+        {% endfor %}
+        <td class="col-nota col-media">{% if media_geral is not none %}{{ formatar_numero_br(media_geral, 2) }}{% endif %}</td>
+      </tr>
+    </tfoot>
+  {% endif %}
+  </table>
+</div>
+
+<div class="legenda">
+  {% if modo == "posto" %}
+    Janeiro a dezembro do posto. Mapa de calor de 51 faixas entre os meses vistoriados.
+  {% elif modo == "mes" %}
+    Da maior nota para a menor; quem não foi vistoriado vai para o fim. Mapa de calor de 51 faixas, os postos comparados entre si.
+  {% else %}
+    Ordenado pela média do ano. Mapa de calor de 51 faixas por mês (os postos entre si naquele mês) e, à parte, na média.
+  {% endif %}
+  Só entra nota de vistoria <strong>finalizada</strong>. A que começou e não foi fechada aparece em amarelo, <em>em vistoria desde</em> a data da vistoria, e fica fora do ranking e das médias.
+  Vistoria programada sem nenhum item respondido conta como não vistoriado.
+  Com mais de uma vistoria finalizada no mês vale a mais recente — o número entre parênteses diz quantas houve.
+</div>
+
+{% endif %}
+
+{% endblock %}
