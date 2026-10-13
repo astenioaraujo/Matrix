@@ -25,7 +25,7 @@
 
   .grid-filtros {
     display: grid;
-    grid-template-columns: 260px 260px auto auto;
+    grid-template-columns: 260px 260px 220px auto auto;
     gap: 18px;
     align-items: end;
     justify-content: start;
@@ -248,6 +248,19 @@
       </div>
 
       <div class="campo">
+        <label for="produto">Combustível</label>
+        <select id="produto" name="produto" onchange="this.form.submit()">
+          <option value="">Todos os combustíveis</option>
+          {% for produto in produtos %}
+          <option value="{{ produto.cod_produto }}"
+                  {% if produto_sel == produto.cod_produto|string|trim %}selected{% endif %}>
+            {{ produto.descricao }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="campo">
         <label>Mostrar</label>
         <div class="caixas-mostrar">
           <label>
@@ -325,7 +338,7 @@
   </div>
   {% else %}
   <div class="sem-dados">
-    Nenhuma venda encontrada para {% if filial_sel %}o posto e {% endif %}a data informada.
+    Nenhuma venda encontrada para {% if filial_sel %}o posto, {% endif %}{% if produto_sel %}o combustível e {% endif %}a data informada.
   </div>
   {% endif %}
 </div>

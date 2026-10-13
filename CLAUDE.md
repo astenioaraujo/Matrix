@@ -504,6 +504,12 @@ O arquivo é o CSV "vendas item por pagamento" (`;`, uma linha por item). Lido p
 
 Sem filtro de Status — todas as linhas entram. A projeção do mês é a média diária × dias do mês informado; `dia_base` gravado em `vendas_painel_importacoes` é a quantidade de dias lidos. EMP013 tem uma filial só (cod_filial 1); com mais de uma, tudo vai para a primeira e a tela avisa.
 
+## Importar Vendas Diárias — erros de custo
+
+`POST /vendas/diarias/importar` (fluxo WebPostos) confere cada linha com `tipo_erro_custo_venda` e mostra, no fim da própria tela, o quadro vermelho das linhas com o custo errado, agrupadas por posto (`resumir_custos_suspeitos`, `templates/vendas_importar_diarias.html`). **A importação grava do mesmo jeito** (decisão do cliente, 13/10/2026): o arquivo é o que o WebPostos tem, e o quadro existe para não gravar isso calado. Tipos: `Custo fora de escala` (custo > `FATOR_CUSTO_FORA_DE_ESCALA` = 3 × preço de venda), `Custo maior que o preço de venda`, `Margem bruta negativa`. A lista não é persistida — só aparece na resposta da importação.
+
+Origem: em 09–13/10/2026 o etanol de 5 postos da EMP010 veio a ~R$ 3.580 o litro (entrada digitada errada no WebPostos) e a margem do dia fechou em −3,6 milhões, com a tela dizendo "concluída com sucesso".
+
 ## Margem Unitária por Dia
 
 `GET /vendas/margem_unitaria` (permissão `VENDAS/MARGEM_UNITARIA` 780, `migrations/permissao_margem_unitaria_vendas.sql`, sem conceder a ninguém). Grid de **um dia**: linhas = combustível × (Compra / Venda / Margem), colunas = os postos. A data sugerida é o **último dia com venda** em `vendas_diarias`. Três checkboxes no cabeçalho escolhem quais dos três blocos aparecem (desmarcar todos volta aos três). Seletor de **posto** (`filial`, vazio = todos): recorta as colunas para um posto só, mas o mapa de calor continua calculado com a **rede inteira** — a cor diz onde o posto está em relação aos demais; produto que o posto não vendeu no dia some.

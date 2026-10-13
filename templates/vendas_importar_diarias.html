@@ -179,6 +179,134 @@
     font-size: 13px;
     color: #666;
   }
+
+  /* Quadro das linhas importadas com custo errado */
+  .erros-custo {
+    margin-top: 22px;
+    border: 2px solid #c62828;
+    border-radius: 10px;
+    background: #fff;
+    overflow: hidden;
+  }
+
+  .erros-custo-cabecalho {
+    background: #c62828;
+    color: #fff;
+    padding: 14px 18px;
+  }
+
+  .erros-custo-titulo {
+    font-size: 19px;
+    font-weight: 700;
+  }
+
+  .erros-custo-sub {
+    margin-top: 4px;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .erros-custo-resumo {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 14px 18px;
+    background: #fdeaea;
+    border-bottom: 1px solid #efc2c2;
+  }
+
+  .erros-custo-numero {
+    background: #fff;
+    border: 1px solid #efc2c2;
+    border-radius: 8px;
+    padding: 8px 14px;
+    min-width: 130px;
+  }
+
+  .erros-custo-numero span {
+    display: block;
+    font-size: 12px;
+    color: #7a2222;
+    text-transform: uppercase;
+    letter-spacing: .3px;
+  }
+
+  .erros-custo-numero strong {
+    font-size: 19px;
+    color: #9f2f2f;
+  }
+
+  .erros-custo-rolagem {
+    overflow-x: auto;
+  }
+
+  .erros-custo table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  .erros-custo th {
+    background: #f3f3f3;
+    text-align: right;
+    padding: 8px 10px;
+    border-bottom: 1px solid #d0d0d0;
+    white-space: nowrap;
+  }
+
+  .erros-custo td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #ececec;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .erros-custo th.esq,
+  .erros-custo td.esq {
+    text-align: left;
+  }
+
+  .erros-custo tr.posto td {
+    background: #e9e9e9;
+    font-weight: 700;
+    text-align: left;
+    border-top: 2px solid #c9c9c9;
+  }
+
+  .erros-custo tr.posto td.total {
+    text-align: right;
+    color: #9f2f2f;
+  }
+
+  .erros-custo td.ruim {
+    color: #c62828;
+    font-weight: 700;
+  }
+
+  .selo-erro {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    background: #fff3cd;
+    color: #7a5200;
+    border: 1px solid #f0d58a;
+  }
+
+  .selo-erro.grave {
+    background: #c62828;
+    color: #fff;
+    border-color: #c62828;
+  }
+
+  .erros-custo-rodape {
+    padding: 12px 18px;
+    font-size: 14px;
+    color: #444;
+    line-height: 1.6;
+    background: #fafafa;
+  }
 </style>
 
 <div class="card">
@@ -234,10 +362,80 @@
       <div class="texto-secundario" id="texto-secundario"></div>
     </div>
   </div>
+
+  {% if custos_suspeitos %}
+  {% macro br(v, casas=2) %}{{ ("{:,.%df}" % casas).format(v).replace(",", "X").replace(".", ",").replace("X", ".") }}{% endmacro %}
+  <div class="erros-custo" id="erros-custo">
+    <div class="erros-custo-cabecalho">
+      <div class="erros-custo-titulo">⚠ {{ resumo_suspeitos.linhas }} linha(s) importada(s) com erro de custo</div>
+      <div class="erros-custo-sub">
+        O arquivo foi importado como veio, mas nas linhas abaixo o preço de compra está
+        acima do preço de venda. A margem bruta dessas vendas está errada no Matrix
+        até o custo ser corrigido no sistema de origem e o relatório ser importado de novo.
+      </div>
+    </div>
+
+    <div class="erros-custo-resumo">
+      <div class="erros-custo-numero"><span>Linhas com erro</span><strong>{{ resumo_suspeitos.linhas }}</strong></div>
+      <div class="erros-custo-numero"><span>Postos</span><strong>{{ resumo_suspeitos.postos }}</strong></div>
+      <div class="erros-custo-numero"><span>Margem bruta dessas linhas</span><strong>{{ br(resumo_suspeitos.margem_bruta) }}</strong></div>
+      {% for tipo, qtd in resumo_suspeitos.por_tipo %}
+      <div class="erros-custo-numero"><span>{{ tipo }}</span><strong>{{ qtd }}</strong></div>
+      {% endfor %}
+    </div>
+
+    <div class="erros-custo-rolagem">
+      <table>
+        <thead>
+          <tr>
+            <th class="esq">Data</th>
+            <th class="esq">Produto</th>
+            <th>Custo (R$)</th>
+            <th>Preço de venda (R$)</th>
+            <th>Margem unit. (R$)</th>
+            <th>Quantidade</th>
+            <th>Vendas (R$)</th>
+            <th>Margem bruta (R$)</th>
+            <th class="esq">Tipo de erro</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for grupo in resumo_suspeitos.por_filial %}
+          <tr class="posto">
+            <td colspan="7">{{ grupo.filial }} — {{ grupo.linhas|length }} linha(s)</td>
+            <td class="total">{{ br(grupo.margem_bruta) }}</td>
+            <td></td>
+          </tr>
+          {% for l in grupo.linhas %}
+          <tr>
+            <td class="esq">{{ l.data.strftime("%d/%m/%Y") }}</td>
+            <td class="esq">{{ l.codigo }} · {{ l.descricao }}</td>
+            <td class="ruim">{{ br(l.custo, 4) }}</td>
+            <td>{{ br(l.preco_venda, 4) }}</td>
+            <td class="ruim">{{ br(l.margem_unitaria, 4) }}</td>
+            <td>{{ br(l.quantidade, 3) }}</td>
+            <td>{{ br(l.valor) }}</td>
+            <td class="ruim">{{ br(l.margem_bruta) }}</td>
+            <td class="esq"><span class="selo-erro {% if l.grave %}grave{% endif %}">{{ l.tipo }}</span></td>
+          </tr>
+          {% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="erros-custo-rodape">
+      <strong>Custo fora de escala</strong>: o custo passa de 3 vezes o preço de venda, sinal de valor digitado errado na entrada da mercadoria.
+      <strong>Custo maior que o preço de venda</strong>: a margem unitária saiu negativa.
+      Esta lista aparece só agora, ao fim da importação. Para vê-la de novo, importe o arquivo outra vez.
+    </div>
+  </div>
+  {% endif %}
 </div>
 
 <script>
   const jobId = {{ job_id|tojson if job_id else 'null' }};
+  const totalErrosCusto = {{ (custos_suspeitos or [])|length }};
   const formImportacao = document.getElementById("form-importacao");
   const btnImportar = document.getElementById("btn-importar");
   const boxProgresso = document.getElementById("box-progresso");
@@ -294,7 +492,9 @@
 
       if (job.status === "concluido") {
         barraProgresso.style.width = "100%";
-        textoProgresso.innerText = "Importação concluída com sucesso.";
+        textoProgresso.innerText = totalErrosCusto
+          ? `Importação concluída, com ${totalErrosCusto} linha(s) com erro de custo. Veja a lista abaixo.`
+          : "Importação concluída com sucesso.";
       }
 
       if (job.status === "erro") {

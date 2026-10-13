@@ -2115,6 +2115,58 @@ def importar_diarias_ocloset(cod_empresa, nome_empresa):
     return pagina()
 
 
+# Custo que passa disto vezes o preço de venda não é margem apertada: é valor
+# digitado em outra escala no sistema de origem (em 10/2026 o etanol de 5
+# postos veio a R$ 3.579,99 o litro, e a margem do dia fechou em -3,6 milhões).
+FATOR_CUSTO_FORA_DE_ESCALA = 3
+
+TIPO_CUSTO_FORA_DE_ESCALA = "Custo fora de escala"
+TIPO_CUSTO_MAIOR_QUE_VENDA = "Custo maior que o preço de venda"
+TIPO_MARGEM_NEGATIVA = "Margem bruta negativa"
+
+
+def tipo_erro_custo_venda(custo, preco_venda, margem_bruta):
+    """Diz o que há de errado no custo da linha, ou None se nada.
+
+    A linha é importada do mesmo jeito — o arquivo é o que o sistema de origem
+    tem; a lista serve para a importação não gravar isso calada.
+    """
+    if preco_venda > 0 and custo > preco_venda * FATOR_CUSTO_FORA_DE_ESCALA:
+        return TIPO_CUSTO_FORA_DE_ESCALA
+    if preco_venda > 0 and custo > preco_venda:
+        return TIPO_CUSTO_MAIOR_QUE_VENDA
+    if margem_bruta < 0:
+        return TIPO_MARGEM_NEGATIVA
+    return None
+
+
+def resumir_custos_suspeitos(linhas):
+    """Totais do quadro de erros e as linhas agrupadas por posto."""
+    if not linhas:
+        return None
+
+    por_tipo = {}
+    por_filial = {}
+    for l in linhas:
+        por_tipo[l["tipo"]] = por_tipo.get(l["tipo"], 0) + 1
+        por_filial.setdefault(l["filial"], []).append(l)
+
+    return {
+        "linhas": len(linhas),
+        "postos": len(por_filial),
+        "margem_bruta": sum(l["margem_bruta"] for l in linhas),
+        "por_tipo": sorted(por_tipo.items(), key=lambda t: -t[1]),
+        "por_filial": [
+            {
+                "filial": nome,
+                "linhas": itens,
+                "margem_bruta": sum(i["margem_bruta"] for i in itens),
+            }
+            for nome, itens in por_filial.items()
+        ],
+    }
+
+
 @vendas_bp.route("/diarias/importar", methods=["GET", "POST"])
 @permissao_obrigatoria("VENDAS", "IMPORTAR_VENDAS_DIARIAS", redirecionar_para="sistema.menu_vendas")
 def vendas_importar_diarias():
@@ -2152,6 +2204,7 @@ def vendas_importar_diarias():
     tmp = None
     wb = None
     job_id = None
+    custos_suspeitos = []
 
     try:
         job_id = criar_job_importacao(cur, cod_empresa, "vendas_diarias")
@@ -2254,6 +2307,7 @@ def vendas_importar_diarias():
         data_ini = None
         data_fim = None
         linhas_lidas = 0
+        nome_filial_atual = ""
 
         for row in ws.iter_rows(min_row=1, values_only=True):
             linhas_lidas += 1
@@ -2286,6 +2340,7 @@ def vendas_importar_diarias():
                     nome_filial_planilha,
                     mapa_filiais
                 )
+                nome_filial_atual = nome_filial_planilha
 
                 data_atual = None
                 dia_semana_atual = ""
@@ -2344,6 +2399,23 @@ def vendas_importar_diarias():
             if quantidade == 0 and valor == 0 and margem_bruta == 0:
                 linhas_ignoradas += 1
                 continue
+
+            tipo_erro = tipo_erro_custo_venda(custo, preco_venda, margem_bruta)
+            if tipo_erro:
+                custos_suspeitos.append({
+                    "filial": nome_filial_atual,
+                    "data": data_atual,
+                    "codigo": codigo,
+                    "descricao": descricao,
+                    "custo": custo,
+                    "preco_venda": preco_venda,
+                    "margem_unitaria": preco_venda - custo,
+                    "quantidade": quantidade,
+                    "valor": valor,
+                    "margem_bruta": margem_bruta,
+                    "tipo": tipo_erro,
+                    "grave": tipo_erro == TIPO_CUSTO_FORA_DE_ESCALA,
+                })
 
             dados.append((
                 cod_empresa,
@@ -2462,8 +2534,17 @@ def vendas_importar_diarias():
 
         flash(msg, "success")
 
+        if custos_suspeitos:
+            flash(
+                f"ATENÇÃO — {len(custos_suspeitos)} linha(s) foram importadas com o custo "
+                "maior que o preço de venda. Veja a lista no fim da página.",
+                "error"
+            )
+
     except Exception as e:
         conn.rollback()
+        # Nada foi gravado: a lista falaria de linhas que não estão no banco.
+        custos_suspeitos = []
 
         try:
             if job_id:
@@ -2498,6 +2579,8 @@ def vendas_importar_diarias():
         "vendas_importar_diarias.html",
         nome_empresa=nome_empresa,
         job_id=job_id,
+        custos_suspeitos=custos_suspeitos,
+        resumo_suspeitos=resumir_custos_suspeitos(custos_suspeitos),
         url_voltar=url_for("sistema.menu_vendas"),
         texto_voltar="← Voltar"
     )
@@ -2910,6 +2993,9 @@ def vendas_margem_unitaria():
     filial_txt = (request.args.get("filial") or "").strip()
     filial_sel = int(filial_txt) if filial_txt.isdigit() else None
 
+    # Vazio = todos os combustíveis.
+    produto_sel = (request.args.get("produto") or "").strip()
+
     # Os checkboxes só valem quando o formulário foi enviado; na primeira
     # abertura os três vêm marcados.
     if request.args.get("filtrado"):
@@ -2993,8 +3079,16 @@ def vendas_margem_unitaria():
     sem_cadastro = sorted(nao_casados)
     codigos_filiais = [int(f["cod_filial"]) for f in filiais]
 
+    # Seletor de combustível: as opções são as do cadastro (e não as do dia),
+    # para a escolha não sumir do seletor ao trocar de data.
+    if produto_sel not in {str(p["cod_produto"]).strip() for p in produtos}:
+        produto_sel = ""
+
     for produto in produtos:
         cod_produto = str(produto["cod_produto"]).strip()
+
+        if produto_sel and cod_produto != produto_sel:
+            continue
 
         # Produto sem venda no dia não vira linha: a empresa que não trabalha
         # Gasolina Especial não precisa ver a faixa vazia dela.
@@ -3080,6 +3174,8 @@ def vendas_margem_unitaria():
         filiais=filiais_visiveis,
         todas_filiais=filiais,
         filial_sel=filial_sel,
+        produtos=produtos,
+        produto_sel=produto_sel,
         linhas=linhas,
         mostrar=mostrar,
         sem_cadastro=sem_cadastro,
