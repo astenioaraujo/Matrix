@@ -249,6 +249,14 @@ antes de ser interpretado, só para responder a uma pergunta: existe alguma linh
 |---|---|
 | quebrado por filial (`Filial: BONITO I` a cada seção) | importa; a tela lista as filiais lidas, e avisa em destaque quando veio **uma só** — a transferência substitui apenas ela |
 | **sem nenhuma** `Filial:` | **recusado**, com a instrução de reemitir marcando as filiais |
+| com `Filial:` **sem cadastro** em `nome_filial_importacao` | **pergunta antes de gravar** (`FiliaisNaoCadastradas`): "Ignorar e importar as demais" ou "Cancelar". Ignorada, a seção inteira dela é pulada até a próxima `Filial:` |
+
+Filial sem cadastro é o caso da **VM TRANSPORTES E SERVIÇOS** no relatório da Vilela (EMP011):
+outra empresa, que não controlamos e nunca vai virar filial. A checagem roda **antes** do
+DELETE de `importacoes`, e entre a pergunta e a confirmação o PDF fica guardado em
+`PASTA_TMP_PDF_ANALITICO` + token (mesmo padrão de Abastecimentos), para não pedir o upload
+de novo. A função recebe agora o **caminho** do PDF (`caminho_pdf`), não o arquivo do
+formulário — quem cuida do temporário é a rota.
 
 > **Armadilha que já custou caro (03/09/2026).** Uma primeira versão, ao não achar `Filial:`,
 > usava o **título** como filial se ele casasse com `nome_filial_importacao`. Mas o título é a
@@ -510,6 +518,22 @@ Sem filtro de Status — todas as linhas entram. A projeção do mês é a médi
 
 Origem: em 09–13/10/2026 o etanol de 5 postos da EMP010 veio a ~R$ 3.580 o litro (entrada digitada errada no WebPostos) e a margem do dia fechou em −3,6 milhões, com a tela dizendo "concluída com sucesso".
 
+## Análise de Vendas (IA)
+
+`GET /vendas/analise` (`VENDAS/ANALISE_VENDAS` 810, `migrations/permissao_analise_vendas.sql`, não concedida), botão no menu de Vendas. Escolhe-se 1 a 4 semanas e o dia final (sugerido: o último dia **completo** com venda — o dia de hoje vem pela metade) e a tela compara o período com o anterior de mesma duração, na rede e posto a posto.
+
+- **Duas metades, de propósito** (`services/analise_vendas_service.py`): os números (litros/dia, preço, custo, margem, variação, diferença para a rede) são calculados em Python por `coletar_analise` e aparecem na hora; a IA recebe esses mesmos números (`montar_dados_ia`) e devolve só texto — resumo, pontos da rede e, por posto, situação + diagnóstico + sugestões em centavos. A IA não produz número que a tela exiba como dado.
+- **Claude via SDK `anthropic`** (`pedir_diagnostico`): modelo em `MODELO_ANALISE`, saída estruturada por `ESQUEMA_RESPOSTA`, instruções em `INSTRUCOES_ANALISTA`. Precisa de `ANTHROPIC_API_KEY` no ambiente do servidor; sem ela a tela mostra os números e avisa que não há diagnóstico.
+- **Roda em segundo plano**: `POST /vendas/api/analise/iniciar` coleta os dados na requisição e dispara uma thread só com a chamada da IA (leva de 1 a 3 min); a tela consulta `GET /vendas/api/analise/andamento/<job>`. Os jobs ficam em memória, como o `IMPORT_PROGRESS` — depende de o gunicorn ter um worker só. O job é amarrado a `(id_usuario, cod_empresa)`.
+- **Mudança de preço não sai do preço médio do dia.** O mesmo combustível vende no mesmo dia a vários preços (cartão, à vista, frota), e a média oscila com a mistura. O que vai para a IA são as `faixas_preco`: cada preço praticado com a fatia do volume e o primeiro/último dia em que vendeu — aumento aparece como uma faixa que termina e outra que começa.
+- **Conta de empate** (`variacao_volume_empate`): subindo c centavos sobre a margem por litro m, o posto pode perder até `c/(m+c)` do volume e ainda ganhar o mesmo em reais; baixando, precisa vender `c/(m−c)` a mais. Vai pronta no JSON da IA (`empate`, degraus de `CENTAVOS_EMPATE`), que é instruída a citá-la em toda sugestão de subir/baixar; e `anexar_empate` recalcula o número de cada sugestão no Python, que é o que a tela destaca (⚖) — não o número que a IA escreveu.
+- Linha com custo fora de escala (`FATOR_CUSTO_FORA_DE_ESCALA`) conta litros e valor, mas fica fora do custo médio. Produtos casados por `_cod_produto_das_vendas`, como na Margem Unitária.
+- Nada gravado: cada clique em Analisar refaz tudo e gera uma chamada paga à IA.
+
+## Resumo de Vendas
+
+`GET /vendas/resumo` (`VENDAS/RESUMO_VENDAS` 775, `migrations/permissao_resumo_vendas.sql`, não concedida), botão logo depois de Consulta por Produto. Filtro mês/ano (abre no mês da última venda) + posto (vazio = todos): **uma linha por produto** com preço de custo, preço de venda, margem unitária, quantidade, valor e margem bruta, e TOTAL no rodapé. Unitários ponderados pela quantidade (custo = `Σ(custo×qtd)/Σqtd`, venda = `Σvalor/Σqtd`, MUN = `Σmargem/Σqtd`), também no total. Setas ← → de mês iguais às do matricial (na virada do ano o ano acompanha). Ordenação **sempre do maior para o menor** por qualquer coluna numérica (`ordem`, seletor ou clique no cabeçalho; padrão quantidade), e mapa de calor `cor_excel_51` **por coluna**, só nas linhas de produto — no preço de custo a escala é invertida (caro = vermelho), como na Margem Unitária. **Pizza ao lado da tabela** da coluna ordenada, só quando ela é quantidade, valor ou margem bruta (`COLUNAS_PIZZA_RESUMO` — preço e margem unitária não têm fatia), **em percentual, nunca em valor**. É o desenho de Conferir Caixas (`montarPizzaSVG`, SVG sem biblioteca): sem legenda, cada fatia com nome e % do lado de fora ligado por linha guia, fatias < 3% juntas no lado mais vazio e < 2% em fonte menor — copiado, com medidas menores (bloco fixo de 540px) para caber ao lado da tabela sem rolar a página numa tela de 1680px. Margem bruta negativa fica fora da pizza, listada embaixo dela. Produto = a `descricao` de `vendas_diarias` com as grafias juntadas por `_produto_resumo`: sem ponto final ("…FROTA." = "…FROTA"), sem espaço duplo ("OLEO DIESEL  S10" = "OLEO DIESEL S10", EMP012) e sem o "B" do diesel ("OLEO DIESEL B S500" = "OLEO DIESEL S500", EMP012 — todo diesel de bomba é B); FROTA continua linha própria. Linhas com custo fora de escala (`FATOR_CUSTO_FORA_DE_ESCALA`) entram na conta, mas a tela avisa em vermelho. Nada gravado.
+
 ## Margem Unitária por Dia
 
 `GET /vendas/margem_unitaria` (permissão `VENDAS/MARGEM_UNITARIA` 780, `migrations/permissao_margem_unitaria_vendas.sql`, sem conceder a ninguém). Grid de **um dia**: linhas = combustível × (Compra / Venda / Margem), colunas = os postos. A data sugerida é o **último dia com venda** em `vendas_diarias`. Três checkboxes no cabeçalho escolhem quais dos três blocos aparecem (desmarcar todos volta aos três). Seletor de **posto** (`filial`, vazio = todos): recorta as colunas para um posto só, mas o mapa de calor continua calculado com a **rede inteira** — a cor diz onde o posto está em relação aos demais; produto que o posto não vendeu no dia some.
@@ -524,6 +548,16 @@ Origem: em 09–13/10/2026 o etanol de 5 postos da EMP010 veio a ~R$ 3.580 o lit
 ---
 
 # Módulo Performances
+
+## Avaliações de Funcionários (Criar → Executar → Consultar)
+
+Reorganizado em 19/10/2026 (`migrations/criar_avaliacoes_funcionarios_filiais.sql`). Antes a avaliação nascia dentro de Executar, funcionário a funcionário, e Consultar nem tinha template.
+
+- **Criar Avaliações** (`/performances/avaliacoes/criar`, `PERFORMANCES/CRIAR_AVALIACOES` 1105, não concedida): mês/ano com setas ← →, grade das avaliações do mês e linha nova no próprio bloco — filiais (seletor estilo Excel, várias de uma vez), checklist (de Configurar Avaliações) e **cargo** (sugere Frentista). Cria uma `performances_avaliacoes_filiais` por filial (única por empresa/filial/ano/mês/checklist — repetir não duplica, avisa) e já vincula os ativos do cargo. Enxerga a empresa inteira.
+- **O vínculo é a própria execução** (`performances_execucoes.id_avaliacao_filial`, uma por funcionário, com os itens do checklist copiados) — sem tabela de vínculo à parte. Tela **Vincular** (`/criar/<id>/vincular`): todos os ativos da filial, de qualquer cargo, com checkbox que grava na hora (`POST /criar/<id>/vinculo`, `FOR UPDATE` no cabeçalho contra clique duplo). Desvincular quem já tem nota pede confirmação (409 `precisa_confirmar`) — apaga as notas. Excluir a avaliação da filial é recusado se alguém já foi avaliado.
+- "Avaliado" = algum item com nota (`SQL_RESPONDIDA`); a nota nasce 0 e não serve para isso.
+- **Executar e Consultar só mostram as filiais do usuário** (`usuarios_filiais`, mesma função de Vistorias, `cod_filiais_vistorias_usuario`; superusuário vê todas). A trava vale também em `preencher_avaliacao` e no `salvar-ajax` (403). Executor nasce em branco e é gravado (`COALESCE`) por quem preenche.
+- As 73 execuções antigas (EMP011 05/2026, EMP012 05–10/2026) ganharam cabeçalho na migration. Há um funcionário (id 175) com 3 execuções em 10/2026 na filial 8 da EMP012 — por isso não há índice único por funcionário.
 
 ## Metas de Vendas (Performance de Gerentes → Metas)
 

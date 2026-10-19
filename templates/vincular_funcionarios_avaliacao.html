@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+{% set nomes_meses = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"] %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 8px; color: #111; }
+  .pagina-subtitulo { font-size: 18px; margin-bottom: 18px; color: #222; line-height: 1.6; }
+
+  .bloco {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 22px;
+    max-width: 900px;
+  }
+
+  .contador { font-weight: 800; margin-bottom: 12px; font-size: 15px; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #ddd; padding: 7px 8px; text-align: left; font-size: 14px; }
+  th { background: #dbe8f4; font-weight: 800; }
+  tbody tr:nth-child(even) td { background: #fafbfc; }
+  tr.vinculado td { background: #e8f5ee !important; }
+  tr.salvando td { opacity: .6; }
+  td.col-centro { text-align: center; white-space: nowrap; }
+
+  td.col-check input { width: 18px; height: 18px; cursor: pointer; }
+
+  .fora { color: #b45309; font-size: 12px; font-weight: 700; }
+
+  .nota { font-weight: 900; }
+  .nota-baixa { color: #dc3545; }
+  .nota-media { color: #b58900; }
+  .nota-alta { color: #198754; }
+
+  .vazio { color: #777; padding: 14px 8px; }
+
+  .badge-flutuante {
+    position: fixed;
+    right: 22px;
+    bottom: 22px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-weight: 700;
+    box-shadow: 0 4px 14px rgba(0,0,0,.18);
+    display: none;
+    z-index: 50;
+  }
+
+  .badge-salvo { background: #d1e7dd; color: #0f5132; }
+  .badge-erro { background: #f8d7da; color: #842029; }
+</style>
+
+<div class="pagina-titulo">Vincular Funcionários</div>
+
+<div class="pagina-subtitulo">
+  <strong>Filial:</strong> {{ af.cod_filial }} - {{ af.nome_filial }}<br>
+  <strong>Mês:</strong> {{ nomes_meses[af.mes - 1] }}/{{ af.ano }}<br>
+  <strong>Checklist:</strong> {{ af.codigo_avaliacao }} - {{ af.avaliacao_descricao }} - v{{ af.versao }}
+</div>
+
+<div class="bloco">
+  <div class="contador" id="contador"></div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:70px" class="col-centro">Avaliar</th>
+        <th>Funcionário</th>
+        <th style="width:190px">Cargo</th>
+        <th style="width:170px">Situação</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in funcionarios %}
+      <tr data-id="{{ f.id }}" data-respondida="{{ 1 if f.respondida else 0 }}"
+          class="{% if f.vinculado %}vinculado{% endif %}">
+        <td class="col-centro col-check">
+          <input type="checkbox" {% if f.vinculado %}checked{% endif %}
+                 {% if f.cod_filial != af.cod_filial or not f.ativo %}data-fora="1"{% endif %}>
+        </td>
+        <td>
+          {{ f.nome }}
+          {% if not f.ativo %}<span class="fora">· desligado</span>
+          {% elif f.cod_filial != af.cod_filial %}<span class="fora">· hoje em outra filial</span>{% endif %}
+        </td>
+        <td>{{ f.cargo or "—" }}</td>
+        <td class="situacao">
+          {% if f.respondida %}
+            Avaliado — <span class="nota
+              {% if (f.nota or 0) < 5 %}nota-baixa{% elif (f.nota or 0) < 8 %}nota-media{% else %}nota-alta{% endif %}">
+              {{ "%.2f"|format(f.nota or 0) }}</span>
+          {% elif f.vinculado %}
+            A avaliar
+          {% else %}
+            —
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+
+      {% if not funcionarios %}
+      <tr><td colspan="4" class="vazio">Nenhum funcionário ativo nesta filial.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<div class="badge-flutuante" id="aviso"></div>
+
+<script>
+  const URL_VINCULO = "{{ url_for('performances.alternar_vinculo_avaliacao', id_avaliacao_filial=af.id_avaliacao_filial) }}";
+
+  function contar() {
+    const total = document.querySelectorAll("tbody tr[data-id] input:checked").length;
+    document.getElementById("contador").textContent = total + " funcionário(s) vinculado(s)";
+  }
+
+  let timerAviso = null;
+  function avisar(texto, erro) {
+    const el = document.getElementById("aviso");
+    el.textContent = texto;
+    el.className = "badge-flutuante " + (erro ? "badge-erro" : "badge-salvo");
+    el.style.display = "block";
+    clearTimeout(timerAviso);
+    timerAviso = setTimeout(function () { el.style.display = "none"; }, erro ? 5000 : 1800);
+  }
+
+  async function enviar(idFuncionario, vincular, confirmar) {
+    const resp = await fetch(URL_VINCULO, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id_funcionario: idFuncionario, vincular: vincular, confirmar: !!confirmar })
+    });
+    let dados = {};
+    try { dados = await resp.json(); } catch (e) { dados = { ok: false, erro: "Resposta inválida do servidor." }; }
+    return { status: resp.status, dados: dados };
+  }
+
+  document.querySelectorAll("tbody tr[data-id] input[type=checkbox]").forEach(function (chk) {
+    chk.addEventListener("change", async function () {
+      const tr = chk.closest("tr");
+      const id = parseInt(tr.dataset.id, 10);
+      const vincular = chk.checked;
+
+      // Funcionário que saiu da filial pode ser desvinculado, mas não volta.
+      if (vincular && chk.dataset.fora) {
+        chk.checked = false;
+        avisar("Só funcionários ativos desta filial podem ser vinculados.", true);
+        return;
+      }
+
+      chk.disabled = true;
+      tr.classList.add("salvando");
+
+      try {
+        let r = await enviar(id, vincular, false);
+
+        if (r.status === 409 && r.dados.precisa_confirmar) {
+          if (await confirmarGlobal(r.dados.erro + " Desvincular mesmo assim?")) {
+            r = await enviar(id, vincular, true);
+          } else {
+            chk.checked = true;
+            return;
+          }
+        }
+
+        if (!r.dados.ok) {
+          chk.checked = !vincular;
+          avisar(r.dados.erro || "Erro ao gravar.", true);
+          return;
+        }
+
+        tr.classList.toggle("vinculado", r.dados.vinculado);
+        tr.dataset.respondida = "0";
+        tr.querySelector(".situacao").textContent = r.dados.vinculado ? "A avaliar" : "—";
+        avisar(r.dados.vinculado ? "Vinculado" : "Desvinculado", false);
+      } catch (e) {
+        chk.checked = !vincular;
+        avisar("Erro de comunicação. Nada foi gravado.", true);
+      } finally {
+        chk.disabled = false;
+        tr.classList.remove("salvando");
+        contar();
+      }
+    });
+  });
+
+  contar();
+</script>
+
+{% endblock %}

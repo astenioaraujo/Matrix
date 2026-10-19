@@ -39,6 +39,16 @@
     padding: 0 10px;
   }
 
+  .btn-criar {
+    background: #c2410c;
+    border: 1px solid #c2410c;
+  }
+
+  .btn-criar:hover {
+    background: #a2370a;
+    border-color: #a2370a;
+  }
+
   .btn-executar {
     background: #0F766E;
     border: 1px solid #0F766E;
@@ -77,6 +87,12 @@
 </div>
 
 <div class="menu-botoes">
+
+  {% if pode_criar_avaliacoes %}
+    <a href="{{ url_for('performances.criar_avaliacoes') }}" class="btn-criar">
+      Criar Avaliações
+    </a>
+  {% endif %}
 
   {% if pode_executar_avaliacoes %}
     <a href="{{ url_for('performances.executar_avaliacoes') }}" class="btn-executar">

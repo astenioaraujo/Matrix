@@ -1,0 +1,500 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .btn-selecionar {
+    display: inline-block;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-weight: 700;
+    border: 1px solid #c7c7c7;
+    background: #f7f7f7;
+    color: #1f3c88;
+    cursor: pointer;
+  }
+
+  .btn-selecionar:hover {
+    background: #ededed;
+  }
+
+  .painel-filtros {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 24px;
+  }
+
+  .grid-filtros {
+    display: grid;
+    grid-template-columns: 250px 110px 280px 200px auto;
+    gap: 12px;
+    align-items: end;
+    justify-content: start;
+  }
+
+  .campo label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .campo select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid #c9c9c9;
+    border-radius: 8px;
+    font-size: 15px;
+    background: #fff;
+  }
+
+  .mes-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .btn-mes-nav {
+    flex: 0 0 38px;
+    width: 38px;
+    height: 38px;
+    border: 1px solid #c7c7c7;
+    border-radius: 9px;
+    background: #c8e6c9;
+    color: #111;
+    font-size: 18px;
+    font-weight: 900;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .btn-mes-nav:hover {
+    background: #a5d6a7;
+  }
+
+  .bloco-titulo {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: #b02a37;
+  }
+
+  .tabela-wrap {
+    overflow-x: auto;
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    background: #fff;
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: auto;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #dddddd;
+    padding: 7px 10px;
+    white-space: nowrap;
+  }
+
+  th {
+    background: #dbe8f4;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  td.num {
+    text-align: right;
+    min-width: 110px;
+  }
+
+  td.produto {
+    min-width: 220px;
+  }
+
+  tbody tr:nth-child(even) td {
+    background: #f8fafc;
+  }
+
+  th.th-ordem {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  th.th-ordem:hover {
+    background: #c5d9ec;
+  }
+
+  th.ordenada {
+    background: #b9d0e8;
+  }
+
+  tfoot td {
+    background: #fff3c4;
+    font-weight: 700;
+    border-top: 2px solid #b8a35a;
+  }
+
+  td.negativo {
+    color: #b02a37;
+  }
+
+  .resumo-corpo {
+    display: flex;
+    max-width: 100%;
+    gap: 18px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .grafico-box {
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 16px;
+    background: #fff;
+    flex: 0 0 540px;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .grafico-titulo {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+
+  .grafico-pizza svg {
+    display: block;
+    overflow: visible;
+    width: 100%;
+    height: auto;
+  }
+
+  .grafico-nota {
+    font-size: 13px;
+    color: #666;
+    margin-top: 8px;
+  }
+
+  .aviso-custo {
+    background: #fdecea;
+    border: 1px solid #f5c2c0;
+    color: #8a1c1c;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    max-width: 900px;
+  }
+
+  .sem-dados {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 20px;
+    color: #666;
+  }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">Resumo de Vendas</div>
+  <div class="pagina-subtitulo">
+    Empresa: <strong>{{ nome_empresa }}</strong>
+  </div>
+
+  <form method="get" class="painel-filtros">
+    <div class="grid-filtros">
+      <div class="campo">
+        <label for="mes">Mês</label>
+        <div class="mes-nav">
+          <button type="button" class="btn-mes-nav" onclick="mudarMes(-1)" title="Mês anterior">←</button>
+          <select id="mes" name="mes">
+            {% for nome in meses %}
+            <option value="{{ loop.index }}" {% if mes == loop.index %}selected{% endif %}>{{ nome }}</option>
+            {% endfor %}
+          </select>
+          <button type="button" class="btn-mes-nav" onclick="mudarMes(1)" title="Próximo mês">→</button>
+        </div>
+      </div>
+
+      <div class="campo">
+        <label for="ano">Ano</label>
+        <select id="ano" name="ano">
+          {% for a in anos %}
+          <option value="{{ a }}" {% if ano == a %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="campo">
+        <label for="filial">Posto</label>
+        <select id="filial" name="filial">
+          <option value="">(Todos os postos)</option>
+          {% for f in filiais %}
+          <option value="{{ f.cod_filial }}" {% if filial_sel == f.cod_filial|int %}selected{% endif %}>
+            {{ f.cod_filial }} - {{ f.nome_filial }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="campo">
+        <label for="ordem">Ordenar por (maior → menor)</label>
+        <select id="ordem" name="ordem" onchange="this.form.submit()">
+          {% for campo, rotulo in colunas %}
+          <option value="{{ campo }}" {% if ordem == campo %}selected{% endif %}>{{ rotulo }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="campo">
+        <button type="submit" class="btn-selecionar">Selecionar</button>
+      </div>
+    </div>
+  </form>
+
+  <div class="bloco-titulo">
+    {{ meses[mes - 1] }}/{{ ano }} —
+    {% if filial_sel is not none %}{{ filial_sel }} - {{ nome_filial_sel or '' }}{% else %}Todos os postos{% endif %}
+  </div>
+
+  {% if custo_suspeito %}
+  <div class="aviso-custo">
+    ⚠ {{ custo_suspeito }} linha(s) do período têm custo maior que 3× o preço de venda
+    (custo digitado em outra escala no sistema de origem). O preço de custo e a margem
+    deste resumo estão contaminados por elas.
+  </div>
+  {% endif %}
+
+  {% if linhas %}
+  <div class="resumo-corpo">
+    <div class="tabela-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>PRODUTO</th>
+            {% for campo, rotulo in colunas %}
+            <th class="th-ordem {% if ordem == campo %}ordenada{% endif %}"
+                onclick="ordenarPor('{{ campo }}')" title="Ordenar por {{ rotulo|lower }}, do maior para o menor">
+              {{ rotulo|upper }}{% if ordem == campo %} ▼{% endif %}
+            </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for l in linhas %}
+          <tr>
+            <td class="produto">{{ l.produto }}</td>
+            {% for campo, rotulo in colunas %}
+            <td class="num {% if l[campo] < 0 %}negativo{% endif %}" style="background: {{ l[campo ~ '_cor'] }};">{{ formatar_numero_br(l[campo]) }}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>TOTAL</td>
+            <td class="num">{{ formatar_numero_br(total.custo) }}</td>
+            <td class="num">{{ formatar_numero_br(total.preco_venda) }}</td>
+            <td class="num {% if total.mun < 0 %}negativo{% endif %}">{{ formatar_numero_br(total.mun) }}</td>
+            <td class="num">{{ formatar_numero_br(total.quantidade) }}</td>
+            <td class="num">{{ formatar_numero_br(total.valor) }}</td>
+            <td class="num {% if total.margem_bruta < 0 %}negativo{% endif %}">{{ formatar_numero_br(total.margem_bruta) }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    {% if tem_pizza and fatias %}
+    <div class="grafico-box">
+      <div class="grafico-titulo">Participação por produto — {{ rotulo_ordem }}</div>
+      <div id="grafico-pizza" class="grafico-pizza"></div>
+      {% if fora_da_pizza %}
+      <div class="grafico-nota">
+        Fora do gráfico, por estarem negativos: {{ fora_da_pizza|join(', ') }}.
+      </div>
+      {% endif %}
+    </div>
+    {% elif not tem_pizza %}
+    <div class="grafico-box">
+      <div class="grafico-nota">
+        O gráfico de pizza aparece ao ordenar por quantidade, valor ou margem bruta.
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+    <div class="sem-dados">
+      Nenhuma venda encontrada para o mês e posto informados.
+    </div>
+  {% endif %}
+</div>
+
+{% if tem_pizza and fatias %}
+<script>
+(function () {
+  /* Pizza no modelo de Conferir Caixas (montarPizzaSVG em conferir_caixas.html):
+     SVG sem biblioteca, o nome de cada fatia do lado de fora, ligado a ela
+     por uma linha guia em cotovelo — o rótulo já é a legenda. Os rótulos
+     vão para duas colunas (esquerda/direita) e são afastados na vertical
+     para não se encavalarem; as fatias pequenas vão em bloco para o lado
+     mais vazio, e as miúdas saem em fonte menor. Só as medidas mudaram,
+     para a pizza caber ao lado da tabela. */
+  const PALETA = ['#4338ca', '#0891b2', '#16a34a', '#ca8a04', '#dc2626',
+                  '#9333ea', '#0d9488', '#c2410c', '#2563eb', '#65a30d'];
+  const fatias = {{ fatias|tojson }};
+  const pct = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+  const escapar = t => String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // Ângulo em graus a partir do topo (12 horas), sentido horário.
+  function pontoNoCirculo(cx, cy, r, angulo) {
+    const rad = angulo * Math.PI / 180;
+    return { x: cx + r * Math.sin(rad), y: cy - r * Math.cos(rad) };
+  }
+
+  function montarPizzaSVG(itens) {
+    const LARGURA = 620, ALTURA = 330;
+    const cx = 310, cy = 165, r = 95;
+    const ESPACO_ROTULO = 17;   // altura mínima entre dois textos
+    const COLUNA = 34;          // distância da borda até a coluna de texto
+    const MARGEM_V = 14;        // respiro no topo e no rodapé
+    const LIMIAR_PEQUENA = 3;   // % abaixo do qual a fatia é "continha"
+    const LIMIAR_MIUDA = 2;     // % abaixo do qual o rótulo sai em fonte menor
+    const FONTE = 12, FONTE_MIUDA = 8;
+    const espaco = l => (l.fonte < FONTE ? ESPACO_ROTULO - 5 : ESPACO_ROTULO);
+
+    let anguloAtual = 0;
+    let fatiasSvg = '';
+    const rotulos = [];
+
+    itens.forEach((it, i) => {
+      const inicio = anguloAtual;
+      const fim = anguloAtual + (it.percentual / 100) * 360;
+      anguloAtual = fim;
+      const meio = (inicio + fim) / 2;
+      const cor = PALETA[i % PALETA.length];
+
+      if (it.percentual >= 99.999) {
+        fatiasSvg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${cor}"></circle>`;
+      } else {
+        const p1 = pontoNoCirculo(cx, cy, r, inicio);
+        const p2 = pontoNoCirculo(cx, cy, r, fim);
+        const arcoGrande = (fim - inicio) > 180 ? 1 : 0;
+        fatiasSvg += `<path d="M${cx},${cy} L${p1.x.toFixed(2)},${p1.y.toFixed(2)} `
+          + `A${r},${r} 0 ${arcoGrande} 1 ${p2.x.toFixed(2)},${p2.y.toFixed(2)} Z" `
+          + `fill="${cor}" stroke="#fff" stroke-width="1.5"></path>`;
+      }
+
+      const pBorda = pontoNoCirculo(cx, cy, r, meio);
+      const pCotovelo = pontoNoCirculo(cx, cy, r + 14, meio);
+      rotulos.push({
+        cor, rotulo: it.produto, percentual: it.percentual,
+        pBorda, pCotovelo,
+        direita: pCotovelo.x >= cx,
+        y: pCotovelo.y,
+        pequena: it.percentual < LIMIAR_PEQUENA,
+        fonte: it.percentual < LIMIAR_MIUDA ? FONTE_MIUDA : FONTE,
+      });
+    });
+
+    // As pequenas vão juntas para a coluna com menos fatias grandes.
+    const grandes = rotulos.filter(l => !l.pequena);
+    const pequenas = rotulos.filter(l => l.pequena);
+    if (pequenas.length) {
+      const naDireita = grandes.filter(l => l.direita).length;
+      const ladoVazio = naDireita <= grandes.length - naDireita;
+      pequenas.forEach(l => { l.direita = ladoVazio; });
+    }
+
+    // Desempilha uma coluna: empurra para baixo quem está perto demais do
+    // vizinho de cima e, se estourar o rodapé, reacomoda de baixo para cima.
+    function acomodar(lista) {
+      lista.sort((a, b) => a.y - b.y);
+      let limite = MARGEM_V;
+      lista.forEach(l => {
+        if (l.y < limite) l.y = limite;
+        limite = l.y + espaco(l);
+      });
+      if (limite - (ALTURA - MARGEM_V) > 0) {
+        let teto = ALTURA - MARGEM_V;
+        for (let i = lista.length - 1; i >= 0; i--) {
+          if (lista[i].y > teto) lista[i].y = teto;
+          teto = lista[i].y - espaco(lista[i]);
+        }
+      }
+    }
+    acomodar(rotulos.filter(l => l.direita));
+    acomodar(rotulos.filter(l => !l.direita));
+
+    let rotulosSvg = '';
+    rotulos.forEach(l => {
+      const xColuna = l.direita ? cx + r + COLUNA : cx - r - COLUNA;
+      const anchor = l.direita ? 'start' : 'end';
+      const desloca = l.direita ? 6 : -6;
+      rotulosSvg += `<polyline points="${l.pBorda.x.toFixed(2)},${l.pBorda.y.toFixed(2)} `
+        + `${l.pCotovelo.x.toFixed(2)},${l.pCotovelo.y.toFixed(2)} `
+        + `${xColuna},${l.y.toFixed(2)}" fill="none" stroke="${l.cor}" `
+        + `stroke-width="1" stroke-linejoin="round"></polyline>`;
+      rotulosSvg += `<text x="${xColuna + desloca}" y="${l.y.toFixed(2)}" `
+        + `text-anchor="${anchor}" dominant-baseline="middle" `
+        + `font-size="${l.fonte}" font-weight="700" fill="${l.cor}">`
+        + `${escapar(l.rotulo)} `
+        + `<tspan font-weight="600" fill="#6b7280">${pct(l.percentual)}</tspan></text>`;
+    });
+
+    return `<svg viewBox="0 0 ${LARGURA} ${ALTURA}" width="${LARGURA}" height="${ALTURA}" `
+      + `role="img" aria-label="Participação por produto">${fatiasSvg}${rotulosSvg}</svg>`;
+  }
+
+  document.getElementById('grafico-pizza').innerHTML = montarPizzaSVG(fatias);
+})();
+</script>
+{% endif %}
+
+<script>
+  // Mesmas setas do matricial: andam um mês e já consultam. Na virada do ano
+  // o ano acompanha — se ele não estiver no seletor (mês sem venda), entra.
+  // Clicar no cabeçalho é o mesmo que escolher no seletor de ordem.
+  function ordenarPor(campo) {
+    const selectOrdem = document.getElementById("ordem");
+    selectOrdem.value = campo;
+    selectOrdem.form.submit();
+  }
+
+  function mudarMes(delta) {
+    const selectMes = document.getElementById("mes");
+    const selectAno = document.getElementById("ano");
+
+    let mes = parseInt(selectMes.value, 10) + delta;
+    let ano = parseInt(selectAno.value, 10);
+
+    if (mes < 1) { mes = 12; ano -= 1; }
+    if (mes > 12) { mes = 1; ano += 1; }
+
+    if (!Array.from(selectAno.options).some(opt => opt.value === String(ano))) {
+      selectAno.add(new Option(String(ano), String(ano)));
+    }
+
+    selectMes.value = String(mes);
+    selectAno.value = String(ano);
+    selectMes.form.submit();
+  }
+</script>
+
+{% endblock %}

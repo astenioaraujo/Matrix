@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<div class="pagina-titulo">Consultar Avaliações</div>
+<div class="pagina-subtitulo"><strong>Empresa:</strong> {{ nome_empresa }}</div>
+
+{% set rota_filtro = "performances.consultar_avaliacoes" %}
+{% include "components/filtro_avaliacoes.html" %}
+
+{% for b in blocos %}
+<div class="bloco-filial">
+  <div class="bloco-titulo">
+    <span class="nome">{{ b.cod_filial }} - {{ b.nome_filial }}</span>
+    <span class="resumo">
+      {{ b.respondidas }} de {{ b.total }} avaliados
+      {% if b.media is not none %}
+        · média <span class="nota {% if b.media < 5 %}nota-baixa{% elif b.media < 8 %}nota-media{% else %}nota-alta{% endif %}">{{ "%.2f"|format(b.media) }}</span>
+      {% endif %}
+    </span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:50px" class="col-centro">#</th>
+        <th>Funcionário</th>
+        <th style="width:170px">Cargo</th>
+        <th style="width:180px">Avaliado por</th>
+        <th style="width:90px">Nota</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% set pos = namespace(n=0) %}
+      {% for e in b.itens %}
+      <tr>
+        <td class="col-centro">{% if e.respondida %}{% set pos.n = pos.n + 1 %}{{ pos.n }}º{% endif %}</td>
+        <td>{{ e.nome_avaliado or "—" }}</td>
+        <td>{{ e.cargo or "—" }}</td>
+        <td>{{ e.nome_executor if e.respondida and e.nome_executor else "—" }}</td>
+        <td class="col-num">
+          {% if e.respondida %}
+            <span class="nota {% if (e.nota or 0) < 5 %}nota-baixa{% elif (e.nota or 0) < 8 %}nota-media{% else %}nota-alta{% endif %}">
+              {{ "%.2f"|format(e.nota or 0) }}</span>
+          {% else %}<span class="badge badge-pendente">A AVALIAR</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endfor %}
+
+{% endblock %}

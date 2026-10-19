@@ -1,4 +1,7 @@
+import os
+import re
 import subprocess
+import tempfile
 import traceback
 import uuid
 from decimal import Decimal
@@ -189,6 +192,12 @@ def importar_pdf_fluxo_caixa():
 # IMPORTACAO DO PDF ANALITICO
 # ---------------------------------------------------------------
 
+# O PDF fica guardado entre a pergunta "ignorar filiais sem cadastro?" e a
+# confirmacao, para nao pedir o upload de novo (mesmo padrao da importacao de
+# abastecimentos).
+PASTA_TMP_PDF_ANALITICO = os.path.join(tempfile.gettempdir(), "matrix_pdf_analitico")
+
+
 @importacoes_bp.route("/importacoes/pdf-analitico", methods=["GET", "POST"])
 def importar_pdf_fluxo_caixa_analitico():
     if "cod_empresa" not in session:
@@ -197,34 +206,83 @@ def importar_pdf_fluxo_caixa_analitico():
     mensagem = ""
     erro = ""
     resultado_pdf = None
+    confirmar_filiais = None
 
     if request.method == "POST":
+        from importa_web_postos import (
+            Importa_Fluxo_Caixa_PDF_Analitico,
+            FiliaisNaoCadastradas,
+        )
+
+        token = (request.form.get("token") or "").strip()
+        acao = (request.form.get("acao") or "").strip()
+        caminho_tmp = None
+        manter_tmp = False
+
         try:
-            arquivo = request.files.get("arquivo")
+            if token:
+                if not re.fullmatch(r"[a-f0-9]{32}\.pdf", token):
+                    raise ValueError("Arquivo da confirmação inválido. Envie o PDF de novo.")
 
-            if not arquivo:
-                raise ValueError("Selecione um arquivo PDF.")
+                caminho_tmp = os.path.join(PASTA_TMP_PDF_ANALITICO, token)
 
-            from importa_web_postos import Importa_Fluxo_Caixa_PDF_Analitico
+                if not os.path.exists(caminho_tmp):
+                    caminho_tmp = None
+                    raise ValueError("O arquivo enviado expirou. Envie o PDF de novo.")
 
-            resultado_pdf = Importa_Fluxo_Caixa_PDF_Analitico(
-                arquivo_pdf=arquivo,
-                cod_empresa_fixo=session["cod_empresa"]
-            )
+                nome_arquivo = (request.form.get("nome_arquivo") or token).strip()
+            else:
+                arquivo = request.files.get("arquivo")
 
-            mensagem = (
-                "Importação do PDF analítico concluída. "
-                "Confira abaixo a conferência do detalhamento."
-            )
+                if not arquivo or not arquivo.filename:
+                    raise ValueError("Selecione um arquivo PDF.")
+
+                nome_arquivo = arquivo.filename
+                os.makedirs(PASTA_TMP_PDF_ANALITICO, exist_ok=True)
+                token = f"{uuid.uuid4().hex}.pdf"
+                caminho_tmp = os.path.join(PASTA_TMP_PDF_ANALITICO, token)
+                arquivo.save(caminho_tmp)
+
+            if acao == "cancelar":
+                mensagem = "Importação cancelada. Nada foi gravado."
+            else:
+                ignorar = (
+                    request.form.getlist("ignorar_filial")
+                    if acao == "ignorar_filiais" else []
+                )
+
+                try:
+                    resultado_pdf = Importa_Fluxo_Caixa_PDF_Analitico(
+                        cod_empresa_fixo=session["cod_empresa"],
+                        caminho_pdf=caminho_tmp,
+                        ignorar_filiais=ignorar,
+                    )
+                except FiliaisNaoCadastradas as e:
+                    manter_tmp = True
+                    confirmar_filiais = {
+                        "nomes": e.nomes,
+                        "token": token,
+                        "nome_arquivo": nome_arquivo,
+                    }
+                else:
+                    mensagem = (
+                        "Importação do PDF analítico concluída. "
+                        "Confira abaixo a conferência do detalhamento."
+                    )
 
         except Exception as e:
             erro = str(e)
+
+        finally:
+            if caminho_tmp and not manter_tmp and os.path.exists(caminho_tmp):
+                os.remove(caminho_tmp)
 
     return render_template(
         "importar_pdf_analitico.html",
         mensagem=mensagem,
         erro=erro,
         resultado_pdf=resultado_pdf,
+        confirmar_filiais=confirmar_filiais,
         empresa_ativa=session["cod_empresa"],
         nome_empresa_ativa=session["nome_empresa"],
         url_voltar=url_for("importacoes.listar_importacoes"),

@@ -1,0 +1,423 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+{% set nomes_meses = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"] %}
+{% set ant_ano = ano_sel - 1 if mes_sel == 1 else ano_sel %}
+{% set ant_mes = 12 if mes_sel == 1 else mes_sel - 1 %}
+{% set prox_ano = ano_sel + 1 if mes_sel == 12 else ano_sel %}
+{% set prox_mes = 1 if mes_sel == 12 else mes_sel + 1 %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 8px; color: #111; }
+  .pagina-subtitulo { font-size: 20px; margin-bottom: 24px; color: #222; }
+
+  .bloco {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 22px;
+  }
+
+  .linha-filtros {
+    display: flex;
+    gap: 10px;
+    align-items: end;
+    margin-bottom: 18px;
+  }
+
+  .linha-filtros .campo-ano { width: 100px; }
+  .linha-filtros .campo-mes { width: 160px; }
+
+  .seta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid #bbb;
+    background: #fff;
+    color: #333;
+    text-decoration: none;
+    font-weight: 800;
+  }
+
+  .seta:hover { background: #eef4fe; }
+
+  .acao-nova { margin-bottom: 14px; }
+  .dica { font-size: 11px; color: #777; margin-top: 4px; }
+
+  /* Seletor de filiais estilo filtro do Excel (o mesmo de Programar Vistorias) */
+  .filtro-filiais { position: relative; }
+
+  .filtro-botao {
+    width: 100%;
+    text-align: left;
+    padding: 8px 26px 8px 10px;
+    border-radius: 6px;
+    border: 1px solid #bbb;
+    background: #fff;
+    font-size: 14px;
+    cursor: pointer;
+    box-sizing: border-box;
+  }
+
+  .filtro-botao::after { content: "▾"; position: absolute; right: 10px; color: #666; }
+
+  .filtro-painel {
+    position: absolute;
+    z-index: 30;
+    top: 100%;
+    left: 0;
+    min-width: 260px;
+    background: #fff;
+    border: 1px solid #bbb;
+    border-radius: 6px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.18);
+    padding: 8px;
+    margin-top: 4px;
+  }
+
+  .filtro-painel input[type="search"] { margin-bottom: 6px; }
+  .filtro-lista { max-height: 260px; overflow-y: auto; }
+
+  .filtro-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    font-weight: 400;
+    font-size: 13px;
+    margin: 0;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+
+  .filtro-item:hover { background: #eef4fe; }
+  .filtro-item input[type="checkbox"] { width: auto; margin: 0; flex: none; }
+  .filtro-todas { border-bottom: 1px solid #e2e2e2; font-weight: 700; }
+
+  label { display: block; font-weight: 700; margin-bottom: 6px; font-size: 13px; }
+
+  input, select {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid #bbb;
+    font-size: 14px;
+    box-sizing: border-box;
+  }
+
+  .btn-novo {
+    padding: 9px 18px;
+    border-radius: 8px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .btn-novo:hover { filter: brightness(0.92); }
+
+  .btn-mini {
+    display: inline-block;
+    padding: 5px 11px;
+    border-radius: 6px;
+    border: 1px solid #1a73e8;
+    background: #1a73e8;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    text-decoration: none;
+  }
+
+  .btn-mini.vincular { border-color: #0F766E; background: #0F766E; }
+  .btn-mini.excluir { border-color: #c0392b; background: #c0392b; }
+  .btn-mini:hover { filter: brightness(0.92); }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 14px; }
+  th { background: #dbe8f4; font-weight: 800; }
+  tbody tr:nth-child(even) td { background: #fafbfc; }
+  tr.linha-nova td { background: #f3f8ff !important; vertical-align: top; }
+  td.col-centro { text-align: center; white-space: nowrap; }
+  td.col-num { text-align: right; white-space: nowrap; }
+
+  tfoot td { background: #f1f3f5; font-weight: 800; }
+
+  .nota { font-weight: 900; }
+  .nota-baixa { color: #dc3545; }
+  .nota-media { color: #b58900; }
+  .nota-alta { color: #198754; }
+
+  .vazio { color: #777; padding: 14px 8px; }
+
+  .flash-msg { padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; font-weight: 600; }
+  .flash-success { background: #d1e7dd; color: #0f5132; }
+  .flash-error { background: #f8d7da; color: #842029; }
+</style>
+
+<div class="pagina-titulo">Criar Avaliações</div>
+
+<div class="pagina-subtitulo">
+  <strong>Empresa:</strong> {{ nome_empresa }}
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endwith %}
+
+<form method="get" class="linha-filtros">
+  <a class="seta" title="Mês anterior"
+     href="{{ url_for('performances.criar_avaliacoes', ano=ant_ano, mes=ant_mes) }}">←</a>
+
+  <div class="campo-mes">
+    <label for="mes">Mês</label>
+    <select id="mes" name="mes" onchange="this.form.submit()">
+      {% for nome in nomes_meses %}
+        <option value="{{ loop.index }}" {% if loop.index == mes_sel %}selected{% endif %}>{{ nome }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="campo-ano">
+    <label for="ano">Ano</label>
+    <input type="number" id="ano" name="ano" value="{{ ano_sel }}" onchange="this.form.submit()">
+  </div>
+
+  <a class="seta" title="Próximo mês"
+     href="{{ url_for('performances.criar_avaliacoes', ano=prox_ano, mes=prox_mes) }}">→</a>
+</form>
+
+<div class="acao-nova">
+  <button type="button" class="btn-novo" id="btnNova">+ Nova Avaliação</button>
+</div>
+
+<div class="bloco">
+  <form method="post" id="formNova" onsubmit="return validarNova()">
+    <input type="hidden" name="ano" value="{{ ano_sel }}">
+    <input type="hidden" name="mes" value="{{ mes_sel }}">
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:260px">Filial</th>
+          <th>Checklist</th>
+          <th style="width:190px">Cargo avaliado</th>
+          <th style="width:110px">Vinculados</th>
+          <th style="width:110px">Avaliados</th>
+          <th style="width:90px">Média</th>
+          <th style="width:190px">Ações</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <tr class="linha-nova" id="linhaNova" style="display:none;">
+          <td>
+            <div class="filtro-filiais" id="filtroFiliais">
+              <button type="button" class="filtro-botao" id="filtroBotao"
+                      aria-expanded="false">Selecione as filiais</button>
+              <div class="filtro-painel" id="filtroPainel" style="display:none;">
+                <input type="search" id="filtroBusca" placeholder="Buscar filial...">
+                <label class="filtro-item filtro-todas">
+                  <input type="checkbox" id="filtroTodas">
+                  <span>(Selecionar tudo)</span>
+                </label>
+                <div class="filtro-lista" id="filtroLista">
+                  {% for f in filiais %}
+                    <label class="filtro-item">
+                      <input type="checkbox" name="cod_filial" value="{{ f.cod_filial }}">
+                      <span>{{ f.cod_filial }} - {{ f.nome_filial }}</span>
+                    </label>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+            <div class="dica">Uma avaliação por filial marcada.</div>
+          </td>
+          <td>
+            <select name="id_avaliacao" id="novaChecklist">
+              <option value="">Selecione</option>
+              {% for c in checklists %}
+                <option value="{{ c.id_avaliacao }}" {% if checklists|length == 1 %}selected{% endif %}>
+                  {{ c.codigo_avaliacao }} - {{ c.descricao }} - v{{ c.versao }}
+                </option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            <select name="id_cargo">
+              <option value="">Nenhum (vincular depois)</option>
+              {% for c in cargos %}
+                <option value="{{ c.id }}" {% if c.id == id_cargo_sugerido %}selected{% endif %}>{{ c.descricao }}</option>
+              {% endfor %}
+            </select>
+            <div class="dica">Vincula os funcionários ativos desse cargo em cada filial.</div>
+          </td>
+          <td colspan="3" style="color:#777;">Criada para {{ nomes_meses[mes_sel - 1] }}/{{ ano_sel }}</td>
+          <td class="col-centro">
+            <button type="submit" class="btn-mini">Salvar</button>
+          </td>
+        </tr>
+
+        {% for a in avaliacoes_mes %}
+        <tr>
+          <td>{{ a.cod_filial }} - {{ a.nome_filial }}</td>
+          <td>{{ a.codigo_avaliacao }} - {{ a.avaliacao_descricao }}</td>
+          <td>{{ a.cargo_descricao or "—" }}</td>
+          <td class="col-num">{{ a.vinculados }}</td>
+          <td class="col-num">{{ a.respondidas }}</td>
+          <td class="col-num">
+            {% if a.media is not none %}
+              <span class="nota
+                {% if a.media < 5 %}nota-baixa{% elif a.media < 8 %}nota-media{% else %}nota-alta{% endif %}">
+                {{ "%.2f"|format(a.media) }}
+              </span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="col-centro">
+            <a class="btn-mini vincular"
+               href="{{ url_for('performances.vincular_funcionarios_avaliacao', id_avaliacao_filial=a.id_avaliacao_filial) }}">Vincular</a>
+            {% if a.respondidas == 0 %}
+              <button type="button" class="btn-mini excluir"
+                      onclick="excluirAvaliacao({{ a.id_avaliacao_filial }}, '{{ (a.cod_filial ~ ' - ' ~ (a.nome_filial or ''))|e }}', {{ a.vinculados }})">Excluir</button>
+            {% else %}
+              <span title="Já tem funcionários avaliados" style="color:#777;">🔒</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+
+        {% if not avaliacoes_mes %}
+        <tr>
+          <td colspan="7" class="vazio">Nenhuma avaliação criada em {{ nomes_meses[mes_sel - 1] }}/{{ ano_sel }}.</td>
+        </tr>
+        {% endif %}
+      </tbody>
+
+      {% if avaliacoes_mes|length > 1 %}
+      <tfoot>
+        <tr>
+          <td colspan="3">TOTAL ({{ avaliacoes_mes|length }} filiais)</td>
+          <td class="col-num">{{ avaliacoes_mes|sum(attribute='vinculados') }}</td>
+          <td class="col-num">{{ avaliacoes_mes|sum(attribute='respondidas') }}</td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </form>
+</div>
+
+{% for a in avaliacoes_mes %}
+  <form method="post" id="formExcluir{{ a.id_avaliacao_filial }}"
+        action="{{ url_for('performances.excluir_avaliacao_filial', id_avaliacao_filial=a.id_avaliacao_filial) }}"></form>
+{% endfor %}
+
+<script>
+  document.getElementById("btnNova").addEventListener("click", function () {
+    const linha = document.getElementById("linhaNova");
+    linha.style.display = linha.style.display === "none" ? "" : "none";
+    if (linha.style.display === "") {
+      document.getElementById("filtroBotao").focus();
+    }
+  });
+
+  (function () {
+    const caixa   = document.getElementById("filtroFiliais");
+    const botao   = document.getElementById("filtroBotao");
+    const painel  = document.getElementById("filtroPainel");
+    const busca   = document.getElementById("filtroBusca");
+    const todas   = document.getElementById("filtroTodas");
+    const itens   = Array.from(
+      document.querySelectorAll("#filtroLista input[name='cod_filial']")
+    );
+
+    function rotulo(chk) {
+      return chk.closest("label").querySelector("span").textContent.trim();
+    }
+
+    function atualizarBotao() {
+      const marcados = itens.filter(function (c) { return c.checked; });
+      if (marcados.length === 0) {
+        botao.textContent = "Selecione as filiais";
+      } else if (marcados.length === 1) {
+        botao.textContent = rotulo(marcados[0]);
+      } else if (marcados.length === itens.length) {
+        botao.textContent = "Todas as filiais (" + itens.length + ")";
+      } else {
+        botao.textContent = marcados.length + " filiais selecionadas";
+      }
+      todas.checked = marcados.length === itens.length && itens.length > 0;
+      todas.indeterminate = marcados.length > 0 && marcados.length < itens.length;
+    }
+
+    function abrir(mostrar) {
+      painel.style.display = mostrar ? "" : "none";
+      botao.setAttribute("aria-expanded", mostrar ? "true" : "false");
+      if (mostrar) { busca.focus(); }
+    }
+
+    botao.addEventListener("click", function () { abrir(painel.style.display === "none"); });
+
+    document.addEventListener("click", function (ev) {
+      if (!caixa.contains(ev.target)) { abrir(false); }
+    });
+
+    painel.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape") { abrir(false); botao.focus(); }
+    });
+
+    todas.addEventListener("change", function () {
+      itens.forEach(function (c) {
+        if (c.closest("label").style.display !== "none") { c.checked = todas.checked; }
+      });
+      atualizarBotao();
+    });
+
+    itens.forEach(function (c) { c.addEventListener("change", atualizarBotao); });
+
+    busca.addEventListener("input", function () {
+      const termo = busca.value.trim().toLowerCase();
+      itens.forEach(function (c) {
+        const label = c.closest("label");
+        label.style.display = rotulo(c).toLowerCase().indexOf(termo) >= 0 ? "" : "none";
+      });
+    });
+
+    atualizarBotao();
+  })();
+
+  function validarNova() {
+    const marcadas = document.querySelectorAll("#filtroLista input[name='cod_filial']:checked").length;
+    if (!marcadas || !document.getElementById("novaChecklist").value) {
+      mostrarConfirmacaoGlobal(
+        "NOVA AVALIAÇÃO",
+        "Escolha pelo menos uma filial e o checklist.",
+        function () {}
+      );
+      return false;
+    }
+    return true;
+  }
+
+  function excluirAvaliacao(id, filial, vinculados) {
+    mostrarConfirmacaoGlobal(
+      "EXCLUIR AVALIAÇÃO",
+      "Excluir a avaliação de <strong>" + filial + "</strong>" +
+      (vinculados ? " e desvincular os <strong>" + vinculados + "</strong> funcionários?" : "?"),
+      function () { document.getElementById("formExcluir" + id).submit(); }
+    );
+  }
+</script>
+
+{% endblock %}

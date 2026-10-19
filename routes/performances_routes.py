@@ -16,6 +16,10 @@ from routes.vendas_routes import (
 )
 from services.vendas_produtos import FILTRO_SQL_COMBUSTIVEL
 
+# Mesma regra de Vistorias: superusuário vê todas as filiais; os demais, só as
+# de usuarios_filiais (o chefe de pista avalia e consulta a sua).
+from routes.vistorias_routes import cod_filiais_vistorias_usuario as cod_filiais_avaliacoes_usuario
+
 performances_bp = Blueprint("performances", __name__)
 
 
@@ -40,6 +44,7 @@ def menu_performances():
     tipo_global = str(session.get("tipo_global") or "").strip().lower()
 
     if tipo_global == "superusuario":
+        pode_criar_avaliacoes = True
         pode_executar_avaliacoes = True
         pode_consultar_avaliacoes = True
         pode_configurar_avaliacoes = True
@@ -47,6 +52,10 @@ def menu_performances():
         pode_importar_abastecimentos = True
         pode_consultar_abastecimentos = True
     else:
+        pode_criar_avaliacoes = usuario_tem_permissao(
+            id_usuario, cod_empresa, "PERFORMANCES", "CRIAR_AVALIACOES"
+        )
+
         pode_executar_avaliacoes = usuario_tem_permissao(
             id_usuario,
             cod_empresa,
@@ -83,7 +92,8 @@ def menu_performances():
         )
 
     pode_avaliacoes = (
-        pode_executar_avaliacoes
+        pode_criar_avaliacoes
+        or pode_executar_avaliacoes
         or pode_consultar_avaliacoes
         or pode_configurar_avaliacoes
     )
@@ -177,10 +187,14 @@ def menu_avaliacoes_funcionarios():
     tipo_global = str(session.get("tipo_global") or "").strip().lower()
 
     if tipo_global == "superusuario":
+        pode_criar_avaliacoes = True
         pode_executar_avaliacoes = True
         pode_consultar_avaliacoes = True
         pode_configurar_avaliacoes = True
     else:
+        pode_criar_avaliacoes = usuario_tem_permissao(
+            id_usuario, cod_empresa, "PERFORMANCES", "CRIAR_AVALIACOES"
+        )
         pode_executar_avaliacoes = usuario_tem_permissao(
             id_usuario, cod_empresa, "PERFORMANCES", "EXECUTAR_AVALIACOES"
         )
@@ -191,8 +205,8 @@ def menu_avaliacoes_funcionarios():
             id_usuario, cod_empresa, "PERFORMANCES", "CONFIGURAR_AVALIACOES"
         )
 
-    # O menu abre com qualquer uma das três; sem nenhuma, volta ao menu do módulo.
-    if not (pode_executar_avaliacoes or pode_consultar_avaliacoes or pode_configurar_avaliacoes):
+    # O menu abre com qualquer uma das quatro; sem nenhuma, volta ao menu do módulo.
+    if not (pode_criar_avaliacoes or pode_executar_avaliacoes or pode_consultar_avaliacoes or pode_configurar_avaliacoes):
         flash("Você não tem acesso às avaliações de funcionários.", "erro")
         return redirect(url_for("performances.menu_performances"))
 
@@ -201,6 +215,7 @@ def menu_avaliacoes_funcionarios():
         nome_empresa=session.get("nome_empresa"),
         url_voltar=url_for("performances.menu_performances"),
         texto_voltar="← Voltar",
+        pode_criar_avaliacoes=pode_criar_avaliacoes,
         pode_executar_avaliacoes=pode_executar_avaliacoes,
         pode_consultar_avaliacoes=pode_consultar_avaliacoes,
         pode_configurar_avaliacoes=pode_configurar_avaliacoes,
@@ -1124,407 +1139,608 @@ def nova_avaliacao():
     )
 
 #--------------------------------------------------------------
-# EXECUTAR AVALIACOES
+# CRIAR AVALIAÇÕES (por filial e mês) + VÍNCULO DE FUNCIONÁRIOS
 #--------------------------------------------------------------
+# A avaliação é criada por filial e mês (performances_avaliacoes_filiais) com
+# um checklist de Configurar Avaliações. Os funcionários são VINCULADOS a ela, e
+# o vínculo é a própria execução (performances_execucoes, uma por funcionário),
+# que é o que o chefe de pista preenche em Executar. Quem cria enxerga a
+# empresa inteira; Executar e Consultar só as filiais do usuário
+# (usuarios_filiais), como em Vistorias.
 
-@performances_bp.route("/avaliacoes/executar", methods=["GET", "POST"])
+def _ano_mes_sel(origem=None):
+    origem = origem if origem is not None else request.args
+    hoje = date.today()
+    try:
+        ano = int(origem.get("ano") or hoje.year)
+    except ValueError:
+        ano = hoje.year
+    try:
+        mes = int(origem.get("mes") or hoje.month)
+    except ValueError:
+        mes = hoje.month
+    if not 1 <= mes <= 12:
+        mes = hoje.month
+    return ano, mes
+
+
+def _nome_executor():
+    return (
+        session.get("nome_usuario")
+        or session.get("usuario")
+        or f"Usuário {session.get('id_usuario')}"
+    )
+
+
+# Execução "respondida" = algum item com nota. É o que trava excluir/desvincular
+# sem confirmação: apagar ali é perder o que o chefe de pista já preencheu.
+SQL_RESPONDIDA = """
+    EXISTS (
+        SELECT 1
+        FROM performances_execucao_itens i
+        WHERE i.id_execucao = e.id_execucao
+          AND COALESCE(i.nota_item, 0) > 0
+    )
+"""
+
+
+def _vincular_funcionario(cur, af, id_funcionario, nome):
+    """Cria a execução do funcionário na avaliação da filial, já com os itens
+    do checklist. O executor fica em branco: é gravado por quem preencher."""
+    cur.execute("""
+        INSERT INTO performances_execucoes (
+            cod_empresa, id_avaliacao, id_avaliacao_filial, cod_filial,
+            data_avaliacao, id_funcionario, nome_avaliado, status,
+            criado_em, atualizado_em
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, 'ABERTA', NOW(), NOW())
+        RETURNING id_execucao
+    """, (
+        af["cod_empresa"], af["id_avaliacao"], af["id_avaliacao_filial"],
+        af["cod_filial"], date(af["ano"], af["mes"], 1), id_funcionario, nome,
+    ))
+    id_execucao = cur.fetchone()["id_execucao"]
+
+    cur.execute("""
+        INSERT INTO performances_execucao_itens (
+            id_execucao, id_item, sequencia, titulo, detalhamento,
+            nota_item, criado_em, atualizado_em
+        )
+        SELECT %s, id_item, sequencia, titulo, detalhamento, 0, NOW(), NOW()
+        FROM performances_avaliacao_itens
+        WHERE id_avaliacao = %s
+          AND ativo = TRUE
+        ORDER BY sequencia
+    """, (id_execucao, af["id_avaliacao"]))
+    return id_execucao
+
+
+def _apagar_execucoes(cur, ids_execucao):
+    if not ids_execucao:
+        return
+    cur.execute(
+        "DELETE FROM performances_execucao_itens WHERE id_execucao = ANY(%s)",
+        (list(ids_execucao),),
+    )
+    cur.execute(
+        "DELETE FROM performances_execucoes WHERE id_execucao = ANY(%s)",
+        (list(ids_execucao),),
+    )
+
+
+def _avaliacao_filial(cur, cod_empresa, id_avaliacao_filial, travar=False):
+    cur.execute(f"""
+        SELECT af.*, f.nome_filial, a.codigo_avaliacao, a.descricao AS avaliacao_descricao,
+               a.versao, c.descricao AS cargo_descricao
+        FROM performances_avaliacoes_filiais af
+        LEFT JOIN filiais f
+          ON f.cod_empresa = af.cod_empresa
+         AND f.cod_filial = af.cod_filial
+        LEFT JOIN performances_avaliacoes a ON a.id_avaliacao = af.id_avaliacao
+        LEFT JOIN cargos c ON c.id = af.id_cargo
+        WHERE af.id_avaliacao_filial = %s
+          AND af.cod_empresa = %s
+        {"FOR UPDATE OF af" if travar else ""}
+    """, (id_avaliacao_filial, cod_empresa))
+    return cur.fetchone()
+
+
+@performances_bp.route("/avaliacoes/criar", methods=["GET", "POST"])
 @permissao_obrigatoria(
     "PERFORMANCES",
-    "EXECUTAR_AVALIACOES",
-    redirecionar_para="performances.menu_performances",
+    "CRIAR_AVALIACOES",
+    redirecionar_para="performances.menu_avaliacoes_funcionarios",
 )
-def executar_avaliacoes():
-    if "id_usuario" not in session:
-        return redirect(url_for("auth.index"))
-
-    if "cod_empresa" not in session:
-        return redirect(url_for("auth.index"))
-
+def criar_avaliacoes():
     cod_empresa = str(session["cod_empresa"]).strip()
-    nome_empresa = session.get("nome_empresa")
-
-    hoje = date.today()
-    ano_sel = (request.args.get("ano") or str(hoje.year)).strip()
-    mes_sel = (request.args.get("mes") or str(hoje.month)).strip().zfill(2)
-
-    filial_sel = (request.args.get("filial") or "").strip()
-    filial_execucao = filial_sel
-    data_hoje = hoje.isoformat()
-
-    data_ini = f"{ano_sel}-{mes_sel}-01"
-
-    if mes_sel == "12":
-        data_fim = f"{int(ano_sel) + 1}-01-01"
-    else:
-        data_fim = f"{ano_sel}-{str(int(mes_sel) + 1).zfill(2)}-01"
-
-    filtro_filial_sql = ""
-    params_filial = []
-
-    if filial_sel:
-        filtro_filial_sql = " AND e.cod_filial = %s "
-        params_filial.append(int(filial_sel))
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
-        cur.execute("""
-            SELECT cod_filial, nome_filial
-            FROM filiais
-            WHERE cod_empresa = %s
-              AND ativo = TRUE
-            ORDER BY cod_filial
-        """, (cod_empresa,))
-        filiais = cur.fetchall() or []
-
-        cur.execute("""
-            SELECT id, codigo, descricao
-            FROM cargos
-            WHERE cod_empresa = %s
-              AND ativo = TRUE
-            ORDER BY descricao
-        """, (cod_empresa,))
-        cargos = cur.fetchall() or []
-
-        funcionarios = []
-
-        if filial_sel:
-            cur.execute("""
-                SELECT
-                    f.id,
-                    f.nome
-                FROM funcionarios f
-                WHERE f.cod_empresa = %s
-                  AND f.cod_filial = %s
-                  AND f.ativo = TRUE
-
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM performances_execucoes e
-                      WHERE e.cod_empresa = f.cod_empresa
-                        AND e.cod_filial = f.cod_filial
-                        AND e.id_funcionario = f.id
-                        AND e.data_avaliacao >= %s
-                        AND e.data_avaliacao < %s
-                  )
-
-                ORDER BY f.nome
-            """, (
-                cod_empresa,
-                int(filial_sel),
-                data_ini,
-                data_fim
-            ))
-
-            funcionarios = cur.fetchall() or []
-
-        cur.execute("""
-            SELECT id_avaliacao, codigo_avaliacao, descricao, versao
-            FROM performances_avaliacoes
-            WHERE cod_empresa = %s
-              AND status = 'ATIVO'
-            ORDER BY codigo_avaliacao, versao DESC
-        """, (cod_empresa,))
-        avaliacoes = cur.fetchall() or []
-
         if request.method == "POST":
-            cod_filial = int(filial_sel or 0)
+            ano, mes = _ano_mes_sel(request.form)
             id_avaliacao = int(request.form.get("id_avaliacao") or 0)
-            id_funcionario = request.form.get("id_funcionario") or ""
-            id_cargo = request.form.get("id_cargo") or ""
-            data_avaliacao = request.form.get("data_avaliacao")
+            id_cargo = int(request.form.get("id_cargo") or 0) or None
+            cod_filiais = sorted({
+                int(x) for x in request.form.getlist("cod_filial") if str(x).isdigit()
+            })
 
-            if not cod_filial:
-                flash("Selecione uma filial no filtro antes de iniciar a avaliação.", "error")
-                return redirect(url_for("performances.executar_avaliacoes"))
+            if not cod_filiais or not id_avaliacao:
+                flash("Escolha as filiais e o checklist.", "error")
+                return redirect(url_for("performances.criar_avaliacoes", ano=ano, mes=mes))
 
-            if not id_avaliacao or not data_avaliacao:
-                flash("Informe questionário e data.", "error")
-                return redirect(url_for(
-                    "performances.executar_avaliacoes",
-                    ano=ano_sel,
-                    mes=mes_sel,
-                    filial=filial_sel,
-                ))
+            cur.execute("""
+                SELECT 1 FROM performances_avaliacoes
+                WHERE id_avaliacao = %s AND cod_empresa = %s AND status = 'ATIVO'
+            """, (id_avaliacao, cod_empresa))
+            if not cur.fetchone():
+                flash("Checklist não encontrado.", "error")
+                return redirect(url_for("performances.criar_avaliacoes", ano=ano, mes=mes))
 
-            nome_executor = (
-                session.get("nome_usuario")
-                or session.get("usuario")
-                or f"Usuário {session.get('id_usuario')}"
-            )
+            cur.execute("""
+                SELECT cod_filial, nome_filial FROM filiais
+                WHERE cod_empresa = %s AND ativo = TRUE AND cod_filial = ANY(%s)
+                ORDER BY cod_filial
+            """, (cod_empresa, cod_filiais))
+            filiais_validas = cur.fetchall() or []
 
-            # ---------------------------------------
-            # CRIAÇÃO EM BLOCO POR CARGO
-            # ---------------------------------------
-            if id_cargo:
+            criadas, ja_existiam, vinculados = 0, [], 0
+
+            for fil in filiais_validas:
                 cur.execute("""
-                    SELECT
-                        f.id,
-                        f.nome
+                    INSERT INTO performances_avaliacoes_filiais
+                        (cod_empresa, cod_filial, ano, mes, id_avaliacao, id_cargo, criado_por)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (cod_empresa, cod_filial, ano, mes, id_avaliacao) DO NOTHING
+                    RETURNING *
+                """, (cod_empresa, fil["cod_filial"], ano, mes, id_avaliacao,
+                      id_cargo, session.get("id_usuario")))
+                af = cur.fetchone()
+
+                if not af:
+                    ja_existiam.append(f"{fil['cod_filial']} - {fil['nome_filial']}")
+                    continue
+
+                criadas += 1
+
+                if not id_cargo:
+                    continue
+
+                # Funcionários ativos do cargo na filial que ainda não têm este
+                # checklist no mês (inclusive em execução antiga, sem cabeçalho).
+                cur.execute("""
+                    SELECT f.id, f.nome
                     FROM funcionarios f
                     WHERE f.cod_empresa = %s
                       AND f.cod_filial = %s
                       AND f.id_cargo = %s
                       AND f.ativo = TRUE
-
                       AND NOT EXISTS (
-                          SELECT 1
-                          FROM performances_execucoes e
+                          SELECT 1 FROM performances_execucoes e
                           WHERE e.cod_empresa = f.cod_empresa
-                            AND e.cod_filial = f.cod_filial
                             AND e.id_funcionario = f.id
+                            AND e.id_avaliacao = %s
                             AND e.data_avaliacao >= %s
                             AND e.data_avaliacao < %s
                       )
-
                     ORDER BY f.nome
                 """, (
-                    cod_empresa,
-                    cod_filial,
-                    int(id_cargo),
-                    data_ini,
-                    data_fim,
+                    cod_empresa, fil["cod_filial"], id_cargo, id_avaliacao,
+                    date(ano, mes, 1),
+                    date(ano + 1, 1, 1) if mes == 12 else date(ano, mes + 1, 1),
                 ))
-
-                funcionarios_bloco = cur.fetchall() or []
-
-                if not funcionarios_bloco:
-                    flash("Nenhum funcionário ativo desse cargo disponível para avaliação neste mês.", "error")
-                    return redirect(url_for(
-                        "performances.executar_avaliacoes",
-                        ano=ano_sel,
-                        mes=mes_sel,
-                        filial=filial_sel,
-                    ))
-
-                primeira_execucao = None
-                total_criados = 0
-
-                for func in funcionarios_bloco:
-                    cur.execute("""
-                        INSERT INTO performances_execucoes (
-                            cod_empresa,
-                            id_avaliacao,
-                            cod_filial,
-                            data_avaliacao,
-                            id_funcionario,
-                            nome_avaliado,
-                            status,
-                            id_usuario_executor,
-                            nome_executor,
-                            criado_em,
-                            atualizado_em
-                        )
-                        VALUES (%s, %s, %s, %s, %s, %s, 'ABERTA', %s, %s, NOW(), NOW())
-                        RETURNING id_execucao
-                    """, (
-                        cod_empresa,
-                        id_avaliacao,
-                        cod_filial,
-                        data_avaliacao,
-                        func["id"],
-                        func["nome"],
-                        session.get("id_usuario"),
-                        nome_executor,
-                    ))
-
-                    id_execucao = cur.fetchone()["id_execucao"]
-
-                    if primeira_execucao is None:
-                        primeira_execucao = id_execucao
-
-                    cur.execute("""
-                        INSERT INTO performances_execucao_itens (
-                            id_execucao,
-                            id_item,
-                            sequencia,
-                            titulo,
-                            detalhamento,
-                            nota_item,
-                            criado_em,
-                            atualizado_em
-                        )
-                        SELECT
-                            %s,
-                            id_item,
-                            sequencia,
-                            titulo,
-                            detalhamento,
-                            0,
-                            NOW(),
-                            NOW()
-                        FROM performances_avaliacao_itens
-                        WHERE id_avaliacao = %s
-                          AND ativo = TRUE
-                        ORDER BY sequencia
-                    """, (id_execucao, id_avaliacao))
-
-                    total_criados += 1
-
-                conn.commit()
-                flash(f"{total_criados} avaliações criadas com sucesso.", "success")
-
-                return redirect(url_for(
-                    "performances.executar_avaliacoes",
-                    ano=ano_sel,
-                    mes=mes_sel,
-                    filial=filial_sel,
-                ))
-
-            # ---------------------------------------
-            # CRIAÇÃO INDIVIDUAL
-            # ---------------------------------------
-            if not id_funcionario:
-                flash("Selecione um avaliado ou escolha um cargo para criar em bloco.", "error")
-                return redirect(url_for(
-                    "performances.executar_avaliacoes",
-                    ano=ano_sel,
-                    mes=mes_sel,
-                    filial=filial_sel,
-                ))
-
-            cur.execute("""
-                SELECT nome
-                FROM funcionarios
-                WHERE id = %s
-                  AND cod_empresa = %s
-                  AND cod_filial = %s
-                  AND ativo = TRUE
-            """, (id_funcionario, cod_empresa, cod_filial))
-
-            row_func = cur.fetchone()
-
-            if not row_func:
-                flash("Funcionário não encontrado para esta filial.", "error")
-                return redirect(url_for(
-                    "performances.executar_avaliacoes",
-                    ano=ano_sel,
-                    mes=mes_sel,
-                    filial=filial_sel,
-                ))
-
-            nome_avaliado = row_func["nome"]
-
-            cur.execute("""
-                INSERT INTO performances_execucoes (
-                    cod_empresa,
-                    id_avaliacao,
-                    cod_filial,
-                    data_avaliacao,
-                    id_funcionario,
-                    nome_avaliado,
-                    status,
-                    id_usuario_executor,
-                    nome_executor,
-                    criado_em,
-                    atualizado_em
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, 'ABERTA', %s, %s, NOW(), NOW())
-                RETURNING id_execucao
-            """, (
-                cod_empresa,
-                id_avaliacao,
-                cod_filial,
-                data_avaliacao,
-                id_funcionario,
-                nome_avaliado,
-                session.get("id_usuario"),
-                nome_executor,
-            ))
-
-            id_execucao = cur.fetchone()["id_execucao"]
-
-            cur.execute("""
-                INSERT INTO performances_execucao_itens (
-                    id_execucao,
-                    id_item,
-                    sequencia,
-                    titulo,
-                    detalhamento,
-                    nota_item,
-                    criado_em,
-                    atualizado_em
-                )
-                SELECT
-                    %s,
-                    id_item,
-                    sequencia,
-                    titulo,
-                    detalhamento,
-                    0,
-                    NOW(),
-                    NOW()
-                FROM performances_avaliacao_itens
-                WHERE id_avaliacao = %s
-                  AND ativo = TRUE
-                ORDER BY sequencia
-            """, (id_execucao, id_avaliacao))
+                for func in cur.fetchall() or []:
+                    _vincular_funcionario(cur, af, func["id"], func["nome"])
+                    vinculados += 1
 
             conn.commit()
 
-            return redirect(url_for("performances.preencher_avaliacao", id_execucao=id_execucao))
+            if criadas:
+                flash(
+                    f"{criadas} avaliação(ões) criada(s), {vinculados} funcionário(s) vinculado(s).",
+                    "success",
+                )
+            if ja_existiam:
+                flash(
+                    "Já existia avaliação com esse checklist no mês em: "
+                    + ", ".join(ja_existiam) + ". Use Vincular para mexer nelas.",
+                    "error",
+                )
+            return redirect(url_for("performances.criar_avaliacoes", ano=ano, mes=mes))
 
-        sql = f"""
+        ano, mes = _ano_mes_sel()
+
+        cur.execute("""
+            SELECT cod_filial, nome_filial FROM filiais
+            WHERE cod_empresa = %s AND ativo = TRUE
+            ORDER BY cod_filial
+        """, (cod_empresa,))
+        filiais = cur.fetchall() or []
+
+        cur.execute("""
+            SELECT id_avaliacao, codigo_avaliacao, descricao, versao
+            FROM performances_avaliacoes
+            WHERE cod_empresa = %s AND status = 'ATIVO'
+            ORDER BY codigo_avaliacao, versao DESC
+        """, (cod_empresa,))
+        checklists = cur.fetchall() or []
+
+        cur.execute("""
+            SELECT id, codigo, descricao FROM cargos
+            WHERE cod_empresa = %s AND ativo = TRUE
+            ORDER BY descricao
+        """, (cod_empresa,))
+        cargos = cur.fetchall() or []
+
+        cur.execute(f"""
             SELECT
-                e.id_execucao,
-                e.data_avaliacao,
-                e.status,
-                e.nome_avaliado,
-                COALESCE(e.nota, 0) AS nota,
-                e.nome_executor,
-                f.cod_filial,
+                af.id_avaliacao_filial,
+                af.cod_filial,
                 f.nome_filial,
                 a.codigo_avaliacao,
                 a.descricao AS avaliacao_descricao,
-                a.versao
-            FROM performances_execucoes e
+                a.versao,
+                c.descricao AS cargo_descricao,
+                COUNT(e.id_execucao) AS vinculados,
+                COUNT(e.id_execucao) FILTER (WHERE {SQL_RESPONDIDA}) AS respondidas,
+                AVG(e.nota) FILTER (WHERE {SQL_RESPONDIDA}) AS media
+            FROM performances_avaliacoes_filiais af
             LEFT JOIN filiais f
-              ON f.cod_empresa = e.cod_empresa
-             AND f.cod_filial = e.cod_filial
-            LEFT JOIN performances_avaliacoes a
-              ON a.id_avaliacao = e.id_avaliacao
-            WHERE e.cod_empresa = %s
-              AND e.data_avaliacao >= %s
-              AND e.data_avaliacao < %s
-              {filtro_filial_sql}
-            ORDER BY e.data_avaliacao DESC, e.id_execucao DESC
-        """
-
-        params = [cod_empresa, data_ini, data_fim] + params_filial
-        cur.execute(sql, params)
-
+              ON f.cod_empresa = af.cod_empresa
+             AND f.cod_filial = af.cod_filial
+            LEFT JOIN performances_avaliacoes a ON a.id_avaliacao = af.id_avaliacao
+            LEFT JOIN cargos c ON c.id = af.id_cargo
+            LEFT JOIN performances_execucoes e ON e.id_avaliacao_filial = af.id_avaliacao_filial
+            WHERE af.cod_empresa = %s
+              AND af.ano = %s
+              AND af.mes = %s
+            GROUP BY af.id_avaliacao_filial, af.cod_filial, f.nome_filial,
+                     a.codigo_avaliacao, a.descricao, a.versao, c.descricao
+            ORDER BY af.cod_filial, a.codigo_avaliacao
+        """, (cod_empresa, ano, mes))
         avaliacoes_mes = cur.fetchall() or []
 
-    except Exception as e:
-        conn.rollback()
-        flash(f"Erro ao executar avaliação: {e}", "error")
-        filiais = []
-        cargos = []
-        avaliacoes = []
-        avaliacoes_mes = []
-        funcionarios = []
+        # Cargo sugerido na linha nova: Frentista, quando existir.
+        id_cargo_sugerido = next(
+            (c["id"] for c in cargos if "FRENTISTA" in (c["descricao"] or "").upper()),
+            None,
+        )
 
     finally:
         cur.close()
         conn.close()
 
     return render_template(
-        "executar_avaliacoes.html",
-        nome_empresa=nome_empresa,
+        "criar_avaliacoes.html",
+        nome_empresa=session.get("nome_empresa"),
+        ano_sel=ano,
+        mes_sel=mes,
         filiais=filiais,
+        checklists=checklists,
         cargos=cargos,
-        funcionarios=funcionarios,
-        avaliacoes=avaliacoes,
+        id_cargo_sugerido=id_cargo_sugerido,
         avaliacoes_mes=avaliacoes_mes,
-        ano_sel=ano_sel,
-        mes_sel=mes_sel,
-        filial_sel=filial_sel,
-        filial_execucao=filial_execucao,
-        data_hoje=data_hoje,
-        url_voltar=url_for("performances.menu_performances"),
+        url_voltar=url_for("performances.menu_avaliacoes_funcionarios"),
         texto_voltar="← Voltar",
     )
+
+
+@performances_bp.route("/avaliacoes/criar/<int:id_avaliacao_filial>/excluir", methods=["POST"])
+@permissao_obrigatoria(
+    "PERFORMANCES",
+    "CRIAR_AVALIACOES",
+    redirecionar_para="performances.menu_avaliacoes_funcionarios",
+)
+def excluir_avaliacao_filial(id_avaliacao_filial):
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        af = _avaliacao_filial(cur, cod_empresa, id_avaliacao_filial, travar=True)
+        if not af:
+            flash("Avaliação não encontrada.", "error")
+            return redirect(url_for("performances.criar_avaliacoes"))
+
+        cur.execute(f"""
+            SELECT e.id_execucao, {SQL_RESPONDIDA} AS respondida
+            FROM performances_execucoes e
+            WHERE e.id_avaliacao_filial = %s
+        """, (id_avaliacao_filial,))
+        execucoes = cur.fetchall() or []
+
+        if any(e["respondida"] for e in execucoes):
+            flash(
+                "Esta avaliação já tem funcionários avaliados e não pode ser excluída. "
+                "Use Vincular para retirar só quem não deve ser avaliado.",
+                "error",
+            )
+            return redirect(url_for("performances.criar_avaliacoes", ano=af["ano"], mes=af["mes"]))
+
+        _apagar_execucoes(cur, [e["id_execucao"] for e in execucoes])
+        cur.execute(
+            "DELETE FROM performances_avaliacoes_filiais WHERE id_avaliacao_filial = %s",
+            (id_avaliacao_filial,),
+        )
+        conn.commit()
+        flash(f"Avaliação da filial {af['cod_filial']} - {af['nome_filial']} excluída.", "success")
+        return redirect(url_for("performances.criar_avaliacoes", ano=af["ano"], mes=af["mes"]))
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao excluir avaliação: {e}", "error")
+        return redirect(url_for("performances.criar_avaliacoes"))
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+@performances_bp.route("/avaliacoes/criar/<int:id_avaliacao_filial>/vincular")
+@permissao_obrigatoria(
+    "PERFORMANCES",
+    "CRIAR_AVALIACOES",
+    redirecionar_para="performances.menu_avaliacoes_funcionarios",
+)
+def vincular_funcionarios_avaliacao(id_avaliacao_filial):
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        af = _avaliacao_filial(cur, cod_empresa, id_avaliacao_filial)
+        if not af:
+            flash("Avaliação não encontrada.", "error")
+            return redirect(url_for("performances.criar_avaliacoes"))
+
+        # Os ativos da filial, mais quem já está vinculado e saiu dela (ou foi
+        # desligado) — senão o vínculo ficaria invisível e sem como desfazer.
+        cur.execute(f"""
+            WITH vinc AS (
+                SELECT
+                    e.id_funcionario,
+                    COUNT(*) AS qtd,
+                    BOOL_OR({SQL_RESPONDIDA}) AS respondida,
+                    MAX(e.nota) AS nota
+                FROM performances_execucoes e
+                WHERE e.id_avaliacao_filial = %s
+                GROUP BY e.id_funcionario
+            )
+            SELECT
+                f.id,
+                f.nome,
+                f.matricula,
+                f.ativo,
+                f.cod_filial,
+                c.descricao AS cargo,
+                (v.id_funcionario IS NOT NULL) AS vinculado,
+                COALESCE(v.respondida, FALSE) AS respondida,
+                v.nota
+            FROM funcionarios f
+            LEFT JOIN cargos c ON c.id = f.id_cargo
+            LEFT JOIN vinc v ON v.id_funcionario = f.id
+            WHERE f.cod_empresa = %s
+              AND (
+                    (f.cod_filial = %s AND f.ativo = TRUE)
+                    OR v.id_funcionario IS NOT NULL
+              )
+            ORDER BY c.descricao NULLS LAST, f.nome
+        """, (id_avaliacao_filial, cod_empresa, af["cod_filial"]))
+        funcionarios = cur.fetchall() or []
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "vincular_funcionarios_avaliacao.html",
+        nome_empresa=session.get("nome_empresa"),
+        af=af,
+        funcionarios=funcionarios,
+        url_voltar=url_for("performances.criar_avaliacoes", ano=af["ano"], mes=af["mes"]),
+        texto_voltar="← Voltar",
+    )
+
+
+@performances_bp.route("/avaliacoes/criar/<int:id_avaliacao_filial>/vinculo", methods=["POST"])
+@permissao_obrigatoria(
+    "PERFORMANCES",
+    "CRIAR_AVALIACOES",
+    redirecionar_para="performances.menu_avaliacoes_funcionarios",
+)
+def alternar_vinculo_avaliacao(id_avaliacao_filial):
+    cod_empresa = str(session["cod_empresa"]).strip()
+    dados = request.get_json(silent=True) or {}
+
+    try:
+        id_funcionario = int(dados.get("id_funcionario") or 0)
+    except (TypeError, ValueError):
+        id_funcionario = 0
+    vincular = bool(dados.get("vincular"))
+    confirmar = bool(dados.get("confirmar"))
+
+    if not id_funcionario:
+        return jsonify({"ok": False, "erro": "Funcionário não informado."}), 400
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        # A trava no cabeçalho serializa dois cliques seguidos no mesmo
+        # checkbox — sem ela os dois veriam "não vinculado" e criariam dois.
+        af = _avaliacao_filial(cur, cod_empresa, id_avaliacao_filial, travar=True)
+        if not af:
+            return jsonify({"ok": False, "erro": "Avaliação não encontrada."}), 404
+
+        cur.execute(f"""
+            SELECT e.id_execucao, {SQL_RESPONDIDA} AS respondida
+            FROM performances_execucoes e
+            WHERE e.id_avaliacao_filial = %s
+              AND e.id_funcionario = %s
+        """, (id_avaliacao_filial, id_funcionario))
+        atuais = cur.fetchall() or []
+
+        if vincular:
+            if atuais:
+                return jsonify({"ok": True, "vinculado": True})
+
+            cur.execute("""
+                SELECT id, nome FROM funcionarios
+                WHERE id = %s AND cod_empresa = %s AND cod_filial = %s AND ativo = TRUE
+            """, (id_funcionario, cod_empresa, af["cod_filial"]))
+            func = cur.fetchone()
+            if not func:
+                conn.rollback()
+                return jsonify({"ok": False, "erro": "Funcionário não é ativo desta filial."}), 400
+
+            _vincular_funcionario(cur, af, func["id"], func["nome"])
+            conn.commit()
+            return jsonify({"ok": True, "vinculado": True})
+
+        if not atuais:
+            return jsonify({"ok": True, "vinculado": False})
+
+        if any(e["respondida"] for e in atuais) and not confirmar:
+            conn.rollback()
+            return jsonify({
+                "ok": False,
+                "precisa_confirmar": True,
+                "erro": "Este funcionário já foi avaliado. Desvincular apaga as notas lançadas.",
+            }), 409
+
+        _apagar_execucoes(cur, [e["id_execucao"] for e in atuais])
+        conn.commit()
+        return jsonify({"ok": True, "vinculado": False})
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+#--------------------------------------------------------------
+# EXECUTAR / CONSULTAR AVALIAÇÕES (filiais do usuário)
+#--------------------------------------------------------------
+def _execucoes_do_mes(cur, cod_empresa, ano, mes, cod_filiais):
+    if not cod_filiais:
+        return []
+    cur.execute(f"""
+        SELECT
+            e.id_execucao,
+            e.cod_filial,
+            f.nome_filial,
+            e.nome_avaliado,
+            e.nome_executor,
+            e.status,
+            e.nota,
+            cg.descricao AS cargo,
+            a.codigo_avaliacao,
+            a.descricao AS avaliacao_descricao,
+            {SQL_RESPONDIDA} AS respondida
+        FROM performances_execucoes e
+        LEFT JOIN filiais f
+          ON f.cod_empresa = e.cod_empresa
+         AND f.cod_filial = e.cod_filial
+        LEFT JOIN performances_avaliacoes a ON a.id_avaliacao = e.id_avaliacao
+        LEFT JOIN funcionarios fu ON fu.id = e.id_funcionario
+        LEFT JOIN cargos cg ON cg.id = fu.id_cargo
+        WHERE e.cod_empresa = %s
+          AND e.data_avaliacao >= %s
+          AND e.data_avaliacao < %s
+          AND e.cod_filial = ANY(%s)
+        ORDER BY e.cod_filial, e.nome_avaliado, e.id_execucao
+    """, (
+        cod_empresa,
+        date(ano, mes, 1),
+        date(ano + 1, 1, 1) if mes == 12 else date(ano, mes + 1, 1),
+        sorted(cod_filiais),
+    ))
+    return cur.fetchall() or []
+
+
+def _agrupar_por_filial(execucoes):
+    """Um bloco por filial, com a média só de quem já foi avaliado."""
+    blocos = {}
+    for e in execucoes:
+        b = blocos.setdefault(e["cod_filial"], {
+            "cod_filial": e["cod_filial"],
+            "nome_filial": e["nome_filial"],
+            "itens": [],
+        })
+        b["itens"].append(e)
+    for b in blocos.values():
+        notas = [float(e["nota"] or 0) for e in b["itens"] if e["respondida"]]
+        b["total"] = len(b["itens"])
+        b["respondidas"] = len(notas)
+        b["media"] = sum(notas) / len(notas) if notas else None
+    return list(blocos.values())
+
+
+def _tela_execucoes(template, ordenar_por_nota):
+    cod_empresa = str(session["cod_empresa"]).strip()
+    ano, mes = _ano_mes_sel()
+    filial_sel = (request.args.get("filial") or "").strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        permitidas = cod_filiais_avaliacoes_usuario(cur, cod_empresa)
+
+        cur.execute("""
+            SELECT cod_filial, nome_filial FROM filiais
+            WHERE cod_empresa = %s AND ativo = TRUE AND cod_filial = ANY(%s)
+            ORDER BY cod_filial
+        """, (cod_empresa, sorted(permitidas)))
+        filiais = cur.fetchall() or []
+
+        alvo = permitidas
+        if filial_sel.isdigit() and int(filial_sel) in permitidas:
+            alvo = {int(filial_sel)}
+        else:
+            filial_sel = ""
+
+        blocos = _agrupar_por_filial(_execucoes_do_mes(cur, cod_empresa, ano, mes, alvo))
+
+        if ordenar_por_nota:
+            for b in blocos:
+                b["itens"].sort(key=lambda e: (
+                    not e["respondida"], -float(e["nota"] or 0), e["nome_avaliado"] or ""
+                ))
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        template,
+        nome_empresa=session.get("nome_empresa"),
+        ano_sel=ano,
+        mes_sel=mes,
+        filial_sel=filial_sel,
+        filiais=filiais,
+        sem_filial=not permitidas,
+        blocos=blocos,
+        url_voltar=url_for("performances.menu_avaliacoes_funcionarios"),
+        texto_voltar="← Voltar",
+    )
+
+
+@performances_bp.route("/avaliacoes/executar")
+@permissao_obrigatoria(
+    "PERFORMANCES",
+    "EXECUTAR_AVALIACOES",
+    redirecionar_para="performances.menu_avaliacoes_funcionarios",
+)
+def executar_avaliacoes():
+    return _tela_execucoes("executar_avaliacoes.html", ordenar_por_nota=False)
+
 # ---------------------------------------
 # EDITAR AVALIAÇÃO
 # ---------------------------------------
@@ -1589,22 +1805,10 @@ def editar_avaliacao(id_avaliacao):
 @permissao_obrigatoria(
     "PERFORMANCES",
     "CONSULTAR_AVALIACOES",
-    redirecionar_para="performances.menu_performances",
+    redirecionar_para="performances.menu_avaliacoes_funcionarios",
 )
 def consultar_avaliacoes():
-    if "id_usuario" not in session:
-        return redirect(url_for("auth.index"))
-
-    if "cod_empresa" not in session:
-        return redirect(url_for("auth.index"))
-
-    return render_template(
-        "consultar_avaliacoes.html",
-        nome_empresa=session.get("nome_empresa"),
-        url_voltar=url_for("performances.menu_performances"),
-        texto_voltar="← Voltar",
-    )
-
+    return _tela_execucoes("consultar_avaliacoes.html", ordenar_por_nota=True)
 
 # ---------------------------------------
 # CONFIGURAR AVALIAÇÕES - LISTA
@@ -1870,6 +2074,19 @@ def preencher_avaliacao(id_execucao):
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
+        # A trava de filial vale no servidor, não só na lista de Executar.
+        cur.execute("""
+            SELECT cod_filial, data_avaliacao FROM performances_execucoes
+            WHERE id_execucao = %s AND cod_empresa = %s
+        """, (id_execucao, cod_empresa))
+        alvo = cur.fetchone()
+        if not alvo:
+            flash("Avaliação não encontrada.", "error")
+            return redirect(url_for("performances.executar_avaliacoes"))
+        if int(alvo["cod_filial"]) not in cod_filiais_avaliacoes_usuario(cur, cod_empresa):
+            flash("Você não tem acesso às avaliações desta filial.", "error")
+            return redirect(url_for("performances.executar_avaliacoes"))
+
         if request.method == "POST":
             cur.execute("""
                 SELECT id_execucao_item
@@ -1928,6 +2145,8 @@ def preencher_avaliacao(id_execucao):
                     pontuacao_possivel = %s,
                     pontuacao_obtida = %s,
                     nota = %s,
+                    id_usuario_executor = COALESCE(id_usuario_executor, %s),
+                    nome_executor = COALESCE(nome_executor, %s),
                     atualizado_em = NOW()
                 WHERE id_execucao = %s
                   AND cod_empresa = %s
@@ -1935,6 +2154,8 @@ def preencher_avaliacao(id_execucao):
                 total_possivel,
                 total_obtido,
                 nota_final,
+                session.get("id_usuario"),
+                _nome_executor(),
                 id_execucao,
                 cod_empresa,
             ))
@@ -1984,7 +2205,12 @@ def preencher_avaliacao(id_execucao):
         "preencher_avaliacao.html",
         execucao=execucao,
         itens=itens,
-        url_voltar=url_for("performances.executar_avaliacoes"),
+        url_voltar=url_for(
+            "performances.executar_avaliacoes",
+            ano=execucao["data_avaliacao"].year,
+            mes=execucao["data_avaliacao"].month,
+            filial=execucao["cod_filial"],
+        ),
         texto_voltar="← Voltar",
     )
 
@@ -2027,7 +2253,7 @@ def salvar_item_avaliacao_ajax():
 
     try:
         cur.execute("""
-            SELECT i.id_execucao
+            SELECT i.id_execucao, e.cod_filial
             FROM performances_execucao_itens i
             JOIN performances_execucoes e
               ON e.id_execucao = i.id_execucao
@@ -2039,6 +2265,9 @@ def salvar_item_avaliacao_ajax():
 
         if not row:
             return jsonify({"ok": False, "erro": "Item não encontrado"}), 404
+
+        if int(row["cod_filial"]) not in cod_filiais_avaliacoes_usuario(cur, cod_empresa):
+            return jsonify({"ok": False, "erro": "Sem acesso às avaliações desta filial."}), 403
 
         id_execucao = row["id_execucao"]
 
@@ -2074,6 +2303,8 @@ def salvar_item_avaliacao_ajax():
             SET pontuacao_possivel = %s,
                 pontuacao_obtida = %s,
                 nota = %s,
+                id_usuario_executor = COALESCE(id_usuario_executor, %s),
+                nome_executor = COALESCE(nome_executor, %s),
                 atualizado_em = NOW()
             WHERE id_execucao = %s
               AND cod_empresa = %s
@@ -2081,6 +2312,8 @@ def salvar_item_avaliacao_ajax():
             total_possivel,
             total_obtido,
             nota_final,
+            session.get("id_usuario"),
+            _nome_executor(),
             id_execucao,
             cod_empresa,
         ))

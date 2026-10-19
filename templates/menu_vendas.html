@@ -51,8 +51,10 @@
   .btn-importar-diarias { background: #00695c; }
   .btn-consultas { background: #5e35b1; }
   .btn-produto { background: #d97706; color: #fff; }
+  .btn-resumo { background: #b45309; }
   .btn-margem { background: #ad1457; }
   .btn-vendas-dia { background: #00695c; }
+  .btn-analise { background: #283593; }
   .btn-painel-diarias { background: #4527a0; }
   .btn-parametros { background: #37474f; }
   .btn-voltar { background: #444; }
@@ -116,6 +118,12 @@
     </a>
     {% endif %}
 
+    {% if pode_vendas.RESUMO_VENDAS %}
+    <a class="btn-resumo" href="{{ url_for('vendas.vendas_resumo') }}">
+      Resumo de Vendas
+    </a>
+    {% endif %}
+
     {% if pode_vendas.MARGEM_UNITARIA %}
     <a class="btn-margem" href="{{ url_for('vendas.vendas_margem_unitaria') }}">
       Margem Unitária por Dia
@@ -125,6 +133,12 @@
     {% if pode_vendas.VENDAS_POR_DIA %}
     <a class="btn-vendas-dia" href="{{ url_for('vendas.vendas_por_dia') }}">
       Vendas por Dia
+    </a>
+    {% endif %}
+
+    {% if pode_vendas.ANALISE_VENDAS %}
+    <a class="btn-analise" href="{{ url_for('vendas.vendas_analise') }}">
+      Análise de Vendas
     </a>
     {% endif %}
 

@@ -1,0 +1,495 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+{% macro br(v, casas=2) %}{% if v is none %}—{% else %}{{ ("{:,.%df}" % casas).format(v).replace(",", "X").replace(".", ",").replace("X", ".") }}{% endif %}{% endmacro %}
+
+{# Diferença com sinal. `bom` diz qual lado é o bom: "alto", "baixo" ou "" (neutro). #}
+{% macro dif(v, casas=2, bom="", sufixo="") %}
+  {%- if v is none -%}
+    <span class="neutro">—</span>
+  {%- else -%}
+    {%- set zero = (v|abs) < 0.5 / (10 ** casas) -%}
+    <span class="{% if zero or not bom %}neutro{% elif (v > 0) == (bom == 'alto') %}bom{% else %}ruim{% endif %}">
+      {{- "+" if v > 0 and not zero else "" }}{{ br(v, casas) }}{{ sufixo -}}
+    </span>
+  {%- endif -%}
+{% endmacro %}
+
+<style>
+  .av-titulo { font-size: 30px; font-weight: 700; margin-bottom: 6px; }
+  .av-sub { font-size: 17px; margin-bottom: 18px; color: #333; }
+
+  .av-filtro {
+    display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-end;
+    background: #fff; border: 1px solid #d9d9d9; border-radius: 10px;
+    padding: 16px 18px; margin-bottom: 18px;
+  }
+  .av-filtro label { display: block; font-weight: 700; font-size: 13px; margin-bottom: 6px; color: #444; }
+  .av-chips { display: flex; gap: 6px; }
+  .av-chips input { position: absolute; opacity: 0; pointer-events: none; }
+  .av-chips span {
+    display: inline-block; padding: 9px 14px; border: 1px solid #c7c7c7;
+    border-radius: 999px; background: #f7f7f7; font-weight: 700; color: #1f3c88; cursor: pointer;
+  }
+  .av-chips input:checked + span { background: #283593; border-color: #283593; color: #fff; }
+  .av-chips input:focus-visible + span { outline: 2px solid #283593; outline-offset: 2px; }
+  .av-filtro input[type="date"] {
+    padding: 8px 10px; border: 1px solid #c9c9c9; border-radius: 8px; font-size: 15px;
+  }
+  .av-btn {
+    padding: 10px 22px; border-radius: 10px; border: 1px solid #283593;
+    background: #283593; color: #fff; font-weight: 700; font-size: 15px; cursor: pointer;
+  }
+  .av-btn.secundario { background: #f7f7f7; color: #1f3c88; border-color: #c7c7c7; }
+  .av-btn:disabled { opacity: .6; cursor: default; }
+
+  .av-aviso {
+    background: #f8fafc; border: 1px solid #d9e3ef; border-radius: 10px;
+    padding: 16px 18px; color: #444; line-height: 1.6; max-width: 900px;
+  }
+  .av-aviso.amarelo { background: #fff7e6; border-color: #f0d58a; color: #7a5200; }
+
+  .av-periodo { font-size: 15px; color: #444; margin-bottom: 14px; }
+
+  .av-cartao {
+    background: #fff; border: 1px solid #d9d9d9; border-radius: 10px;
+    margin-bottom: 18px; overflow: hidden;
+  }
+  .av-cartao-cab {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 12px 18px; background: #f3f4f8; border-bottom: 1px solid #dcdfe8;
+    font-size: 17px; font-weight: 700;
+  }
+  .av-cartao-cab .resumo-num { margin-left: auto; font-size: 13px; font-weight: 600; color: #555; }
+  .av-cartao-corpo { padding: 14px 18px; }
+
+  .av-ia { border-color: #283593; }
+  .av-ia .av-cartao-cab { background: #283593; color: #fff; border-bottom-color: #283593; }
+  .av-ia-resumo { font-size: 16px; line-height: 1.65; margin: 0 0 14px; }
+  .av-ponto { padding: 10px 0; border-top: 1px solid #ececec; }
+  .av-ponto strong { display: block; margin-bottom: 3px; color: #1f2a6b; }
+  .av-ponto span { line-height: 1.6; color: #333; }
+
+  .av-espera { display: flex; align-items: center; gap: 12px; color: #555; }
+  .av-giro {
+    width: 18px; height: 18px; border-radius: 50%; flex: none;
+    border: 3px solid #c5cae9; border-top-color: #283593; animation: av-giro 0.9s linear infinite;
+  }
+  @keyframes av-giro { to { transform: rotate(360deg); } }
+  .av-erro { color: #c62828; font-weight: 600; }
+
+  .av-diag { line-height: 1.65; margin: 0 0 10px; color: #222; }
+  .av-diag.pendente { color: #888; font-style: italic; }
+
+  .av-sugestoes { list-style: none; margin: 0 0 14px; padding: 0; }
+  .av-sugestoes li {
+    display: flex; gap: 12px; align-items: baseline;
+    padding: 8px 12px; margin-bottom: 6px; border-radius: 8px;
+    background: #f6f7fb; border-left: 4px solid #9e9e9e; line-height: 1.5;
+  }
+  .av-sugestoes li.subir { border-left-color: #2e7d32; background: #eef7ef; }
+  .av-sugestoes li.baixar { border-left-color: #c62828; background: #fdeeee; }
+  .av-sugestoes li.custo { border-left-color: #ef6c00; background: #fff4e5; }
+  .av-sugestoes .acao { font-weight: 700; white-space: nowrap; min-width: 210px; }
+  .av-sugestoes .empate { display: block; margin-top: 3px; font-size: 13px; font-weight: 700; color: #37474f; }
+
+  .selo {
+    display: inline-block; padding: 3px 10px; border-radius: 999px;
+    font-size: 12px; font-weight: 700; letter-spacing: .2px;
+    background: #e0e0e0; color: #444;
+  }
+  .selo.PRECO_BAIXO { background: #2e7d32; color: #fff; }
+  .selo.PRECO_ALTO { background: #c62828; color: #fff; }
+  .selo.CUSTO_ALTO { background: #ef6c00; color: #fff; }
+  .selo.EQUILIBRADO { background: #e3f2fd; color: #0d47a1; }
+  .selo.ATENCAO { background: #fbc02d; color: #3e2f00; }
+
+  .av-rolagem { overflow-x: auto; }
+  table.av-tab { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .av-tab th {
+    background: #f3f3f3; text-align: right; padding: 7px 10px;
+    border-bottom: 1px solid #d0d0d0; white-space: nowrap; font-size: 12px; color: #444;
+  }
+  .av-tab th.grupo { text-align: center; border-left: 2px solid #fff; background: #e8eaf1; }
+  .av-tab td { padding: 6px 10px; border-bottom: 1px solid #ececec; text-align: right; white-space: nowrap; }
+  .av-tab th.esq, .av-tab td.esq { text-align: left; }
+  .av-tab td.sep, .av-tab th.sep { border-left: 2px solid #e3e3e3; }
+  .av-tab tr.total td { font-weight: 700; background: #fafafa; border-top: 2px solid #c9c9c9; }
+  .av-tab .bom { color: #2e7d32; font-weight: 600; }
+  .av-tab .ruim { color: #c62828; font-weight: 600; }
+  .av-tab .neutro { color: #666; }
+  .av-nota { font-size: 12px; color: #7a5200; }
+
+  /* Matriz de decisão: combustível × posto */
+  .av-matriz { border-collapse: separate; border-spacing: 0; font-size: 14px; min-width: 100%; }
+  .av-matriz th, .av-matriz td {
+    border-bottom: 1px solid #e3e3e3; border-right: 1px solid #eee;
+    padding: 8px 10px; text-align: center; white-space: nowrap;
+  }
+  .av-matriz thead th { background: #e8eaf1; font-size: 12px; color: #333; position: sticky; top: 0; }
+  .av-matriz th.combustivel {
+    text-align: left; background: #f3f4f8; position: sticky; left: 0; z-index: 1;
+    min-width: 150px; border-right: 2px solid #d5d9e6;
+  }
+  .av-matriz thead th.combustivel { z-index: 2; background: #e8eaf1; }
+  .av-matriz td { font-weight: 700; min-width: 74px; }
+  .av-matriz td.vende { cursor: pointer; }
+  .av-matriz td.vende:hover { outline: 2px solid #283593; outline-offset: -2px; }
+  .av-matriz td.nao-vende { background: #f5f5f5; }
+  .av-matriz td.manter { color: #9e9e9e; }
+  .av-matriz td.subir { background: #e3f3e5; color: #1b5e20; }
+  .av-matriz td.baixar { background: #fde7e7; color: #b71c1c; }
+  .av-legenda { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: #555; padding: 10px 18px 14px; }
+  .av-legenda b { display: inline-block; padding: 1px 8px; border-radius: 4px; margin-right: 4px; }
+
+  .av-rodape { font-size: 13px; color: #666; line-height: 1.6; margin-top: 6px; max-width: 1000px; }
+
+  @media print {
+    .av-filtro, .av-btn, .topo, nav { display: none !important; }
+    .av-cartao { break-inside: avoid; }
+  }
+</style>
+
+<div class="card">
+  <div class="av-titulo">Análise de Vendas</div>
+  <div class="av-sub">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+  <form method="get" class="av-filtro" id="av-form">
+    <input type="hidden" name="analisar" value="1">
+    <div>
+      <label>Período a analisar</label>
+      <div class="av-chips">
+        {% for n in opcoes_semanas %}
+        <label style="margin:0">
+          <input type="radio" name="semanas" value="{{ n }}" {% if n == semanas %}checked{% endif %}>
+          <span>{{ n }} semana{{ "s" if n > 1 else "" }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div>
+      <label for="data_fim">Até o dia</label>
+      <input type="date" id="data_fim" name="data_fim" value="{{ data_fim.strftime('%Y-%m-%d') }}">
+    </div>
+    <div>
+      <button type="submit" class="av-btn" id="av-analisar">Analisar</button>
+      {% if analise and analise.postos %}
+      <button type="button" class="av-btn secundario" onclick="window.print()">Imprimir</button>
+      {% endif %}
+    </div>
+  </form>
+
+  {% if not analisar %}
+  <div class="av-aviso">
+    Escolha o período e clique em <strong>Analisar</strong>. O sistema compara as vendas de
+    combustível do período com o período anterior de mesma duração, na rede e posto a posto,
+    e a inteligência artificial aponta onde o preço está baixo ou alto demais, onde o custo
+    está acima dos outros postos e quantos centavos valeria mexer. A data sugerida é o último
+    dia completo com venda importada.
+  </div>
+
+  {% elif not analise.postos %}
+  <div class="av-aviso amarelo">Não há vendas de combustível importadas neste período.</div>
+
+  {% else %}
+  {% set per = analise.periodo %}
+  {% set ant = analise.periodo_anterior %}
+  <div class="av-periodo">
+    Período: <strong>{{ per.inicio.strftime("%d/%m/%Y") }} a {{ per.fim.strftime("%d/%m/%Y") }}</strong>
+    ({{ per.dias }} dias), comparado com {{ ant.inicio.strftime("%d/%m/%Y") }} a {{ ant.fim.strftime("%d/%m/%Y") }}.
+    {% if analise.dias_com_venda < per.dias %}
+    <span class="av-nota">Atenção: só {{ analise.dias_com_venda }} dos {{ per.dias }} dias têm venda importada; as médias diárias saem menores.</span>
+    {% endif %}
+  </div>
+
+  <div class="av-cartao av-ia">
+    <div class="av-cartao-cab">Diagnóstico da rede</div>
+    <div class="av-cartao-corpo" id="ia-geral">
+      {% if ia_configurada %}
+      <div class="av-espera">
+        <div class="av-giro"></div>
+        <div>A inteligência artificial está analisando as vendas. Costuma levar de 1 a 3 minutos; os números abaixo já estão prontos.</div>
+      </div>
+      {% else %}
+      <div class="av-erro">
+        A chave da IA não está configurada no servidor (ANTHROPIC_API_KEY). Os números abaixo estão corretos, mas o diagnóstico e as sugestões não podem ser gerados.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="av-cartao" id="av-matriz-cartao" hidden>
+    <div class="av-cartao-cab">Sugestão de preço (centavos por litro)</div>
+    <div class="av-rolagem">
+      <table class="av-matriz">
+        <thead>
+          <tr>
+            <th class="combustivel">Combustível</th>
+            {% for p in analise.postos %}<th>{{ p.cod_filial }} · {{ p.nome }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in analise.rede %}
+          <tr>
+            <th class="combustivel">{{ r.produto }}</th>
+            {% for p in analise.postos %}
+            {% set vende = p.produtos | selectattr("cod_produto", "equalto", r.cod_produto) | list %}
+            {% if vende %}
+            <td class="vende manter" data-matriz="{{ p.cod_filial }}|{{ r.produto|upper }}" data-filial="{{ p.cod_filial }}">—</td>
+            {% else %}
+            <td class="nao-vende"></td>
+            {% endif %}
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="av-legenda">
+      <span><b class="subir" style="background:#e3f3e5;color:#1b5e20">+15</b>subir 15 centavos</span>
+      <span><b style="background:#fde7e7;color:#b71c1c">−25</b>baixar 25 centavos</span>
+      <span><b style="color:#9e9e9e">—</b>não mexer</span>
+      <span><b style="background:#f5f5f5">&nbsp;&nbsp;</b>posto não vende</span>
+      <span>Valores em centavos por litro. Clique na célula para ver o motivo no cartão do posto.</span>
+    </div>
+  </div>
+
+  {% macro cabecalho(com_rede) %}
+  <thead>
+    <tr>
+      <th class="esq" rowspan="2">Combustível</th>
+      <th class="grupo" colspan="2">Volume</th>
+      <th class="grupo" colspan="{{ 3 if com_rede else 2 }}">Preço de venda</th>
+      <th class="grupo" colspan="{{ 3 if com_rede else 2 }}">Custo</th>
+      <th class="grupo" colspan="{{ 3 if com_rede else 2 }}">Margem por litro</th>
+      <th class="grupo" colspan="2">Margem no período</th>
+    </tr>
+    <tr>
+      <th class="sep">Litros/dia</th><th>Var.</th>
+      <th class="sep">R$/L</th><th>Var.</th>{% if com_rede %}<th>× rede</th>{% endif %}
+      <th class="sep">R$/L</th><th>Var.</th>{% if com_rede %}<th>× rede</th>{% endif %}
+      <th class="sep">R$/L</th><th>Var.</th>{% if com_rede %}<th>× rede</th>{% endif %}
+      <th class="sep">R$</th><th>Var.</th>
+    </tr>
+  </thead>
+  {% endmacro %}
+
+  {% macro linha(m, rotulo, com_rede, classe="") %}
+  <tr class="{{ classe }}">
+    <td class="esq">{{ rotulo }}{% if m.custo_invalido %} <span class="av-nota" title="Custo com erro de digitação na origem em {{ m.custo_invalido.dias|length }} dia(s); esses litros ficaram fora do custo médio.">⚠</span>{% endif %}</td>
+    <td class="sep">{{ br(m.litros_dia, 0) }}</td>
+    <td>{{ dif(m.var_volume_pct, 1, "alto", "%") }}</td>
+    <td class="sep">{{ br(m.preco, 3) }}</td>
+    <td>{{ dif(m.var_preco, 3) }}</td>
+    {% if com_rede %}<td>{{ dif(m.dif_preco_rede, 3) }}</td>{% endif %}
+    <td class="sep">{{ br(m.custo, 3) }}</td>
+    <td>{{ dif(m.var_custo, 3, "baixo") }}</td>
+    {% if com_rede %}<td>{{ dif(m.dif_custo_rede, 3, "baixo") }}</td>{% endif %}
+    <td class="sep">{{ br(m.margem_unit, 3) }}</td>
+    <td>{{ dif(m.var_margem_unit, 3, "alto") }}</td>
+    {% if com_rede %}<td>{{ dif(m.dif_margem_rede, 3, "alto") }}</td>{% endif %}
+    <td class="sep">{{ br(m.margem_total, 0) }}</td>
+    <td>{{ dif(m.var_margem_total_pct, 1, "alto", "%") }}</td>
+  </tr>
+  {% endmacro %}
+
+  <div class="av-cartao">
+    <div class="av-cartao-cab">Rede, por combustível</div>
+    <div class="av-rolagem">
+      <table class="av-tab">
+        {{ cabecalho(false) }}
+        <tbody>
+          {% for m in analise.rede %}{{ linha(m, m.produto, false) }}{% endfor %}
+          {% if analise.rede_total %}{{ linha(analise.rede_total, "TOTAL", false, "total") }}{% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% for p in analise.postos %}
+  <div class="av-cartao" id="posto-{{ p.cod_filial }}">
+    <div class="av-cartao-cab">
+      {{ p.cod_filial }} · {{ p.nome }}
+      <span class="selo" data-selo hidden></span>
+      <span class="resumo-num">
+        {{ br(p.total.litros_dia, 0) }} L/dia
+        ({{ dif(p.total.var_volume_pct, 1, "alto", "%") }})
+        · margem R$ {{ br(p.total.margem_total, 0) }}
+        ({{ dif(p.total.var_margem_total_pct, 1, "alto", "%") }})
+      </span>
+    </div>
+    <div class="av-cartao-corpo">
+      <p class="av-diag pendente" data-diag>{% if ia_configurada %}Aguardando o diagnóstico…{% endif %}</p>
+      <ul class="av-sugestoes" data-sugestoes></ul>
+    </div>
+    <div class="av-rolagem">
+      <table class="av-tab">
+        {{ cabecalho(true) }}
+        <tbody>
+          {% for m in p.produtos %}{{ linha(m, m.produto, true) }}{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="av-rodape">
+    <strong>Var.</strong> compara com o período anterior de mesma duração; <strong>× rede</strong> compara com a média da rede no mesmo combustível.
+    Verde é favorável e vermelho é desfavorável (custo acima da rede sai em vermelho).
+    Os números são calculados pelo Matrix a partir das vendas diárias importadas; o diagnóstico e as sugestões são escritos por inteligência artificial
+    sobre esses números e não conhecem o preço dos concorrentes de cada cidade. Nada é gravado: a análise é refeita a cada clique.
+  </div>
+  {% endif %}
+</div>
+
+<script>
+  const avIniciar = {{ (analisar and analise and analise.postos and ia_configurada)|tojson }};
+  const avParametros = { semanas: {{ semanas }}, data_fim: {{ data_fim.strftime('%Y-%m-%d')|tojson }} };
+
+  const ROTULO_SITUACAO = {
+    PRECO_BAIXO: "Preço baixo",
+    PRECO_ALTO: "Preço alto",
+    CUSTO_ALTO: "Custo alto",
+    EQUILIBRADO: "Equilibrado",
+    ATENCAO: "Atenção"
+  };
+
+  function rotuloAcao(s) {
+    const c = Number(s.centavos) || 0;
+    const quanto = c > 0 ? ` ${c} centavo${c === 1 ? "" : "s"}` : "";
+    if (s.acao === "SUBIR_PRECO") return { texto: `▲ Subir${quanto}`, classe: "subir" };
+    if (s.acao === "BAIXAR_PRECO") return { texto: `▼ Baixar${quanto}`, classe: "baixar" };
+    if (s.acao === "REVISAR_CUSTO") return { texto: "● Revisar custo", classe: "custo" };
+    return { texto: "■ Manter", classe: "" };
+  }
+
+  function el(tag, classe, texto) {
+    const e = document.createElement(tag);
+    if (classe) e.className = classe;
+    if (texto !== undefined) e.textContent = texto;
+    return e;
+  }
+
+  function mostrarErroIA(mensagem) {
+    const geral = document.getElementById("ia-geral");
+    geral.replaceChildren(el("div", "av-erro", mensagem));
+    document.querySelectorAll("[data-diag].pendente").forEach(p => { p.textContent = ""; });
+  }
+
+  function mostrarResultado(r) {
+    const geral = document.getElementById("ia-geral");
+    const blocos = [el("p", "av-ia-resumo", r.resumo_geral || "")];
+    (r.diagnostico_rede || []).forEach(ponto => {
+      const div = el("div", "av-ponto");
+      div.append(el("strong", "", ponto.titulo), el("span", "", ponto.texto));
+      blocos.push(div);
+    });
+    geral.replaceChildren(...blocos);
+
+    (r.postos || []).forEach(p => {
+      const cartao = document.getElementById(`posto-${p.cod_filial}`);
+      if (!cartao) return;
+
+      const selo = cartao.querySelector("[data-selo]");
+      selo.textContent = ROTULO_SITUACAO[p.situacao] || p.situacao;
+      selo.classList.add(p.situacao);
+      selo.hidden = false;
+
+      const diag = cartao.querySelector("[data-diag]");
+      diag.textContent = p.diagnostico || "";
+      diag.classList.remove("pendente");
+
+      const lista = cartao.querySelector("[data-sugestoes]");
+      lista.replaceChildren(...(p.sugestoes || []).map(s => {
+        const acao = rotuloAcao(s);
+        const li = el("li", acao.classe);
+        const texto = el("span", "", s.motivo);
+        if (s.empate) texto.append(el("span", "empate", `⚖ ${s.empate}`));
+        li.append(el("span", "acao", `${acao.texto} · ${s.produto}`), texto);
+        return li;
+      }));
+    });
+
+    montarMatriz(r);
+
+    // Posto que a IA deixou de fora não pode ficar "aguardando" para sempre.
+    document.querySelectorAll("[data-diag].pendente").forEach(p => {
+      p.textContent = "Sem diagnóstico para este posto.";
+    });
+  }
+
+  // Matriz combustível × posto: só os centavos sugeridos, tirados das mesmas
+  // sugestões dos cartões. Sem mudança de preço (inclusive "revisar custo",
+  // que fica no cartão do posto) a célula é "—".
+  function montarMatriz(r) {
+    const celulas = {};
+    document.querySelectorAll("[data-matriz]").forEach(td => { celulas[td.dataset.matriz] = td; });
+
+    (r.postos || []).forEach(p => {
+      (p.sugestoes || []).forEach(s => {
+        const td = celulas[`${p.cod_filial}|${String(s.produto || "").trim().toUpperCase()}`];
+        if (!td) return;
+
+        const c = Number(s.centavos) || 0;
+        let texto = "—", classe = "manter";
+        if (s.acao === "SUBIR_PRECO" && c > 0) { texto = `+${c}`; classe = "subir"; }
+        else if (s.acao === "BAIXAR_PRECO" && c > 0) { texto = `−${c}`; classe = "baixar"; }
+
+        td.textContent = texto;
+        td.className = `vende ${classe}`;
+        td.title = [s.motivo, s.empate].filter(Boolean).join("\n");
+      });
+    });
+
+    document.querySelectorAll("[data-matriz]").forEach(td => {
+      td.addEventListener("click", () => {
+        const cartao = document.getElementById(`posto-${td.dataset.filial}`);
+        if (cartao) cartao.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
+
+    document.getElementById("av-matriz-cartao").hidden = false;
+  }
+
+  async function acompanhar(jobId) {
+    try {
+      const resp = await fetch(`/vendas/api/analise/andamento/${jobId}`, { cache: "no-store" });
+      const data = await resp.json();
+
+      if (!data.ok) { mostrarErroIA(data.erro || "Não foi possível consultar a análise."); return; }
+      if (data.job.status === "concluido") { mostrarResultado(data.job.resultado); return; }
+      if (data.job.status === "erro") { mostrarErroIA(data.job.mensagem); return; }
+    } catch (erro) {
+      // Queda momentânea de rede: a análise segue no servidor, tenta de novo.
+    }
+    setTimeout(() => acompanhar(jobId), 3000);
+  }
+
+  async function iniciarAnalise() {
+    try {
+      const resp = await fetch("/vendas/api/analise/iniciar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(avParametros)
+      });
+      const data = await resp.json();
+      if (!data.ok) { mostrarErroIA(data.erro || "Não foi possível iniciar a análise."); return; }
+      acompanhar(data.job_id);
+    } catch (erro) {
+      mostrarErroIA("Não foi possível iniciar a análise. Tente de novo.");
+    }
+  }
+
+  document.getElementById("av-form").addEventListener("submit", function () {
+    const botao = document.getElementById("av-analisar");
+    botao.disabled = true;
+    botao.textContent = "Analisando...";
+  });
+
+  if (avIniciar) iniciarAnalise();
+</script>
+
+{% endblock %}

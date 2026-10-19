@@ -959,16 +959,42 @@ def auditoria_detalhamento(conn, cod_empresa):
     }
 
 
-def Importa_Fluxo_Caixa_PDF_Analitico(arquivo_pdf, cod_empresa_fixo):
+class FiliaisNaoCadastradas(ValueError):
+    """O PDF traz secoes 'Filial:' que nao casam com nenhuma filial da empresa.
+
+    Nao e erro de leitura: e uma pergunta para o usuario. A VM Transportes,
+    por exemplo, vem no relatorio da Vilela mas e outra empresa, que nao
+    controlamos - a tela oferece importar as demais e ignorar essas.
+    """
+
+    def __init__(self, nomes):
+        self.nomes = list(nomes)
+        super().__init__(
+            "Filiais do PDF sem cadastro em 'nome_filial_importacao': "
+            + ", ".join(self.nomes)
+        )
+
+
+def _nome_filial_pdf(linha):
+    return linha.split(":", 1)[1].strip()
+
+
+def Importa_Fluxo_Caixa_PDF_Analitico(cod_empresa_fixo, caminho_pdf,
+                                      ignorar_filiais=None):
+    """Importa o PDF analitico ja salvo em disco (caminho_pdf).
+
+    ignorar_filiais: nomes de 'Filial:' do PDF (como vieram no arquivo) que o
+    usuario confirmou desprezar. Qualquer filial sem cadastro que NAO esteja
+    nessa lista levanta FiliaisNaoCadastradas, antes de gravar qualquer coisa.
+    """
     if not cod_empresa_fixo:
         raise ValueError("Cod_empresa da sessão não foi informado.")
 
     cod_empresa = str(cod_empresa_fixo).strip()
 
-    nome_original = arquivo_pdf.filename or "fluxo_caixa_analitico.pdf"
-    nome_seguro = re.sub(r"[^a-zA-Z0-9_.-]", "_", nome_original)
+    ignorar_norm = {normalizar_texto(n) for n in (ignorar_filiais or []) if n}
+    filiais_ignoradas = []
 
-    caminho_temp = None
     conn = None
     cur = None
 
@@ -992,25 +1018,8 @@ def Importa_Fluxo_Caixa_PDF_Analitico(arquivo_pdf, cod_empresa_fixo):
             detalhes_pendentes = []
 
     try:
-        with tempfile.NamedTemporaryFile(
-            prefix="fluxo_caixa_analitico_",
-            suffix=f"_{nome_seguro}",
-            delete=False
-        ) as tmp:
-            caminho_temp = tmp.name
-            arquivo_pdf.stream.seek(0)
-            shutil.copyfileobj(arquivo_pdf.stream, tmp, 1024 * 1024)
-
         conn = get_connection()
         cur = conn.cursor()
-
-        # As duas tabelas sao apagadas juntas: elas trabalham sincronizadas.
-        cur.execute("""
-            DELETE FROM importacoes
-            WHERE cod_empresa = %s
-        """, (cod_empresa,))
-
-        limpar_detalhamento_importacao(cur, cod_empresa)
 
         filiais_importacao = carregar_filiais_importacao(cur, cod_empresa)
 
@@ -1020,7 +1029,7 @@ def Importa_Fluxo_Caixa_PDF_Analitico(arquivo_pdf, cod_empresa_fixo):
         # serve para importar.
         linhas_pdf = []
 
-        with pdfplumber.open(caminho_temp) as pdf:
+        with pdfplumber.open(caminho_pdf) as pdf:
             for pagina in pdf.pages:
                 texto = pagina.extract_text(x_tolerance=1, y_tolerance=3) or ""
 
@@ -1056,6 +1065,35 @@ def Importa_Fluxo_Caixa_PDF_Analitico(arquivo_pdf, cod_empresa_fixo):
                 "no campo 'Filiais' — cada uma vira uma seção 'Filial: NOME'."
             )
 
+        # Filial do PDF sem cadastro: pergunta ANTES de apagar ou gravar
+        # qualquer coisa. Com a confirmacao, as secoes dela sao puladas
+        # inteiras e as demais filiais seguem normalmente.
+        sem_cadastro = []
+        for l in linhas_pdf:
+            if not normalizar_texto(l).startswith("filial:"):
+                continue
+            nome_pdf = _nome_filial_pdf(l)
+            nome_norm = normalizar_texto(nome_pdf)
+            if nome_norm in filiais_importacao:
+                continue
+            if nome_norm in ignorar_norm:
+                if nome_pdf not in filiais_ignoradas:
+                    filiais_ignoradas.append(nome_pdf)
+                continue
+            if nome_pdf not in sem_cadastro:
+                sem_cadastro.append(nome_pdf)
+
+        if sem_cadastro:
+            raise FiliaisNaoCadastradas(sem_cadastro)
+
+        # As duas tabelas sao apagadas juntas: elas trabalham sincronizadas.
+        cur.execute("""
+            DELETE FROM importacoes
+            WHERE cod_empresa = %s
+        """, (cod_empresa,))
+
+        limpar_detalhamento_importacao(cur, cod_empresa)
+
         mes_atual = None
         ano_atual = None
         cod_filial_atual = None
@@ -1082,6 +1120,15 @@ def Importa_Fluxo_Caixa_PDF_Analitico(arquivo_pdf, cod_empresa_fixo):
                 continue
 
             if linha_norm.startswith("filial:"):
+                if normalizar_texto(_nome_filial_pdf(linha)) in ignorar_norm:
+                    # Secao de filial ignorada: sem filial corrente, tudo
+                    # ate a proxima "Filial:" e pulado.
+                    cod_filial_atual = None
+                    nome_filial_atual = None
+                    conta_atual = None
+                    historico_conta_atual = None
+                    continue
+
                 cod_filial_detectada, nome_filial_detectada = \
                     detectar_filial_na_linha(linha, filiais_importacao)
 
@@ -1235,6 +1282,7 @@ def Importa_Fluxo_Caixa_PDF_Analitico(arquivo_pdf, cod_empresa_fixo):
                 for c, n in filiais_lidas
             ],
             "filial_unica": len(filiais_lidas) == 1,
+            "filiais_ignoradas": filiais_ignoradas,
         }
 
     except Exception:
@@ -1248,6 +1296,3 @@ def Importa_Fluxo_Caixa_PDF_Analitico(arquivo_pdf, cod_empresa_fixo):
 
         if conn:
             conn.close()
-
-        if caminho_temp and os.path.exists(caminho_temp):
-            os.remove(caminho_temp)

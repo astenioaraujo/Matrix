@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, session, redirect, url_for, request, flash, g
+from flask import Blueprint, render_template, session, redirect, url_for, request, flash, g, jsonify
 from security_helpers import permissao_obrigatoria
 from db import copiar_linhas
 import psycopg2
@@ -21,6 +21,7 @@ from services.vendas_produtos import (
     PRODUTOS_NAO_COMBUSTIVEL,
     FILTRO_SQL_COMBUSTIVEL,
 )
+from services import analise_vendas_service
 
 vendas_bp = Blueprint("vendas", __name__, url_prefix="/vendas")
 
@@ -2898,6 +2899,220 @@ def vendas_consulta_produto():
     )
 
 
+# ------------------------------------------
+# RESUMO DE VENDAS
+# ------------------------------------------
+# Um mês, um posto ou todos: uma linha por produto, com os mesmos campos da
+# Consulta por Produto (custo, venda, margem unitária, quantidade, valor e
+# margem bruta). vendas_diarias traz várias linhas por posto/produto/dia (uma
+# por preço), então os unitários são médias ponderadas pela quantidade:
+# custo = Σ(custo×qtd)/Σqtd, venda = Σvalor/Σqtd, MUN = Σmargem/Σqtd.
+# Nada gravado.
+
+MESES_RESUMO = [
+    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+]
+
+
+def _produto_resumo(descricao):
+    """Junta as grafias diferentes do mesmo produto vindas do arquivo:
+
+    - ponto final: "GASOLINA COMUM FROTA." = "GASOLINA COMUM FROTA" (mesma
+      regra da Performance de Gerentes);
+    - espaço duplo: "OLEO DIESEL  S10" = "OLEO DIESEL S10" (EMP012);
+    - o "B" do diesel: "OLEO DIESEL B S500" = "OLEO DIESEL S500" (EMP012) —
+      todo diesel de bomba é diesel B (com biodiesel), a letra não muda o produto.
+    """
+    texto = " ".join(str(descricao or "").upper().split())
+    while texto.endswith("."):
+        texto = texto[:-1].strip()
+    return re.sub(r"\bDIESEL B (S\d+)", r"DIESEL \1", texto)
+
+
+# Colunas numéricas: ordenam sempre do maior para o menor e levam mapa de
+# calor próprio. No custo a escala é invertida (comprar caro é o ruim), como
+# na linha de Compra da Margem Unitária.
+COLUNAS_RESUMO = [
+    ("custo", "Preço de custo"),
+    ("preco_venda", "Preço de venda"),
+    ("mun", "Margem unitária"),
+    ("quantidade", "Quantidade"),
+    ("valor", "Valor"),
+    ("margem_bruta", "Margem bruta"),
+]
+ORDEM_PADRAO_RESUMO = "quantidade"
+# Pizza só para o que se soma: preço e margem unitária não têm "fatia".
+COLUNAS_PIZZA_RESUMO = ("quantidade", "valor", "margem_bruta")
+
+
+def _fechar_resumo(acc):
+    qtd = acc["quantidade"]
+    return {
+        "custo": (acc["custo_x_qtd"] / qtd) if qtd else 0.0,
+        "preco_venda": (acc["valor"] / qtd) if qtd else 0.0,
+        "mun": (acc["margem_bruta"] / qtd) if qtd else 0.0,
+        "quantidade": qtd,
+        "valor": acc["valor"],
+        "margem_bruta": acc["margem_bruta"],
+    }
+
+
+@vendas_bp.route("/resumo")
+@permissao_obrigatoria("VENDAS", "RESUMO_VENDAS", redirecionar_para="sistema.menu_vendas")
+def vendas_resumo():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+
+    mes_txt = (request.args.get("mes") or "").strip()
+    ano_txt = (request.args.get("ano") or "").strip()
+    filial_txt = (request.args.get("filial") or "").strip()
+    filial_sel = int(filial_txt) if filial_txt.isdigit() else None  # vazio = todos
+    ordem = (request.args.get("ordem") or "").strip()
+    if ordem not in dict(COLUNAS_RESUMO):
+        ordem = ORDEM_PADRAO_RESUMO
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    filiais = []
+    anos = []
+    linhas = []
+    total = None
+    custo_suspeito = 0
+    fatias = []
+    fora_da_pizza = []
+
+    try:
+        cur.execute("""
+            SELECT cod_filial, nome_filial
+            FROM filiais
+            WHERE cod_empresa = %s
+              AND ativo = TRUE
+            ORDER BY cod_filial
+        """, (cod_empresa,))
+        filiais = cur.fetchall()
+
+        cur.execute("""
+            SELECT MIN(data) AS primeira, MAX(data) AS ultima
+            FROM vendas_diarias
+            WHERE cod_empresa = %s
+        """, (cod_empresa,))
+        row = cur.fetchone() or {}
+        hoje = datetime.now(ZoneInfo("America/Recife")).date()
+        ultima = row.get("ultima") or hoje
+        primeira = row.get("primeira") or ultima
+        anos = list(range(ultima.year, primeira.year - 1, -1))
+
+        # Primeira abertura: o mês da última venda importada.
+        mes = int(mes_txt) if mes_txt.isdigit() and 1 <= int(mes_txt) <= 12 else ultima.month
+        ano = int(ano_txt) if ano_txt.isdigit() else ultima.year
+        if ano not in anos:
+            anos = sorted(set(anos) | {ano}, reverse=True)
+
+        data_ini = date(ano, mes, 1)
+        data_fim = date(ano + 1, 1, 1) if mes == 12 else date(ano, mes + 1, 1)
+
+        where = ["cod_empresa = %s", "data >= %s", "data < %s"]
+        params = [cod_empresa, data_ini, data_fim]
+        if filial_sel is not None:
+            where.append("cod_filial = %s")
+            params.append(filial_sel)
+
+        cur.execute(f"""
+            SELECT descricao,
+                   SUM(COALESCE(custo, 0) * COALESCE(quantidade, 0)) AS custo_x_qtd,
+                   SUM(COALESCE(quantidade, 0)) AS quantidade,
+                   SUM(COALESCE(valor, 0)) AS valor,
+                   SUM(COALESCE(margem_bruta, 0)) AS margem_bruta,
+                   COUNT(*) FILTER (
+                       WHERE preco_venda > 0
+                         AND custo > preco_venda * %s
+                   ) AS custo_suspeito
+            FROM vendas_diarias
+            WHERE {" AND ".join(where)}
+              AND COALESCE(TRIM(descricao), '') <> ''
+            GROUP BY descricao
+        """, [FATOR_CUSTO_FORA_DE_ESCALA] + params)
+
+        campos = ("custo_x_qtd", "quantidade", "valor", "margem_bruta")
+        por_produto = {}
+        geral = dict.fromkeys(campos, 0.0)
+        for r in cur.fetchall():
+            produto = _produto_resumo(r["descricao"])
+            acc = por_produto.setdefault(produto, dict.fromkeys(campos, 0.0))
+            for campo in campos:
+                acc[campo] += float(r[campo] or 0)
+                geral[campo] += float(r[campo] or 0)
+            custo_suspeito += int(r["custo_suspeito"] or 0)
+
+        for produto, acc in por_produto.items():
+            linha = _fechar_resumo(acc)
+            linha["produto"] = produto
+            linhas.append(linha)
+        linhas.sort(key=lambda l: l[ordem], reverse=True)
+
+        # Mapa de calor por coluna, só nas linhas de produto (o TOTAL fica fora).
+        for campo, _ in COLUNAS_RESUMO:
+            valores = [l[campo] for l in linhas]
+            minimo, maximo = min(valores), max(valores)
+            for l in linhas:
+                v = l[campo]
+                if campo == "custo":
+                    v = minimo + maximo - v
+                l[f"{campo}_cor"] = cor_excel_51(v, minimo, maximo) if len(linhas) > 1 else ""
+
+        if linhas:
+            total = _fechar_resumo(geral)
+
+        # Fatias na mesma ordem da tabela, em percentual do que é positivo
+        # (margem bruta negativa não cabe numa pizza — vai para o aviso).
+        if ordem in COLUNAS_PIZZA_RESUMO:
+            positivos = [l for l in linhas if l[ordem] > 0]
+            soma = sum(l[ordem] for l in positivos)
+            fatias = [
+                {"produto": l["produto"], "percentual": round(l[ordem] / soma * 100, 2)}
+                for l in positivos
+            ] if soma else []
+            fora_da_pizza = [l["produto"] for l in linhas if l[ordem] < 0]
+
+    finally:
+        cur.close()
+        conn.close()
+
+    nome_filial_sel = next(
+        (f["nome_filial"] for f in filiais if int(f["cod_filial"]) == filial_sel),
+        None,
+    )
+
+    return render_template(
+        "vendas_resumo.html",
+        nome_empresa=nome_empresa,
+        filiais=filiais,
+        anos=anos,
+        meses=MESES_RESUMO,
+        mes=mes,
+        ano=ano,
+        filial_sel=filial_sel,
+        nome_filial_sel=nome_filial_sel,
+        linhas=linhas,
+        total=total,
+        custo_suspeito=custo_suspeito,
+        colunas=COLUNAS_RESUMO,
+        ordem=ordem,
+        rotulo_ordem=dict(COLUNAS_RESUMO)[ordem],
+        tem_pizza=ordem in COLUNAS_PIZZA_RESUMO,
+        fatias=fatias,
+        fora_da_pizza=fora_da_pizza,
+        formatar_numero_br=formatar_numero_br,
+        url_voltar=url_for("sistema.menu_vendas"),
+        texto_voltar="← Voltar"
+    )
+
+
 # =========================
 # CADASTROS - FILIAIS
 # =========================
@@ -4169,3 +4384,146 @@ def _detalhe_periodo(cur, cod_empresa, ano, mes):
             "mun": (acum[2] / acum[0]) if acum[0] else 0.0
         }
     }
+
+
+# =========================
+# ANÁLISE DE VENDAS (IA)
+# =========================
+# Os números saem de vendas_diarias (services/analise_vendas_service.py) e a
+# tela os mostra na hora; o diagnóstico e as sugestões de preço chegam depois,
+# escritos pela IA em segundo plano. Nada é gravado.
+
+SEMANAS_ANALISE = [1, 2, 3, 4]
+SEMANAS_ANALISE_PADRAO = 2
+
+
+def _parametros_analise(cur, cod_empresa, origem):
+    """(semanas, data_fim) pedidos na requisição, com os padrões da tela.
+
+    A data final sugerida é o último dia COMPLETO com venda: o dia de hoje,
+    quando já foi importado, está pela metade e derrubaria a média diária.
+    """
+    semanas_txt = str(origem.get("semanas") or "").strip()
+    semanas = int(semanas_txt) if semanas_txt.isdigit() else SEMANAS_ANALISE_PADRAO
+    if semanas not in SEMANAS_ANALISE:
+        semanas = SEMANAS_ANALISE_PADRAO
+
+    data_fim_txt = str(origem.get("data_fim") or "").strip()
+    data_fim = para_data_excel(data_fim_txt) if data_fim_txt else None
+
+    if not data_fim:
+        hoje = datetime.now(ZoneInfo("America/Recife")).date()
+        cur.execute("""
+            SELECT MAX(data) AS ultima
+            FROM vendas_diarias
+            WHERE cod_empresa = %s
+              AND data < %s
+        """, (cod_empresa, hoje))
+        row = cur.fetchone() or {}
+        data_fim = row.get("ultima") or (hoje - timedelta(days=1))
+
+    return semanas, data_fim
+
+
+def _coletar_analise_vendas(cur, cod_empresa, semanas, data_fim):
+    data_ini = data_fim - timedelta(days=semanas * 7 - 1)
+
+    filiais = obter_filiais_ativas(cur, cod_empresa)
+
+    cur.execute("""
+        SELECT cod_produto, descricao
+        FROM combustiveis
+        WHERE cod_empresa = %s
+        ORDER BY cod_produto
+    """, (cod_empresa,))
+    produtos = list(cur.fetchall() or []) + PRODUTOS_ADICIONAIS_MARGEM
+
+    return analise_vendas_service.coletar_analise(
+        cur, cod_empresa, data_ini, data_fim, filiais, produtos,
+        _cod_produto_das_vendas, FATOR_CUSTO_FORA_DE_ESCALA,
+    )
+
+
+def _dono_analise():
+    return (session.get("id_usuario"), str(session.get("cod_empresa")).strip())
+
+
+@vendas_bp.route("/analise")
+@permissao_obrigatoria("VENDAS", "ANALISE_VENDAS", redirecionar_para="sistema.menu_vendas")
+def vendas_analise():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    analisar = request.args.get("analisar") == "1"
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    analise = None
+
+    try:
+        semanas, data_fim = _parametros_analise(cur, cod_empresa, request.args)
+        if analisar:
+            analise = _coletar_analise_vendas(cur, cod_empresa, semanas, data_fim)
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "vendas_analise.html",
+        nome_empresa=session.get("nome_empresa", ""),
+        semanas=semanas,
+        opcoes_semanas=SEMANAS_ANALISE,
+        data_fim=data_fim,
+        analisar=analisar,
+        analise=analise,
+        ia_configurada=analise_vendas_service.ia_configurada(),
+        url_voltar=url_for("sistema.menu_vendas"),
+        texto_voltar="← Voltar"
+    )
+
+
+@vendas_bp.route("/api/analise/iniciar", methods=["POST"])
+@permissao_obrigatoria("VENDAS", "ANALISE_VENDAS", redirecionar_para="sistema.menu_vendas")
+def api_analise_iniciar():
+    if "cod_empresa" not in session:
+        return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    corpo = request.get_json(silent=True) or {}
+
+    if not analise_vendas_service.ia_configurada():
+        return jsonify({
+            "ok": False,
+            "erro": "A chave da IA não está configurada no servidor (ANTHROPIC_API_KEY)."
+        }), 503
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        semanas, data_fim = _parametros_analise(cur, cod_empresa, corpo)
+        analise = _coletar_analise_vendas(cur, cod_empresa, semanas, data_fim)
+    finally:
+        cur.close()
+        conn.close()
+
+    if not analise["postos"]:
+        return jsonify({"ok": False, "erro": "Não há vendas no período escolhido."}), 400
+
+    dados_ia = analise_vendas_service.montar_dados_ia(session.get("nome_empresa", ""), analise)
+    job_id = analise_vendas_service.iniciar_job(_dono_analise(), dados_ia)
+    return jsonify({"ok": True, "job_id": job_id})
+
+
+@vendas_bp.route("/api/analise/andamento/<job_id>")
+@permissao_obrigatoria("VENDAS", "ANALISE_VENDAS", redirecionar_para="sistema.menu_vendas")
+def api_analise_andamento(job_id):
+    if "cod_empresa" not in session:
+        return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+
+    job = analise_vendas_service.consultar_job(job_id, _dono_analise())
+    if not job:
+        # O servidor reiniciou (ou o job venceu): o andamento morava na memória.
+        return jsonify({"ok": False, "erro": "A análise se perdeu. Clique em Analisar de novo."}), 404
+
+    return jsonify({"ok": True, "job": job})
