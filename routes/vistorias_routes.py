@@ -1169,7 +1169,11 @@ def consultar_vistorias():
     hoje = date.today()
 
     ano_sel = (request.args.get("ano") or str(hoje.year)).strip()
-    mes_sel = (request.args.get("mes") or "").strip()
+
+    # "mes" ausente = primeira abertura da tela, vem no mês corrente; "mes"
+    # vazio = o usuário escolheu "Todos os meses" no combo.
+    mes_arg = request.args.get("mes")
+    mes_sel = str(hoje.month) if mes_arg is None else mes_arg.strip()
 
     if mes_sel:
         mes_sel = mes_sel.zfill(2)
@@ -1877,9 +1881,30 @@ def _execucao_notas_prazo(cur, id_execucao, cod_empresa):
 
 
 @vistorias_bp.route("/execucao/<int:id_execucao>/notas-prazo", methods=["GET"])
-@permissao_obrigatoria("VISTORIAS", "EXECUTAR_VISTORIAS", redirecionar_para="vistorias.menu_vistorias")
 def notas_prazo_vistoria(id_execucao):
+    # Quem executa grava; quem só consulta também pode abrir, só que sempre
+    # em modo leitura (decidido por `_execucao_notas_prazo`, não por aqui).
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    id_usuario = session["id_usuario"]
     cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global != "superusuario":
+        pode_executar = usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "EXECUTAR_VISTORIAS")
+        pode_consultar = usuario_tem_permissao(id_usuario, cod_empresa, "VISTORIAS", "CONSULTAR_VISTORIAS")
+        if not pode_executar and not pode_consultar:
+            flash("Você não tem permissão para acessar esta opção.", "error")
+            return redirect(url_for("vistorias.menu_vistorias"))
+
+    # Quem chegou por Consultar Vistorias volta para lá, não para Executar
+    # (que pode nem estar liberado para quem só consulta).
+    origem = (request.args.get("origem") or "").strip().lower()
+    rota_voltar = "vistorias.consultar_vistorias" if origem == "consultar" else "vistorias.executar_vistorias"
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -1888,7 +1913,7 @@ def notas_prazo_vistoria(id_execucao):
         execucao = _execucao_notas_prazo(cur, id_execucao, cod_empresa)
         if not execucao:
             flash("Esta vistoria não é de uma filial sua.", "error")
-            return redirect(url_for("vistorias.executar_vistorias"))
+            return redirect(url_for(rota_voltar))
 
         cur.execute("""
             SELECT id_nota_prazo, cliente, valor_notas, composicao_notas,
@@ -1917,7 +1942,7 @@ def notas_prazo_vistoria(id_execucao):
         "vistorias_notas_prazo.html",
         execucao=execucao,
         linhas=linhas,
-        url_voltar=url_for("vistorias.executar_vistorias"),
+        url_voltar=url_for(rota_voltar),
         texto_voltar="← Voltar",
     )
 
