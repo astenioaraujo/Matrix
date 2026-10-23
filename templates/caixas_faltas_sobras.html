@@ -34,15 +34,38 @@
     padding:0 20px; height:36px; font-size:14px; font-weight:700; cursor:pointer; }
   .btn-filtrar:hover { background:#065f46; }
 
-  .tbl-wrap { overflow:auto; max-width:calc(100vw - 110px); max-height:75vh;
-    border:1px solid #e2e8f0; border-radius:12px; }
-  table.fs { border-collapse:separate; border-spacing:0; font-size:13px; width:100%; }
+  .nav-filiais {
+    display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+    margin-bottom:16px; padding:10px 14px;
+    background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0;
+  }
+  .nav-tab {
+    padding:5px 13px; border-radius:20px; font-size:13px; font-weight:600;
+    border:1px solid #ccc; background:#fff; color:#555; cursor:pointer;
+    text-decoration:none; transition:all 0.15s; white-space:nowrap;
+  }
+  .nav-tab:hover { background:#f1f5f9; }
+  .nav-tab.ativa { background:#14114f; color:#fff; border-color:#14114f; }
+
+  .tbl-wrap { border:1px solid #e2e8f0; border-radius:12px; }
+  table.fs { border-collapse:separate; border-spacing:0; font-size:13px; table-layout:fixed; }
   table.fs th, table.fs td { border-right:1px solid #e5e7eb; border-bottom:1px solid #e5e7eb;
     padding:6px 10px; white-space:nowrap; }
-  table.fs thead th { background:#ffe600; color:#14114f; font-weight:800; text-align:center;
-    position:sticky; top:0; z-index:2; }
-  table.fs thead th.col-data { text-align:left; background:#fff; left:0; z-index:3; min-width:90px; }
+  .titulo-filial { font-size:16px; font-weight:800; color:#14114f; margin:4px 0 10px; }
+
+  table.fs thead th { background:#ffe600; color:#14114f; font-weight:800; text-align:center; }
+  table.fs th.col-data, table.fs td.col-data {
+    width:62px; min-width:62px; max-width:62px; padding-left:8px; padding-right:4px;
+  }
+  table.fs thead th.col-data { text-align:left; background:#fff; left:0; z-index:3; position:sticky; }
   table.fs thead th.col-total { background:#ffd400; }
+  table.fs th:not(.col-data):not(.col-total), table.fs td:not(.col-data):not(.col-total) {
+    width:104px; min-width:104px; max-width:104px; padding-left:5px; padding-right:5px;
+  }
+  table.fs th.col-total, table.fs td.col-total {
+    width:152px; min-width:152px; max-width:152px; padding-left:5px; padding-right:5px;
+  }
+  table.fs th.col-total { white-space:normal; line-height:1.15; }
 
   table.fs td.col-data { position:sticky; left:0; z-index:1; background:#fff;
     font-weight:700; color:#14114f; text-align:left; }
@@ -52,7 +75,7 @@
   table.fs td.col-total { font-weight:800; border-left:3px solid #94a3b8; }
 
   table.fs tfoot td { background:#f1f5f9; font-weight:800; border-top:2px solid #94a3b8; }
-  table.fs tfoot td.col-data { background:#f1f5f9; }
+  table.fs tfoot td.col-data { background:#f1f5f9; left:0; z-index:3; position:sticky; }
   table.fs tbody tr:hover td:not(.col-data) { background:#fffde7; }
 
   .sem-dados { color:#94a3b8; font-size:15px; margin-top:20px; }
@@ -78,17 +101,20 @@
     </div>
   </div>
 
+  {% macro qs(filial) %}cod_filial={{ filial }}&mes={{ mes_sel }}&ano={{ ano_sel }}{% endmacro %}
+
+  <div class="nav-filiais">
+    {% for f in filiais %}
+      <a href="?{{ qs(f.cod_filial) }}"
+         class="nav-tab {% if cod_filial_sel == f.cod_filial|string %}ativa{% endif %}"
+         title="{{ f.nome_filial_importacao or f.nome_filial }}">
+        {{ f.nome_filial }}
+      </a>
+    {% endfor %}
+  </div>
+
   <form class="filtro-bar" method="GET">
-    <div class="filtro-campo">
-      <label>Filial</label>
-      <select name="cod_filial">
-        {% for f in filiais %}
-          <option value="{{ f.cod_filial }}" {% if cod_filial_sel == f.cod_filial|string %}selected{% endif %}>
-            {{ f.nome_filial_importacao or f.nome_filial }}
-          </option>
-        {% endfor %}
-      </select>
-    </div>
+    <input type="hidden" name="cod_filial" value="{{ cod_filial_sel }}">
     <div class="filtro-campo">
       <label>Mês</label>
       <select name="mes">
@@ -111,11 +137,12 @@
   {% if not filiais %}
     <p class="sem-dados">Nenhuma filial cadastrada para esta empresa.</p>
   {% elif grade and grade.colunas %}
+  <div class="titulo-filial">{{ nome_filial_sel }}</div>
   <div class="tbl-wrap">
-    <table class="fs">
+    <table class="fs" id="tbl-fs">
       <thead>
         <tr>
-          <th class="col-data">{{ nome_filial_sel }}</th>
+          <th class="col-data">Data</th>
           {% for col in grade.colunas %}<th>{{ col }}</th>{% endfor %}
           <th class="col-total">TOTAL DO DIA</th>
         </tr>
@@ -126,13 +153,14 @@
           <td class="col-data">{{ l.data.strftime('%d/%m/%y') }}</td>
           {% for col in grade.colunas %}
             {% set v = l.valores[col] %}
-            <td class="{% if v is none %}vazio{% elif v < 0 %}negativo{% endif %}">
-              {% if v is not none %}R$ {{ '(%s)'|format(v|abs|br) if v < 0 else v|br }}{% endif %}
+            <td class="valor-func {% if v is none %}vazio{% elif v < 0 %}negativo{% endif %}"
+                {% if v is not none %}data-val="{{ v }}"{% endif %}>
+              {% if v is not none %}{{ '(%s)'|format(v|abs|br) if v < 0 else v|br }}{% endif %}
             </td>
           {% endfor %}
           <td class="col-total {% if not l.tem_dados %}vazio{% endif %}">
-            {% if l.tem_dados %}R$ {{ '(%s)'|format(l.total_dia|abs|br) if l.total_dia < 0 else l.total_dia|br }}
-            {% else %}R$ -{% endif %}
+            {% if l.tem_dados %}{{ '(%s)'|format(l.total_dia|abs|br) if l.total_dia < 0 else l.total_dia|br }}
+            {% else %}-{% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -142,16 +170,58 @@
           <td class="col-data">TOTAL</td>
           {% for col in grade.colunas %}
             {% set t = grade.total_colunas[col] %}
-            <td>R$ {{ '(%s)'|format(t|abs|br) if t < 0 else t|br }}</td>
+            <td>{{ '(%s)'|format(t|abs|br) if t < 0 else t|br }}</td>
           {% endfor %}
-          <td class="col-total">R$ {{ '(%s)'|format(grade.total_geral|abs|br) if grade.total_geral < 0 else grade.total_geral|br }}</td>
+          <td class="col-total">{{ '(%s)'|format(grade.total_geral|abs|br) if grade.total_geral < 0 else grade.total_geral|br }}</td>
         </tr>
       </tfoot>
     </table>
   </div>
   {% else %}
+    <div class="titulo-filial">{{ nome_filial_sel }}</div>
     <p class="sem-dados">Nenhum lançamento importado para {{ nomes_meses[mes_sel - 1] }}/{{ ano_sel }} nesta filial.</p>
   {% endif %}
 </div>
+
+{% if grade and grade.colunas %}
+<script>
+(function () {
+  // Mesmo mapa de calor do Matricial: 51 faixas discretas (vermelho → amarelo →
+  // verde), por linha (dia), comparando só os funcionários — TOTAL DO DIA e a
+  // linha TOTAL do rodapé ficam de fora.
+  function getColorExcel(ratio) {
+    let r, g, b;
+    if (ratio <= 0.5) {
+      const t = ratio / 0.5;
+      r = 248 + (255 - 248) * t; g = 105 + (235 - 105) * t; b = 107 + (132 - 107) * t;
+    } else {
+      const t = (ratio - 0.5) / 0.5;
+      r = 255 + (99 - 255) * t; g = 235 + (190 - 235) * t; b = 132 + (123 - 132) * t;
+    }
+    return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+  }
+
+  document.querySelectorAll('#tbl-fs tbody tr').forEach(tr => {
+    const celulas = Array.from(tr.querySelectorAll('td.valor-func'));
+    const valores = celulas
+      .map(td => td.dataset.val !== undefined ? parseFloat(td.dataset.val) : null)
+      .filter(v => v !== null && !isNaN(v));
+
+    if (valores.length < 2) return;
+
+    const min = Math.min(...valores), max = Math.max(...valores);
+
+    celulas.forEach(td => {
+      if (td.dataset.val === undefined) return;
+      const valor = parseFloat(td.dataset.val);
+      if (isNaN(valor)) return;
+      let ratio = (valor - min) / ((max - min) || 1);
+      ratio = Math.round(ratio * 50) / 50; // 51 faixas, como no Excel
+      td.style.background = getColorExcel(ratio);
+    });
+  });
+})();
+</script>
+{% endif %}
 
 {% endblock %}
