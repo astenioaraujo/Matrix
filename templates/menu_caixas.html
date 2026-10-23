@@ -78,6 +78,12 @@
         </a>
     {% endif %}
 
+    {% if pode_faltas_caixas %}
+        <a href="{{ url_for('financeiro.faltas_sobras_caixas') }}">
+            Faltas de Caixa
+        </a>
+    {% endif %}
+
 </div>
 
 {% endblock %}

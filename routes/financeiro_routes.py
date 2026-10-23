@@ -1,7 +1,9 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify, flash
 from datetime import datetime, date, timedelta, timezone
 from zoneinfo import ZoneInfo
+from decimal import Decimal
 from collections import defaultdict, OrderedDict
+import calendar
 import math
 import re
 import io
@@ -16,6 +18,7 @@ from services.dashboard_service import montar_dashboard
 from services.estoques_service import totais_estoque_rs
 from services.bloqueios_service import datas_bloqueio_pendentes
 from services.emprestimos_service import gerar_parcelas
+from services.caixas_faltas_sobras_service import importar_faltas_sobras, nomes_exibicao
 from utils.formatters import formatar_numero_br, formatar_int
 
 financeiro_bp = Blueprint("financeiro", __name__)
@@ -3471,6 +3474,7 @@ def menu_caixas():
         pode_atualizar_caixas = True
         pode_configuracoes_caixas = True
         pode_acessos_caixas = True
+        pode_faltas_caixas = True
     else:
         pode_atualizar_caixas = usuario_tem_permissao(
             id_usuario, cod_empresa, "FINANCEIRO", "ATUALIZAR_CAIXAS"
@@ -3481,6 +3485,9 @@ def menu_caixas():
         pode_acessos_caixas = usuario_tem_permissao(
             id_usuario, cod_empresa, "FINANCEIRO", "ACESSOS_CAIXAS"
         )
+        pode_faltas_caixas = usuario_tem_permissao(
+            id_usuario, cod_empresa, "FINANCEIRO", "FALTAS_CAIXAS"
+        )
 
     return render_template(
         "menu_caixas.html",
@@ -3490,6 +3497,166 @@ def menu_caixas():
         pode_atualizar_caixas=pode_atualizar_caixas,
         pode_configuracoes_caixas=pode_configuracoes_caixas,
         pode_acessos_caixas=pode_acessos_caixas,
+        pode_faltas_caixas=pode_faltas_caixas,
+    )
+
+
+@financeiro_bp.route("/caixas/faltas", methods=["GET", "POST"])
+@permissao_obrigatoria("FINANCEIRO", "FALTAS_CAIXAS",
+                       redirecionar_para="financeiro.menu_caixas")
+def faltas_sobras_caixas():
+    """Importa a planilha "Sobras e Faltas de Caixa" (WebPostos) e mostra a
+    grade mensal: uma linha por dia, uma coluna por funcionário, com a
+    diferença (sobra + falta, falta já vem negativa) e os totais do dia e
+    do mês. Mesma ideia visual de Vendas por Dia por Bandeira, só que com
+    dia na linha em vez de na coluna.
+    """
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    id_usuario = session["id_usuario"]
+    hoje = date.today()
+
+    mensagem = ""
+    erro = ""
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if request.method == "POST":
+            try:
+                arquivo = request.files.get("arquivo")
+                if not arquivo or not (arquivo.filename or "").strip():
+                    raise ValueError("Selecione o arquivo da planilha (.xlsx).")
+
+                resultado = importar_faltas_sobras(cur, cod_empresa, id_usuario, arquivo)
+                conn.commit()
+
+                qtd_filiais = len(resultado["filiais"])
+                mensagem = (
+                    f"Importação concluída: {resultado['total_importado']} lançamento(s) "
+                    f"em {qtd_filiais} filial(is)."
+                )
+                if resultado["filiais_ignoradas"]:
+                    mensagem += (
+                        " Filiais da planilha sem cadastro de importação nesta empresa "
+                        "(ignoradas): " + ", ".join(resultado["filiais_ignoradas"]) + "."
+                    )
+
+                if resultado["filiais"]:
+                    primeira = resultado["filiais"][0]
+                    session["faltas_caixas_filial"] = str(primeira["cod_filial"])
+                    session["faltas_caixas_ano"] = primeira["data_max"].year
+                    session["faltas_caixas_mes"] = primeira["data_max"].month
+
+            except Exception as e:
+                conn.rollback()
+                erro = str(e)
+
+        cur.execute("""
+            SELECT cod_filial, nome_filial, nome_filial_importacao
+              FROM filiais
+             WHERE cod_empresa = %s AND ativo = TRUE
+             ORDER BY cod_filial
+        """, (cod_empresa,))
+        filiais = cur.fetchall()
+
+        cod_filial_sel = (
+            request.values.get("cod_filial")
+            or session.get("faltas_caixas_filial")
+            or ""
+        ).strip()
+        if not cod_filial_sel and filiais:
+            cod_filial_sel = str(filiais[0]["cod_filial"])
+
+        ano_sel = int(request.values.get("ano") or session.get("faltas_caixas_ano") or hoje.year)
+        mes_sel = int(request.values.get("mes") or session.get("faltas_caixas_mes") or hoje.month)
+
+        session["faltas_caixas_filial"] = cod_filial_sel
+        session["faltas_caixas_ano"] = ano_sel
+        session["faltas_caixas_mes"] = mes_sel
+
+        grade = None
+        nome_filial_sel = ""
+
+        if cod_filial_sel:
+            cod_filial_sel_int = int(cod_filial_sel)
+            filial_obj = next(
+                (f for f in filiais if f["cod_filial"] == cod_filial_sel_int), None
+            )
+            if filial_obj:
+                nome_filial_sel = filial_obj["nome_filial_importacao"] or filial_obj["nome_filial"]
+
+            qtd_dias = calendar.monthrange(ano_sel, mes_sel)[1]
+            primeiro_dia = date(ano_sel, mes_sel, 1)
+            ultimo_dia = date(ano_sel, mes_sel, qtd_dias)
+
+            cur.execute("""
+                SELECT data, nome_funcionario, SUM(sobra + falta) AS diferenca
+                  FROM caixas_faltas_sobras
+                 WHERE cod_empresa = %s AND cod_filial = %s
+                   AND data BETWEEN %s AND %s
+                 GROUP BY data, nome_funcionario
+            """, (cod_empresa, cod_filial_sel_int, primeiro_dia, ultimo_dia))
+            linhas_bd = cur.fetchall()
+
+            nomes_completos = [l["nome_funcionario"] for l in linhas_bd]
+            rotulos = nomes_exibicao(nomes_completos)
+            colunas = sorted(set(rotulos.values()))
+
+            valores = defaultdict(dict)
+            for l in linhas_bd:
+                col = rotulos[l["nome_funcionario"]]
+                valores[l["data"]][col] = valores[l["data"]].get(col, Decimal("0")) + Decimal(str(l["diferenca"]))
+
+            total_colunas = {col: Decimal("0") for col in colunas}
+            total_geral = Decimal("0")
+            linhas_grade = []
+
+            for d in (primeiro_dia + timedelta(days=n) for n in range(qtd_dias)):
+                vals = valores.get(d, {})
+                tem_dados = bool(vals)
+                total_dia = sum(vals.values(), Decimal("0"))
+                total_geral += total_dia
+                for col in colunas:
+                    total_colunas[col] += vals.get(col, Decimal("0"))
+                linhas_grade.append({
+                    "data": d,
+                    "valores": {col: vals.get(col) for col in colunas},
+                    "total_dia": total_dia,
+                    "tem_dados": tem_dados,
+                })
+
+            grade = {
+                "colunas": colunas,
+                "linhas": linhas_grade,
+                "total_colunas": total_colunas,
+                "total_geral": total_geral,
+            }
+    finally:
+        cur.close()
+        conn.close()
+
+    anos_disponiveis = list(range(hoje.year - 2, hoje.year + 1))
+    nomes_meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+                   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
+
+    return render_template(
+        "caixas_faltas_sobras.html",
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_caixas"),
+        filiais=filiais,
+        cod_filial_sel=cod_filial_sel,
+        nome_filial_sel=nome_filial_sel,
+        ano_sel=ano_sel,
+        mes_sel=mes_sel,
+        anos_disponiveis=anos_disponiveis,
+        nomes_meses=nomes_meses,
+        grade=grade,
+        mensagem=mensagem,
+        erro=erro,
     )
 
 

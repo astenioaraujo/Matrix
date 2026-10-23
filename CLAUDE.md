@@ -382,6 +382,36 @@ Duas armadilhas dessa tela:
   a janela usa um `mdiEscape` próprio. Pelo mesmo motivo, cuidado ao escrever `{% if ... %}`
   dentro de comentário JavaScript no template: o Jinja lê a tag e quebra a página.
 
+## Faltas de Caixa — importação da planilha do WebPostos (23/10/2026)
+
+Botão **Faltas de Caixa** no menu de Caixas (`FINANCEIRO/FALTAS_CAIXAS` 504,
+`migrations/criar_tabela_caixas_faltas_sobras.sql`, não concedida). Sem relação com a
+coluna **FALTAS** de Conferir Caixas (digitada pelo próprio caixa) — aqui o dado vem
+pronto do relatório "Sobras e Faltas de Caixa" do WebPostos: uma aba, um bloco por
+filial (`Filial: NOME`), dentro dele um bloco por funcionário (`Funcionário: MATRICULA -
+NOME`) com as linhas Data/Turno/PDV/Sobra/Falta e um "Subtotal:" no fim.
+
+`services/caixas_faltas_sobras_service.py` lê a planilha (`ler_planilha_faltas_sobras`) e
+grava em `caixas_faltas_sobras` (`sobra` sempre ≥ 0, `falta` sempre ≤ 0 — a diferença do
+dia é `sobra + falta`, calculada na consulta, nunca persistida). O nome da filial na
+planilha casa com `filiais.nome_filial_importacao` (mesmo campo da importação do WebPostos
+em `importa_web_postos.py`) **já normalizado** — filial sem bater (planilha de outra
+empresa no mesmo arquivo, ou nome truncado em `nome_filial_importacao`) é ignorada e
+listada na mensagem de importação, não interrompe o resto. Reimportar substitui o
+**período da planilha** por filial (`DELETE ... WHERE data BETWEEN data_min AND data_max`
+daquela filial, depois insere) — não duplica.
+
+Tela (`GET/POST /caixas/faltas`, `templates/caixas_faltas_sobras.html`): formulário de
+upload (.xlsx) em cima, filtro Filial/Mês/Ano embaixo, grade **dias nas linhas** (do
+jeito da planilha de referência do cliente) × **funcionários nas colunas**, cabeçalho
+amarelo, negativo em parênteses (`R$ (x,xx)`), dia sem nenhum lançamento em **R$ -**,
+TOTAL DO DIA na última coluna e TOTAL no rodapé. O rótulo da coluna é o **primeiro nome**
+do funcionário (desempatado com a palavra seguinte só em colisão, `nomes_exibicao`) — não
+reproduz apelidos manuais que porventura existam numa planilha de referência (ex.: alguém
+com nome "ANTONIO XAVIER..." vira coluna "ANTONIO", não "XAVIER"). Ordem das colunas:
+alfabética pelo rótulo — a planilha de referência do cliente tinha uma ordem manual própria,
+sem regra derivável do arquivo.
+
 ## Exclusões de lançamentos
 
 `GET/POST /exclusoes`. No primeiro acesso, sugere o **último** período com dados (`ORDER BY ano DESC, mes DESC LIMIT 1`) — mesmo critério da consulta matricial. Antes não marcava nada e o navegador exibia a primeira `<option>`, que no combo de meses (crescente) era o mês **mais antigo**; além disso a grade não vinha filtrada. A sugestão só entra quando ano e mês vêm ambos vazios.

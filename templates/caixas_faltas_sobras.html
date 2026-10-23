@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .pagina-sub    { font-size:15px; color:#666; margin-bottom:20px; }
+
+  .bloco-importar {
+    background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px;
+    padding:16px 20px; margin-bottom:16px;
+  }
+  .bloco-importar h3 { font-size:14px; font-weight:800; color:#14114f; margin:0 0 10px; }
+  .form-importar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .form-importar input[type=file] { font-size:13px; }
+  .btn-importar {
+    background:#14114f; color:#fff; border:none; border-radius:8px;
+    padding:0 18px; height:36px; font-size:13px; font-weight:700; cursor:pointer;
+  }
+  .btn-importar:hover { background:#221c78; }
+  .dica-importar { font-size:12px; color:#64748b; margin-top:8px; }
+
+  .mensagem { padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:14px; }
+  .mensagem.ok   { background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; }
+  .mensagem.erro { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
+
+  .filtro-bar { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap;
+    background:#fff; border:1px solid #e2e8f0; border-radius:12px;
+    padding:16px 20px; margin-bottom:16px; }
+  .filtro-campo label { display:block; font-size:12px; font-weight:700; color:#555; margin-bottom:5px; }
+  .filtro-campo select { height:36px; border-radius:8px; border:1px solid #cbd5e1;
+    padding:0 10px; font-size:14px; background:#fff; box-sizing:border-box; }
+  .btn-filtrar { background:#0f766e; color:#fff; border:none; border-radius:8px;
+    padding:0 20px; height:36px; font-size:14px; font-weight:700; cursor:pointer; }
+  .btn-filtrar:hover { background:#065f46; }
+
+  .tbl-wrap { overflow:auto; max-width:calc(100vw - 110px); max-height:75vh;
+    border:1px solid #e2e8f0; border-radius:12px; }
+  table.fs { border-collapse:separate; border-spacing:0; font-size:13px; width:100%; }
+  table.fs th, table.fs td { border-right:1px solid #e5e7eb; border-bottom:1px solid #e5e7eb;
+    padding:6px 10px; white-space:nowrap; }
+  table.fs thead th { background:#ffe600; color:#14114f; font-weight:800; text-align:center;
+    position:sticky; top:0; z-index:2; }
+  table.fs thead th.col-data { text-align:left; background:#fff; left:0; z-index:3; min-width:90px; }
+  table.fs thead th.col-total { background:#ffd400; }
+
+  table.fs td.col-data { position:sticky; left:0; z-index:1; background:#fff;
+    font-weight:700; color:#14114f; text-align:left; }
+  table.fs td { text-align:right; color:#1e293b; font-variant-numeric:tabular-nums; }
+  table.fs td.negativo { color:#1e293b; }
+  table.fs td.vazio { color:#c3c9d4; }
+  table.fs td.col-total { font-weight:800; border-left:3px solid #94a3b8; }
+
+  table.fs tfoot td { background:#f1f5f9; font-weight:800; border-top:2px solid #94a3b8; }
+  table.fs tfoot td.col-data { background:#f1f5f9; }
+  table.fs tbody tr:hover td:not(.col-data) { background:#fffde7; }
+
+  .sem-dados { color:#94a3b8; font-size:15px; margin-top:20px; }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">Faltas de Caixa</div>
+  <div class="pagina-sub">Empresa: <strong>{{ empresa_ativa }} - {{ nome_empresa_ativa }}</strong></div>
+
+  {% if mensagem %}<div class="mensagem ok">{{ mensagem }}</div>{% endif %}
+  {% if erro %}<div class="mensagem erro">{{ erro }}</div>{% endif %}
+
+  <div class="bloco-importar">
+    <h3>Importar planilha "Sobras e Faltas de Caixa"</h3>
+    <form class="form-importar" method="POST" enctype="multipart/form-data">
+      <input type="file" name="arquivo" accept=".xlsx" required>
+      <button type="submit" class="btn-importar">Importar</button>
+    </form>
+    <div class="dica-importar">
+      Arquivo do WebPostos (um bloco por filial, com Sobra/Falta por funcionário e por dia).
+      A importação substitui, filial por filial, o período que vier na planilha — reimportar não duplica.
+      Filiais da planilha sem cadastro em "nome_filial_importacao" (Filiais) são ignoradas.
+    </div>
+  </div>
+
+  <form class="filtro-bar" method="GET">
+    <div class="filtro-campo">
+      <label>Filial</label>
+      <select name="cod_filial">
+        {% for f in filiais %}
+          <option value="{{ f.cod_filial }}" {% if cod_filial_sel == f.cod_filial|string %}selected{% endif %}>
+            {{ f.nome_filial_importacao or f.nome_filial }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filtro-campo">
+      <label>Mês</label>
+      <select name="mes">
+        {% for n in nomes_meses %}
+          <option value="{{ loop.index }}" {% if loop.index == mes_sel %}selected{% endif %}>{{ n }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filtro-campo">
+      <label>Ano</label>
+      <select name="ano">
+        {% for a in anos_disponiveis %}
+          <option value="{{ a }}" {% if a == ano_sel %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn-filtrar">Consultar</button>
+  </form>
+
+  {% if not filiais %}
+    <p class="sem-dados">Nenhuma filial cadastrada para esta empresa.</p>
+  {% elif grade and grade.colunas %}
+  <div class="tbl-wrap">
+    <table class="fs">
+      <thead>
+        <tr>
+          <th class="col-data">{{ nome_filial_sel }}</th>
+          {% for col in grade.colunas %}<th>{{ col }}</th>{% endfor %}
+          <th class="col-total">TOTAL DO DIA</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in grade.linhas %}
+        <tr>
+          <td class="col-data">{{ l.data.strftime('%d/%m/%y') }}</td>
+          {% for col in grade.colunas %}
+            {% set v = l.valores[col] %}
+            <td class="{% if v is none %}vazio{% elif v < 0 %}negativo{% endif %}">
+              {% if v is not none %}R$ {{ '(%s)'|format(v|abs|br) if v < 0 else v|br }}{% endif %}
+            </td>
+          {% endfor %}
+          <td class="col-total {% if not l.tem_dados %}vazio{% endif %}">
+            {% if l.tem_dados %}R$ {{ '(%s)'|format(l.total_dia|abs|br) if l.total_dia < 0 else l.total_dia|br }}
+            {% else %}R$ -{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td class="col-data">TOTAL</td>
+          {% for col in grade.colunas %}
+            {% set t = grade.total_colunas[col] %}
+            <td>R$ {{ '(%s)'|format(t|abs|br) if t < 0 else t|br }}</td>
+          {% endfor %}
+          <td class="col-total">R$ {{ '(%s)'|format(grade.total_geral|abs|br) if grade.total_geral < 0 else grade.total_geral|br }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  {% else %}
+    <p class="sem-dados">Nenhum lançamento importado para {{ nomes_meses[mes_sel - 1] }}/{{ ano_sel }} nesta filial.</p>
+  {% endif %}
+</div>
+
+{% endblock %}
