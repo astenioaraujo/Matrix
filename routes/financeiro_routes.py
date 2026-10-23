@@ -3939,7 +3939,7 @@ def conferir_caixas():
         todos_filiais = [f["cod_filial"] for a in areas for f in a["filiais"]]
 
         cur.execute("""
-            SELECT id, nome, agrupamento FROM caixas_formas_recebimento
+            SELECT id, nome, agrupamento, eh_conferencia FROM caixas_formas_recebimento
             WHERE cod_empresa = %s
               AND (ativo = TRUE
                    OR EXISTS (
@@ -4805,6 +4805,151 @@ def api_caixas_detalhe_salvar():
 
 
 # ---------------------------------------------------------------------------
+# CONFERÊNCIA COM PORTAL — formas marcadas com eh_conferencia (ex.: Prosegur)
+# ganham, no cabeçalho da coluna, um ícone que abre esta janela: o valor
+# lançado no caixa (caixas_lancamentos, não muda aqui) ao lado do valor do
+# portal (caixas_conferencia_portal, digitado à mão) e a diferença entre os
+# dois — calculada na consulta, nunca persistida. Só existe com uma filial
+# selecionada: o valor do portal é por posto.
+# ---------------------------------------------------------------------------
+
+@financeiro_bp.route("/api/caixas/conferencia-portal", methods=["GET"])
+def api_caixas_conferencia_portal():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    cod_filial  = int(request.args.get("cod_filial") or 0)
+    id_forma    = int(request.args.get("id_forma") or 0)
+    ano         = int(request.args.get("ano") or 0)
+    mes         = int(request.args.get("mes") or 0)
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT nome, eh_conferencia FROM caixas_formas_recebimento
+            WHERE id = %s AND cod_empresa = %s
+        """, (id_forma, cod_empresa))
+        forma = cur.fetchone()
+        if not forma or not forma["eh_conferencia"]:
+            return jsonify({
+                "ok": False,
+                "erro": "Esta forma não está habilitada para conferência com portal."
+            }), 400
+
+        import calendar as _cal
+        _, ultimo_dia = _cal.monthrange(ano, mes)
+
+        cur.execute("""
+            SELECT data, valor FROM caixas_lancamentos
+            WHERE cod_empresa = %s AND cod_filial = %s AND id_forma = %s
+              AND EXTRACT(MONTH FROM data) = %s AND EXTRACT(YEAR FROM data) = %s
+        """, (cod_empresa, cod_filial, id_forma, mes, ano))
+        valor_caixa = {r["data"]: float(r["valor"] or 0) for r in cur.fetchall()}
+
+        cur.execute("""
+            SELECT data, valor_portal FROM caixas_conferencia_portal
+            WHERE cod_empresa = %s AND cod_filial = %s AND id_forma = %s
+              AND EXTRACT(MONTH FROM data) = %s AND EXTRACT(YEAR FROM data) = %s
+        """, (cod_empresa, cod_filial, id_forma, mes, ano))
+        valor_portal = {r["data"]: float(r["valor_portal"] or 0) for r in cur.fetchall()}
+    finally:
+        cur.close()
+        conn.close()
+
+    import datetime as _dt
+    dias = []
+    total_caixa = total_portal = 0.0
+    for n in range(1, ultimo_dia + 1):
+        d = _dt.date(ano, mes, n)
+        vc = valor_caixa.get(d, 0.0)
+        vp = valor_portal.get(d, 0.0)
+        total_caixa  += vc
+        total_portal += vp
+        dias.append({
+            "data": d.isoformat(),
+            "data_br": data_br_com_dia(d),
+            "valor_caixa": vc,
+            "valor_portal": vp,
+            "diferenca": vc - vp,
+        })
+
+    return jsonify({
+        "ok": True,
+        "nome_forma": forma["nome"],
+        "dias": dias,
+        "total_caixa": total_caixa,
+        "total_portal": total_portal,
+        "total_diferenca": total_caixa - total_portal,
+    })
+
+
+@financeiro_bp.route("/api/caixas/conferencia-portal/salvar", methods=["POST"])
+@permissao_obrigatoria("FINANCEIRO", "ATUALIZAR_CAIXAS",
+                       redirecionar_para="financeiro.menu_caixas")
+def api_caixas_conferencia_portal_salvar():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    cod_filial  = int(request.form.get("cod_filial") or 0)
+    id_forma    = int(request.form.get("id_forma") or 0)
+    data_str    = request.form.get("data", "")
+    try:
+        valor_portal = abs(float(request.form.get("valor_portal") or "0"))
+    except ValueError:
+        valor_portal = 0.0
+
+    conn = get_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if not _pode_alterar_filial(cur, cod_empresa, session["id_usuario"],
+                                    session.get("tipo_global"), cod_filial):
+            return jsonify({
+                "ok": False,
+                "erro": "Você não tem permissão para alterar esta filial."
+            }), 403
+
+        cur.execute("""
+            SELECT eh_conferencia FROM caixas_formas_recebimento
+            WHERE id = %s AND cod_empresa = %s
+        """, (id_forma, cod_empresa))
+        forma = cur.fetchone()
+        if not forma or not forma["eh_conferencia"]:
+            return jsonify({
+                "ok": False,
+                "erro": "Esta forma não está habilitada para conferência com portal."
+            }), 400
+
+        cur.execute("""
+            INSERT INTO caixas_conferencia_portal (cod_empresa, cod_filial, data, id_forma, valor_portal, atualizado_em)
+            VALUES (%s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (cod_empresa, cod_filial, data, id_forma)
+            DO UPDATE SET valor_portal = EXCLUDED.valor_portal, atualizado_em = NOW()
+        """, (cod_empresa, cod_filial, data_str, id_forma, valor_portal))
+
+        cur.execute("""
+            SELECT valor FROM caixas_lancamentos
+            WHERE cod_empresa = %s AND cod_filial = %s AND data = %s AND id_forma = %s
+        """, (cod_empresa, cod_filial, data_str, id_forma))
+        r = cur.fetchone()
+        valor_caixa = float(r["valor"]) if r else 0.0
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    finally:
+        cur.close()
+        conn.close()
+
+    return jsonify({
+        "ok": True,
+        "valor_portal": valor_portal,
+        "valor_caixa": valor_caixa,
+        "diferenca": valor_caixa - valor_portal,
+    })
+
+
+# ---------------------------------------------------------------------------
 # LIBERAÇÃO TEMPORÁRIA DE DATAS ANTIGAS (caixas)
 # Abre um PERÍODO já fora da janela de digitação, para uma filial ou para
 # todas, por algumas horas. As liberações se somam e expiram sozinhas.
@@ -4994,11 +5139,12 @@ def configuracoes_caixas():
                 ordem = int(request.form.get("ordem") or 0)
                 eh_fiado = bool(request.form.get("eh_fiado"))
                 eh_cartao = bool(request.form.get("eh_cartao"))
+                eh_conferencia = bool(request.form.get("eh_conferencia"))
                 if nome:
                     cur.execute("""
-                        INSERT INTO caixas_formas_recebimento (cod_empresa, nome, agrupamento, ordem, eh_fiado, eh_cartao)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                    """, (cod_empresa, nome, agrupamento, ordem, eh_fiado, eh_cartao))
+                        INSERT INTO caixas_formas_recebimento (cod_empresa, nome, agrupamento, ordem, eh_fiado, eh_cartao, eh_conferencia)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, (cod_empresa, nome, agrupamento, ordem, eh_fiado, eh_cartao, eh_conferencia))
                     conn.commit()
                     flash("Forma de recebimento incluída.", "success")
 
@@ -5009,12 +5155,13 @@ def configuracoes_caixas():
                 ordem = int(request.form.get("ordem_editar") or 0)
                 eh_fiado = bool(request.form.get("eh_fiado_editar"))
                 eh_cartao = bool(request.form.get("eh_cartao_editar"))
+                eh_conferencia = bool(request.form.get("eh_conferencia_editar"))
                 if id_ed and nome:
                     cur.execute("""
                         UPDATE caixas_formas_recebimento
-                        SET nome = %s, agrupamento = %s, ordem = %s, eh_fiado = %s, eh_cartao = %s
+                        SET nome = %s, agrupamento = %s, ordem = %s, eh_fiado = %s, eh_cartao = %s, eh_conferencia = %s
                         WHERE id = %s AND cod_empresa = %s
-                    """, (nome, agrupamento, ordem, eh_fiado, eh_cartao, id_ed, cod_empresa))
+                    """, (nome, agrupamento, ordem, eh_fiado, eh_cartao, eh_conferencia, id_ed, cod_empresa))
                     conn.commit()
                     flash("Forma de recebimento atualizada.", "success")
 
@@ -5081,7 +5228,7 @@ def configuracoes_caixas():
                     flash("Status do controle adicional alterado.", "success")
 
         cur.execute("""
-            SELECT id, nome, agrupamento, ordem, ativo, eh_fiado, eh_cartao FROM caixas_formas_recebimento
+            SELECT id, nome, agrupamento, ordem, ativo, eh_fiado, eh_cartao, eh_conferencia FROM caixas_formas_recebimento
             WHERE cod_empresa = %s ORDER BY ordem, nome
         """, (cod_empresa,))
         formas = cur.fetchall()

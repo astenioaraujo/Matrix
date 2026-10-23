@@ -459,6 +459,18 @@
   .btn-somar-col.ativo { background:#fed7aa; border-color:#ea580c; color:#9a3412; }
   th.col-fechada .btn-somar-col { display:none !important; }
 
+  /* Ícone de conferência com portal (ex.: Prosegur): só nas formas marcadas
+     com eh_conferencia, ao lado do Σ da coluna. Fica em teal para não se
+     confundir com o laranja do somatório. */
+  .btn-conferir-col {
+    display:inline-block; margin-left:4px; background:none;
+    border:1px solid rgba(255,255,255,.35); border-radius:4px;
+    width:16px; height:16px; line-height:1; font-size:10px; font-weight:700;
+    color:rgba(255,255,255,.6); cursor:pointer; padding:0;
+  }
+  .btn-conferir-col:hover { border-color:#5eead4; color:#fff; background:rgba(255,255,255,.12); }
+  th.col-fechada .btn-conferir-col { display:none !important; }
+
   #barra-soma {
     display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
     background:#fff; border:1px solid #ea580c; border-radius:10px;
@@ -538,6 +550,39 @@
   .mdi-vazio { padding:18px; color:#6b7280; }
   .mdi-rodape { padding:11px 18px; border-top:1px solid #e5e7eb;
     display:flex; justify-content:space-between; font-weight:800; }
+
+  /* ── Janela de conferência com portal (Prosegur etc.) ──────────────────
+     Mesmo esqueleto do modal de detalhamento (.mdi-*), mas mais largo —
+     tem três colunas numéricas lado a lado em vez de uma lista de linhas. */
+  #modal-conferencia { display:none; position:fixed; inset:0; z-index:9500;
+    background:rgba(0,0,0,.45); align-items:center; justify-content:center; }
+  #modal-conferencia.aberto { display:flex; }
+  .mdc-caixa { background:#fff; border-radius:14px; width:min(560px,94vw);
+    max-height:86vh; display:flex; flex-direction:column; box-shadow:0 12px 40px rgba(0,0,0,.25); }
+  .mdc-topo { padding:14px 18px; border-bottom:1px solid #e5e7eb;
+    display:flex; justify-content:space-between; align-items:flex-start; }
+  .mdc-titulo { font-size:17px; font-weight:800; }
+  .mdc-sub { font-size:12px; color:#6b7280; margin-top:3px; }
+  .mdc-fechar { border:none; background:transparent; font-size:22px;
+    line-height:1; cursor:pointer; color:#6b7280; }
+  .mdc-fechar:hover { color:#111; }
+  .mdc-corpo { overflow:auto; padding:0 18px 12px; }
+  .mdc-tabela { width:100%; border-collapse:collapse; font-size:13px; }
+  .mdc-tabela th { position:sticky; top:0; background:#f9fafb; text-align:right;
+    padding:7px 8px; font-size:11px; font-weight:800; color:#6b7280; border-bottom:1px solid #e5e7eb; }
+  .mdc-tabela th:first-child, .mdc-tabela td:first-child { text-align:left; }
+  .mdc-tabela td { padding:4px 8px; border-top:1px solid #f1f5f9; text-align:right;
+    font-family:Consolas,Menlo,monospace; white-space:nowrap; }
+  .mdc-tabela td.dia-hoje { font-weight:800; }
+  .mdc-tabela input { width:90px; height:26px; border-radius:5px; border:1px solid #cbd5e1;
+    padding:0 6px; font-size:13px; text-align:right; font-family:Consolas,Menlo,monospace; }
+  .mdc-tabela input:disabled { background:#f1f5f9; color:#94a3b8; }
+  .mdc-dif-ok  { color:#16a34a; }
+  .mdc-dif-bad { color:#dc2626; font-weight:800; }
+  .mdc-rodape { padding:11px 18px; border-top:1px solid #e5e7eb;
+    display:flex; justify-content:space-between; font-weight:800; font-size:13px; }
+  .mdc-rodape .mdc-tot-dif.mdc-dif-bad { color:#dc2626; }
+  .mdc-salvando { font-size:11px; color:#6b7280; font-weight:400; margin-left:8px; }
 
   /* ── Painel de detalhamento (abre abaixo da grade) ──
      Fundo cinza no painel inteiro, para destacar dos cartões brancos de
@@ -910,6 +955,10 @@
               <span class="th-nome">{{ f.nome }}</span>
             {% endif %}
             <button type="button" class="btn-somar-col" onclick="alternarSomaColuna(this)" title="Somar células desta coluna">Σ</button>
+            {% if f.eh_conferencia and cod_filial_atual %}
+              <button type="button" class="btn-conferir-col" onclick="abrirConferenciaPortal({{ f.id }})"
+                      title="Conferir {{ f.nome }} com o portal">⇄</button>
+            {% endif %}
           </th>
         {% endfor %}
         <th class="col-total">TOTAL<button type="button" class="btn-somar-col" onclick="alternarSomaColuna(this)" title="Somar células desta coluna">Σ</button></th>
@@ -1210,6 +1259,9 @@
   const URL_OBS_DIA = "{{ url_for('financeiro.api_caixas_observacao_dia') }}";
   const URL_COLUNA_VISIVEL = "{{ url_for('financeiro.api_caixas_coluna_visivel') }}";
   const URL_RESUMO_AGRUPAMENTO = "{{ url_for('financeiro.api_caixas_resumo_agrupamento') }}";
+  const URL_CONF_PORTAL = "{{ url_for('financeiro.api_caixas_conferencia_portal') }}";
+  const URL_CONF_PORTAL_SALVAR = "{{ url_for('financeiro.api_caixas_conferencia_portal_salvar') }}";
+  const EDITAVEL_CAIXA = {{ 'true' if editavel else 'false' }};
   {% endif %}
 
   function parseBR(v) { return parseFloat((v||'0').replace(/\./g,'').replace(',','.')) || 0; }
@@ -2200,6 +2252,155 @@
     <div class="mdi-rodape">
       <span id="mdi-rotulo-total">Total</span>
       <span id="mdi-total"></span>
+    </div>
+  </div>
+</div>
+
+
+<script>
+  /* ── Conferência com portal (Prosegur etc.) ──────────────────────────
+     Ícone na coluna de uma forma marcada com eh_conferencia. Abre o mês
+     inteiro, um dia por linha: valor do caixa (fixo, vem da grade), valor
+     do portal (digitado aqui) e a diferença — as duas últimas calculadas
+     na tela a cada tecla, e só a do portal é gravada. */
+  let confPortalAtual = null; // { idForma, nome }
+
+  async function abrirConferenciaPortal(idForma) {
+    confPortalAtual = { idForma };
+    const modal = document.getElementById('modal-conferencia');
+    const corpo = document.getElementById('mdc-corpo');
+
+    document.getElementById('mdc-titulo').textContent = 'Conferência com portal';
+    document.getElementById('mdc-sub').textContent = '';
+    corpo.innerHTML = '<div class="mdi-vazio">Carregando...</div>';
+    modal.classList.add('aberto');
+
+    const params = new URLSearchParams({
+      cod_filial: FILIAL_ATUAL, id_forma: idForma, ano: ANO_ATUAL, mes: MES_ATUAL
+    });
+
+    try {
+      const resp = await fetch(URL_CONF_PORTAL + '?' + params.toString());
+      const j = await resp.json();
+
+      if (!j.ok) {
+        corpo.innerHTML = '<div class="mdi-vazio">' + (j.erro || 'Erro ao consultar.') + '</div>';
+        return;
+      }
+
+      confPortalAtual.nome = j.nome_forma;
+      document.getElementById('mdc-titulo').textContent = j.nome_forma;
+      document.getElementById('mdc-sub').textContent =
+        String(MES_ATUAL).padStart(2, '0') + '/' + ANO_ATUAL
+        + (EDITAVEL_CAIXA ? '' : ' — somente leitura');
+
+      const linhas = j.dias.map((d) => {
+        const dia = d.data.slice(8, 10);
+        return '<tr data-data="' + d.data + '">'
+          + '<td>' + dia + '</td>'
+          + '<td>' + fmtBR(d.valor_caixa) + '</td>'
+          + '<td><input type="text" class="mdc-portal" value="' + (d.valor_portal ? fmtBR(d.valor_portal) : '') + '"'
+          + (EDITAVEL_CAIXA ? '' : ' disabled')
+          + ' oninput="recalcularDifConferencia(this)" onblur="salvarConferenciaPortal(this)"></td>'
+          + '<td class="mdc-dif">' + fmtDifConferencia(d.diferenca) + '</td>'
+          + '</tr>';
+      }).join('');
+
+      corpo.innerHTML = '<table class="mdc-tabela"><thead><tr>'
+        + '<th>Dia</th><th>Caixa</th><th>Portal</th><th>Diferença</th>'
+        + '</tr></thead><tbody>' + linhas + '</tbody></table>';
+
+      atualizarRodapeConferencia(j.total_caixa, j.total_portal, j.total_diferenca);
+
+    } catch (e) {
+      corpo.innerHTML = '<div class="mdi-vazio">Erro ao consultar a conferência.</div>';
+    }
+  }
+
+  function fmtDifConferencia(v) {
+    const classe = Math.abs(v) < 0.005 ? 'mdc-dif-ok' : 'mdc-dif-bad';
+    return '<span class="' + classe + '">' + fmtBR(v) + '</span>';
+  }
+
+  function atualizarRodapeConferencia(totalCaixa, totalPortal, totalDif) {
+    document.getElementById('mdc-tot-caixa').textContent = fmtBR(totalCaixa);
+    document.getElementById('mdc-tot-portal').textContent = fmtBR(totalPortal);
+    const elDif = document.getElementById('mdc-tot-dif');
+    elDif.textContent = fmtBR(totalDif);
+    elDif.className = 'mdc-tot-dif ' + (Math.abs(totalDif) < 0.005 ? 'mdc-dif-ok' : 'mdc-dif-bad');
+  }
+
+  /* Recalcula a diferença da linha e os totais do rodapé a cada tecla,
+     sem esperar o campo perder o foco — só a gravação espera o blur. */
+  function recalcularDifConferencia(input) {
+    const tr = input.closest('tr');
+    const valorCaixa = parseBR(tr.children[1].textContent);
+    const valorPortal = parseBR(input.value);
+    tr.querySelector('.mdc-dif').innerHTML = fmtDifConferencia(valorCaixa - valorPortal);
+
+    let totalCaixa = 0, totalPortal = 0;
+    document.querySelectorAll('#mdc-corpo tr[data-data]').forEach((linha) => {
+      totalCaixa += parseBR(linha.children[1].textContent);
+      totalPortal += parseBR(linha.querySelector('.mdc-portal').value);
+    });
+    atualizarRodapeConferencia(totalCaixa, totalPortal, totalCaixa - totalPortal);
+  }
+
+  async function salvarConferenciaPortal(input) {
+    if (!EDITAVEL_CAIXA || !confPortalAtual) return;
+    const tr = input.closest('tr');
+    const data = tr.dataset.data;
+    const valor = parseBR(input.value);
+    const badgeSalvando = document.getElementById('mdc-salvando');
+    badgeSalvando.style.display = 'inline';
+
+    try {
+      const resp = await fetch(URL_CONF_PORTAL_SALVAR, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          cod_filial: FILIAL_ATUAL, id_forma: confPortalAtual.idForma,
+          data: data, valor_portal: valor
+        })
+      });
+      const j = await resp.json();
+      if (!j.ok) {
+        avisar(j.erro || 'Erro ao salvar.');
+        return;
+      }
+      input.value = valor ? fmtBR(valor) : '';
+      tr.querySelector('.mdc-dif').innerHTML = fmtDifConferencia(j.diferenca);
+    } catch (e) {
+      avisar('Erro de conexão ao salvar.');
+    } finally {
+      badgeSalvando.style.display = 'none';
+    }
+  }
+
+  function fecharConferenciaPortal() {
+    document.getElementById('modal-conferencia').classList.remove('aberto');
+    confPortalAtual = null;
+  }
+</script>
+
+<!-- Janela de conferência com portal (Prosegur etc.) -->
+<div id="modal-conferencia" onclick="if (event.target === this) fecharConferenciaPortal()">
+  <div class="mdc-caixa">
+    <div class="mdc-topo">
+      <div>
+        <div class="mdc-titulo" id="mdc-titulo">Conferência com portal</div>
+        <div class="mdc-sub" id="mdc-sub"></div>
+      </div>
+      <button type="button" class="mdc-fechar" onclick="fecharConferenciaPortal()">&times;</button>
+    </div>
+    <div class="mdc-corpo" id="mdc-corpo"></div>
+    <div class="mdc-rodape">
+      <span>Totais do mês <span class="mdc-salvando" id="mdc-salvando" style="display:none;">salvando...</span></span>
+      <span>
+        <span id="mdc-tot-caixa"></span> &nbsp;—&nbsp;
+        <span id="mdc-tot-portal"></span> &nbsp;—&nbsp;
+        <span class="mdc-tot-dif" id="mdc-tot-dif"></span>
+      </span>
     </div>
   </div>
 </div>
