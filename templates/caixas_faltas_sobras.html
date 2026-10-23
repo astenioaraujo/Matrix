@@ -34,6 +34,15 @@
     padding:0 20px; height:36px; font-size:14px; font-weight:700; cursor:pointer; }
   .btn-filtrar:hover { background:#065f46; }
 
+  .mes-nav { display:flex; align-items:center; gap:6px; }
+  .mes-nav select { min-width:90px; }
+  .btn-mes-nav {
+    width:36px; height:36px; border:1px solid #c7c7c7; border-radius:9px;
+    background:#c8e6c9; color:#111; font-size:18px; font-weight:900;
+    cursor:pointer; padding:0;
+  }
+  .btn-mes-nav:hover { background:#a5d6a7; }
+
   .nav-filiais {
     display:flex; align-items:center; gap:6px; flex-wrap:wrap;
     margin-bottom:16px; padding:10px 14px;
@@ -55,7 +64,7 @@
 
   table.fs thead th { background:#ffe600; color:#14114f; font-weight:800; text-align:center; }
   table.fs th.col-data, table.fs td.col-data {
-    width:62px; min-width:62px; max-width:62px; padding-left:8px; padding-right:4px;
+    width:74px; min-width:74px; max-width:74px; padding-left:8px; padding-right:4px;
   }
   table.fs thead th.col-data { text-align:left; background:#fff; left:0; z-index:3; position:sticky; }
   table.fs thead th.col-total { background:#ffd400; }
@@ -104,6 +113,10 @@
   {% macro qs(filial) %}cod_filial={{ filial }}&mes={{ mes_sel }}&ano={{ ano_sel }}{% endmacro %}
 
   <div class="nav-filiais">
+    <a href="?{{ qs('TODOS') }}"
+       class="nav-tab {% if cod_filial_sel == 'TODOS' %}ativa{% endif %}">
+      TODOS
+    </a>
     {% for f in filiais %}
       <a href="?{{ qs(f.cod_filial) }}"
          class="nav-tab {% if cod_filial_sel == f.cod_filial|string %}ativa{% endif %}"
@@ -117,15 +130,19 @@
     <input type="hidden" name="cod_filial" value="{{ cod_filial_sel }}">
     <div class="filtro-campo">
       <label>Mês</label>
-      <select name="mes">
-        {% for n in nomes_meses %}
-          <option value="{{ loop.index }}" {% if loop.index == mes_sel %}selected{% endif %}>{{ n }}</option>
-        {% endfor %}
-      </select>
+      <div class="mes-nav">
+        <button type="button" class="btn-mes-nav" onclick="mudarMes(-1)">←</button>
+        <select id="mes" name="mes">
+          {% for n in nomes_meses %}
+            <option value="{{ loop.index }}" {% if loop.index == mes_sel %}selected{% endif %}>{{ n }}</option>
+          {% endfor %}
+        </select>
+        <button type="button" class="btn-mes-nav" onclick="mudarMes(1)">→</button>
+      </div>
     </div>
     <div class="filtro-campo">
       <label>Ano</label>
-      <select name="ano">
+      <select id="ano" name="ano">
         {% for a in anos_disponiveis %}
           <option value="{{ a }}" {% if a == ano_sel %}selected{% endif %}>{{ a }}</option>
         {% endfor %}
@@ -182,6 +199,31 @@
     <p class="sem-dados">Nenhum lançamento importado para {{ nomes_meses[mes_sel - 1] }}/{{ ano_sel }} nesta filial.</p>
   {% endif %}
 </div>
+
+<script>
+  // Mesmo padrão do Matricial: ← → andam um mês, acompanhando o ano na virada.
+  function mudarMes(delta) {
+    const selectMes = document.getElementById("mes");
+    const selectAno = document.getElementById("ano");
+    if (!selectMes || !selectAno) return;
+
+    let mes = parseInt(selectMes.value || "0", 10);
+    let ano = parseInt(selectAno.value || new Date().getFullYear(), 10);
+
+    if (!mes || mes < 1 || mes > 12) mes = new Date().getMonth() + 1;
+
+    mes += delta;
+    if (mes < 1) { mes = 12; ano -= 1; }
+    if (mes > 12) { mes = 1; ano += 1; }
+
+    selectMes.value = String(mes);
+
+    const optionAno = Array.from(selectAno.options).find(opt => opt.value === String(ano));
+    if (optionAno) selectAno.value = String(ano);
+
+    selectMes.form.submit();
+  }
+</script>
 
 {% if grade and grade.colunas %}
 <script>

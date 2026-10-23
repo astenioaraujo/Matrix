@@ -3581,52 +3581,104 @@ def faltas_sobras_caixas():
         nome_filial_sel = ""
 
         if cod_filial_sel:
-            cod_filial_sel_int = int(cod_filial_sel)
-            filial_obj = next(
-                (f for f in filiais if f["cod_filial"] == cod_filial_sel_int), None
-            )
-            if filial_obj:
-                nome_filial_sel = filial_obj["nome_filial_importacao"] or filial_obj["nome_filial"]
+            eh_todos = cod_filial_sel == "TODOS"
 
-            qtd_dias = calendar.monthrange(ano_sel, mes_sel)[1]
-            primeiro_dia = date(ano_sel, mes_sel, 1)
-            ultimo_dia = date(ano_sel, mes_sel, qtd_dias)
+            if eh_todos:
+                nome_filial_sel = "TODOS OS POSTOS"
+            else:
+                cod_filial_sel_int = int(cod_filial_sel)
+                filial_obj = next(
+                    (f for f in filiais if f["cod_filial"] == cod_filial_sel_int), None
+                )
+                if filial_obj:
+                    nome_filial_sel = filial_obj["nome_filial_importacao"] or filial_obj["nome_filial"]
 
-            cur.execute("""
-                SELECT data, nome_funcionario, SUM(sobra + falta) AS diferenca
-                  FROM caixas_faltas_sobras
-                 WHERE cod_empresa = %s AND cod_filial = %s
-                   AND data BETWEEN %s AND %s
-                 GROUP BY data, nome_funcionario
-            """, (cod_empresa, cod_filial_sel_int, primeiro_dia, ultimo_dia))
-            linhas_bd = cur.fetchall()
+            # Mês de caixa: do dia 25 do mês anterior ao dia 24 do mês
+            # selecionado (fechamento do WebPostos) — não o mês de calendário.
+            if mes_sel == 1:
+                mes_anterior, ano_anterior = 12, ano_sel - 1
+            else:
+                mes_anterior, ano_anterior = mes_sel - 1, ano_sel
 
-            nomes_completos = [l["nome_funcionario"] for l in linhas_bd]
-            rotulos = nomes_exibicao(nomes_completos)
-            colunas = sorted(set(rotulos.values()))
+            primeiro_dia = date(ano_anterior, mes_anterior, 25)
+            ultimo_dia = date(ano_sel, mes_sel, 24)
+            qtd_dias = (ultimo_dia - primeiro_dia).days + 1
 
-            valores = defaultdict(dict)
-            for l in linhas_bd:
-                col = rotulos[l["nome_funcionario"]]
-                valores[l["data"]][col] = valores[l["data"]].get(col, Decimal("0")) + Decimal(str(l["diferenca"]))
+            if eh_todos:
+                # "Todos os postos": uma coluna por posto (o nome curto, igual
+                # ao dos botões), não por funcionário — gente diferente em
+                # cada posto não daria pra comparar na mesma coluna.
+                cur.execute("""
+                    SELECT data, cod_filial, SUM(sobra + falta) AS diferenca
+                      FROM caixas_faltas_sobras
+                     WHERE cod_empresa = %s
+                       AND data BETWEEN %s AND %s
+                     GROUP BY data, cod_filial
+                """, (cod_empresa, primeiro_dia, ultimo_dia))
+                linhas_bd = cur.fetchall()
 
-            total_colunas = {col: Decimal("0") for col in colunas}
-            total_geral = Decimal("0")
-            linhas_grade = []
+                rotulo_filial = {f["cod_filial"]: f["nome_filial"] for f in filiais}
+                codfiliais_com_dado = sorted(set(l["cod_filial"] for l in linhas_bd))
+                colunas = [rotulo_filial.get(cf, str(cf)) for cf in codfiliais_com_dado]
 
-            for d in (primeiro_dia + timedelta(days=n) for n in range(qtd_dias)):
-                vals = valores.get(d, {})
-                tem_dados = bool(vals)
-                total_dia = sum(vals.values(), Decimal("0"))
-                total_geral += total_dia
-                for col in colunas:
-                    total_colunas[col] += vals.get(col, Decimal("0"))
-                linhas_grade.append({
-                    "data": d,
-                    "valores": {col: vals.get(col) for col in colunas},
-                    "total_dia": total_dia,
-                    "tem_dados": tem_dados,
-                })
+                valores = defaultdict(dict)
+                for l in linhas_bd:
+                    col = rotulo_filial.get(l["cod_filial"], str(l["cod_filial"]))
+                    valores[l["data"]][col] = valores[l["data"]].get(col, Decimal("0")) + Decimal(str(l["diferenca"]))
+
+                total_colunas = {col: Decimal("0") for col in colunas}
+                total_geral = Decimal("0")
+                linhas_grade = []
+
+                for d in (primeiro_dia + timedelta(days=n) for n in range(qtd_dias)):
+                    vals = valores.get(d, {})
+                    tem_dados = bool(vals)
+                    total_dia = sum(vals.values(), Decimal("0"))
+                    total_geral += total_dia
+                    for col in colunas:
+                        total_colunas[col] += vals.get(col, Decimal("0"))
+                    linhas_grade.append({
+                        "data": d,
+                        "valores": {col: vals.get(col) for col in colunas},
+                        "total_dia": total_dia,
+                        "tem_dados": tem_dados,
+                    })
+            else:
+                cur.execute("""
+                    SELECT data, nome_funcionario, SUM(sobra + falta) AS diferenca
+                      FROM caixas_faltas_sobras
+                     WHERE cod_empresa = %s AND cod_filial = %s
+                       AND data BETWEEN %s AND %s
+                     GROUP BY data, nome_funcionario
+                """, (cod_empresa, cod_filial_sel_int, primeiro_dia, ultimo_dia))
+                linhas_bd = cur.fetchall()
+
+                nomes_completos = [l["nome_funcionario"] for l in linhas_bd]
+                rotulos = nomes_exibicao(nomes_completos)
+                colunas = sorted(set(rotulos.values()))
+
+                valores = defaultdict(dict)
+                for l in linhas_bd:
+                    col = rotulos[l["nome_funcionario"]]
+                    valores[l["data"]][col] = valores[l["data"]].get(col, Decimal("0")) + Decimal(str(l["diferenca"]))
+
+                total_colunas = {col: Decimal("0") for col in colunas}
+                total_geral = Decimal("0")
+                linhas_grade = []
+
+                for d in (primeiro_dia + timedelta(days=n) for n in range(qtd_dias)):
+                    vals = valores.get(d, {})
+                    tem_dados = bool(vals)
+                    total_dia = sum(vals.values(), Decimal("0"))
+                    total_geral += total_dia
+                    for col in colunas:
+                        total_colunas[col] += vals.get(col, Decimal("0"))
+                    linhas_grade.append({
+                        "data": d,
+                        "valores": {col: vals.get(col) for col in colunas},
+                        "total_dia": total_dia,
+                        "tem_dados": tem_dados,
+                    })
 
             grade = {
                 "colunas": colunas,
