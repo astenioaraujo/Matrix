@@ -235,7 +235,7 @@
     <form method="get" id="form-importacao">
         <select id="tipo_importacao">
             <option value="/importacoes/pdf">Importar PDF WebPostos</option>
-            <option value="{{ url_for('importacoes.importar_pdf_fluxo_caixa_analitico') }}">Importar PDF WebPostos Analítico</option>
+            <option value="{{ url_for('importacoes.importar_pdf_fluxo_caixa_analitico') }}" selected>Importar PDF WebPostos Analítico</option>
             <option value="{{ url_for('importacoes.importar_web_postos') }}">Importar Excel WebPostos</option>
             <option value="{{ url_for('importacoes.importar_csv_ocloset') }}">Importar CSV O Closet</option>
         </select>
@@ -270,6 +270,10 @@
             Transferir
         </button>
     </form>
+
+    <button type="button" class="btn-secundario" onclick="abrirModalHistorico()">
+        Histórico
+    </button>
 
     <a class="btn-link" href="{{ url_for('importacoes.listar_importacoes', somente_pendentes='1') }}">
         Somente Pendentes
@@ -616,9 +620,46 @@
         document.getElementById("modalLimpar").style.display = "none";
     }
 
+    function abrirModalHistorico() {
+        document.getElementById("modalHistorico").style.display = "flex";
+
+        const corpo = document.getElementById("historicoCorpo");
+        corpo.innerHTML = '<tr><td colspan="4">Carregando...</td></tr>';
+
+        fetch("{{ url_for('importacoes.historico_importacoes') }}")
+            .then(r => r.json())
+            .then(d => {
+                if (!d.ok) {
+                    corpo.innerHTML = '<tr><td colspan="4">' + (d.erro || "Erro ao carregar o histórico.") + '</td></tr>';
+                    return;
+                }
+
+                if (!d.itens.length) {
+                    corpo.innerHTML = '<tr><td colspan="4">Nenhuma importação registrada ainda.</td></tr>';
+                    return;
+                }
+
+                corpo.innerHTML = d.itens.map(function(i) {
+                    return '<tr>'
+                        + '<td>' + i.data + ' ' + i.hora + '</td>'
+                        + '<td>' + i.nome_usuario + '</td>'
+                        + '<td>' + i.tipo_importacao + '</td>'
+                        + '<td class="td-valor">' + i.total_registros + '</td>'
+                        + '</tr>';
+                }).join('');
+            })
+            .catch(() => {
+                corpo.innerHTML = '<tr><td colspan="4">Erro ao carregar o histórico.</td></tr>';
+            });
+    }
+    function fecharModalHistorico() {
+        document.getElementById("modalHistorico").style.display = "none";
+    }
+
     window.addEventListener("click", function(e) {
         if (e.target === document.getElementById("modalReclassificar")) fecharModalReclassificar();
         if (e.target === document.getElementById("modalLimpar")) fecharModalLimpar();
+        if (e.target === document.getElementById("modalHistorico")) fecharModalHistorico();
     });
 </script>
 
@@ -647,6 +688,35 @@
         <div class="modal-botoes">
             <button type="button" class="modal-btn modal-btn-cancelar" onclick="fecharModalLimpar()">Cancelar</button>
             <button type="button" class="modal-btn" style="background:#dc2626; color:#fff;" onclick="document.getElementById('form-limpar').submit()">Excluir</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="modalHistorico" style="display:none;">
+    <div class="modal-confirmacao" style="width:640px;">
+        <div class="modal-titulo">Histórico de Importações</div>
+        <div class="modal-texto" style="margin-bottom:14px;">
+            Últimas 20 importações registradas para esta empresa.
+        </div>
+
+        <div class="scroll">
+            <table class="table-local">
+                <thead>
+                    <tr>
+                        <th>Data/Hora</th>
+                        <th>Usuário</th>
+                        <th>Tipo de Importação</th>
+                        <th>Total de Registros</th>
+                    </tr>
+                </thead>
+                <tbody id="historicoCorpo">
+                    <tr><td colspan="4">Carregando...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="modal-botoes" style="margin-top:20px;">
+            <button type="button" class="modal-btn modal-btn-cancelar" onclick="fecharModalHistorico()">Fechar</button>
         </div>
     </div>
 </div>

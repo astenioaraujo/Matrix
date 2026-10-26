@@ -21,6 +21,35 @@ importacoes_bp = Blueprint("importacoes", __name__)
 
 IMPORT_PROGRESS = {}
 
+TOTAL_HISTORICO_IMPORTACOES = 20
+
+
+def registrar_historico_importacao(conn, cod_empresa, tipo_importacao, total_registros):
+    """Grava uma linha no histórico de importações do Fluxo de Caixa.
+
+    Chamada depois do commit de cada importação bem-sucedida — se a gravação
+    do histórico falhar, não deve desfazer a importação que já foi concluída.
+    """
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO importacoes_historico
+                (cod_empresa, id_usuario, nome_usuario, tipo_importacao, total_registros)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (
+            cod_empresa,
+            session.get("id_usuario"),
+            session.get("nome_usuario"),
+            tipo_importacao,
+            total_registros,
+        ))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        traceback.print_exc()
+    finally:
+        cur.close()
+
 
 @importacoes_bp.route("/importacoes")
 def listar_importacoes():
@@ -144,6 +173,45 @@ def listar_importacoes():
     )
 
 
+@importacoes_bp.route("/importacoes/historico")
+def historico_importacoes():
+    if "cod_empresa" not in session:
+        return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT
+                criado_em,
+                nome_usuario,
+                tipo_importacao,
+                total_registros
+            FROM importacoes_historico
+            WHERE cod_empresa = %s
+            ORDER BY criado_em DESC
+            LIMIT %s
+        """, (session["cod_empresa"], TOTAL_HISTORICO_IMPORTACOES))
+
+        itens = [
+            {
+                "data": row["criado_em"].strftime("%d/%m/%Y"),
+                "hora": row["criado_em"].strftime("%H:%M"),
+                "nome_usuario": row["nome_usuario"] or "—",
+                "tipo_importacao": row["tipo_importacao"],
+                "total_registros": row["total_registros"],
+            }
+            for row in cur.fetchall()
+        ]
+
+        return jsonify({"ok": True, "itens": itens})
+    except Exception as e:
+        return jsonify({"ok": False, "erro": str(e)}), 500
+    finally:
+        cur.close()
+
+
 # ---------------------------------------------------------------
 # IMPORTACAO DO PDF
 # ---------------------------------------------------------------
@@ -169,6 +237,13 @@ def importar_pdf_fluxo_caixa():
             resultado_pdf = Importa_Fluxo_Caixa_PDF(
                 arquivo_pdf=arquivo,
                 cod_empresa_fixo=session["cod_empresa"]
+            )
+
+            registrar_historico_importacao(
+                get_connection(),
+                session["cod_empresa"],
+                "PDF WebPostos",
+                resultado_pdf.get("total_importado", 0),
             )
 
             mensagem = "Importação do PDF concluída. Confira abaixo a auditoria por filial/mês."
@@ -265,6 +340,13 @@ def importar_pdf_fluxo_caixa_analitico():
                         "nome_arquivo": nome_arquivo,
                     }
                 else:
+                    registrar_historico_importacao(
+                        get_connection(),
+                        session["cod_empresa"],
+                        "PDF WebPostos Analítico",
+                        resultado_pdf.get("total_importado", 0),
+                    )
+
                     mensagem = (
                         "Importação do PDF analítico concluída. "
                         "Confira abaixo a conferência do detalhamento."
@@ -345,6 +427,13 @@ def importar_csv_ocloset():
                 cod_filial=int(cod_filial_selecionada),
                 base_data=base_data,
                 limpar_antes=limpar_antes,
+            )
+
+            registrar_historico_importacao(
+                conn,
+                cod_empresa,
+                "CSV O Closet",
+                resultado["total_importado"],
             )
 
             mensagem = (
