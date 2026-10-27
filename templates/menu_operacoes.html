@@ -50,6 +50,17 @@
     border-color: #755840;
   }
 
+  /* 🟠 AFERIÇÕES (laranja) */
+  .btn-afericoes {
+    background: #e07c1c;
+    border: 1px solid #e07c1c;
+  }
+
+  .btn-afericoes:hover {
+    background: #c56a15;
+    border-color: #c56a15;
+  }
+
   /* 🔶 CONSULTAR (marrom médio) */
   .btn-consultar {
     background: #064d29;
@@ -107,6 +118,12 @@
   {% if pode_consultar_medicoes %}
     <a href="{{ url_for('operacoes.consultar_medicoes') }}" class="btn-consultar">
       Consultar Medições
+    </a>
+  {% endif %}
+
+  {% if pode_informar_afericoes or pode_consultar_afericoes %}
+    <a href="{{ url_for('operacoes.menu_afericoes') }}" class="btn-afericoes">
+      Aferições
     </a>
   {% endif %}
 

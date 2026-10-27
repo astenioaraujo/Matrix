@@ -520,6 +520,78 @@ coligada.
 
 A consulta grande saiu da rota para `services/estoques_service.py` (`linhas_estoque`, `totais_estoque_rs`): a importação em Saldos usa a **mesma** função, para os números não divergirem com o tempo. O cursor precisa ser `RealDictCursor`.
 
+## Aferições de Bicos (26/10/2026)
+
+Botão **Aferições** no menu de Operações, atrás de `INFORMAR_AFERICOES` (500) /
+`CONSULTAR_AFERICOES` (510) — menu próprio (`templates/menu_afericoes.html`,
+`GET /operacoes/afericoes/menu`) que abre com **qualquer uma** das duas, mesmo
+princípio do menu de Crédito.
+
+**Concedida na EMP010 (Lucena)** em `migrations/conceder_acesso_afericoes_medicoes_lucena.sql`
+(26/10/2026): todo usuário que já tinha `INFORMAR_MEDICOES`/`CONSULTAR_MEDICOES`
+ativo e e-mail `medicoesNN@lucena.com.br` (um chefe de pista por posto, restrito
+à sua única filial ativa em `usuarios_filiais` — isso não muda) ganhou as duas
+opções de Aferições junto, e a gerente Heloísa também. A migration é
+re-executável (copia de quem já tem a permissão espelho, `ON CONFLICT DO UPDATE
+SET ativo = TRUE`) — rodar de novo depois de criar um `medicoesNN` novo propaga
+sozinho. Nas demais empresas (EMP011, EMP012...) ninguém tem acesso ainda.
+
+O posto escoa 20 litros num balde e compara com o que o bico indicou (tolerância
+combinada: ±100 ml), filmando o teste. `templates/informar_afericoes.html`
+(`GET/POST /operacoes/afericoes/informar`) grava em `afericoes`
+(`migrations/criar_tabela_afericoes.sql`, RLS habilitado): filial, combustível
+(mesmo cadastro de `combustiveis`/`capacidade_tanques` de Medições), **bico**
+(`numero_bico`, texto livre — não existe cadastro de bicos/bombas no sistema,
+decisão para não criar uma tela a mais sem pedido do cliente; uma bomba pode
+ter um bico de cada combustível, não é padronizado), data, hora, diferença em
+ml (pode ser negativa) e observação opcional. `normal`/"fora do padrão" **não é
+coluna** — calculado na consulta (`abs(diferenca_ml) <= 100`), convenção do
+projeto de nunca persistir o que é derivado.
+
+**Cada linha é um evento, não um estado por dia** — ao contrário de Medições,
+não há upsert por (filial, produto, bico, data): o mesmo bico pode ser aferido
+mais de uma vez no mesmo dia, e o período entre aferições (semanal, quinzenal,
+mensal) é decisão do posto, não travada em código.
+
+**Uma aferição pode ter vários arquivos** (`afericoes_arquivos`,
+`migrations/criar_tabela_afericoes_arquivos.sql`, `ON DELETE CASCADE` de
+`afericoes`) — vídeo de baixa, vídeo de alta, vídeo da aferição digitada **e**
+fotos dos marcadores, sem limite de quantidade nem de mistura vídeo/imagem
+(`<input type="file" name="arquivos" multiple>`, `request.files.getlist`).
+`afericoes.arquivo_video` **não existe mais** (coluna única, substituída por
+essa tabela filha antes de haver aferição real cadastrada — não houve o que
+migrar). Cada arquivo enviado é classificado em `tipo` (`'video'` ou
+`'imagem'`) por extensão, `_tipo_arquivo_afericao` — vídeo: mp4, mov, m4v,
+webm, avi, mkv, 3gp; imagem: jpg, jpeg, png, webp, heic, heif — rejeitando o
+POST inteiro se algum arquivo não bater com nenhuma das duas listas.
+
+**Retenção: só as 2 aferições mais recentes de cada bico.** A cada novo envio,
+`_limpar_afericoes_antigas` mantém as 2 linhas mais novas de
+`(cod_empresa, cod_filial, cod_produto, numero_bico)` e apaga o resto — a
+linha em `afericoes` (o `DELETE` já leva as linhas de `afericoes_arquivos`
+junto, por `ON DELETE CASCADE`) e, **depois do commit** (para não apagar
+arquivo de uma gravação que acabou sendo revertida), cada arquivo apagado no
+Storage. A tela de Informar mostra, abaixo do formulário, as aferições já
+guardadas daquela filial, para o usuário ver o que vai ser substituído antes
+de subir a próxima.
+
+**Vídeo/imagem no Supabase Storage**, bucket próprio `afericoes` (público,
+mesmo padrão do bucket `certificados`). `services/supabase_storage.py` deixou
+de ser fixo num bucket só — `upload_arquivo`/`url_publica`/`deletar_arquivo`/
+`garantir_bucket` agora recebem `bucket` opcional (default `certificados`,
+mantendo as chamadas existentes de Treinamentos) — e o content-type passou a
+sair de `mimetypes.guess_type` em vez do antigo `if extensao == ".png"`, que só
+cobria imagem.
+
+`templates/consultar_afericoes.html` (`GET /operacoes/afericoes/consultar`)
+segue o mesmo filtro por filial de Consultar Medições (`usuarios_filiais`) —
+quem tem acesso a várias filiais consulta e assiste os arquivos de todas elas,
+num modal que alterna entre `<video controls>` e `<img>` conforme o tipo
+clicado (não existia player de vídeo no sistema até aqui). A célula
+"Arquivos" lista um botão por arquivo da aferição (▶ Vídeo / 🖼 Foto). Sem
+filtro de data: o volume por posto já é pequeno (2 aferições × bicos ativos),
+diferente de Medições, que é diária.
+
 ---
 
 # Módulo Vendas

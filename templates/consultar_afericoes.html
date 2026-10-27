@@ -1,0 +1,346 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .painel-filtro {
+    max-width: 1400px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+  }
+
+  .linha-filtros {
+    display: grid;
+    grid-template-columns: 320px auto;
+    gap: 18px;
+    align-items: end;
+  }
+
+  .campo label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .campo select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid #c7c7c7;
+    border-radius: 8px;
+  }
+
+  .acoes {
+    display: flex;
+    gap: 10px;
+  }
+
+  .btn-filtrar {
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid #1565c0;
+    background: #1565c0;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn-limpar {
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid #c7c7c7;
+    background: #f7f7f7;
+    color: #1f3c88;
+    text-decoration: none;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .bloco-filial {
+    max-width: 1400px;
+    margin-bottom: 22px;
+  }
+
+  .titulo-filial {
+    font-weight: 800;
+    font-size: 18px;
+    margin-bottom: 8px;
+    padding: 10px 14px;
+    background: #f1f1f1;
+    border: 1px solid #d9d9d9;
+    border-radius: 12px;
+  }
+
+  .tabela-wrapper {
+    max-width: 1400px;
+    overflow: auto;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #dcdcdc;
+    padding: 10px 12px;
+    white-space: nowrap;
+  }
+
+  th {
+    background: #f1f1f1;
+    text-align: left;
+  }
+
+  td.valor {
+    text-align: right;
+    font-family: monospace;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 12px;
+  }
+
+  .badge-normal {
+    background: #e6f4ea;
+    color: #1e6b34;
+  }
+
+  .badge-anormal {
+    background: #fdeaea;
+    color: #9f2f2f;
+  }
+
+  .btn-assistir {
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid #064d29;
+    background: #064d29;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 13px;
+  }
+
+  .btn-assistir:hover {
+    background: #043d20;
+  }
+
+  .sem-dados {
+    max-width: 1400px;
+    font-weight: 700;
+    color: #666;
+    margin-top: 12px;
+  }
+
+  .modal-video-fundo {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.75);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-video-fundo.aberto {
+    display: flex;
+  }
+
+  .modal-video-caixa {
+    background: #000;
+    border-radius: 12px;
+    padding: 10px;
+    max-width: 90vw;
+  }
+
+  .modal-video-caixa video {
+    max-width: 85vw;
+    max-height: 80vh;
+    display: block;
+    border-radius: 8px;
+  }
+
+  .modal-video-fechar {
+    display: block;
+    margin: 10px auto 0;
+    padding: 8px 18px;
+    border-radius: 8px;
+    border: none;
+    background: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+</style>
+
+<div class="pagina-titulo">Consultar Aferições</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="painel-filtro">
+  <form method="get">
+    <div class="linha-filtros">
+      <div class="campo">
+        <label for="cod_filial">Filial</label>
+        <select id="cod_filial" name="cod_filial">
+          <option value="">Todas</option>
+          {% for f in filiais %}
+            <option value="{{ f.cod_filial }}" {% if filial_sel|string == f.cod_filial|string %}selected{% endif %}>
+              {{ f.cod_filial }} - {{ f.nome_filial }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="acoes">
+        <button type="submit" class="btn-filtrar">Filtrar</button>
+        <a href="{{ url_for('operacoes.consultar_afericoes') }}" class="btn-limpar">Limpar</a>
+      </div>
+    </div>
+  </form>
+</div>
+
+{% if linhas %}
+  {% set ns = namespace(filial_atual='') %}
+
+  {% for l in linhas %}
+    {% set chave_filial = (l.cod_filial|string) ~ ' - ' ~ (l.nome_filial or '') %}
+
+    {% if ns.filial_atual != chave_filial %}
+      {% if not loop.first %}
+          </tbody></table></div></div>
+      {% endif %}
+
+      <div class="bloco-filial">
+        <div class="titulo-filial">
+          Filial: {{ l.cod_filial }} - {{ l.nome_filial or "" }}
+        </div>
+
+        <div class="tabela-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Combustível</th>
+                <th>Bico</th>
+                <th>Data</th>
+                <th>Hora</th>
+                <th class="valor">Diferença (ml)</th>
+                <th>Status</th>
+                <th>Usuário</th>
+                <th>Observação</th>
+                <th>Arquivos</th>
+              </tr>
+            </thead>
+            <tbody>
+
+      {% set ns.filial_atual = chave_filial %}
+    {% endif %}
+
+    <tr>
+      <td>{{ l.descricao_produto or l.cod_produto }}</td>
+      <td>{{ l.numero_bico }}</td>
+      <td>{{ l.data_afericao.strftime("%d/%m/%Y") if l.data_afericao else "" }}</td>
+      <td>{{ l.hora_afericao.strftime("%H:%M") if l.hora_afericao else "" }}</td>
+      <td class="valor">{{ l.diferenca_ml | br }}</td>
+      <td>
+        {% if l.normal %}
+          <span class="badge badge-normal">Normal</span>
+        {% else %}
+          <span class="badge badge-anormal">Fora do padrão</span>
+        {% endif %}
+      </td>
+      <td>{{ l.nome_usuario or "" }}</td>
+      <td>{{ l.observacao or "" }}</td>
+      <td class="celula-arquivos">
+        {% for arq in l.arquivos %}
+          {% if arq.tipo == 'video' %}
+            <button type="button" class="btn-assistir" onclick="abrirArquivo('video', '{{ arq.url }}')">▶ Vídeo</button>
+          {% else %}
+            <button type="button" class="btn-assistir" onclick="abrirArquivo('imagem', '{{ arq.url }}')">🖼 Foto</button>
+          {% endif %}
+        {% endfor %}
+      </td>
+    </tr>
+
+  {% endfor %}
+
+  </tbody></table></div></div>
+
+{% else %}
+  <div class="sem-dados">
+    Nenhuma aferição encontrada para os filtros informados.
+  </div>
+{% endif %}
+
+<div class="modal-video-fundo" id="modalVideo" onclick="if (event.target === this) fecharVideo()">
+  <div class="modal-video-caixa">
+    <video id="playerVideo" controls style="display:none;"></video>
+    <img id="imagemVideo" style="display:none;">
+    <button type="button" class="modal-video-fechar" onclick="fecharVideo()">Fechar</button>
+  </div>
+</div>
+
+<script>
+  function abrirArquivo(tipo, url) {
+    const modal = document.getElementById("modalVideo");
+    const player = document.getElementById("playerVideo");
+    const imagem = document.getElementById("imagemVideo");
+
+    if (tipo === "video") {
+      imagem.style.display = "none";
+      imagem.removeAttribute("src");
+      player.style.display = "block";
+      player.src = url;
+      player.play().catch(() => {});
+    } else {
+      player.pause();
+      player.style.display = "none";
+      player.removeAttribute("src");
+      imagem.style.display = "block";
+      imagem.src = url;
+    }
+
+    modal.classList.add("aberto");
+  }
+
+  function fecharVideo() {
+    const modal = document.getElementById("modalVideo");
+    const player = document.getElementById("playerVideo");
+    const imagem = document.getElementById("imagemVideo");
+    player.pause();
+    player.removeAttribute("src");
+    player.load();
+    imagem.removeAttribute("src");
+    modal.classList.remove("aberto");
+  }
+</script>
+
+{% endblock %}

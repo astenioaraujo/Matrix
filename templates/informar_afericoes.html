@@ -1,0 +1,438 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .flash-msg {
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-weight: 600;
+  }
+
+  .flash-success {
+    background: #e6f4ea;
+    color: #1e6b34;
+    border: 1px solid #b7dfc2;
+  }
+
+  .flash-error {
+    background: #fdeaea;
+    color: #9f2f2f;
+    border: 1px solid #efc2c2;
+  }
+
+  .painel-form {
+    max-width: 1100px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 26px;
+  }
+
+  .linha-topo {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 18px;
+    align-items: end;
+    margin-bottom: 20px;
+  }
+
+  .campo label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .campo input,
+  .campo select,
+  .campo textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid #c7c7c7;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+
+  .grid-form {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+
+  .grid-form .campo-largo {
+    grid-column: span 2;
+  }
+
+  @media (max-width: 640px) {
+    .linha-topo,
+    .grid-form {
+      grid-template-columns: 1fr;
+    }
+
+    .grid-form .campo-largo {
+      grid-column: span 1;
+    }
+  }
+
+  .ajuda {
+    font-size: 12px;
+    color: #777;
+    margin-top: 4px;
+  }
+
+  .btn-salvar {
+    padding: 12px 22px;
+    border-radius: 10px;
+    border: 1px solid #064d29;
+    background: #064d29;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 15px;
+  }
+
+  .btn-salvar:hover {
+    background: #043d20;
+  }
+
+  .sem-filial {
+    font-weight: 700;
+    color: #9f2f2f;
+  }
+
+  .tabela-wrapper {
+    max-width: 1100px;
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    background: #fff;
+  }
+
+  th, td {
+    border: 1px solid #dcdcdc;
+    padding: 9px 12px;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  th {
+    background: #f1f1f1;
+  }
+
+  td.valor {
+    text-align: right;
+    font-family: monospace;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 12px;
+  }
+
+  .badge-normal {
+    background: #e6f4ea;
+    color: #1e6b34;
+  }
+
+  .badge-anormal {
+    background: #fdeaea;
+    color: #9f2f2f;
+  }
+
+  .titulo-secao {
+    font-weight: 800;
+    font-size: 18px;
+    margin: 10px 0 10px;
+  }
+
+  .botoes-captura {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .btn-captura {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid #064d29;
+    background: #064d29;
+    color: #fff;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+
+  .btn-captura:hover {
+    background: #043d20;
+  }
+
+  .btn-captura-secundario {
+    background: #fff;
+    color: #064d29;
+  }
+
+  .btn-captura-secundario:hover {
+    background: #f0f7f3;
+  }
+
+  .input-oculto {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .lista-arquivos {
+    list-style: none;
+    margin: 0 0 6px;
+    padding: 0;
+    font-size: 13px;
+    color: #333;
+  }
+
+  .lista-arquivos li {
+    padding: 3px 0;
+  }
+
+  .tipo-tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 999px;
+    margin-right: 6px;
+  }
+
+  .tipo-tag-video {
+    background: #e6f4ea;
+    color: #1e6b34;
+  }
+
+  .tipo-tag-imagem {
+    background: #eaf1fb;
+    color: #1a4f8a;
+  }
+</style>
+
+<div class="pagina-titulo">Informar Aferições</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<div class="painel-form">
+  <div class="linha-topo">
+    <div class="campo">
+      <label for="cod_filial">Filial</label>
+      <select id="cod_filial" name="cod_filial" onchange="trocarFilial(this.value)">
+        <option value="">Selecione</option>
+        {% for f in filiais %}
+          <option value="{{ f.cod_filial }}" {% if filial_sel|string == f.cod_filial|string %}selected{% endif %}>
+            {{ f.cod_filial }} - {{ f.nome_filial }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div></div>
+  </div>
+
+  {% if filial_sel %}
+    {% if produtos %}
+      <form method="post" enctype="multipart/form-data">
+        <input type="hidden" name="cod_filial" value="{{ filial_sel }}">
+
+        <div class="grid-form">
+          <div class="campo">
+            <label for="cod_produto">Combustível</label>
+            <select id="cod_produto" name="cod_produto" required>
+              {% for p in produtos %}
+                <option value="{{ p.cod_produto }}">{{ p.descricao }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="campo">
+            <label for="numero_bico">Bico</label>
+            <input type="text" id="numero_bico" name="numero_bico" placeholder="Ex.: 1" required>
+          </div>
+
+          <div class="campo">
+            <label for="data_afericao">Data</label>
+            <input type="date" id="data_afericao" name="data_afericao" value="{{ hoje_iso }}" required>
+          </div>
+
+          <div class="campo">
+            <label for="hora_afericao">Hora</label>
+            <input type="time" id="hora_afericao" name="hora_afericao" value="{{ agora_iso }}" required>
+          </div>
+
+          <div class="campo">
+            <label for="diferenca_ml">Diferença (ml)</label>
+            <input type="text" id="diferenca_ml" name="diferenca_ml" placeholder="Ex.: -80 ou 45" required>
+            <div class="ajuda">20 litros no balde − o que o bico indicou. Negativo = bico marcou a menos.</div>
+          </div>
+
+          <div class="campo campo-largo">
+            <label for="observacao">Observação (opcional)</label>
+            <input type="text" id="observacao" name="observacao" placeholder="Opcional">
+          </div>
+
+          <div class="campo campo-largo">
+            <label>Vídeos e fotos da aferição</label>
+
+            <div class="botoes-captura">
+              <label class="btn-captura" for="capturar_video">🎥 Gravar vídeo agora</label>
+              <input type="file" id="capturar_video" name="arquivos" accept="video/*" capture="environment" class="input-oculto" onchange="adicionarArquivos(this)">
+
+              <label class="btn-captura" for="capturar_foto">📷 Tirar foto agora</label>
+              <input type="file" id="capturar_foto" name="arquivos" accept="image/*" capture="environment" class="input-oculto" onchange="adicionarArquivos(this)">
+
+              <label class="btn-captura btn-captura-secundario" for="escolher_arquivos">📁 Escolher da galeria</label>
+              <input type="file" id="escolher_arquivos" name="arquivos" accept="video/*,image/*" multiple class="input-oculto" onchange="adicionarArquivos(this)">
+            </div>
+
+            <ul class="lista-arquivos" id="listaArquivos"></ul>
+
+            <div class="ajuda">
+              No celular, "Gravar vídeo agora" e "Tirar foto agora" abrem a câmera direto. Sem limite de
+              quantidade — pode juntar vídeo de baixa, de alta, da aferição digitada e as fotos dos marcadores.
+            </div>
+          </div>
+        </div>
+
+        <div class="ajuda" style="margin-bottom: 14px;">
+          Registrado por: <strong>{{ nome_usuario }}</strong> — só as 2 aferições mais recentes de cada bico ficam guardadas; os arquivos da mais antiga são apagados automaticamente.
+        </div>
+
+        <button type="submit" class="btn-salvar">Salvar Aferição</button>
+      </form>
+    {% else %}
+      <div class="sem-filial">
+        Não há tanques cadastrados para esta filial.
+      </div>
+    {% endif %}
+  {% else %}
+    <div class="sem-filial">
+      Selecione uma filial para informar aferições.
+    </div>
+  {% endif %}
+</div>
+
+{% if filial_sel and afericoes_existentes %}
+  <div class="titulo-secao">Aferições já registradas nesta filial</div>
+
+  <div class="tabela-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Combustível</th>
+          <th>Bico</th>
+          <th>Data</th>
+          <th>Hora</th>
+          <th class="valor">Diferença (ml)</th>
+          <th>Status</th>
+          <th>Observação</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for chave, lista in afericoes_existentes.items() %}
+          {% for a in lista %}
+            {% set normal = (a.diferenca_ml | float | abs) <= limite_diferenca %}
+            <tr>
+              <td>{{ chave[0] }}</td>
+              <td>{{ chave[1] }}</td>
+              <td>{{ a.data_afericao.strftime("%d/%m/%Y") if a.data_afericao else "" }}</td>
+              <td>{{ a.hora_afericao.strftime("%H:%M") if a.hora_afericao else "" }}</td>
+              <td class="valor">{{ a.diferenca_ml | br }}</td>
+              <td>
+                {% if normal %}
+                  <span class="badge badge-normal">Normal</span>
+                {% else %}
+                  <span class="badge badge-anormal">Fora do padrão</span>
+                {% endif %}
+              </td>
+              <td>{{ a.observacao or "" }}</td>
+            </tr>
+          {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+
+<script>
+  function trocarFilial(filial) {
+    window.location = "{{ url_for('operacoes.informar_afericoes') }}?cod_filial=" + filial;
+  }
+
+  // Os três inputs de arquivo (gravar vídeo, tirar foto, escolher da galeria)
+  // compartilham name="arquivos" — o navegador já envia os arquivos dos três
+  // juntos no submit. Esta lista é só feedback visual de tudo que foi
+  // selecionado até agora.
+  const arquivosPorInput = {};
+
+  function adicionarArquivos(input) {
+    arquivosPorInput[input.id] = Array.from(input.files || []);
+    renderizarListaArquivos();
+  }
+
+  function renderizarListaArquivos() {
+    const lista = document.getElementById("listaArquivos");
+    lista.innerHTML = "";
+
+    Object.values(arquivosPorInput).flat().forEach(function(arquivo) {
+      const ehVideo = arquivo.type.startsWith("video");
+      const li = document.createElement("li");
+      const tag = document.createElement("span");
+      tag.className = "tipo-tag " + (ehVideo ? "tipo-tag-video" : "tipo-tag-imagem");
+      tag.textContent = ehVideo ? "Vídeo" : "Foto";
+      li.appendChild(tag);
+      li.appendChild(document.createTextNode(arquivo.name));
+      lista.appendChild(li);
+    });
+  }
+</script>
+
+{% endblock %}

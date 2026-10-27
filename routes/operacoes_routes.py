@@ -1,10 +1,17 @@
+import os
+
 from flask import Blueprint, render_template, session, redirect, url_for, flash, request
 from psycopg2.extras import RealDictCursor, execute_batch
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, time, timedelta
 from zoneinfo import ZoneInfo
 
 from db import get_connection
 from services.estoques_service import linhas_estoque
+from services.supabase_storage import (
+    upload_arquivo as afericao_upload,
+    url_publica as afericao_url,
+    deletar_arquivo as afericao_deletar,
+)
 from services.coligadas_service import (
     coligadas_ativas,
     empresa_tem_coligadas,
@@ -125,6 +132,8 @@ def menu_operacoes():
         permissoes = {
             "pode_informar_medicoes": True,
             "pode_consultar_medicoes": True,
+            "pode_informar_afericoes": True,
+            "pode_consultar_afericoes": True,
             "pode_informar_preco_compra": True,
             "pode_consultar_preco_compra": True,
             "pode_informar_compras": True,
@@ -148,6 +157,12 @@ def menu_operacoes():
             ),
             "pode_consultar_medicoes": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_MEDICOES"
+            ),
+            "pode_informar_afericoes": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "INFORMAR_AFERICOES"
+            ),
+            "pode_consultar_afericoes": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_AFERICOES"
             ),
             "pode_informar_preco_compra": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "INFORMAR_PRECO_COMPRA"
@@ -450,6 +465,478 @@ def informar_medicoes():
         url_voltar=url_for("operacoes.menu_operacoes"),
         texto_voltar="← Voltar",
     )
+
+#------------------------------------------
+# AFERICOES DE BICOS
+#------------------------------------------
+BUCKET_AFERICOES = "afericoes"
+EXTENSOES_VIDEO_AFERICAO = {".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv", ".3gp"}
+EXTENSOES_IMAGEM_AFERICAO = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
+LIMITE_DIFERENCA_NORMAL_ML = 100
+
+def _tipo_arquivo_afericao(nome_arquivo):
+    """'video', 'imagem' ou None (extensão não aceita)."""
+    extensao = os.path.splitext(nome_arquivo)[1].lower()
+    if extensao in EXTENSOES_VIDEO_AFERICAO:
+        return "video"
+    if extensao in EXTENSOES_IMAGEM_AFERICAO:
+        return "imagem"
+    return None
+
+def _pode_afericoes(acao):
+    if str(session.get("tipo_global") or "").strip().lower() == "superusuario":
+        return True
+    return usuario_tem_permissao(
+        session.get("id_usuario"),
+        str(session.get("cod_empresa") or "").strip(),
+        "OPERACOES",
+        acao,
+    )
+
+
+def _filiais_do_usuario(cur, cod_empresa, id_usuario, tipo_global):
+    """Mesma regra de filiais visíveis usada em Informar/Consultar Medições."""
+    if tipo_global == "superusuario":
+        cur.execute(
+            """
+            SELECT cod_filial, nome_filial
+            FROM filiais
+            WHERE cod_empresa = %s
+              AND ativo = TRUE
+            ORDER BY cod_filial
+            """,
+            (cod_empresa,),
+        )
+        return cur.fetchall() or []
+
+    filiais_permitidas = [int(x) for x in usuario_filiais_ativas(id_usuario, cod_empresa)]
+
+    if not filiais_permitidas:
+        return []
+
+    cur.execute(
+        """
+        SELECT cod_filial, nome_filial
+        FROM filiais
+        WHERE cod_empresa = %s
+          AND ativo = TRUE
+          AND cod_filial = ANY(%s)
+        ORDER BY cod_filial
+        """,
+        (cod_empresa, filiais_permitidas),
+    )
+    return cur.fetchall() or []
+
+
+def _limpar_afericoes_antigas(cur, cod_empresa, cod_filial, cod_produto, numero_bico, manter=2):
+    """Mantém só as `manter` aferições mais recentes do bico; devolve os
+    caminhos dos arquivos das que foram apagadas, para remover do Storage
+    depois do commit (o DELETE já leva junto as linhas de afericoes_arquivos,
+    por ON DELETE CASCADE)."""
+    cur.execute(
+        """
+        SELECT id_afericao
+        FROM afericoes
+        WHERE cod_empresa = %s
+          AND cod_filial = %s
+          AND cod_produto = %s
+          AND numero_bico = %s
+        ORDER BY data_afericao DESC, hora_afericao DESC, criado_em DESC
+        OFFSET %s
+        """,
+        (cod_empresa, cod_filial, cod_produto, numero_bico, manter),
+    )
+    antigas = cur.fetchall() or []
+
+    if not antigas:
+        return []
+
+    ids_antigos = [a["id_afericao"] for a in antigas]
+
+    cur.execute(
+        "SELECT arquivo FROM afericoes_arquivos WHERE id_afericao = ANY(%s)",
+        (ids_antigos,),
+    )
+    arquivos = [a["arquivo"] for a in cur.fetchall() or []]
+
+    cur.execute("DELETE FROM afericoes WHERE id_afericao = ANY(%s)", (ids_antigos,))
+
+    return arquivos
+
+
+@operacoes_bp.route("/afericoes/menu")
+def menu_afericoes():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    pode_informar = _pode_afericoes("INFORMAR_AFERICOES")
+    pode_consultar = _pode_afericoes("CONSULTAR_AFERICOES")
+
+    # O menu abre com qualquer uma das duas.
+    if not (pode_informar or pode_consultar):
+        flash("Você não tem acesso ao módulo de Aferições.", "error")
+        return redirect(url_for("operacoes.menu_operacoes"))
+
+    return render_template(
+        "menu_afericoes.html",
+        cod_empresa=session.get("cod_empresa", ""),
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("operacoes.menu_operacoes"),
+        texto_voltar="← Voltar",
+        pode_informar=pode_informar,
+        pode_consultar=pode_consultar,
+    )
+
+
+# ---------------------------------------
+# INFORMAR AFERICOES
+# ---------------------------------------
+@operacoes_bp.route("/afericoes/informar", methods=["GET", "POST"])
+@permissao_obrigatoria(
+    "OPERACOES",
+    "INFORMAR_AFERICOES",
+    redirecionar_para="operacoes.menu_afericoes",
+)
+def informar_afericoes():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+    nome_usuario = session.get("nome_usuario", "")
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    agora = datetime.now(ZoneInfo("America/Sao_Paulo"))
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    produtos = []
+    afericoes_existentes = {}
+    filiais = []
+    filial_sel = None
+
+    try:
+        filiais = _filiais_do_usuario(cur, cod_empresa, id_usuario, tipo_global)
+
+        if not filiais and tipo_global != "superusuario":
+            flash("Você não possui filiais habilitadas.", "error")
+            return redirect(url_for("operacoes.menu_afericoes"))
+
+        codigos_filiais_permitidas = [int(f["cod_filial"]) for f in filiais]
+
+        filial_sel_txt = (request.values.get("cod_filial") or "").strip()
+        filial_sel = int(filial_sel_txt) if filial_sel_txt.isdigit() else None
+
+        if filial_sel is None and len(filiais) == 1:
+            filial_sel = int(filiais[0]["cod_filial"])
+
+        if filial_sel is not None and filial_sel not in codigos_filiais_permitidas and tipo_global != "superusuario":
+            flash("Filial não permitida para este usuário.", "error")
+            return redirect(url_for("operacoes.informar_afericoes"))
+
+        if filial_sel is not None:
+            cur.execute(
+                """
+                SELECT c.cod_produto, c.descricao
+                FROM combustiveis c
+                JOIN capacidade_tanques ct
+                  ON ct.cod_empresa = c.cod_empresa
+                 AND ct.cod_filial = %s
+                 AND ct.cod_produto = c.cod_produto
+                WHERE c.cod_empresa = %s
+                  AND COALESCE(ct.capacidade_tanque, 0) > 0
+                ORDER BY c.cod_produto
+                """,
+                (filial_sel, cod_empresa),
+            )
+            produtos = cur.fetchall() or []
+
+        if request.method == "POST":
+            try:
+                cod_filial = int(request.form.get("cod_filial") or 0)
+            except ValueError:
+                cod_filial = 0
+
+            if not cod_filial:
+                flash("Selecione a filial.", "error")
+                return redirect(url_for("operacoes.informar_afericoes"))
+
+            if tipo_global != "superusuario" and cod_filial not in codigos_filiais_permitidas:
+                flash("Filial não permitida para este usuário.", "error")
+                return redirect(url_for("operacoes.informar_afericoes"))
+
+            cod_produto = (request.form.get("cod_produto") or "").strip()
+            numero_bico = (request.form.get("numero_bico") or "").strip()
+            data_txt = (request.form.get("data_afericao") or "").strip()
+            hora_txt = (request.form.get("hora_afericao") or "").strip()
+            observacao = (request.form.get("observacao") or "").strip() or None
+            diferenca_txt = (request.form.get("diferenca_ml") or "0").strip()
+
+            if not cod_produto or not numero_bico or not data_txt or not hora_txt:
+                flash("Preencha combustível, bico, data e hora da aferição.", "error")
+                return redirect(url_for("operacoes.informar_afericoes", cod_filial=cod_filial))
+
+            try:
+                data_afericao = date.fromisoformat(data_txt)
+            except ValueError:
+                flash("Data da aferição inválida.", "error")
+                return redirect(url_for("operacoes.informar_afericoes", cod_filial=cod_filial))
+
+            try:
+                hora_afericao = time.fromisoformat(hora_txt)
+            except ValueError:
+                flash("Hora da aferição inválida.", "error")
+                return redirect(url_for("operacoes.informar_afericoes", cod_filial=cod_filial))
+
+            diferenca_ml = parse_valor_br(diferenca_txt)
+
+            arquivos_enviados = [a for a in request.files.getlist("arquivos") if a and a.filename]
+
+            if not arquivos_enviados:
+                flash("Envie ao menos um vídeo ou foto da aferição.", "error")
+                return redirect(url_for("operacoes.informar_afericoes", cod_filial=cod_filial))
+
+            arquivos_classificados = []  # [(file_storage, tipo), ...]
+
+            for a in arquivos_enviados:
+                tipo = _tipo_arquivo_afericao(a.filename)
+                if tipo is None:
+                    flash(
+                        f"Formato não suportado em '{a.filename}'. Envie vídeo "
+                        "(mp4, mov, webm, avi, mkv, 3gp) ou imagem (jpg, png, webp, heic).",
+                        "error",
+                    )
+                    return redirect(url_for("operacoes.informar_afericoes", cod_filial=cod_filial))
+                arquivos_classificados.append((a, tipo))
+
+            try:
+                uploads = [
+                    (tipo, afericao_upload(a, a.filename, cod_empresa, bucket=BUCKET_AFERICOES))
+                    for a, tipo in arquivos_classificados
+                ]
+            except Exception as e:
+                flash(f"Erro ao enviar o arquivo: {e}", "error")
+                return redirect(url_for("operacoes.informar_afericoes", cod_filial=cod_filial))
+
+            cur.execute(
+                """
+                INSERT INTO afericoes (
+                    cod_empresa,
+                    cod_filial,
+                    cod_produto,
+                    numero_bico,
+                    data_afericao,
+                    hora_afericao,
+                    id_usuario,
+                    diferenca_ml,
+                    observacao,
+                    criado_em,
+                    atualizado_em
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                RETURNING id_afericao
+                """,
+                (
+                    cod_empresa, cod_filial, cod_produto, numero_bico,
+                    data_afericao, hora_afericao, id_usuario, diferenca_ml,
+                    observacao,
+                ),
+            )
+            id_afericao = cur.fetchone()["id_afericao"]
+
+            for tipo, nome_arquivo in uploads:
+                cur.execute(
+                    """
+                    INSERT INTO afericoes_arquivos (id_afericao, tipo, arquivo, criado_em)
+                    VALUES (%s, %s, %s, NOW())
+                    """,
+                    (id_afericao, tipo, nome_arquivo),
+                )
+
+            arquivos_para_remover = _limpar_afericoes_antigas(
+                cur, cod_empresa, cod_filial, cod_produto, numero_bico
+            )
+
+            conn.commit()
+
+            for caminho in arquivos_para_remover:
+                afericao_deletar(caminho, bucket=BUCKET_AFERICOES)
+
+            flash("Aferição registrada com sucesso.", "success")
+            return redirect(url_for(
+                "operacoes.informar_afericoes",
+                cod_filial=cod_filial,
+                cod_produto=cod_produto,
+            ))
+
+        if filial_sel is not None:
+            cur.execute(
+                """
+                SELECT
+                    a.cod_produto,
+                    c.descricao AS descricao_produto,
+                    a.numero_bico,
+                    a.data_afericao,
+                    a.hora_afericao,
+                    a.diferenca_ml,
+                    a.observacao,
+                    u.nome AS nome_usuario
+                FROM afericoes a
+                LEFT JOIN combustiveis c
+                  ON c.cod_empresa = a.cod_empresa AND c.cod_produto = a.cod_produto
+                LEFT JOIN usuarios u ON u.id_usuario = a.id_usuario
+                WHERE a.cod_empresa = %s
+                  AND a.cod_filial = %s
+                ORDER BY a.cod_produto, a.numero_bico, a.data_afericao DESC, a.hora_afericao DESC
+                """,
+                (cod_empresa, filial_sel),
+            )
+            rows = cur.fetchall() or []
+
+            for r in rows:
+                chave = (str(r["descricao_produto"] or r["cod_produto"]).strip(), str(r["numero_bico"]).strip())
+                afericoes_existentes.setdefault(chave, []).append(r)
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao processar a aferição: {e}", "error")
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "informar_afericoes.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        nome_usuario=nome_usuario,
+        hoje_iso=agora.date().isoformat(),
+        agora_iso=agora.strftime("%H:%M"),
+        filiais=filiais,
+        filial_sel=filial_sel,
+        produtos=produtos,
+        afericoes_existentes=afericoes_existentes,
+        limite_diferenca=LIMITE_DIFERENCA_NORMAL_ML,
+        url_voltar=url_for("operacoes.menu_afericoes"),
+        texto_voltar="← Voltar",
+    )
+
+
+# ---------------------------------------
+# CONSULTAR AFERICOES
+# ---------------------------------------
+@operacoes_bp.route("/afericoes/consultar")
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONSULTAR_AFERICOES",
+    redirecionar_para="operacoes.menu_afericoes",
+)
+def consultar_afericoes():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    linhas = []
+    filiais = []
+    filial_sel = None
+
+    try:
+        filiais = _filiais_do_usuario(cur, cod_empresa, id_usuario, tipo_global)
+        codigos_filiais_permitidas = [int(f["cod_filial"]) for f in filiais]
+
+        filial_sel_txt = (request.args.get("cod_filial") or "").strip()
+        filial_sel = int(filial_sel_txt) if filial_sel_txt.isdigit() else None
+
+        if filial_sel is not None and filial_sel not in codigos_filiais_permitidas and tipo_global != "superusuario":
+            flash("Filial não permitida para este usuário.", "error")
+            return redirect(url_for("operacoes.consultar_afericoes"))
+
+        if filial_sel is not None:
+            filiais_consulta = [filial_sel]
+        else:
+            filiais_consulta = codigos_filiais_permitidas
+
+        if not filiais_consulta:
+            filiais_consulta = [-1]  # nenhuma filial permitida: consulta vazia
+
+        cur.execute(
+            """
+            SELECT
+                a.id_afericao,
+                a.cod_filial,
+                f.nome_filial,
+                a.cod_produto,
+                c.descricao AS descricao_produto,
+                a.numero_bico,
+                a.data_afericao,
+                a.hora_afericao,
+                a.diferenca_ml,
+                a.observacao,
+                u.nome AS nome_usuario
+            FROM afericoes a
+            LEFT JOIN filiais f
+              ON f.cod_empresa = a.cod_empresa AND f.cod_filial = a.cod_filial
+            LEFT JOIN combustiveis c
+              ON c.cod_empresa = a.cod_empresa AND c.cod_produto = a.cod_produto
+            LEFT JOIN usuarios u
+              ON u.id_usuario = a.id_usuario
+            WHERE a.cod_empresa = %s
+              AND a.cod_filial = ANY(%s)
+            ORDER BY a.cod_filial, a.cod_produto, a.numero_bico, a.data_afericao DESC, a.hora_afericao DESC
+            """,
+            (cod_empresa, filiais_consulta),
+        )
+        linhas = cur.fetchall() or []
+
+        cur.execute(
+            """
+            SELECT id_afericao, tipo, arquivo
+            FROM afericoes_arquivos
+            WHERE id_afericao = ANY(%s)
+            ORDER BY id_arquivo
+            """,
+            ([l["id_afericao"] for l in linhas],),
+        )
+        arquivos_por_afericao = {}
+        for a in cur.fetchall() or []:
+            arquivos_por_afericao.setdefault(a["id_afericao"], []).append({
+                "tipo": a["tipo"],
+                "url": afericao_url(a["arquivo"], bucket=BUCKET_AFERICOES),
+            })
+
+        for l in linhas:
+            l["arquivos"] = arquivos_por_afericao.get(l["id_afericao"], [])
+            l["normal"] = abs(float(l["diferenca_ml"] or 0)) <= LIMITE_DIFERENCA_NORMAL_ML
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao consultar aferições: {e}", "error")
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "consultar_afericoes.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        filiais=filiais,
+        filial_sel=filial_sel,
+        linhas=linhas,
+        limite_diferenca=LIMITE_DIFERENCA_NORMAL_ML,
+        url_voltar=url_for("operacoes.menu_afericoes"),
+        texto_voltar="← Voltar",
+    )
+
 
 #------------------------------------------
 # CONFIGURACOES DE OPERACOES

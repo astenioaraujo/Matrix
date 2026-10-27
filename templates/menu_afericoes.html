@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 4px; }
+  .empresa       { font-size: 16px; color: #555; margin-bottom: 30px; }
+
+  .menu-botoes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 260px);
+    gap: 14px;
+    margin-bottom: 50px;
+  }
+
+  .menu-botoes a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 60px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 16px;
+    color: #fff;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+    transition: all 0.2s ease;
+    text-align: center;
+    padding: 0 10px;
+  }
+
+  .btn-informar {
+    background: #876A50;
+    border: 1px solid #876A50;
+  }
+
+  .btn-informar:hover {
+    background: #755840;
+    border-color: #755840;
+  }
+
+  .btn-consultar {
+    background: #064d29;
+    border: 1px solid #064d29;
+  }
+
+  .btn-consultar:hover {
+    background: #043d20;
+    border-color: #043d20;
+  }
+</style>
+
+<div class="pagina-titulo">Aferições</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="menu-botoes">
+
+  {% if pode_informar %}
+    <a href="{{ url_for('operacoes.informar_afericoes') }}" class="btn-informar">
+      Informar Aferições
+    </a>
+  {% endif %}
+
+  {% if pode_consultar %}
+    <a href="{{ url_for('operacoes.consultar_afericoes') }}" class="btn-consultar">
+      Consultar Aferições
+    </a>
+  {% endif %}
+
+</div>
+
+{% endblock %}
