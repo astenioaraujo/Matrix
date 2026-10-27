@@ -613,6 +613,22 @@ Render (Web Service nativo, instância pequena de RAM):**
    também passou a mandar `data=file_obj` pro `requests` (que transmite em
    pedaços) em vez de `data=file_obj.read()` — vale pra todo upload do
    projeto, não só vídeo de aferição.
+3. (27/10/2026, primeiro teste real com upload de vídeo direto no Render —
+   os testes anteriores, mesmo achando que eram "produção", eram contra o
+   app local) Vídeo de 150MB (celular gravando em alta resolução, provável
+   4K) travou o serviço de novo, mesmo já sem carregar bytes em memória:
+   dessa vez é o **próprio processo do ffmpeg** (decodificação + buffers de
+   paralelismo do libx264) que, sozinho, já é suficiente pra estourar os
+   512MB da instância do Render (confirmado no gráfico de Memory do painel:
+   pico batendo no limite bem no segundo exato do restart silencioso do
+   gunicorn, sem traceback — processo morto pelo OOM killer do SO, não uma
+   exceção do Python). Corrigido reduzindo o footprint do próprio ffmpeg:
+   `-preset ultrafast` (era `veryfast`) e `-threads 1` /
+   `-x264-params threads=1:lookahead_threads=1:rc-lookahead=10` pra travar o
+   paralelismo em 1 e cortar o buffer de lookahead. Se vídeos de origem
+   ainda maiores (mais que uns 150-200MB / vários minutos em 4K) continuarem
+   derrubando o serviço, a próxima opção é aumentar o plano do Render (mais
+   RAM), não mexer mais no código do ffmpeg.
 
 Se o ffmpeg falhar por qualquer motivo (vídeo corrompido, timeout) ou a saída
 não ficar menor que o original, sobe o arquivo original sem alteração —

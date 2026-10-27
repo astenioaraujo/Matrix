@@ -102,9 +102,15 @@ def preparar_video_para_upload(file_obj, nome_original):
                             "-vf",
                             f"scale='min({LARGURA_MAXIMA},iw)':'min({ALTURA_MAXIMA},ih)':"
                             "force_original_aspect_ratio=decrease:force_divisible_by=2",
+                            # preset/threads/lookahead reduzidos ao mínimo: a instância
+                            # do Render tem só 512MB no total, e um vídeo de origem
+                            # grande (4K) fazia o ffmpeg sozinho estourar esse limite
+                            # com os buffers de decodificação/paralelismo padrão.
                             "-c:v", "libx264",
-                            "-preset", "veryfast",
+                            "-preset", "ultrafast",
                             "-crf", str(CRF),
+                            "-threads", "1",
+                            "-x264-params", "threads=1:lookahead_threads=1:rc-lookahead=10",
                             "-c:a", "aac",
                             "-b:a", "128k",
                             "-movflags", "+faststart",
