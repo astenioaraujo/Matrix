@@ -7,4 +7,5 @@ python-dotenv
 pdfplumber
 requests
 anthropic
+imageio-ffmpeg
 

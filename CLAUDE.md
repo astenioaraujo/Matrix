@@ -583,6 +583,22 @@ mantendo as chamadas existentes de Treinamentos) — e o content-type passou a
 sair de `mimetypes.guess_type` em vez do antigo `if extensao == ".png"`, que só
 cobria imagem.
 
+**Vídeos são recomprimidos no servidor antes do upload** (`services/video.py`,
+`comprimir_video`, 27/10/2026) — celular grava em resolução bem maior do que o
+necessário pra conferir a aferição, e o Storage recusa objeto acima do limite
+do projeto (`413 EntityTooLarge`). Reduz pra no máximo 1280×720
+(`scale=...force_original_aspect_ratio=decrease:force_divisible_by=2`, crf 28,
+h264/aac, timeout de 5 min); fotos não passam por isso. Usa o binário de
+ffmpeg **empacotado pelo pacote `imageio-ffmpeg`** (`requirements.txt`,
+`imageio_ffmpeg.get_ffmpeg_exe()`) em vez de um ffmpeg do sistema operacional —
+o MATRX roda no Render como Web Service **nativo** (sem Dockerfile), que não dá
+acesso de root pra instalar pacote de sistema (`apt-get`) no build; o
+`imageio-ffmpeg` resolve isso só com `pip install`. Se o ffmpeg falhar por
+qualquer motivo (vídeo corrompido, timeout) ou a saída não ficar menor que o
+original, sobe o arquivo original sem alteração — preferível arriscar o 413 de
+novo a perder a aferição. Testado ponta a ponta (local e com o binário do
+`imageio-ffmpeg`): vídeo 1920×1080 → objeto salvo no Storage saiu 1280×720.
+
 `templates/consultar_afericoes.html` (`GET /operacoes/afericoes/consultar`)
 segue o mesmo filtro por filial de Consultar Medições (`usuarios_filiais`) —
 quem tem acesso a várias filiais consulta e assiste os arquivos de todas elas,

@@ -102,6 +102,13 @@
     border-bottom: 2px solid #c7c7c7;
   }
 
+  .linha-total-final td {
+    font-weight: bold;
+    background: #dfe7fd;
+    border-top: 3px solid #4a6cd4;
+    border-bottom: 3px solid #4a6cd4;
+  }
+
   .linha-espaco td {
     background: #ffffff;
     border: none !important;
@@ -428,7 +435,7 @@
               </tr>
             {% endfor %}
         
-            <tr class="linha-total-grupo">
+            <tr class="linha-total-grupo" data-grupo="{{ grupo.grupo }}">
               <td colspan="3">
                 Total do Grupo {{ grupo.grupo }}
               </td>
@@ -447,6 +454,14 @@
               <td colspan="{{ 4 + filiais_colunas|length }}"></td>
             </tr>
           {% endfor %}
+
+          <tr class="linha-total-final" id="linha-total-final">
+            <td colspan="3">Total Geral (grupos selecionados)</td>
+            <td class="num col-total-separador">0,00</td>
+            {% for filial in filiais_colunas %}
+              <td class="num">0,00</td>
+            {% endfor %}
+          </tr>
         </tbody>
       </table>
     </div>
@@ -490,7 +505,41 @@
         const g = String(tr.getAttribute("data-grupo"));
         tr.style.display = selecionados.includes(g) ? "" : "none";
       });
+
+      atualizarTotalFinal();
     }
+
+    function formatarNumeroBr(numero) {
+      return numero.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function atualizarTotalFinal() {
+      const linhaFinal = document.getElementById("linha-total-final");
+      if (!linhaFinal) {
+        return;
+      }
+
+      const celulasFinal = linhaFinal.querySelectorAll("td.num");
+      const somas = new Array(celulasFinal.length).fill(0);
+
+      document.querySelectorAll(".linha-total-grupo").forEach(tr => {
+        if (tr.style.display === "none") {
+          return;
+        }
+        const celulas = tr.querySelectorAll("td.num");
+        celulas.forEach((celula, idx) => {
+          const texto = celula.innerText.replace(/\./g, "").replace(",", ".").trim();
+          const numero = parseFloat(texto);
+          somas[idx] += isNaN(numero) ? 0 : numero;
+        });
+      });
+
+      celulasFinal.forEach((celula, idx) => {
+        celula.textContent = formatarNumeroBr(somas[idx]);
+      });
+    }
+
+    atualizarTotalFinal();
 
     function mudarMes(delta) {
         const selectMes = document.getElementById("mes");
