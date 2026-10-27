@@ -152,6 +152,20 @@
     background: #043d20;
   }
 
+  .item-arquivo {
+    display: inline-block;
+    text-align: center;
+    margin: 2px 8px 4px 0;
+    vertical-align: top;
+  }
+
+  .info-arquivo {
+    font-size: 11px;
+    color: #777;
+    margin-top: 3px;
+    white-space: nowrap;
+  }
+
   .sem-dados {
     max-width: 1400px;
     font-weight: 700;
@@ -281,11 +295,20 @@
       <td>{{ l.observacao or "" }}</td>
       <td class="celula-arquivos">
         {% for arq in l.arquivos %}
-          {% if arq.tipo == 'video' %}
-            <button type="button" class="btn-assistir" onclick="abrirArquivo('video', '{{ arq.url }}')">▶ Vídeo</button>
-          {% else %}
-            <button type="button" class="btn-assistir" onclick="abrirArquivo('imagem', '{{ arq.url }}')">🖼 Foto</button>
-          {% endif %}
+          <div class="item-arquivo">
+            {% if arq.tipo == 'video' %}
+              <button type="button" class="btn-assistir" onclick="abrirArquivo('video', '{{ arq.url }}')">▶ Vídeo</button>
+            {% else %}
+              <button type="button" class="btn-assistir" onclick="abrirArquivo('imagem', '{{ arq.url }}')">🖼 Foto</button>
+            {% endif %}
+            {% if arq.tamanho_mb is not none or arq.duracao_segundos is not none %}
+              <div class="info-arquivo">
+                {%- if arq.tamanho_mb is not none -%}{{ arq.tamanho_mb }} MB{%- endif -%}
+                {%- if arq.tamanho_mb is not none and arq.duracao_segundos is not none %} · {% endif -%}
+                {%- if arq.duracao_segundos is not none -%}{{ arq.duracao_segundos }} s{%- endif -%}
+              </div>
+            {% endif %}
+          </div>
         {% endfor %}
       </td>
     </tr>

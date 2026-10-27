@@ -620,12 +620,41 @@ preferível arriscar o 413 de
 novo a perder a aferição. Testado ponta a ponta (local e com o binário do
 `imageio-ffmpeg`): vídeo 1920×1080 → objeto salvo no Storage saiu 1280×720.
 
+**Tamanho e duração de cada arquivo ficam gravados** (`afericoes_arquivos.
+tamanho_bytes`/`duracao_segundos`, `migrations/adicionar_tamanho_duracao_
+afericoes_arquivos.sql`, 27/10/2026) — pedido do cliente pra conferir
+visualmente, na tela de Consultar, se a compressão no upload está mesmo
+reduzindo o vídeo. Calculado no momento do upload, não dá pra recalcular
+depois sem baixar o arquivo de novo do Storage: vídeo usa
+`os.path.getsize` no arquivo final (comprimido ou original) e a duração sai
+do próprio stderr do ffmpeg (`Duration: HH:MM:SS.ss`, regex em
+`_duracao_do_log`) — **não existe ffprobe** nesse deploy (o
+`imageio-ffmpeg` só empacota o `ffmpeg`), por isso não dá pra usar o jeito
+óbvio (`ffprobe -show_entries format=duration`). Imagem usa
+`os.path.getsize` no arquivo final, mesmo princípio do vídeo (sem duração,
+claro). Os 4 primeiros arquivos (de antes dessa coluna existir) foram
+preenchidos manualmente rodando `ffprobe` direto contra a URL pública no
+Storage (só precisou uma vez, não é rotina).
+
+**Foto em HEIC/HEIF é convertida pra JPEG no upload** (`services/imagem.py`,
+`preparar_imagem_para_upload`, 27/10/2026) — iPhone grava foto nesse formato
+por padrão, e ele não renderiza em `<img>` na maioria dos navegadores
+(aparece ícone de imagem quebrada); os postos acessam de Windows/Chrome e
+Android, não só Safari. Usa `Pillow` + `pillow-heif` (`requirements.txt`,
+`pillow_heif.register_heif_opener()`) — mesmo princípio de resiliência do
+vídeo: se a conversão falhar por qualquer motivo (HEIC corrompido, suporte
+ausente), sobe o arquivo original sem alteração em vez de travar o envio.
+Outros formatos (jpg, png, webp) já renderizam em qualquer navegador e
+sobem sem conversão. Testado ponta a ponta com uma foto HEIC real de
+posto (4284×5712) que tinha ficado quebrada antes dessa correção.
+
 `templates/consultar_afericoes.html` (`GET /operacoes/afericoes/consultar`)
 segue o mesmo filtro por filial de Consultar Medições (`usuarios_filiais`) —
 quem tem acesso a várias filiais consulta e assiste os arquivos de todas elas,
 num modal que alterna entre `<video controls>` e `<img>` conforme o tipo
 clicado (não existia player de vídeo no sistema até aqui). A célula
-"Arquivos" lista um botão por arquivo da aferição (▶ Vídeo / 🖼 Foto). Sem
+"Arquivos" lista um botão por arquivo da aferição (▶ Vídeo / 🖼 Foto), com o
+tamanho (MB) e, pra vídeo, a duração (segundos) logo abaixo do botão. Sem
 filtro de data: o volume por posto já é pequeno (2 aferições × bicos ativos),
 diferente de Medições, que é diária.
 

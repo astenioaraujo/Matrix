@@ -8,4 +8,6 @@ pdfplumber
 requests
 anthropic
 imageio-ffmpeg
+pillow
+pillow-heif
 

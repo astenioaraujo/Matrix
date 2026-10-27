@@ -182,9 +182,9 @@
     gap: 6px;
     padding: 10px 16px;
     border-radius: 10px;
-    border: 1px solid #064d29;
-    background: #064d29;
-    color: #fff;
+    border: 1px solid #e0c067;
+    background: #ffe9a8;
+    color: #5c4400;
     font-weight: 700;
     font-size: 14px;
     cursor: pointer;
@@ -193,16 +193,7 @@
   }
 
   .btn-captura:hover {
-    background: #043d20;
-  }
-
-  .btn-captura-secundario {
-    background: #fff;
-    color: #064d29;
-  }
-
-  .btn-captura-secundario:hover {
-    background: #f0f7f3;
+    background: #ffdf85;
   }
 
   .input-oculto {
@@ -329,7 +320,7 @@
               <label class="btn-captura" for="capturar_foto">📷 Tirar foto agora</label>
               <input type="file" id="capturar_foto" name="arquivos" accept="image/*" capture="environment" class="input-oculto" onchange="adicionarArquivos(this)">
 
-              <label class="btn-captura btn-captura-secundario" for="escolher_arquivos">📁 Escolher da galeria</label>
+              <label class="btn-captura" for="escolher_arquivos">📁 Escolher da galeria</label>
               <input type="file" id="escolher_arquivos" name="arquivos" accept="video/*,image/*" multiple class="input-oculto" onchange="adicionarArquivos(this)">
             </div>
 

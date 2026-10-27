@@ -13,6 +13,7 @@ from services.supabase_storage import (
     deletar_arquivo as afericao_deletar,
 )
 from services.video import preparar_video_para_upload
+from services.imagem import preparar_imagem_para_upload
 from services.coligadas_service import (
     coligadas_ativas,
     empresa_tem_coligadas,
@@ -713,20 +714,26 @@ def informar_afericoes():
                 arquivos_classificados.append((a, tipo))
 
             try:
-                uploads = []
+                uploads = []  # [(tipo, nome_no_storage, tamanho_bytes, duracao_segundos), ...]
                 for a, tipo in arquivos_classificados:
                     if tipo == "video":
-                        with preparar_video_para_upload(a, a.filename) as (caminho, nome_arquivo, _ctype):
+                        with preparar_video_para_upload(a, a.filename) as (
+                            caminho, nome_arquivo, _ctype, tamanho_bytes, duracao_segundos,
+                        ):
                             with open(caminho, "rb") as arquivo_para_upload:
-                                uploads.append((
-                                    tipo,
-                                    afericao_upload(arquivo_para_upload, nome_arquivo, cod_empresa, bucket=BUCKET_AFERICOES),
-                                ))
+                                nome_no_storage = afericao_upload(
+                                    arquivo_para_upload, nome_arquivo, cod_empresa, bucket=BUCKET_AFERICOES
+                                )
+                        uploads.append((tipo, nome_no_storage, tamanho_bytes, duracao_segundos))
                     else:
-                        uploads.append((
-                            tipo,
-                            afericao_upload(a, a.filename, cod_empresa, bucket=BUCKET_AFERICOES),
-                        ))
+                        with preparar_imagem_para_upload(a, a.filename) as (
+                            caminho, nome_arquivo, _ctype, tamanho_bytes,
+                        ):
+                            with open(caminho, "rb") as arquivo_para_upload:
+                                nome_no_storage = afericao_upload(
+                                    arquivo_para_upload, nome_arquivo, cod_empresa, bucket=BUCKET_AFERICOES
+                                )
+                        uploads.append((tipo, nome_no_storage, tamanho_bytes, None))
             except Exception as e:
                 flash(f"Erro ao enviar o arquivo: {e}", "error")
                 return redirect(url_for("operacoes.informar_afericoes", cod_filial=cod_filial))
@@ -757,13 +764,14 @@ def informar_afericoes():
             )
             id_afericao = cur.fetchone()["id_afericao"]
 
-            for tipo, nome_arquivo in uploads:
+            for tipo, nome_arquivo, tamanho_bytes, duracao_segundos in uploads:
                 cur.execute(
                     """
-                    INSERT INTO afericoes_arquivos (id_afericao, tipo, arquivo, criado_em)
-                    VALUES (%s, %s, %s, NOW())
+                    INSERT INTO afericoes_arquivos
+                        (id_afericao, tipo, arquivo, tamanho_bytes, duracao_segundos, criado_em)
+                    VALUES (%s, %s, %s, %s, %s, NOW())
                     """,
-                    (id_afericao, tipo, nome_arquivo),
+                    (id_afericao, tipo, nome_arquivo, tamanho_bytes, duracao_segundos),
                 )
 
             arquivos_para_remover = _limpar_afericoes_antigas(
@@ -910,7 +918,7 @@ def consultar_afericoes():
 
         cur.execute(
             """
-            SELECT id_afericao, tipo, arquivo
+            SELECT id_afericao, tipo, arquivo, tamanho_bytes, duracao_segundos
             FROM afericoes_arquivos
             WHERE id_afericao = ANY(%s)
             ORDER BY id_arquivo
@@ -922,6 +930,8 @@ def consultar_afericoes():
             arquivos_por_afericao.setdefault(a["id_afericao"], []).append({
                 "tipo": a["tipo"],
                 "url": afericao_url(a["arquivo"], bucket=BUCKET_AFERICOES),
+                "tamanho_mb": round(a["tamanho_bytes"] / 1024 / 1024, 2) if a["tamanho_bytes"] else None,
+                "duracao_segundos": round(float(a["duracao_segundos"]), 1) if a["duracao_segundos"] else None,
             })
 
         for l in linhas:
