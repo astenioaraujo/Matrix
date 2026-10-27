@@ -2,18 +2,39 @@ import os
 import subprocess
 import tempfile
 
-import imageio_ffmpeg
-
 LARGURA_MAXIMA = 1280
 ALTURA_MAXIMA = 720
 CRF = 28
 TIMEOUT_SEGUNDOS = 300
 
-# Binário de ffmpeg empacotado pelo imageio-ffmpeg (vem no próprio
-# requirements.txt) em vez de depender de um ffmpeg instalado no sistema —
-# o Render (Web Service nativo, sem Dockerfile) não dá acesso de root pra
-# instalar pacotes do sistema operacional durante o build.
-_FFMPEG_BINARIO = imageio_ffmpeg.get_ffmpeg_exe()
+_ffmpeg_binario_cache = None
+_ffmpeg_binario_falhou = False
+
+
+def _ffmpeg_binario():
+    """
+    Caminho do ffmpeg empacotado pelo imageio-ffmpeg (no requirements.txt),
+    em vez de depender de um ffmpeg instalado no sistema — o Render (Web
+    Service nativo, sem Dockerfile) não dá acesso de root pra instalar
+    pacote de sistema operacional no build.
+
+    Resolvido sob demanda (não na importação do módulo): se isso falhar por
+    qualquer motivo, não pode derrubar o import de services.video — e com
+    ele o app inteiro, já que operacoes_routes.py importa este módulo no
+    carregamento das rotas.
+    """
+    global _ffmpeg_binario_cache, _ffmpeg_binario_falhou
+
+    if _ffmpeg_binario_falhou:
+        return None
+    if _ffmpeg_binario_cache is None:
+        try:
+            import imageio_ffmpeg
+            _ffmpeg_binario_cache = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            _ffmpeg_binario_falhou = True
+            return None
+    return _ffmpeg_binario_cache
 
 
 def comprimir_video(file_obj, nome_original):
@@ -31,6 +52,10 @@ def comprimir_video(file_obj, nome_original):
     dados_originais = file_obj.read()
     extensao_original = os.path.splitext(nome_original)[1].lower()
 
+    ffmpeg = _ffmpeg_binario()
+    if ffmpeg is None:
+        return dados_originais, nome_original, None
+
     with tempfile.NamedTemporaryFile(suffix=extensao_original or ".mp4") as entrada, \
          tempfile.NamedTemporaryFile(suffix=".mp4") as saida:
         entrada.write(dados_originais)
@@ -39,7 +64,7 @@ def comprimir_video(file_obj, nome_original):
         try:
             subprocess.run(
                 [
-                    _FFMPEG_BINARIO, "-y",
+                    ffmpeg, "-y",
                     "-i", entrada.name,
                     "-vf",
                     f"scale='min({LARGURA_MAXIMA},iw)':'min({ALTURA_MAXIMA},ih)':"
