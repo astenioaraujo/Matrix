@@ -43,7 +43,10 @@ def upload_arquivo(file_obj, nome_original: str, cod_empresa: str, bucket: str =
     r = requests.post(
         url,
         headers={**_headers(), "Content-Type": content_type},
-        data=file_obj.read(),
+        # Stream em vez de file_obj.read(): em arquivo grande (vídeo), ler
+        # tudo pra um bytes antes de mandar dobra o uso de memória à toa —
+        # requests já sabe transmitir um arquivo em pedaços.
+        data=file_obj,
     )
 
     if r.status_code not in (200, 201):

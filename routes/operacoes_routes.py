@@ -1,4 +1,3 @@
-import io
 import os
 
 from flask import Blueprint, render_template, session, redirect, url_for, flash, request
@@ -13,7 +12,7 @@ from services.supabase_storage import (
     url_publica as afericao_url,
     deletar_arquivo as afericao_deletar,
 )
-from services.video import comprimir_video
+from services.video import preparar_video_para_upload
 from services.coligadas_service import (
     coligadas_ativas,
     empresa_tem_coligadas,
@@ -717,15 +716,17 @@ def informar_afericoes():
                 uploads = []
                 for a, tipo in arquivos_classificados:
                     if tipo == "video":
-                        dados, nome_arquivo, _ = comprimir_video(a, a.filename)
-                        arquivo_para_upload = io.BytesIO(dados)
+                        with preparar_video_para_upload(a, a.filename) as (caminho, nome_arquivo, _ctype):
+                            with open(caminho, "rb") as arquivo_para_upload:
+                                uploads.append((
+                                    tipo,
+                                    afericao_upload(arquivo_para_upload, nome_arquivo, cod_empresa, bucket=BUCKET_AFERICOES),
+                                ))
                     else:
-                        arquivo_para_upload = a
-                        nome_arquivo = a.filename
-                    uploads.append((
-                        tipo,
-                        afericao_upload(arquivo_para_upload, nome_arquivo, cod_empresa, bucket=BUCKET_AFERICOES),
-                    ))
+                        uploads.append((
+                            tipo,
+                            afericao_upload(a, a.filename, cod_empresa, bucket=BUCKET_AFERICOES),
+                        ))
             except Exception as e:
                 flash(f"Erro ao enviar o arquivo: {e}", "error")
                 return redirect(url_for("operacoes.informar_afericoes", cod_filial=cod_filial))

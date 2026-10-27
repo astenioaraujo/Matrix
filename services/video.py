@@ -1,3 +1,4 @@
+import contextlib
 import os
 import subprocess
 import tempfile
@@ -37,57 +38,72 @@ def _ffmpeg_binario():
     return _ffmpeg_binario_cache
 
 
-def comprimir_video(file_obj, nome_original):
+@contextlib.contextmanager
+def preparar_video_para_upload(file_obj, nome_original):
     """
-    Recomprime um vídeo para no máximo 1280x720 antes do upload, já que
-    celulares costumam gravar em resolução bem maior do que o necessário
-    para conferir a aferição — e o Storage tem limite de tamanho por arquivo.
+    Grava o vídeo num arquivo temporário em disco e tenta recomprimir para
+    no máximo 1280x720 antes do upload — celular grava em resolução bem
+    maior do que o necessário pra conferir a aferição, e o Storage recusa
+    objeto acima do limite do projeto.
 
-    Se o ffmpeg falhar por qualquer motivo (binário ausente, vídeo
-    corrompido, codec não suportado) ou a compressão não render um arquivo
-    menor, devolve os bytes originais sem alteração.
+    Nunca carrega o vídeo inteiro num bytes do Python: a instância no
+    Render tem pouca RAM, e ler o arquivo inteiro (original + saída do
+    ffmpeg) em memória já derrubou o serviço por estourar o limite. Grava
+    e lê em disco, e o ffmpeg joga stdout/stderr fora (sem capturar em
+    memória).
 
-    Retorna (bytes, nome_arquivo, content_type_ou_None).
+    Context manager: entrega (caminho_arquivo, nome_arquivo,
+    content_type_ou_None) e apaga os arquivos temporários ao sair, com
+    sucesso ou não.
     """
-    dados_originais = file_obj.read()
     extensao_original = os.path.splitext(nome_original)[1].lower()
+    fd_entrada, caminho_entrada = tempfile.mkstemp(suffix=extensao_original or ".mp4")
+    os.close(fd_entrada)
+    fd_saida, caminho_saida = tempfile.mkstemp(suffix=".mp4")
+    os.close(fd_saida)
 
-    ffmpeg = _ffmpeg_binario()
-    if ffmpeg is None:
-        return dados_originais, nome_original, None
+    try:
+        file_obj.save(caminho_entrada)
 
-    with tempfile.NamedTemporaryFile(suffix=extensao_original or ".mp4") as entrada, \
-         tempfile.NamedTemporaryFile(suffix=".mp4") as saida:
-        entrada.write(dados_originais)
-        entrada.flush()
+        comprimiu = False
+        ffmpeg = _ffmpeg_binario()
 
-        try:
-            subprocess.run(
-                [
-                    ffmpeg, "-y",
-                    "-i", entrada.name,
-                    "-vf",
-                    f"scale='min({LARGURA_MAXIMA},iw)':'min({ALTURA_MAXIMA},ih)':"
-                    "force_original_aspect_ratio=decrease:force_divisible_by=2",
-                    "-c:v", "libx264",
-                    "-preset", "veryfast",
-                    "-crf", str(CRF),
-                    "-c:a", "aac",
-                    "-b:a", "128k",
-                    "-movflags", "+faststart",
-                    saida.name,
-                ],
-                check=True,
-                capture_output=True,
-                timeout=TIMEOUT_SEGUNDOS,
-            )
-            with open(saida.name, "rb") as f:
-                dados_comprimidos = f.read()
-        except Exception:
-            return dados_originais, nome_original, None
+        if ffmpeg is not None:
+            try:
+                subprocess.run(
+                    [
+                        ffmpeg, "-y",
+                        "-i", caminho_entrada,
+                        "-vf",
+                        f"scale='min({LARGURA_MAXIMA},iw)':'min({ALTURA_MAXIMA},ih)':"
+                        "force_original_aspect_ratio=decrease:force_divisible_by=2",
+                        "-c:v", "libx264",
+                        "-preset", "veryfast",
+                        "-crf", str(CRF),
+                        "-c:a", "aac",
+                        "-b:a", "128k",
+                        "-movflags", "+faststart",
+                        caminho_saida,
+                    ],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=TIMEOUT_SEGUNDOS,
+                )
+                comprimiu = (
+                    os.path.getsize(caminho_saida) > 0
+                    and os.path.getsize(caminho_saida) < os.path.getsize(caminho_entrada)
+                )
+            except Exception:
+                comprimiu = False
 
-    if not dados_comprimidos or len(dados_comprimidos) >= len(dados_originais):
-        return dados_originais, nome_original, None
-
-    nome_comprimido = os.path.splitext(nome_original)[0] + ".mp4"
-    return dados_comprimidos, nome_comprimido, "video/mp4"
+        if comprimiu:
+            yield caminho_saida, os.path.splitext(nome_original)[0] + ".mp4", "video/mp4"
+        else:
+            yield caminho_entrada, nome_original, None
+    finally:
+        for caminho in (caminho_entrada, caminho_saida):
+            try:
+                os.remove(caminho)
+            except OSError:
+                pass

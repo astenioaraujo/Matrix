@@ -584,18 +584,39 @@ sair de `mimetypes.guess_type` em vez do antigo `if extensao == ".png"`, que só
 cobria imagem.
 
 **Vídeos são recomprimidos no servidor antes do upload** (`services/video.py`,
-`comprimir_video`, 27/10/2026) — celular grava em resolução bem maior do que o
-necessário pra conferir a aferição, e o Storage recusa objeto acima do limite
-do projeto (`413 EntityTooLarge`). Reduz pra no máximo 1280×720
-(`scale=...force_original_aspect_ratio=decrease:force_divisible_by=2`, crf 28,
-h264/aac, timeout de 5 min); fotos não passam por isso. Usa o binário de
-ffmpeg **empacotado pelo pacote `imageio-ffmpeg`** (`requirements.txt`,
+`preparar_video_para_upload`, 27/10/2026) — celular grava em resolução bem
+maior do que o necessário pra conferir a aferição, e o Storage recusa objeto
+acima do limite do projeto (`413 EntityTooLarge`). Reduz pra no máximo
+1280×720 (`scale=...force_original_aspect_ratio=decrease:force_divisible_by=2`,
+crf 28, h264/aac, timeout de 5 min); fotos não passam por isso. Usa o binário
+de ffmpeg **empacotado pelo pacote `imageio-ffmpeg`** (`requirements.txt`,
 `imageio_ffmpeg.get_ffmpeg_exe()`) em vez de um ffmpeg do sistema operacional —
 o MATRX roda no Render como Web Service **nativo** (sem Dockerfile), que não dá
 acesso de root pra instalar pacote de sistema (`apt-get`) no build; o
-`imageio-ffmpeg` resolve isso só com `pip install`. Se o ffmpeg falhar por
-qualquer motivo (vídeo corrompido, timeout) ou a saída não ficar menor que o
-original, sobe o arquivo original sem alteração — preferível arriscar o 413 de
+`imageio-ffmpeg` resolve isso só com `pip install`.
+
+**Dois incidentes de produção no dia em que isso foi implementado, os dois no
+Render (Web Service nativo, instância pequena de RAM):**
+1. A primeira versão resolvia o binário do ffmpeg **na importação do módulo**
+   (`services/video.py` é importado por `operacoes_routes.py` no carregamento
+   das rotas) — uma falha nessa chamada derrubava o app inteiro (502). Corrigido
+   resolvendo sob demanda, com cache e `try/except` (`_ffmpeg_binario()`).
+2. A segunda versão lia o vídeo inteiro pra um `bytes` do Python antes de
+   comprimir, e a saída do ffmpeg inteira de volta pra outro `bytes` antes do
+   upload — um vídeo de poucos minutos já é suficiente pra estourar o limite de
+   memória da instância (aconteceu: "exceeded its memory limit", restart
+   automático). Corrigido: **nunca carrega o vídeo inteiro em memória** —
+   `preparar_video_para_upload` é um context manager que grava o upload direto
+   em disco (`FileStorage.save`), roda o ffmpeg jogando stdout/stderr fora (sem
+   `capture_output`), e devolve o **caminho** do arquivo final (comprimido ou
+   original), não os bytes. `services/supabase_storage.py` (`upload_arquivo`)
+   também passou a mandar `data=file_obj` pro `requests` (que transmite em
+   pedaços) em vez de `data=file_obj.read()` — vale pra todo upload do
+   projeto, não só vídeo de aferição.
+
+Se o ffmpeg falhar por qualquer motivo (vídeo corrompido, timeout) ou a saída
+não ficar menor que o original, sobe o arquivo original sem alteração —
+preferível arriscar o 413 de
 novo a perder a aferição. Testado ponta a ponta (local e com o binário do
 `imageio-ffmpeg`): vídeo 1920×1080 → objeto salvo no Storage saiu 1280×720.
 
