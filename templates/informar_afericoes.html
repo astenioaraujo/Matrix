@@ -285,11 +285,6 @@
           </div>
 
           <div class="campo">
-            <label for="numero_bico">Bico</label>
-            <input type="text" id="numero_bico" name="numero_bico" placeholder="Ex.: 1" required>
-          </div>
-
-          <div class="campo">
             <label for="data_afericao">Data</label>
             <input type="date" id="data_afericao" name="data_afericao" value="{{ hoje_iso }}" required>
           </div>
@@ -303,11 +298,6 @@
             <label for="diferenca_ml">Diferença (ml)</label>
             <input type="text" id="diferenca_ml" name="diferenca_ml" placeholder="Ex.: -80 ou 45" required>
             <div class="ajuda">20 litros no balde − o que o bico indicou. Negativo = bico marcou a menos.</div>
-          </div>
-
-          <div class="campo campo-largo">
-            <label for="observacao">Observação (opcional)</label>
-            <input type="text" id="observacao" name="observacao" placeholder="Opcional">
           </div>
 
           <div class="campo campo-largo">
@@ -358,35 +348,29 @@
     <table>
       <thead>
         <tr>
-          <th>Combustível</th>
-          <th>Bico</th>
           <th>Data</th>
           <th>Hora</th>
+          <th>Nº Ordem</th>
           <th class="valor">Diferença (ml)</th>
           <th>Status</th>
-          <th>Observação</th>
         </tr>
       </thead>
       <tbody>
-        {% for chave, lista in afericoes_existentes.items() %}
-          {% for a in lista %}
-            {% set normal = (a.diferenca_ml | float | abs) <= limite_diferenca %}
-            <tr>
-              <td>{{ chave[0] }}</td>
-              <td>{{ chave[1] }}</td>
-              <td>{{ a.data_afericao.strftime("%d/%m/%Y") if a.data_afericao else "" }}</td>
-              <td>{{ a.hora_afericao.strftime("%H:%M") if a.hora_afericao else "" }}</td>
-              <td class="valor">{{ a.diferenca_ml | br }}</td>
-              <td>
-                {% if normal %}
-                  <span class="badge badge-normal">Normal</span>
-                {% else %}
-                  <span class="badge badge-anormal">Fora do padrão</span>
-                {% endif %}
-              </td>
-              <td>{{ a.observacao or "" }}</td>
-            </tr>
-          {% endfor %}
+        {% for a in afericoes_existentes %}
+          {% set normal = (a.diferenca_ml | float | abs) <= limite_diferenca %}
+          <tr>
+            <td>{{ a.data_afericao.strftime("%d/%m/%Y") if a.data_afericao else "" }}</td>
+            <td>{{ a.hora_afericao.strftime("%H:%M") if a.hora_afericao else "" }}</td>
+            <td>{{ a.numero_ordem }}</td>
+            <td class="valor">{{ a.diferenca_ml | br }}</td>
+            <td>
+              {% if normal %}
+                <span class="badge badge-normal">Normal</span>
+              {% else %}
+                <span class="badge badge-anormal">Fora do padrão</span>
+              {% endif %}
+            </td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>

@@ -530,23 +530,28 @@ def _filiais_do_usuario(cur, cod_empresa, id_usuario, tipo_global):
     return cur.fetchall() or []
 
 
-def _limpar_afericoes_antigas(cur, cod_empresa, cod_filial, cod_produto, numero_bico, manter=2):
-    """Mantém só as `manter` aferições mais recentes do bico; devolve os
-    caminhos dos arquivos das que foram apagadas, para remover do Storage
-    depois do commit (o DELETE já leva junto as linhas de afericoes_arquivos,
-    por ON DELETE CASCADE)."""
+def _limpar_afericoes_antigas(cur, cod_empresa, cod_filial, manter_datas=2):
+    """Mantém só as aferições das `manter_datas` datas mais recentes da
+    filial (datas distintas, não quantidade de aferições — um dia pode ter
+    várias); devolve os caminhos dos arquivos das que foram apagadas, para
+    remover do Storage depois do commit (o DELETE já leva junto as linhas de
+    afericoes_arquivos, por ON DELETE CASCADE)."""
     cur.execute(
         """
         SELECT id_afericao
         FROM afericoes
         WHERE cod_empresa = %s
           AND cod_filial = %s
-          AND cod_produto = %s
-          AND numero_bico = %s
-        ORDER BY data_afericao DESC, hora_afericao DESC, criado_em DESC
-        OFFSET %s
+          AND data_afericao NOT IN (
+              SELECT data_afericao
+              FROM afericoes
+              WHERE cod_empresa = %s AND cod_filial = %s
+              GROUP BY data_afericao
+              ORDER BY data_afericao DESC
+              LIMIT %s
+          )
         """,
-        (cod_empresa, cod_filial, cod_produto, numero_bico, manter),
+        (cod_empresa, cod_filial, cod_empresa, cod_filial, manter_datas),
     )
     antigas = cur.fetchall() or []
 
@@ -615,7 +620,7 @@ def informar_afericoes():
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     produtos = []
-    afericoes_existentes = {}
+    afericoes_existentes = []
     filiais = []
     filial_sel = None
 
@@ -670,14 +675,12 @@ def informar_afericoes():
                 return redirect(url_for("operacoes.informar_afericoes"))
 
             cod_produto = (request.form.get("cod_produto") or "").strip()
-            numero_bico = (request.form.get("numero_bico") or "").strip()
             data_txt = (request.form.get("data_afericao") or "").strip()
             hora_txt = (request.form.get("hora_afericao") or "").strip()
-            observacao = (request.form.get("observacao") or "").strip() or None
             diferenca_txt = (request.form.get("diferenca_ml") or "0").strip()
 
-            if not cod_produto or not numero_bico or not data_txt or not hora_txt:
-                flash("Preencha combustível, bico, data e hora da aferição.", "error")
+            if not cod_produto or not data_txt or not hora_txt:
+                flash("Preencha combustível, data e hora da aferição.", "error")
                 return redirect(url_for("operacoes.informar_afericoes", cod_filial=cod_filial))
 
             try:
@@ -740,26 +743,34 @@ def informar_afericoes():
 
             cur.execute(
                 """
+                SELECT COALESCE(MAX(numero_ordem), 0) + 1 AS proximo
+                FROM afericoes
+                WHERE cod_empresa = %s AND cod_filial = %s AND data_afericao = %s
+                """,
+                (cod_empresa, cod_filial, data_afericao),
+            )
+            numero_ordem = cur.fetchone()["proximo"]
+
+            cur.execute(
+                """
                 INSERT INTO afericoes (
                     cod_empresa,
                     cod_filial,
                     cod_produto,
-                    numero_bico,
+                    numero_ordem,
                     data_afericao,
                     hora_afericao,
                     id_usuario,
                     diferenca_ml,
-                    observacao,
                     criado_em,
                     atualizado_em
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
                 RETURNING id_afericao
                 """,
                 (
-                    cod_empresa, cod_filial, cod_produto, numero_bico,
+                    cod_empresa, cod_filial, cod_produto, numero_ordem,
                     data_afericao, hora_afericao, id_usuario, diferenca_ml,
-                    observacao,
                 ),
             )
             id_afericao = cur.fetchone()["id_afericao"]
@@ -774,9 +785,7 @@ def informar_afericoes():
                     (id_afericao, tipo, nome_arquivo, tamanho_bytes, duracao_segundos),
                 )
 
-            arquivos_para_remover = _limpar_afericoes_antigas(
-                cur, cod_empresa, cod_filial, cod_produto, numero_bico
-            )
+            arquivos_para_remover = _limpar_afericoes_antigas(cur, cod_empresa, cod_filial)
 
             conn.commit()
 
@@ -794,29 +803,18 @@ def informar_afericoes():
             cur.execute(
                 """
                 SELECT
-                    a.cod_produto,
-                    c.descricao AS descricao_produto,
-                    a.numero_bico,
+                    a.numero_ordem,
                     a.data_afericao,
                     a.hora_afericao,
-                    a.diferenca_ml,
-                    a.observacao,
-                    u.nome AS nome_usuario
+                    a.diferenca_ml
                 FROM afericoes a
-                LEFT JOIN combustiveis c
-                  ON c.cod_empresa = a.cod_empresa AND c.cod_produto = a.cod_produto
-                LEFT JOIN usuarios u ON u.id_usuario = a.id_usuario
                 WHERE a.cod_empresa = %s
                   AND a.cod_filial = %s
-                ORDER BY a.cod_produto, a.numero_bico, a.data_afericao DESC, a.hora_afericao DESC
+                ORDER BY a.data_afericao DESC, a.numero_ordem DESC
                 """,
                 (cod_empresa, filial_sel),
             )
-            rows = cur.fetchall() or []
-
-            for r in rows:
-                chave = (str(r["descricao_produto"] or r["cod_produto"]).strip(), str(r["numero_bico"]).strip())
-                afericoes_existentes.setdefault(chave, []).append(r)
+            afericoes_existentes = cur.fetchall() or []
 
     except Exception as e:
         conn.rollback()
@@ -895,11 +893,10 @@ def consultar_afericoes():
                 f.nome_filial,
                 a.cod_produto,
                 c.descricao AS descricao_produto,
-                a.numero_bico,
+                a.numero_ordem,
                 a.data_afericao,
                 a.hora_afericao,
                 a.diferenca_ml,
-                a.observacao,
                 u.nome AS nome_usuario
             FROM afericoes a
             LEFT JOIN filiais f
@@ -910,7 +907,7 @@ def consultar_afericoes():
               ON u.id_usuario = a.id_usuario
             WHERE a.cod_empresa = %s
               AND a.cod_filial = ANY(%s)
-            ORDER BY a.cod_filial, a.cod_produto, a.numero_bico, a.data_afericao DESC, a.hora_afericao DESC
+            ORDER BY a.cod_filial, a.data_afericao DESC, a.numero_ordem DESC
             """,
             (cod_empresa, filiais_consulta),
         )

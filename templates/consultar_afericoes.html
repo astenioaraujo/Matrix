@@ -263,14 +263,13 @@
           <table>
             <thead>
               <tr>
-                <th>Combustível</th>
-                <th>Bico</th>
                 <th>Data</th>
                 <th>Hora</th>
+                <th>Nº Ordem</th>
                 <th class="valor">Diferença (ml)</th>
                 <th>Status</th>
+                <th>Combustível</th>
                 <th>Usuário</th>
-                <th>Observação</th>
                 <th>Arquivos</th>
               </tr>
             </thead>
@@ -280,10 +279,9 @@
     {% endif %}
 
     <tr>
-      <td>{{ l.descricao_produto or l.cod_produto }}</td>
-      <td>{{ l.numero_bico }}</td>
       <td>{{ l.data_afericao.strftime("%d/%m/%Y") if l.data_afericao else "" }}</td>
       <td>{{ l.hora_afericao.strftime("%H:%M") if l.hora_afericao else "" }}</td>
+      <td>{{ l.numero_ordem }}</td>
       <td class="valor">{{ l.diferenca_ml | br }}</td>
       <td>
         {% if l.normal %}
@@ -292,8 +290,8 @@
           <span class="badge badge-anormal">Fora do padrão</span>
         {% endif %}
       </td>
+      <td>{{ l.descricao_produto or l.cod_produto }}</td>
       <td>{{ l.nome_usuario or "" }}</td>
-      <td>{{ l.observacao or "" }}</td>
       <td class="celula-arquivos">
         {% for arq in l.arquivos %}
           <div class="item-arquivo">
