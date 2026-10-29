@@ -540,13 +540,21 @@ O posto escoa 20 litros num balde e compara com o que o bico indicou (tolerânci
 combinada: ±100 ml), filmando o teste. `templates/informar_afericoes.html`
 (`GET/POST /operacoes/afericoes/informar`) grava em `afericoes`
 (`migrations/criar_tabela_afericoes.sql`, RLS habilitado): filial, combustível
-(mesmo cadastro de `combustiveis`/`capacidade_tanques` de Medições), **bico**
-(`numero_bico`, texto livre — não existe cadastro de bicos/bombas no sistema,
-decisão para não criar uma tela a mais sem pedido do cliente; uma bomba pode
-ter um bico de cada combustível, não é padronizado), data, hora, diferença em
-ml (pode ser negativa) e observação opcional. `normal`/"fora do padrão" **não é
+(mesmo cadastro de `combustiveis`/`capacidade_tanques` de Medições), data, hora
+e diferença em ml (pode ser negativa). `normal`/"fora do padrão" **não é
 coluna** — calculado na consulta (`abs(diferenca_ml) <= 100`), convenção do
 projeto de nunca persistir o que é derivado.
+
+**Sem o conceito de bico** (`migrations/remover_bico_adicionar_numero_ordem_
+afericoes.sql`, 29/10/2026) — a primeira versão tinha `numero_bico` (texto
+livre, já que não existe cadastro de bicos/bombas) e `observacao`; o cliente
+pediu pra tirar os dois. No lugar do bico, **`numero_ordem`**: um contador
+sequencial que reinicia a cada dia, por `(cod_empresa, cod_filial)` — **não**
+por combustível, é um número único do dia independente do produto aferido.
+Calculado no INSERT (`SELECT COALESCE(MAX(numero_ordem), 0) + 1 ... WHERE
+cod_empresa = %s AND cod_filial = %s AND data_afericao = %s`, mesma transação
+do insert — sem trava explícita; aceitável pro volume de uso, não é um
+sistema de alta concorrência).
 
 **Cada linha é um evento, não um estado por dia** — ao contrário de Medições,
 não há upsert por (filial, produto, bico, data): o mesmo bico pode ser aferido
@@ -565,15 +573,18 @@ migrar). Cada arquivo enviado é classificado em `tipo` (`'video'` ou
 webm, avi, mkv, 3gp; imagem: jpg, jpeg, png, webp, heic, heif — rejeitando o
 POST inteiro se algum arquivo não bater com nenhuma das duas listas.
 
-**Retenção: só as 2 aferições mais recentes de cada bico.** A cada novo envio,
-`_limpar_afericoes_antigas` mantém as 2 linhas mais novas de
-`(cod_empresa, cod_filial, cod_produto, numero_bico)` e apaga o resto — a
-linha em `afericoes` (o `DELETE` já leva as linhas de `afericoes_arquivos`
+**Retenção: só as 2 datas mais recentes de cada filial** (era por bico até
+29/10/2026, virou por data junto com a remoção do bico). A cada novo envio,
+`_limpar_afericoes_antigas` olha as datas distintas de
+`(cod_empresa, cod_filial)`, mantém as linhas das 2 mais recentes e apaga o
+resto (todas as aferições das datas mais antigas, sem olhar produto/ordem) —
+a linha em `afericoes` (o `DELETE` já leva as linhas de `afericoes_arquivos`
 junto, por `ON DELETE CASCADE`) e, **depois do commit** (para não apagar
 arquivo de uma gravação que acabou sendo revertida), cada arquivo apagado no
 Storage. A tela de Informar mostra, abaixo do formulário, as aferições já
-guardadas daquela filial, para o usuário ver o que vai ser substituído antes
-de subir a próxima.
+guardadas daquela filial (lista única, ordenada por data/número de ordem —
+não tem mais agrupamento por bico), para o usuário ver o que vai ser
+substituído antes de subir a próxima.
 
 **Vídeo/imagem no Supabase Storage**, bucket próprio `afericoes` (público,
 mesmo padrão do bucket `certificados`). `services/supabase_storage.py` deixou
