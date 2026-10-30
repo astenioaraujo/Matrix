@@ -702,11 +702,18 @@ nenhum botão nessa célula.
 
 **Filtro de Mês/Ano** (30/10/2026) — como as aferições agora ficam guardadas
 pra sempre (só o arquivo é apagado), o volume na Consulta deixou de ser
-pequeno e previsível; junto do filtro de filial já existente, `ano` (padrão:
-ano atual) e `mes` (opcional, vazio = todos os meses do ano) com as mesmas
-setas `← →` de navegação do Matricial (`mudarMes`/`mudarAno`, mesmo JS
-copiado de `templates/resultado_mb.html`) — `mes` muda o mês e vira o ano
-na virada de dezembro/janeiro, `ano` só soma/subtrai 1.
+pequeno e previsível; junto do filtro de filial já existente, `ano` e `mes`
+(opcional, vazio = todos os meses do ano) com as mesmas setas `← →` de
+navegação do Matricial (`mudarMes`/`mudarAno`, mesmo JS copiado de
+`templates/resultado_mb.html`) — `mes` muda o mês e vira o ano na virada de
+dezembro/janeiro, `ano` só soma/subtrai 1. **Entrada na tela sem nenhum
+filtro na URL** (não tem `ano` no `request.args` — primeiro acesso, ou
+clicou em "Limpar") sugere o **último mês com aferição registrada**
+(`SELECT data_afericao ... ORDER BY data_afericao DESC LIMIT 1`, pelas
+filiais que o usuário pode consultar), não o mês atual nem "todos" — sem
+dado nenhum, cai no mês/ano atuais. Qualquer filtro explícito (o `<form>`
+sempre envia `ano`) é respeitado à risca, inclusive mês em branco pra ver
+o ano inteiro.
 
 ---
 

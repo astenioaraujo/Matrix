@@ -898,12 +898,35 @@ def consultar_afericoes():
         # As aferições ficam guardadas pra sempre (só os arquivos antigos são
         # apagados) — mês/ano filtram o volume, igual ao Matricial (setas
         # ← → andam um mês/ano; mês vazio = todos os meses do ano escolhido).
-        ano_txt = (request.args.get("ano") or "").strip()
-        if ano_txt.isdigit():
-            ano_sel = int(ano_txt)
+        if "ano" in request.args:
+            # Formulário foi submetido (o input de ano é sempre enviado) —
+            # respeita exatamente o que o usuário pediu, inclusive mês vazio
+            # (= todos os meses daquele ano).
+            ano_txt = (request.args.get("ano") or "").strip()
+            if ano_txt.isdigit():
+                ano_sel = int(ano_txt)
 
-        mes_txt = (request.args.get("mes") or "").strip()
-        mes_sel = int(mes_txt) if mes_txt.isdigit() and 1 <= int(mes_txt) <= 12 else None
+            mes_txt = (request.args.get("mes") or "").strip()
+            mes_sel = int(mes_txt) if mes_txt.isdigit() and 1 <= int(mes_txt) <= 12 else None
+        else:
+            # Primeira entrada na tela (sem filtro nenhum ainda): sugere o
+            # último mês com aferição registrada, não "todos" — o histórico
+            # não é mais apagado, então "todos" aqui costuma vir vazio de
+            # propósito (mês sem nenhum envio) em vez de útil.
+            cur.execute(
+                """
+                SELECT data_afericao
+                FROM afericoes
+                WHERE cod_empresa = %s AND cod_filial = ANY(%s)
+                ORDER BY data_afericao DESC
+                LIMIT 1
+                """,
+                (cod_empresa, filiais_consulta),
+            )
+            ultima = cur.fetchone()
+            if ultima:
+                ano_sel = ultima["data_afericao"].year
+                mes_sel = ultima["data_afericao"].month
 
         filtro_mes_sql = "AND EXTRACT(MONTH FROM a.data_afericao) = %s" if mes_sel else ""
         parametros = [cod_empresa, filiais_consulta, ano_sel]
