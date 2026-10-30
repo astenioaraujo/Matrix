@@ -3226,6 +3226,95 @@ def excluir_descarrego_combustivel(id_descarrego):
 
     return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
 
+
+DIAS_SEMANA_BR = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira",
+                  "Sexta-feira", "Sábado", "Domingo"]
+
+
+@operacoes_bp.route("/api/compras/<int:id_compra>/descarregos", methods=["GET"])
+@permissao_obrigatoria(
+    "OPERACOES",
+    "INFORMAR_MEDICOES",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def api_descarregos_da_compra(id_compra):
+    """Os descarregos de uma compra — a janela da coluna Descarregos em
+    Informar Compras. A data do descarrego costuma ser outra que a da compra
+    (e o lançamento, outra ainda), e sem isso não havia como achá-lo."""
+    cod_empresa = str(session.get("cod_empresa") or "").strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT cc.id_compra, cc.quantidade_comprada
+            FROM compras_combustiveis cc
+            WHERE cc.id_compra = %s
+              AND cc.cod_empresa = %s
+        """, (id_compra, cod_empresa))
+        compra = cur.fetchone()
+
+        if not compra:
+            return {"ok": False, "erro": "Compra não encontrada."}, 404
+
+        cur.execute("""
+            SELECT
+                d.id_descarrego,
+                d.data_descarrego,
+                d.cod_filial_descarga,
+                f.nome_filial,
+                d.id_coligada,
+                COALESCE(cg.nome_fantasia, cg.nome) AS nome_coligada,
+                d.quantidade_descarregada,
+                d.criado_em
+            FROM descarregos_combustiveis d
+            LEFT JOIN filiais f
+              ON f.cod_empresa = d.cod_empresa
+             AND f.cod_filial = d.cod_filial_descarga
+            LEFT JOIN operacoes_coligadas cg
+              ON cg.id_coligada = d.id_coligada
+            WHERE d.id_compra = %s
+              AND d.cod_empresa = %s
+            ORDER BY d.data_descarrego, d.id_descarrego
+        """, (id_compra, cod_empresa))
+        linhas = cur.fetchall() or []
+    finally:
+        cur.close()
+        conn.close()
+
+    descarregos = []
+    for d in linhas:
+        if d["id_coligada"]:
+            ponta = f"Coligada: {d['nome_coligada']}"
+        else:
+            ponta = f"{d['cod_filial_descarga']} - {d['nome_filial'] or ''}".strip()
+
+        # criado_em vem do NOW() do banco, que roda em UTC
+        lancado = None
+        if d["criado_em"]:
+            lancado = (
+                d["criado_em"].replace(tzinfo=ZoneInfo("UTC"))
+                .astimezone(ZoneInfo("America/Sao_Paulo"))
+                .strftime("%d/%m/%Y %H:%M")
+            )
+
+        descarregos.append({
+            "id_descarrego": d["id_descarrego"],
+            "data_iso": d["data_descarrego"].isoformat(),
+            "data": d["data_descarrego"].strftime("%d/%m/%Y"),
+            "dia_semana": DIAS_SEMANA_BR[d["data_descarrego"].weekday()],
+            "ponta": ponta,
+            "quantidade": float(d["quantidade_descarregada"] or 0),
+            "lancado_em": lancado,
+        })
+
+    return {
+        "ok": True,
+        "id_compra": compra["id_compra"],
+        "quantidade_comprada": float(compra["quantidade_comprada"] or 0),
+        "descarregos": descarregos,
+    }
+
 # ---------------------------------------
 # CONSULTAR ESTOQUES
 # ---------------------------------------

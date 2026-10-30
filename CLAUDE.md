@@ -461,6 +461,8 @@ Um posto pode ter **mais de um pedido do mesmo produto no mesmo dia** (caminhõe
 
 **Status da compra = saldo** (30/10/2026): `ABERTA` enquanto `quantidade_comprada − Σ descarregos > 0`, senão `FECHADA`. Toda gravação que mexe nisso (novo descarrego, exclusão de descarrego, edição da compra) chama `recalcular_status_compra` — a exclusão reabria a compra sem olhar o saldo, e excluir um descarrego repetido deixava "Aberta" uma compra toda descarregada (compra 2858 da EMP012). O descarrego trava a compra (`FOR UPDATE`) e recusa quantidade acima do saldo no servidor; antes um clique duplo gravava duas vezes. Corrigidas só as 3 da EMP012 (`migrations/fechar_compras_descarregadas_emp012.sql`); a EMP010 tem 36 compras na mesma situação, deixadas de propósito — o efeito é só o rótulo, já que o saldo zero não entra no trânsito nem na lista de descarrego. A tela de descarregos não renderizava flash: todo erro dela era calado.
 
+**Descarregos da compra**: na coluna Descarregos de Informar Compras o número é link e abre uma janela com os descarregos daquela compra — data (com dia da semana, link para a Consulta de Descarregos do dia), ponta, quantidade e quando foi lançado (`GET /operacoes/api/compras/<id>/descarregos`). A data do descarrego costuma ser outra que a da compra, e o lançamento outra ainda (`criado_em` é UTC, convertido na resposta) — sem a janela não havia como achá-lo.
+
 ## Coligadas
 
 Empresas do grupo econômico da família que **não são do grupo** a ponto de
