@@ -54,6 +54,44 @@ def parse_valor_br(valor_txt):
     except ValueError:
         return 0.0
 
+def recalcular_status_compra(cur, cod_empresa, id_compra):
+    """O status da compra é o saldo dela: FECHADA quando tudo foi descarregado.
+
+    Toda gravação que mexe na quantidade comprada ou nos descarregos passa por
+    aqui. A exclusão de descarrego reabria a compra sem olhar o saldo — excluir
+    um descarrego repetido deixava "Aberta" uma compra já toda descarregada,
+    que nem aparecia mais para descarregar.
+    """
+    cur.execute("""
+        SELECT
+            CASE
+                WHEN cc.quantidade_comprada - COALESCE((
+                    SELECT SUM(d.quantidade_descarregada)
+                    FROM descarregos_combustiveis d
+                    WHERE d.cod_empresa = cc.cod_empresa
+                      AND d.id_compra = cc.id_compra
+                ), 0) > 0 THEN 'ABERTA'
+                ELSE 'FECHADA'
+            END AS status
+        FROM compras_combustiveis cc
+        WHERE cc.id_compra = %s
+          AND cc.cod_empresa = %s
+    """, (id_compra, cod_empresa))
+
+    row = cur.fetchone()
+
+    if not row:
+        return
+
+    cur.execute("""
+        UPDATE compras_combustiveis
+        SET status = %s,
+            atualizado_em = NOW()
+        WHERE id_compra = %s
+          AND cod_empresa = %s
+          AND status IS DISTINCT FROM %s
+    """, (row["status"], id_compra, cod_empresa, row["status"]))
+
 def formatar_numero_br(valor):
     try:
         return f"{float(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -1859,6 +1897,9 @@ def informar_compras_combustiveis():
                     cod_empresa
                 ))
 
+                # a quantidade pode ter mudado: fecha ou reabre pelo saldo
+                recalcular_status_compra(cur, cod_empresa, id_compra)
+
             else:
                 # Pode haver mais de um pedido do mesmo produto para a mesma
                 # ponta no mesmo dia (caminhões e preços diferentes) — cada um
@@ -2622,7 +2663,9 @@ def informar_descarregos_combustiveis():
                 flash("Filial de descarga não permitida.", "error")
                 return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
 
-            # Buscar dados da compra
+            # Buscar dados da compra. O FOR UPDATE segura a compra até o commit:
+            # dois envios simultâneos (clique duplo, duas abas) liam o mesmo
+            # saldo e gravavam o descarrego duas vezes.
             cur.execute("""
                 SELECT
                     id_compra,
@@ -2631,12 +2674,36 @@ def informar_descarregos_combustiveis():
                 FROM compras_combustiveis
                 WHERE id_compra = %s
                   AND cod_empresa = %s
+                FOR UPDATE
             """, (id_compra, cod_empresa))
 
             compra = cur.fetchone()
 
             if not compra:
                 flash("Compra não encontrada.", "error")
+                return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
+
+            cur.execute("""
+                SELECT COALESCE(SUM(quantidade_descarregada), 0) AS total_descarregado
+                FROM descarregos_combustiveis
+                WHERE id_compra = %s
+                  AND cod_empresa = %s
+            """, (id_compra, cod_empresa))
+
+            saldo_compra = float(compra["quantidade_comprada"] or 0) - float(
+                cur.fetchone()["total_descarregado"] or 0
+            )
+
+            if round(quantidade_descarregada, 2) > round(saldo_compra, 2):
+                conn.rollback()
+                if saldo_compra <= 0:
+                    flash(f"A compra {id_compra} já foi toda descarregada.", "error")
+                else:
+                    flash(
+                        f"Quantidade maior que o saldo a descarregar da compra {id_compra} "
+                        f"({formatar_numero_br(saldo_compra)} L).",
+                        "error",
+                    )
                 return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
 
             cod_produto = str(compra["cod_produto"]).strip()
@@ -2669,33 +2736,7 @@ def informar_descarregos_combustiveis():
             novo = cur.fetchone()
             id_descarrego_gerado = novo["id_descarrego"]
 
-            # Recalcular saldo da compra
-            cur.execute("""
-                SELECT
-                    cc.quantidade_comprada,
-                    COALESCE(SUM(d.quantidade_descarregada), 0) AS total_descarregado
-                FROM compras_combustiveis cc
-                LEFT JOIN descarregos_combustiveis d
-                  ON d.id_compra = cc.id_compra
-                 AND d.cod_empresa = cc.cod_empresa
-                WHERE cc.id_compra = %s
-                  AND cc.cod_empresa = %s
-                GROUP BY cc.quantidade_comprada
-            """, (id_compra, cod_empresa))
-
-            row = cur.fetchone()
-
-            if row:
-                saldo_final = float(row["quantidade_comprada"] or 0) - float(row["total_descarregado"] or 0)
-
-                if saldo_final <= 0:
-                    cur.execute("""
-                        UPDATE compras_combustiveis
-                        SET status = 'FECHADA',
-                            atualizado_em = NOW()
-                        WHERE id_compra = %s
-                          AND cod_empresa = %s
-                    """, (id_compra, cod_empresa))
+            recalcular_status_compra(cur, cod_empresa, id_compra)
 
             conn.commit()
 
@@ -3170,16 +3211,10 @@ def excluir_descarrego_combustivel(id_descarrego):
               AND cod_empresa = %s
         """, (id_descarrego, cod_empresa))
 
-        cur.execute("""
-            UPDATE compras_combustiveis
-            SET status = 'ABERTA',
-                atualizado_em = NOW()
-            WHERE id_compra = %s
-              AND cod_empresa = %s
-        """, (id_compra, cod_empresa))
+        recalcular_status_compra(cur, cod_empresa, id_compra)
 
         conn.commit()
-        flash("Descarrego excluído e compra reaberta com sucesso.", "success")
+        flash("Descarrego excluído com sucesso.", "success")
 
     except Exception as e:
         conn.rollback()
