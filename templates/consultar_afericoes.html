@@ -333,7 +333,7 @@
     <tr>
       <td>{{ l.data_afericao.strftime("%d/%m/%Y") if l.data_afericao else "" }}</td>
       <td>{{ l.hora_afericao.strftime("%H:%M") if l.hora_afericao else "" }}</td>
-      <td>{{ l.numero_bomba }}</td>
+      <td>{{ l.numero_bomba if l.numero_bomba is not none else "" }}</td>
       <td>{{ l.numero_bico }}</td>
       <td>{{ l.modo | capitalize }}</td>
       <td class="valor">{{ l.diferenca_ml | br }}</td>

@@ -286,7 +286,7 @@
 
           <div class="campo">
             <label for="numero_bomba">Bomba</label>
-            <input type="text" id="numero_bomba" name="numero_bomba" placeholder="Ex.: 1" required>
+            <input type="number" id="numero_bomba" name="numero_bomba" placeholder="Ex.: 1" min="1" step="1" required>
           </div>
 
           <div class="campo">
@@ -382,7 +382,7 @@
           <tr>
             <td>{{ a.data_afericao.strftime("%d/%m/%Y") if a.data_afericao else "" }}</td>
             <td>{{ a.hora_afericao.strftime("%H:%M") if a.hora_afericao else "" }}</td>
-            <td>{{ a.numero_bomba }}</td>
+            <td>{{ a.numero_bomba if a.numero_bomba is not none else "" }}</td>
             <td>{{ a.numero_bico }}</td>
             <td>{{ a.modo | capitalize }}</td>
             <td class="valor">{{ a.diferenca_ml | br }}</td>

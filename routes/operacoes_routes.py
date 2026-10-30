@@ -678,16 +678,25 @@ def informar_afericoes():
                 return redirect(url_for("operacoes.informar_afericoes"))
 
             cod_produto = (request.form.get("cod_produto") or "").strip()
-            numero_bomba = (request.form.get("numero_bomba") or "").strip()
+            numero_bomba_txt = (request.form.get("numero_bomba") or "").strip()
             numero_bico = (request.form.get("numero_bico") or "").strip()
             modo = (request.form.get("modo") or "").strip()
             data_txt = (request.form.get("data_afericao") or "").strip()
             hora_txt = (request.form.get("hora_afericao") or "").strip()
             diferenca_txt = (request.form.get("diferenca_ml") or "0").strip()
 
-            if not cod_produto or not numero_bomba or not numero_bico or modo not in MODOS_AFERICAO or not data_txt or not hora_txt:
+            if (
+                not cod_produto
+                or not numero_bomba_txt.isdigit()
+                or not numero_bico
+                or modo not in MODOS_AFERICAO
+                or not data_txt
+                or not hora_txt
+            ):
                 flash("Preencha combustível, bomba, bico, modo, data e hora da aferição.", "error")
                 return redirect(url_for("operacoes.informar_afericoes", cod_filial=cod_filial))
+
+            numero_bomba = int(numero_bomba_txt)
 
             try:
                 data_afericao = date.fromisoformat(data_txt)

@@ -560,12 +560,16 @@ projeto de nunca persistir o que é derivado.
    gravado — ficaram com `numero_bico = ''`, usuário corrige na mão se
    precisar.
 
-**Campo `numero_bomba`** (`migrations/adicionar_numero_bomba_afericoes.sql`,
-30/10/2026) — cada bomba tem vários bicos (bomba 1/bico 1, bomba 1/bico 2,
-bomba 2/bico 1...), e só o bico era registrado; texto livre, digitado no
-formulário, mesma convenção do bico (sem cadastro de bombas/bicos no
-sistema). Aparece antes do Bico em Informar e Consultar. Registros feitos
-antes dessa migration ficaram com `numero_bomba = ''`.
+**Campo `numero_bomba`** (`migrations/adicionar_numero_bomba_afericoes.sql`
++ `migrations/numero_bomba_virar_inteiro_afericoes.sql`, 30/10/2026) — cada
+bomba tem vários bicos (bomba 1/bico 1, bomba 1/bico 2, bomba 2/bico 1...),
+e só o bico era registrado. Ao contrário do bico (texto livre, sem cadastro
+de bicos/bombas), a bomba **é numérica** — `integer`, `<input type="number">`
+no formulário. Coluna é nullable (não `NOT NULL` como o resto): os poucos
+registros feitos na janela em que o campo ainda era texto livre não tinham
+como converter pra número e ficaram com `numero_bomba = NULL` — os
+templates tratam isso (`if ... is not none else ""`) pra não imprimir
+"None" na tela. Aparece antes do Bico em Informar e Consultar.
 
 **Campo `modo`** (`migrations/adicionar_modo_afericoes.sql`, 29/10/2026): como
 os 20 litros foram aplicados no teste — `'alta'`/`'baixa'` (vazão) ou
