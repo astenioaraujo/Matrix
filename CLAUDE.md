@@ -545,23 +545,27 @@ e diferença em ml (pode ser negativa). `normal`/"fora do padrão" **não é
 coluna** — calculado na consulta (`abs(diferenca_ml) <= 100`), convenção do
 projeto de nunca persistir o que é derivado.
 
-**Sem o conceito de bico** (`migrations/remover_bico_adicionar_numero_ordem_
-afericoes.sql`, 29/10/2026) — a primeira versão tinha `numero_bico` (texto
-livre, já que não existe cadastro de bicos/bombas) e `observacao`; o cliente
-pediu pra tirar os dois. No lugar do bico, **`numero_ordem`**: um contador
-sequencial que reinicia a cada dia, por `(cod_empresa, cod_filial)` — **não**
-por combustível, é um número único do dia independente do produto aferido.
-Calculado no INSERT (`SELECT COALESCE(MAX(numero_ordem), 0) + 1 ... WHERE
-cod_empresa = %s AND cod_filial = %s AND data_afericao = %s`, mesma transação
-do insert — sem trava explícita; aceitável pro volume de uso, não é um
-sistema de alta concorrência).
+**Bico voltou** (`migrations/voltar_bico_remover_numero_ordem_afericoes.sql`,
+30/10/2026) — passou por três formatos no mesmo fim de semana:
+1. Original: `numero_bico` (texto livre, já que não existe cadastro de
+   bicos/bombas) e `observacao`.
+2. 29/10/2026 (`migrations/remover_bico_adicionar_numero_ordem_afericoes.sql`):
+   cliente pediu pra tirar os dois; no lugar do bico, `numero_ordem` (contador
+   sequencial que reiniciava a cada dia, por `(cod_empresa, cod_filial)`,
+   calculado no INSERT).
+3. 30/10/2026: cliente testou e decidiu voltar ao bico — `numero_bico`
+   (texto livre, **digitado no formulário**, igual ao original) substitui de
+   novo o `numero_ordem`, que foi removido. `observacao` **não voltou**.
+   Os registros feitos na janela 2 (só com `numero_ordem`) não têm bico
+   gravado — ficaram com `numero_bico = ''`, usuário corrige na mão se
+   precisar.
 
 **Campo `modo`** (`migrations/adicionar_modo_afericoes.sql`, 29/10/2026): como
 os 20 litros foram aplicados no teste — `'alta'`/`'baixa'` (vazão) ou
 `'digitado'` (não escoou de verdade, valor digitado, velocidade normal).
 `<select>` fixo de 3 opções (`MODOS_AFERICAO_OPCOES` em `operacoes_routes.py`,
 mesma lista valida o POST e preenche o `<select>` do template — evita os dois
-ficarem fora de sincronia). Aparece em Informar (coluna entre Nº Ordem e
+ficarem fora de sincronia). Aparece em Informar (coluna entre Bico e
 Diferença) e em Consultar, mesma posição.
 
 **Cada linha é um evento, não um estado por dia** — ao contrário de Medições,
@@ -581,18 +585,21 @@ migrar). Cada arquivo enviado é classificado em `tipo` (`'video'` ou
 webm, avi, mkv, 3gp; imagem: jpg, jpeg, png, webp, heic, heif — rejeitando o
 POST inteiro se algum arquivo não bater com nenhuma das duas listas.
 
-**Retenção: só as 2 datas mais recentes de cada filial** (era por bico até
-29/10/2026, virou por data junto com a remoção do bico). A cada novo envio,
-`_limpar_afericoes_antigas` olha as datas distintas de
-`(cod_empresa, cod_filial)`, mantém as linhas das 2 mais recentes e apaga o
-resto (todas as aferições das datas mais antigas, sem olhar produto/ordem) —
-a linha em `afericoes` (o `DELETE` já leva as linhas de `afericoes_arquivos`
-junto, por `ON DELETE CASCADE`) e, **depois do commit** (para não apagar
-arquivo de uma gravação que acabou sendo revertida), cada arquivo apagado no
-Storage. A tela de Informar mostra, abaixo do formulário, as aferições já
-guardadas daquela filial (lista única, ordenada por data/número de ordem —
-não tem mais agrupamento por bico), para o usuário ver o que vai ser
-substituído antes de subir a próxima.
+**Retenção mudou de "apagar a aferição" pra "apagar só o arquivo"**
+(30/10/2026) — o registro da aferição (linha em `afericoes`) agora **fica
+guardado pra sempre**; só os vídeos/fotos das datas mais antigas são
+apagados, pra não acumular armazenamento no Storage indefinidamente. A cada
+novo envio, `_apagar_arquivos_afericoes_antigas` olha as datas distintas de
+`(cod_empresa, cod_filial)`, mantém os arquivos das 2 datas mais recentes e,
+do resto, apaga as linhas de `afericoes_arquivos` (não mais a linha de
+`afericoes`) e, **depois do commit** (para não apagar arquivo de uma
+gravação que acabou sendo revertida), cada arquivo no Storage. A aferição
+continua existindo e aparecendo na Consulta, só sem botão de arquivo.
+
+A tela de Informar mostra, abaixo do formulário, só as aferições das 2
+datas mais recentes daquela filial (filtro explícito na query, já que a
+linha não é mais apagada) — resumo rápido pra ver o que já foi feito antes
+de subir a próxima.
 
 **Vídeo/imagem no Supabase Storage**, bucket próprio `afericoes` (público,
 mesmo padrão do bucket `certificados`). `services/supabase_storage.py` deixou
@@ -689,9 +696,17 @@ quem tem acesso a várias filiais consulta e assiste os arquivos de todas elas,
 num modal que alterna entre `<video controls>` e `<img>` conforme o tipo
 clicado (não existia player de vídeo no sistema até aqui). A célula
 "Arquivos" lista um botão por arquivo da aferição (▶ Vídeo / 🖼 Foto), com o
-tamanho (MB) e, pra vídeo, a duração (segundos) logo abaixo do botão. Sem
-filtro de data: o volume por posto já é pequeno (2 aferições × bicos ativos),
-diferente de Medições, que é diária.
+tamanho (MB) e, pra vídeo, a duração (segundos) logo abaixo do botão; linhas
+de aferições antigas (arquivo já apagado pela retenção) simplesmente não têm
+nenhum botão nessa célula.
+
+**Filtro de Mês/Ano** (30/10/2026) — como as aferições agora ficam guardadas
+pra sempre (só o arquivo é apagado), o volume na Consulta deixou de ser
+pequeno e previsível; junto do filtro de filial já existente, `ano` (padrão:
+ano atual) e `mes` (opcional, vazio = todos os meses do ano) com as mesmas
+setas `← →` de navegação do Matricial (`mudarMes`/`mudarAno`, mesmo JS
+copiado de `templates/resultado_mb.html`) — `mes` muda o mês e vira o ano
+na virada de dezembro/janeiro, `ano` só soma/subtrai 1.
 
 ---
 

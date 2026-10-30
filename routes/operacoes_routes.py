@@ -532,12 +532,13 @@ def _filiais_do_usuario(cur, cod_empresa, id_usuario, tipo_global):
     return cur.fetchall() or []
 
 
-def _limpar_afericoes_antigas(cur, cod_empresa, cod_filial, manter_datas=2):
-    """Mantém só as aferições das `manter_datas` datas mais recentes da
-    filial (datas distintas, não quantidade de aferições — um dia pode ter
-    várias); devolve os caminhos dos arquivos das que foram apagadas, para
-    remover do Storage depois do commit (o DELETE já leva junto as linhas de
-    afericoes_arquivos, por ON DELETE CASCADE)."""
+def _apagar_arquivos_afericoes_antigas(cur, cod_empresa, cod_filial, manter_datas=2):
+    """A aferição em si fica guardada pra sempre — só os vídeos/fotos das
+    aferições fora das `manter_datas` datas mais recentes da filial (datas
+    distintas, não quantidade de aferições) são apagados e desvinculados
+    (linha de afericoes_arquivos removida); o registro continua existindo,
+    só sem arquivo, pra aparecer na Consulta. Devolve os caminhos apagados,
+    pra remover do Storage depois do commit."""
     cur.execute(
         """
         SELECT id_afericao
@@ -568,7 +569,7 @@ def _limpar_afericoes_antigas(cur, cod_empresa, cod_filial, manter_datas=2):
     )
     arquivos = [a["arquivo"] for a in cur.fetchall() or []]
 
-    cur.execute("DELETE FROM afericoes WHERE id_afericao = ANY(%s)", (ids_antigos,))
+    cur.execute("DELETE FROM afericoes_arquivos WHERE id_afericao = ANY(%s)", (ids_antigos,))
 
     return arquivos
 
@@ -677,13 +678,14 @@ def informar_afericoes():
                 return redirect(url_for("operacoes.informar_afericoes"))
 
             cod_produto = (request.form.get("cod_produto") or "").strip()
+            numero_bico = (request.form.get("numero_bico") or "").strip()
             modo = (request.form.get("modo") or "").strip()
             data_txt = (request.form.get("data_afericao") or "").strip()
             hora_txt = (request.form.get("hora_afericao") or "").strip()
             diferenca_txt = (request.form.get("diferenca_ml") or "0").strip()
 
-            if not cod_produto or modo not in MODOS_AFERICAO or not data_txt or not hora_txt:
-                flash("Preencha combustível, modo, data e hora da aferição.", "error")
+            if not cod_produto or not numero_bico or modo not in MODOS_AFERICAO or not data_txt or not hora_txt:
+                flash("Preencha combustível, bico, modo, data e hora da aferição.", "error")
                 return redirect(url_for("operacoes.informar_afericoes", cod_filial=cod_filial))
 
             try:
@@ -746,21 +748,11 @@ def informar_afericoes():
 
             cur.execute(
                 """
-                SELECT COALESCE(MAX(numero_ordem), 0) + 1 AS proximo
-                FROM afericoes
-                WHERE cod_empresa = %s AND cod_filial = %s AND data_afericao = %s
-                """,
-                (cod_empresa, cod_filial, data_afericao),
-            )
-            numero_ordem = cur.fetchone()["proximo"]
-
-            cur.execute(
-                """
                 INSERT INTO afericoes (
                     cod_empresa,
                     cod_filial,
                     cod_produto,
-                    numero_ordem,
+                    numero_bico,
                     modo,
                     data_afericao,
                     hora_afericao,
@@ -773,7 +765,7 @@ def informar_afericoes():
                 RETURNING id_afericao
                 """,
                 (
-                    cod_empresa, cod_filial, cod_produto, numero_ordem, modo,
+                    cod_empresa, cod_filial, cod_produto, numero_bico, modo,
                     data_afericao, hora_afericao, id_usuario, diferenca_ml,
                 ),
             )
@@ -789,7 +781,7 @@ def informar_afericoes():
                     (id_afericao, tipo, nome_arquivo, tamanho_bytes, duracao_segundos),
                 )
 
-            arquivos_para_remover = _limpar_afericoes_antigas(cur, cod_empresa, cod_filial)
+            arquivos_para_remover = _apagar_arquivos_afericoes_antigas(cur, cod_empresa, cod_filial)
 
             conn.commit()
 
@@ -804,10 +796,12 @@ def informar_afericoes():
             ))
 
         if filial_sel is not None:
+            # Só as 2 últimas datas aparecem aqui (resumo rápido antes de
+            # subir a próxima); o histórico completo fica na Consulta.
             cur.execute(
                 """
                 SELECT
-                    a.numero_ordem,
+                    a.numero_bico,
                     a.modo,
                     a.data_afericao,
                     a.hora_afericao,
@@ -815,9 +809,17 @@ def informar_afericoes():
                 FROM afericoes a
                 WHERE a.cod_empresa = %s
                   AND a.cod_filial = %s
-                ORDER BY a.data_afericao DESC, a.numero_ordem DESC
+                  AND a.data_afericao IN (
+                      SELECT data_afericao
+                      FROM afericoes
+                      WHERE cod_empresa = %s AND cod_filial = %s
+                      GROUP BY data_afericao
+                      ORDER BY data_afericao DESC
+                      LIMIT 2
+                  )
+                ORDER BY a.data_afericao DESC, a.hora_afericao DESC
                 """,
-                (cod_empresa, filial_sel),
+                (cod_empresa, filial_sel, cod_empresa, filial_sel),
             )
             afericoes_existentes = cur.fetchall() or []
 
@@ -871,6 +873,8 @@ def consultar_afericoes():
     linhas = []
     filiais = []
     filial_sel = None
+    ano_sel = datetime.now(ZoneInfo("America/Sao_Paulo")).year
+    mes_sel = None
 
     try:
         filiais = _filiais_do_usuario(cur, cod_empresa, id_usuario, tipo_global)
@@ -891,15 +895,30 @@ def consultar_afericoes():
         if not filiais_consulta:
             filiais_consulta = [-1]  # nenhuma filial permitida: consulta vazia
 
+        # As aferições ficam guardadas pra sempre (só os arquivos antigos são
+        # apagados) — mês/ano filtram o volume, igual ao Matricial (setas
+        # ← → andam um mês/ano; mês vazio = todos os meses do ano escolhido).
+        ano_txt = (request.args.get("ano") or "").strip()
+        if ano_txt.isdigit():
+            ano_sel = int(ano_txt)
+
+        mes_txt = (request.args.get("mes") or "").strip()
+        mes_sel = int(mes_txt) if mes_txt.isdigit() and 1 <= int(mes_txt) <= 12 else None
+
+        filtro_mes_sql = "AND EXTRACT(MONTH FROM a.data_afericao) = %s" if mes_sel else ""
+        parametros = [cod_empresa, filiais_consulta, ano_sel]
+        if mes_sel:
+            parametros.append(mes_sel)
+
         cur.execute(
-            """
+            f"""
             SELECT
                 a.id_afericao,
                 a.cod_filial,
                 f.nome_filial,
                 a.cod_produto,
                 c.descricao AS descricao_produto,
-                a.numero_ordem,
+                a.numero_bico,
                 a.modo,
                 a.data_afericao,
                 a.hora_afericao,
@@ -914,9 +933,11 @@ def consultar_afericoes():
               ON u.id_usuario = a.id_usuario
             WHERE a.cod_empresa = %s
               AND a.cod_filial = ANY(%s)
-            ORDER BY a.cod_filial, a.data_afericao DESC, a.numero_ordem DESC
+              AND EXTRACT(YEAR FROM a.data_afericao) = %s
+              {filtro_mes_sql}
+            ORDER BY a.cod_filial, a.data_afericao DESC, a.hora_afericao DESC
             """,
-            (cod_empresa, filiais_consulta),
+            parametros,
         )
         linhas = cur.fetchall() or []
 
@@ -956,6 +977,8 @@ def consultar_afericoes():
         nome_empresa=nome_empresa,
         filiais=filiais,
         filial_sel=filial_sel,
+        ano=ano_sel,
+        mes=mes_sel,
         linhas=linhas,
         limite_diferenca=LIMITE_DIFERENCA_NORMAL_ML,
         url_voltar=url_for("operacoes.menu_afericoes"),

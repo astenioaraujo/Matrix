@@ -26,10 +26,42 @@
   }
 
   .linha-filtros {
-    display: grid;
-    grid-template-columns: 320px auto;
+    display: flex;
+    flex-wrap: wrap;
     gap: 18px;
     align-items: end;
+  }
+
+  .mes-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .mes-nav input {
+    width: 90px;
+    height: 36px;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid #c7c7c7;
+    border-radius: 8px;
+  }
+
+  .btn-mes-nav {
+    width: 38px;
+    height: 38px;
+    border: 1px solid #c7c7c7;
+    border-radius: 9px;
+    background: #c8e6c9;
+    color: #111;
+    font-size: 18px;
+    font-weight: 900;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .btn-mes-nav:hover {
+    background: #a5d6a7;
   }
 
   .campo label {
@@ -221,7 +253,7 @@
 </div>
 
 <div class="painel-filtro">
-  <form method="get">
+  <form method="get" id="form-filtro-afericoes">
     <div class="linha-filtros">
       <div class="campo">
         <label for="cod_filial">Filial</label>
@@ -233,6 +265,24 @@
             </option>
           {% endfor %}
         </select>
+      </div>
+
+      <div class="campo">
+        <label for="ano">Ano</label>
+        <div class="mes-nav">
+          <button type="button" class="btn-mes-nav" onclick="mudarAno(-1)">←</button>
+          <input type="number" id="ano" name="ano" value="{{ ano }}" required>
+          <button type="button" class="btn-mes-nav" onclick="mudarAno(1)">→</button>
+        </div>
+      </div>
+
+      <div class="campo">
+        <label for="mes">Mês</label>
+        <div class="mes-nav">
+          <button type="button" class="btn-mes-nav" onclick="mudarMes(-1)">←</button>
+          <input type="number" id="mes" name="mes" value="{{ mes or '' }}" min="1" max="12" placeholder="(todos)">
+          <button type="button" class="btn-mes-nav" onclick="mudarMes(1)">→</button>
+        </div>
       </div>
 
       <div class="acoes">
@@ -265,7 +315,7 @@
               <tr>
                 <th>Data</th>
                 <th>Hora</th>
-                <th>Nº Ordem</th>
+                <th>Bico</th>
                 <th>Modo</th>
                 <th class="valor">Diferença (ml)</th>
                 <th>Status</th>
@@ -282,7 +332,7 @@
     <tr>
       <td>{{ l.data_afericao.strftime("%d/%m/%Y") if l.data_afericao else "" }}</td>
       <td>{{ l.hora_afericao.strftime("%H:%M") if l.hora_afericao else "" }}</td>
-      <td>{{ l.numero_ordem }}</td>
+      <td>{{ l.numero_bico }}</td>
       <td>{{ l.modo | capitalize }}</td>
       <td class="valor">{{ l.diferenca_ml | br }}</td>
       <td>
@@ -333,6 +383,36 @@
 </div>
 
 <script>
+  // Mesmo padrão do Matricial: ← → andam um mês, acompanhando o ano na virada.
+  function mudarMes(delta) {
+    const inputMes = document.getElementById("mes");
+    const inputAno = document.getElementById("ano");
+    if (!inputMes || !inputAno) return;
+
+    let mes = parseInt(inputMes.value || "0", 10);
+    let ano = parseInt(inputAno.value || new Date().getFullYear(), 10);
+
+    if (!mes || mes < 1 || mes > 12) mes = new Date().getMonth() + 1;
+
+    mes += delta;
+    if (mes < 1) { mes = 12; ano -= 1; }
+    if (mes > 12) { mes = 1; ano += 1; }
+
+    inputMes.value = String(mes);
+    inputAno.value = String(ano);
+
+    inputMes.form.submit();
+  }
+
+  function mudarAno(delta) {
+    const inputAno = document.getElementById("ano");
+    if (!inputAno) return;
+
+    const ano = parseInt(inputAno.value || new Date().getFullYear(), 10) + delta;
+    inputAno.value = String(ano);
+    inputAno.form.submit();
+  }
+
   function abrirArquivo(tipo, url) {
     const modal = document.getElementById("modalVideo");
     const player = document.getElementById("playerVideo");
