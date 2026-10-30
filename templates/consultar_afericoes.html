@@ -315,6 +315,7 @@
               <tr>
                 <th>Data</th>
                 <th>Hora</th>
+                <th>Bomba</th>
                 <th>Bico</th>
                 <th>Modo</th>
                 <th class="valor">Diferença (ml)</th>
@@ -332,6 +333,7 @@
     <tr>
       <td>{{ l.data_afericao.strftime("%d/%m/%Y") if l.data_afericao else "" }}</td>
       <td>{{ l.hora_afericao.strftime("%H:%M") if l.hora_afericao else "" }}</td>
+      <td>{{ l.numero_bomba }}</td>
       <td>{{ l.numero_bico }}</td>
       <td>{{ l.modo | capitalize }}</td>
       <td class="valor">{{ l.diferenca_ml | br }}</td>

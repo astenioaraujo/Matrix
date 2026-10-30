@@ -560,6 +560,13 @@ projeto de nunca persistir o que é derivado.
    gravado — ficaram com `numero_bico = ''`, usuário corrige na mão se
    precisar.
 
+**Campo `numero_bomba`** (`migrations/adicionar_numero_bomba_afericoes.sql`,
+30/10/2026) — cada bomba tem vários bicos (bomba 1/bico 1, bomba 1/bico 2,
+bomba 2/bico 1...), e só o bico era registrado; texto livre, digitado no
+formulário, mesma convenção do bico (sem cadastro de bombas/bicos no
+sistema). Aparece antes do Bico em Informar e Consultar. Registros feitos
+antes dessa migration ficaram com `numero_bomba = ''`.
+
 **Campo `modo`** (`migrations/adicionar_modo_afericoes.sql`, 29/10/2026): como
 os 20 litros foram aplicados no teste — `'alta'`/`'baixa'` (vazão) ou
 `'digitado'` (não escoou de verdade, valor digitado, velocidade normal).

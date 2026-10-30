@@ -678,14 +678,15 @@ def informar_afericoes():
                 return redirect(url_for("operacoes.informar_afericoes"))
 
             cod_produto = (request.form.get("cod_produto") or "").strip()
+            numero_bomba = (request.form.get("numero_bomba") or "").strip()
             numero_bico = (request.form.get("numero_bico") or "").strip()
             modo = (request.form.get("modo") or "").strip()
             data_txt = (request.form.get("data_afericao") or "").strip()
             hora_txt = (request.form.get("hora_afericao") or "").strip()
             diferenca_txt = (request.form.get("diferenca_ml") or "0").strip()
 
-            if not cod_produto or not numero_bico or modo not in MODOS_AFERICAO or not data_txt or not hora_txt:
-                flash("Preencha combustível, bico, modo, data e hora da aferição.", "error")
+            if not cod_produto or not numero_bomba or not numero_bico or modo not in MODOS_AFERICAO or not data_txt or not hora_txt:
+                flash("Preencha combustível, bomba, bico, modo, data e hora da aferição.", "error")
                 return redirect(url_for("operacoes.informar_afericoes", cod_filial=cod_filial))
 
             try:
@@ -752,6 +753,7 @@ def informar_afericoes():
                     cod_empresa,
                     cod_filial,
                     cod_produto,
+                    numero_bomba,
                     numero_bico,
                     modo,
                     data_afericao,
@@ -761,11 +763,11 @@ def informar_afericoes():
                     criado_em,
                     atualizado_em
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
                 RETURNING id_afericao
                 """,
                 (
-                    cod_empresa, cod_filial, cod_produto, numero_bico, modo,
+                    cod_empresa, cod_filial, cod_produto, numero_bomba, numero_bico, modo,
                     data_afericao, hora_afericao, id_usuario, diferenca_ml,
                 ),
             )
@@ -801,6 +803,7 @@ def informar_afericoes():
             cur.execute(
                 """
                 SELECT
+                    a.numero_bomba,
                     a.numero_bico,
                     a.modo,
                     a.data_afericao,
@@ -941,6 +944,7 @@ def consultar_afericoes():
                 f.nome_filial,
                 a.cod_produto,
                 c.descricao AS descricao_produto,
+                a.numero_bomba,
                 a.numero_bico,
                 a.modo,
                 a.data_afericao,
