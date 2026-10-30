@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 10px; }
+  .empresa { font-size: 22px; margin-bottom: 24px; }
+  .subtitulo { color: #555; margin: -14px 0 22px; }
+
+  .painel {
+    max-width: 1600px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+  }
+
+  .linha-filtro { display: flex; gap: 14px; align-items: end; margin-bottom: 20px; flex-wrap: wrap; }
+  label { font-weight: 700; margin-bottom: 6px; display: block; }
+
+  select {
+    padding: 8px;
+    border: 1px solid #cfcfcf;
+    border-radius: 6px;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { border: 1px solid #dcdcdc; padding: 8px; }
+  th { background: #f1f1f1; }
+
+  .col-id { width: 70px; text-align: center; }
+  .num { text-align: right; white-space: nowrap; }
+  .centro { text-align: center; }
+
+  .btn {
+    padding: 8px 12px;
+    background: #1565c0;
+    color: #fff;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-weight: 700;
+  }
+
+  .btn-limpar {
+    background: #f7f7f7;
+    color: #1f3c88;
+    border: 1px solid #c7c7c7;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .saldo { font-weight: 800; color: #b26a00; }
+  .parcial { color: #1565c0; font-size: 12px; font-weight: 700; }
+  .dias-alerta { color: #c62828; font-weight: 800; }
+
+  .total-linha td { background: #f3f3f3; font-weight: 800; }
+
+  .resumo { max-width: 900px; }
+  .resumo h3 { margin-top: 0; font-size: 22px; }
+
+  .sem-dados { font-weight: 700; color: #666; margin-top: 12px; }
+
+  .coligada { color: #6a1b9a; font-weight: 700; }
+  .nota-coligada { font-size: 13px; color: #6a1b9a; margin-top: 8px; }
+
+  .flash-msg { max-width: 900px; padding: 10px 14px; border-radius: 8px; margin-bottom: 15px; font-weight: 600; }
+  .flash-success { background: #e6f4ea; color: #1e6b34; border: 1px solid #b7dfc2; }
+  .flash-error { background: #fdeaea; color: #9f2f2f; border: 1px solid #efc2c2; }
+</style>
+
+<div class="pagina-titulo">Compras em Trânsito</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="subtitulo">Todas as compras com saldo a descarregar, de qualquer data.</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endwith %}
+
+<div class="painel">
+
+  <form method="get">
+    <div class="linha-filtro">
+      <div>
+        <label>Filial</label>
+        <select name="cod_filial" onchange="this.form.submit()">
+          <option value="">Todas</option>
+          {% for f in filiais %}
+            <option value="{{ f.cod_filial }}" {% if filial_sel|string == f.cod_filial|string %}selected{% endif %}>
+              {{ f.cod_filial }} - {{ f.nome_filial }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <button type="submit" class="btn">Filtrar</button>
+
+      <a href="{{ url_for('operacoes.consultar_compras_transito') }}" class="btn btn-limpar">Limpar</a>
+    </div>
+  </form>
+
+  {% if compras %}
+
+  <table>
+    <thead>
+      <tr>
+        <th class="col-id">ID</th>
+        <th>Data da compra</th>
+        <th class="centro">Dias</th>
+        <th>Filial / Coligada</th>
+        <th>Produto</th>
+        <th>Fornecedor</th>
+        <th class="num">Comprado</th>
+        <th class="num">Descarregado</th>
+        <th class="num">Saldo</th>
+        <th class="num">Preço</th>
+        <th class="num">Valor do saldo</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for c in compras %}
+      <tr>
+        <td class="col-id">{{ c.id_compra }}</td>
+        <td>
+          <a href="{{ url_for('operacoes.informar_compras_combustiveis', data=c.data_compra.isoformat()) }}" title="Abrir Informar Compras deste dia">{{ c.data_compra.strftime('%d/%m/%Y') }}</a>
+        </td>
+        <td class="centro {% if c.dias > 3 %}dias-alerta{% endif %}">{{ c.dias }}</td>
+        <td>
+          {% if c.id_coligada %}
+            <span class="coligada">Coligada: {{ c.nome_coligada }}</span>
+          {% else %}
+            {{ c.cod_filial }} - {{ c.nome_filial }}
+          {% endif %}
+        </td>
+        <td>{{ c.cod_produto }} - {{ c.produto }}</td>
+        <td>{{ c.nome_fornecedor or '' }}</td>
+        <td class="num">{{ c.quantidade_comprada | br }}</td>
+        <td class="num">
+          {% if c.total_descarregado > 0 %}
+            <a href="#" class="link-descarregos" onclick="abrirDescarregos({{ c.id_compra }}); return false;" title="Ver os descarregos desta compra">{{ c.total_descarregado | br }}</a>
+            <div class="parcial">parcial</div>
+          {% else %}
+            -
+          {% endif %}
+        </td>
+        <td class="num saldo">{{ c.saldo | br }}</td>
+        <td class="num">{{ c.preco_unitario | br }}</td>
+        <td class="num">{{ c.valor_saldo | br }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if compras | selectattr('id_coligada') | list %}
+    <div class="nota-coligada">Compras de coligada aparecem na lista, mas ficam fora dos totais: o combustível não é nosso.</div>
+  {% endif %}
+
+  {% else %}
+    <div class="sem-dados">Nenhuma compra pendente de descarrego.</div>
+  {% endif %}
+
+</div>
+
+{% if resumo %}
+<div class="painel resumo">
+  <h3>Resumo em Trânsito</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Combustível</th>
+        <th class="num">Compras</th>
+        <th class="num">Saldo (L)</th>
+        <th class="num">Valor do saldo</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in resumo %}
+      <tr>
+        <td>{{ r.produto }}</td>
+        <td class="num">{{ r.compras }}</td>
+        <td class="num">{{ r.saldo | br }}</td>
+        <td class="num">{{ r.valor_saldo | br }}</td>
+      </tr>
+      {% endfor %}
+      <tr class="total-linha">
+        <td>TOTAL GERAL</td>
+        <td class="num">{{ resumo | sum(attribute='compras') }}</td>
+        <td class="num">{{ total_saldo | br }}</td>
+        <td class="num">{{ total_valor_saldo | br }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% include "components/janela_descarregos_compra.html" %}
+
+{% endblock %}

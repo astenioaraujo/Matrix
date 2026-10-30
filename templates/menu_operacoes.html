@@ -151,6 +151,11 @@
     Consultar Resumo de Compras
   </a>
   {% endif %}
+  {% if pode_consultar_compras_transito %}
+  <a href="{{ url_for('operacoes.consultar_compras_transito') }}" class="btn-consultar">
+    Compras em Trânsito
+  </a>
+  {% endif %}
 
   {% if pode_informar_descarregos %}
   <a href="{{ url_for('operacoes.informar_descarregos_combustiveis') }}" class="btn-informar">

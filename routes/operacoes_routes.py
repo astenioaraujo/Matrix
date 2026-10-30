@@ -179,6 +179,7 @@ def menu_operacoes():
             "pode_informar_compras": True,
             "pode_consultar_compras": True,
             "pode_consultar_resumo_compras": True,
+            "pode_consultar_compras_transito": True,
             "pode_informar_descarregos": True,
             "pode_consultar_descarregos": True,
             "pode_consultar_resumo_descarregos": True,
@@ -220,6 +221,9 @@ def menu_operacoes():
 
             "pode_consultar_resumo_compras": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_RESUMO_COMPRAS"
+            ),
+            "pode_consultar_compras_transito": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_COMPRAS_TRANSITO"
             ),
 
 
@@ -2302,6 +2306,179 @@ def consultar_compras_combustiveis():
 
 
 # ---------------------------------------
+# COMPRAS EM TRÂNSITO
+# ---------------------------------------
+
+@operacoes_bp.route("/compras-combustiveis/transito")
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONSULTAR_COMPRAS_TRANSITO",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def consultar_compras_transito():
+    """Toda compra com saldo a descarregar, sem filtro de data: comprada e
+    ainda não descarregada, ou descarregada só em parte. É o que está
+    pendente. Saldo = comprado − Σ descarregos, calculado aqui (nunca pelo
+    status, que é só um rótulo)."""
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    filial_sel_txt = (request.args.get("cod_filial") or "").strip()
+    filial_sel = int(filial_sel_txt) if filial_sel_txt.isdigit() else None
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    compras = []
+    filiais = []
+    resumo = []
+    total_saldo = 0
+    total_valor_saldo = 0
+
+    try:
+        if tipo_global == "superusuario":
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s
+                  AND ativo = TRUE
+                ORDER BY cod_filial
+            """, (cod_empresa,))
+        else:
+            filiais_permitidas = [
+                int(x) for x in usuario_filiais_ativas(id_usuario, cod_empresa)
+            ]
+
+            if not filiais_permitidas:
+                flash("Você não possui filiais habilitadas.", "error")
+                return redirect(url_for("operacoes.menu_operacoes"))
+
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s
+                  AND ativo = TRUE
+                  AND cod_filial = ANY(%s)
+                ORDER BY cod_filial
+            """, (cod_empresa, filiais_permitidas))
+        filiais = cur.fetchall() or []
+
+        codigos_filiais = [int(f["cod_filial"]) for f in filiais]
+
+        if filial_sel is not None and filial_sel not in codigos_filiais:
+            flash("Filial não permitida para este usuário.", "error")
+            return redirect(url_for("operacoes.consultar_compras_transito"))
+
+        filtros = ["cc.cod_empresa = %s"]
+        params = [cod_empresa, cod_empresa]
+
+        if filial_sel is not None:
+            filtros.append("cc.cod_filial = %s")
+            params.append(filial_sel)
+        elif tipo_global != "superusuario":
+            # a compra da coligada não é de filial nenhuma, mas é do grupo:
+            # quem enxerga alguma filial enxerga também as coligadas
+            filtros.append("(cc.cod_filial = ANY(%s) OR cc.id_coligada IS NOT NULL)")
+            params.append(codigos_filiais)
+
+        where_sql = " AND ".join(filtros)
+
+        cur.execute(f"""
+            SELECT
+                cc.id_compra,
+                cc.data_compra,
+                cc.cod_filial,
+                f.nome_filial,
+                cc.id_coligada,
+                COALESCE(cg.nome_fantasia, cg.nome) AS nome_coligada,
+                cc.cod_produto,
+                c.descricao AS produto,
+                fc.nome_fornecedor,
+                cc.quantidade_comprada,
+                cc.preco_unitario,
+                COALESCE(d.total_descarregado, 0) AS total_descarregado,
+                cc.quantidade_comprada - COALESCE(d.total_descarregado, 0) AS saldo
+            FROM compras_combustiveis cc
+            LEFT JOIN (
+                SELECT id_compra, SUM(quantidade_descarregada) AS total_descarregado
+                FROM descarregos_combustiveis
+                WHERE cod_empresa = %s
+                GROUP BY id_compra
+            ) d ON d.id_compra = cc.id_compra
+            LEFT JOIN filiais f
+              ON f.cod_empresa = cc.cod_empresa
+             AND f.cod_filial = cc.cod_filial
+            LEFT JOIN operacoes_coligadas cg
+              ON cg.id_coligada = cc.id_coligada
+            LEFT JOIN combustiveis c
+              ON c.cod_empresa = cc.cod_empresa
+             AND c.cod_produto = cc.cod_produto
+            LEFT JOIN fornecedores_combustiveis fc
+              ON fc.id_fornecedor = cc.id_fornecedor
+            WHERE {where_sql}
+              AND cc.quantidade_comprada - COALESCE(d.total_descarregado, 0) > 0
+            ORDER BY cc.data_compra, cc.cod_filial NULLS LAST, cc.cod_produto, cc.id_compra
+        """, params)
+
+        compras = cur.fetchall() or []
+
+        hoje = hoje_br()
+        resumo_produtos = {}
+
+        for c in compras:
+            c["dias"] = (hoje - c["data_compra"]).days
+            c["valor_saldo"] = float(c["saldo"] or 0) * float(c["preco_unitario"] or 0)
+
+            # a compra da coligada é listada, mas não soma: não é compra nossa
+            if c["id_coligada"]:
+                continue
+
+            cod_produto = str(c["cod_produto"] or "").strip()
+            r = resumo_produtos.setdefault(cod_produto, {
+                "produto": c["produto"] or cod_produto,
+                "compras": 0,
+                "saldo": 0,
+                "valor_saldo": 0,
+            })
+            r["compras"] += 1
+            r["saldo"] += float(c["saldo"] or 0)
+            r["valor_saldo"] += c["valor_saldo"]
+
+            total_saldo += float(c["saldo"] or 0)
+            total_valor_saldo += c["valor_saldo"]
+
+        resumo = sorted(resumo_produtos.values(), key=lambda r: r["produto"])
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao consultar compras em trânsito: {e}", "error")
+        compras = []
+        resumo = []
+        total_saldo = 0
+        total_valor_saldo = 0
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "consultar_compras_transito.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        filiais=filiais,
+        filial_sel=filial_sel,
+        compras=compras,
+        resumo=resumo,
+        total_saldo=total_saldo,
+        total_valor_saldo=total_valor_saldo,
+        url_voltar=url_for("operacoes.menu_operacoes"),
+        texto_voltar="← Voltar",
+    )
+
+
+# ---------------------------------------
 # CONSULTAR RESUMO DE COMPRAS DE COMBUSTÍVEIS
 # ---------------------------------------
 
@@ -3232,16 +3409,22 @@ DIAS_SEMANA_BR = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira
 
 
 @operacoes_bp.route("/api/compras/<int:id_compra>/descarregos", methods=["GET"])
-@permissao_obrigatoria(
-    "OPERACOES",
-    "INFORMAR_MEDICOES",
-    redirecionar_para="operacoes.menu_operacoes",
-)
 def api_descarregos_da_compra(id_compra):
     """Os descarregos de uma compra — a janela da coluna Descarregos em
-    Informar Compras. A data do descarrego costuma ser outra que a da compra
-    (e o lançamento, outra ainda), e sem isso não havia como achá-lo."""
+    Informar Compras e em Compras em Trânsito. A data do descarrego costuma
+    ser outra que a da compra (e o lançamento, outra ainda), e sem isso não
+    havia como achá-lo."""
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return {"ok": False, "erro": "Sessão expirada."}, 401
+
     cod_empresa = str(session.get("cod_empresa") or "").strip()
+
+    # serve as duas telas: quem abre uma ou outra pode ver a janela
+    if session.get("tipo_global") != "superusuario" and not any(
+        usuario_tem_permissao(session["id_usuario"], cod_empresa, "OPERACOES", opcao)
+        for opcao in ("INFORMAR_MEDICOES", "CONSULTAR_COMPRAS_TRANSITO")
+    ):
+        return {"ok": False, "erro": "Sem permissão."}, 403
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
