@@ -3419,10 +3419,11 @@ def api_descarregos_da_compra(id_compra):
 
     cod_empresa = str(session.get("cod_empresa") or "").strip()
 
-    # serve as duas telas: quem abre uma ou outra pode ver a janela
+    # serve as três telas: quem abre qualquer uma delas pode ver a janela
+    # (Informar Compras usa INFORMAR_MEDICOES)
     if session.get("tipo_global") != "superusuario" and not any(
         usuario_tem_permissao(session["id_usuario"], cod_empresa, "OPERACOES", opcao)
-        for opcao in ("INFORMAR_MEDICOES", "CONSULTAR_COMPRAS_TRANSITO")
+        for opcao in ("INFORMAR_MEDICOES", "CONSULTAR_COMPRAS", "CONSULTAR_COMPRAS_TRANSITO")
     ):
         return {"ok": False, "erro": "Sem permissão."}, 403
 

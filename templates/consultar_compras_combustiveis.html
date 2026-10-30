@@ -175,7 +175,13 @@
           {% endif %}
         </td>
 
-        <td class="col-qtd">{{ c.total_descarregado | br }}</td>
+        <td class="col-qtd">
+          {% if c.total_descarregado > 0 %}
+            <a href="#" class="link-descarregos" onclick="abrirDescarregos({{ c.id_compra }}); return false;" title="Ver os descarregos desta compra">{{ c.total_descarregado | br }}</a>
+          {% else %}
+            {{ c.total_descarregado | br }}
+          {% endif %}
+        </td>
 
         <td class="col-status">
           {% if c.status == 'FECHADA' %}
@@ -255,5 +261,7 @@
     document.getElementById("formFiltro").submit();
   }
 </script>
+
+{% include "components/janela_descarregos_compra.html" %}
 
 {% endblock %}
