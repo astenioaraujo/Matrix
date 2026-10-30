@@ -475,6 +475,8 @@ BUCKET_AFERICOES = "afericoes"
 EXTENSOES_VIDEO_AFERICAO = {".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv", ".3gp"}
 EXTENSOES_IMAGEM_AFERICAO = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 LIMITE_DIFERENCA_NORMAL_ML = 100
+MODOS_AFERICAO_OPCOES = [("alta", "Alta"), ("baixa", "Baixa"), ("digitado", "Digitado")]
+MODOS_AFERICAO = {chave for chave, _rotulo in MODOS_AFERICAO_OPCOES}
 
 def _tipo_arquivo_afericao(nome_arquivo):
     """'video', 'imagem' ou None (extensão não aceita)."""
@@ -675,12 +677,13 @@ def informar_afericoes():
                 return redirect(url_for("operacoes.informar_afericoes"))
 
             cod_produto = (request.form.get("cod_produto") or "").strip()
+            modo = (request.form.get("modo") or "").strip()
             data_txt = (request.form.get("data_afericao") or "").strip()
             hora_txt = (request.form.get("hora_afericao") or "").strip()
             diferenca_txt = (request.form.get("diferenca_ml") or "0").strip()
 
-            if not cod_produto or not data_txt or not hora_txt:
-                flash("Preencha combustível, data e hora da aferição.", "error")
+            if not cod_produto or modo not in MODOS_AFERICAO or not data_txt or not hora_txt:
+                flash("Preencha combustível, modo, data e hora da aferição.", "error")
                 return redirect(url_for("operacoes.informar_afericoes", cod_filial=cod_filial))
 
             try:
@@ -758,6 +761,7 @@ def informar_afericoes():
                     cod_filial,
                     cod_produto,
                     numero_ordem,
+                    modo,
                     data_afericao,
                     hora_afericao,
                     id_usuario,
@@ -765,11 +769,11 @@ def informar_afericoes():
                     criado_em,
                     atualizado_em
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
                 RETURNING id_afericao
                 """,
                 (
-                    cod_empresa, cod_filial, cod_produto, numero_ordem,
+                    cod_empresa, cod_filial, cod_produto, numero_ordem, modo,
                     data_afericao, hora_afericao, id_usuario, diferenca_ml,
                 ),
             )
@@ -804,6 +808,7 @@ def informar_afericoes():
                 """
                 SELECT
                     a.numero_ordem,
+                    a.modo,
                     a.data_afericao,
                     a.hora_afericao,
                     a.diferenca_ml
@@ -834,6 +839,7 @@ def informar_afericoes():
         filiais=filiais,
         filial_sel=filial_sel,
         produtos=produtos,
+        modos_afericao=MODOS_AFERICAO_OPCOES,
         afericoes_existentes=afericoes_existentes,
         limite_diferenca=LIMITE_DIFERENCA_NORMAL_ML,
         url_voltar=url_for("operacoes.menu_afericoes"),
@@ -894,6 +900,7 @@ def consultar_afericoes():
                 a.cod_produto,
                 c.descricao AS descricao_produto,
                 a.numero_ordem,
+                a.modo,
                 a.data_afericao,
                 a.hora_afericao,
                 a.diferenca_ml,

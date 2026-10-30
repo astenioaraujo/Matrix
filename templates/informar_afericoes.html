@@ -285,6 +285,15 @@
           </div>
 
           <div class="campo">
+            <label for="modo">Modo</label>
+            <select id="modo" name="modo" required>
+              {% for valor, rotulo in modos_afericao %}
+                <option value="{{ valor }}">{{ rotulo }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="campo">
             <label for="data_afericao">Data</label>
             <input type="date" id="data_afericao" name="data_afericao" value="{{ hoje_iso }}" required>
           </div>
@@ -351,6 +360,7 @@
           <th>Data</th>
           <th>Hora</th>
           <th>Nº Ordem</th>
+          <th>Modo</th>
           <th class="valor">Diferença (ml)</th>
           <th>Status</th>
         </tr>
@@ -362,6 +372,7 @@
             <td>{{ a.data_afericao.strftime("%d/%m/%Y") if a.data_afericao else "" }}</td>
             <td>{{ a.hora_afericao.strftime("%H:%M") if a.hora_afericao else "" }}</td>
             <td>{{ a.numero_ordem }}</td>
+            <td>{{ a.modo | capitalize }}</td>
             <td class="valor">{{ a.diferenca_ml | br }}</td>
             <td>
               {% if normal %}

@@ -266,6 +266,7 @@
                 <th>Data</th>
                 <th>Hora</th>
                 <th>Nº Ordem</th>
+                <th>Modo</th>
                 <th class="valor">Diferença (ml)</th>
                 <th>Status</th>
                 <th>Combustível</th>
@@ -282,6 +283,7 @@
       <td>{{ l.data_afericao.strftime("%d/%m/%Y") if l.data_afericao else "" }}</td>
       <td>{{ l.hora_afericao.strftime("%H:%M") if l.hora_afericao else "" }}</td>
       <td>{{ l.numero_ordem }}</td>
+      <td>{{ l.modo | capitalize }}</td>
       <td class="valor">{{ l.diferenca_ml | br }}</td>
       <td>
         {% if l.normal %}

@@ -556,6 +556,14 @@ cod_empresa = %s AND cod_filial = %s AND data_afericao = %s`, mesma transação
 do insert — sem trava explícita; aceitável pro volume de uso, não é um
 sistema de alta concorrência).
 
+**Campo `modo`** (`migrations/adicionar_modo_afericoes.sql`, 29/10/2026): como
+os 20 litros foram aplicados no teste — `'alta'`/`'baixa'` (vazão) ou
+`'digitado'` (não escoou de verdade, valor digitado, velocidade normal).
+`<select>` fixo de 3 opções (`MODOS_AFERICAO_OPCOES` em `operacoes_routes.py`,
+mesma lista valida o POST e preenche o `<select>` do template — evita os dois
+ficarem fora de sincronia). Aparece em Informar (coluna entre Nº Ordem e
+Diferença) e em Consultar, mesma posição.
+
 **Cada linha é um evento, não um estado por dia** — ao contrário de Medições,
 não há upsert por (filial, produto, bico, data): o mesmo bico pode ser aferido
 mais de uma vez no mesmo dia, e o período entre aferições (semanal, quinzenal,
