@@ -4,22 +4,22 @@
 {% include "components/nav.html" %}
 
 <style>
-  .bloco { background: #fff; border: 1px solid #e2e6ea; border-radius: 10px; padding: 14px; }
-  /* min-width: 0 desliga o max-content global das tabelas: com ele, o campo de
-     observação em 100% esticava a lista para milhares de pixels. */
-  table.lista { border-collapse: collapse; width: 100%; min-width: 0; }
+  /* A lista tem a largura do conteúdo, não da tela: esticada, as colunas
+     ficavam largas demais para ler a linha de ponta a ponta. */
+  .bloco { display: inline-block; max-width: 100%; overflow-x: auto; background: #fff; border: 1px solid #e2e6ea; border-radius: 10px; padding: 14px; }
+  table.lista { border-collapse: collapse; }
   .lista th, .lista td { padding: 7px 9px; font-size: 14px; border-bottom: 1px solid #eceff1; text-align: left; }
   .lista thead th { background: #f5f7f9; font-weight: 700; }
   .lista th.num, .lista td.num { text-align: right; white-space: nowrap; }
-  .lista td.acoes { white-space: nowrap; text-align: right; width: 1%; }
+  .lista td.acoes { white-space: nowrap; text-align: right; }
   .lista tfoot td { background: #e6efe6; font-weight: 700; }
   .lista .dia { color: #777; font-size: 12px; }
   .lista .quem { color: #777; font-size: 12px; }
   .lista .vazio { color: #777; font-style: italic; text-align: center; padding: 18px; }
 
   .lista input, .lista select { padding: 6px; border: 1px solid #b0bec5; border-radius: 6px; font-size: 14px; box-sizing: border-box; }
-  .lista input.valor { width: 140px; text-align: right; }
-  .lista input.obs { width: 100%; min-width: 200px; }
+  .lista input.valor { width: 120px; text-align: right; }
+  .lista input.obs { width: 240px; }
   tr.edicao td { background: #fffbe6; }
   tr.edicao-oculta { display: none; }
 
@@ -70,7 +70,7 @@
   <table class="lista">
     <thead>
       <tr>
-        <th style="width:150px">Data</th>
+        <th>Data</th>
         <th>Filial</th>
         <th class="num">Valor</th>
         <th>Observação</th>
