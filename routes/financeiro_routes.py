@@ -6973,7 +6973,8 @@ def antecipacao_dividendos():
         linhas=linhas,
         total=sum(l["valor"] for l in linhas),
         data_sugerida=data_sugerida.isoformat(),
-        url_consultar=_url_antecipacao("financeiro.consultar_antecipacao_dividendos", filtro),
+        url_consultar=_url_antecipacao("financeiro.consultar_antecipacao_dividendos",
+                                       {**filtro, "origem": "informar"}),
         empresa_ativa=cod_empresa,
         nome_empresa_ativa=session["nome_empresa"],
         url_voltar=url_for("financeiro.menu_saldos"),
@@ -7133,6 +7134,9 @@ def consultar_antecipacao_dividendos():
         linha.update(data=d, dia_semana=DIAS_SEMANA_PT[d.weekday()], observacao=obs)
         linhas.append(linha)
 
+    veio_do_informar = request.args.get("origem") == "informar"
+    url_informar = _url_antecipacao("financeiro.antecipacao_dividendos", filtro)
+
     soma = defaultdict(float)
     for valores in por_linha.values():
         for cod, v in valores.items():
@@ -7147,10 +7151,13 @@ def consultar_antecipacao_dividendos():
         anos=anos,
         linhas=linhas,
         rodape=montar(soma),
-        url_informar=_url_antecipacao("financeiro.antecipacao_dividendos", filtro),
+        url_informar=url_informar,
+        veio_do_informar=veio_do_informar,
         empresa_ativa=cod_empresa,
         nome_empresa_ativa=session["nome_empresa"],
-        url_voltar=url_for("financeiro.menu_saldos"),
+        # Aberta pelo link do Informar, o Voltar devolve ao Informar no mesmo
+        # recorte; aberta pelo menu de Saldos, volta ao menu.
+        url_voltar=url_informar if veio_do_informar else url_for("financeiro.menu_saldos"),
     )
 
 

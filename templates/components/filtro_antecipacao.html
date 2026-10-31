@@ -31,6 +31,8 @@
 </style>
 
 <form method="get" action="{{ url_for(endpoint_filtro) }}" class="filtros" id="formFiltro">
+  {# Mudar o filtro não pode fazer o Voltar esquecer de onde a tela foi aberta. #}
+  {% if veio_do_informar %}<input type="hidden" name="origem" value="informar">{% endif %}
   <div>
     <label for="filtroAno">Ano / Mês</label>
     <div class="mes-nav">
