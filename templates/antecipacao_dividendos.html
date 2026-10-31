@@ -4,49 +4,30 @@
 {% include "components/nav.html" %}
 
 <style>
-  .pagina-titulo { font-size: 30px; font-weight: 800; margin-bottom: 6px; }
-  .empresa { font-size: 17px; margin-bottom: 18px; }
+  .bloco { background: #fff; border: 1px solid #e2e6ea; border-radius: 10px; padding: 14px; }
+  /* min-width: 0 desliga o max-content global das tabelas: com ele, o campo de
+     observação em 100% esticava a lista para milhares de pixels. */
+  table.lista { border-collapse: collapse; width: 100%; min-width: 0; }
+  .lista th, .lista td { padding: 7px 9px; font-size: 14px; border-bottom: 1px solid #eceff1; text-align: left; }
+  .lista thead th { background: #f5f7f9; font-weight: 700; }
+  .lista th.num, .lista td.num { text-align: right; white-space: nowrap; }
+  .lista td.acoes { white-space: nowrap; text-align: right; width: 1%; }
+  .lista tfoot td { background: #e6efe6; font-weight: 700; }
+  .lista .dia { color: #777; font-size: 12px; }
+  .lista .quem { color: #777; font-size: 12px; }
+  .lista .vazio { color: #777; font-style: italic; text-align: center; padding: 18px; }
 
-  .topo { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-  .btn-novo { background: #1e5aa8; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
-  .btn-novo:hover { background: #17488a; }
+  .lista input, .lista select { padding: 6px; border: 1px solid #b0bec5; border-radius: 6px; font-size: 14px; box-sizing: border-box; }
+  .lista input.valor { width: 140px; text-align: right; }
+  .lista input.obs { width: 100%; min-width: 200px; }
+  tr.edicao td { background: #fffbe6; }
+  tr.edicao-oculta { display: none; }
 
-  .rolagem { overflow-x: auto; background: #fff; border: 1px solid #e2e6ea; border-radius: 10px; padding: 12px; }
-  table { border-collapse: collapse; }
-  th, td { padding: 6px 8px; font-size: 13px; border-bottom: 1px solid #eceff1; white-space: nowrap; }
-  thead th { background: #f5f7f9; font-weight: 700; position: sticky; top: 0; }
-  th.area { color: #1e5aa8; text-align: center; border-bottom: 2px solid #1e5aa8; }
-  th.num, td.num { text-align: right; }
-  .col-data { position: sticky; left: 0; background: #fff; z-index: 2; font-weight: 600; }
-  thead .col-data { background: #f5f7f9; z-index: 3; }
-  .subtotal { background: #eef4fb; font-weight: 700; }
-  .total-geral { background: #e6efe6; font-weight: 700; }
-
-  td input.valor { width: 105px; padding: 4px; border: 1px solid #cfd8dc; border-radius: 5px; text-align: right; font-size: 13px; }
-  td input.obs { width: 220px; padding: 4px; border: 1px solid #cfd8dc; border-radius: 5px; font-size: 13px; }
-  td input.data { padding: 4px; border: 1px solid #cfd8dc; border-radius: 5px; font-size: 13px; }
-
-  .btn-mini { border: none; border-radius: 6px; padding: 5px 9px; font-size: 12px; font-weight: 600; cursor: pointer; margin-right: 5px; }
+  .btn-mini { border: none; border-radius: 6px; padding: 6px 11px; font-size: 13px; font-weight: 600; cursor: pointer; margin-left: 4px; }
+  .btn-salvar { background: #1e7a34; color: #fff; }
+  .btn-editar { background: #1e5aa8; color: #fff; }
   .btn-excluir { background: #b3261e; color: #fff; }
-
-  .selo { font-size: 12px; margin-right: 8px; color: #1e7a34; }
-  .selo.salvando { color: #8a6d1f; }
-  .selo.erro { color: #b3261e; }
-
-  .filtros { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; margin-bottom: 16px; }
-  .filtros label { font-size: 13px; font-weight: 600; color: #444; }
-  .filtros select { height: 38px; border: 1px solid #c7c7c7; border-radius: 9px; padding: 0 8px; font-size: 14px; }
-  .mes-nav { display: flex; align-items: center; gap: 6px; }
-  .btn-mes-nav {
-    width: 38px; height: 38px; border: 1px solid #c7c7c7; border-radius: 9px;
-    background: #c8e6c9; color: #111; font-size: 18px; font-weight: 900; cursor: pointer; padding: 0;
-  }
-  .btn-mes-nav:hover { background: #a5d6a7; }
-  .vazio { color: #777; font-style: italic; padding: 14px 8px; }
-
-  .status-msg { margin-top: 10px; font-size: 14px; min-height: 20px; }
-  .status-msg.erro { color: #b3261e; }
-  .status-msg.ok { color: #1e7a34; }
+  .btn-cancelar { background: #e0e0e0; color: #222; }
 </style>
 
 <div class="pagina-titulo">Informar Antecipação de Dividendos</div>
@@ -55,468 +36,166 @@
   <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
 </div>
 
-<div class="filtros">
-  <div>
-    <label for="filtroAno">Ano / Mês</label>
-    <div class="mes-nav">
-      <button type="button" class="btn-mes-nav" onclick="mudarMes(-1)" title="Mês anterior">←</button>
-      <select id="filtroAno">
-        {% for a in anos %}
-          <option value="{{ a }}" {% if a == ano_sel %}selected{% endif %}>{{ a }}</option>
-        {% endfor %}
-      </select>
-      <select id="filtroMes">
-        {% for nome in ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"] %}
-          <option value="{{ loop.index }}" {% if loop.index == mes_sel %}selected{% endif %}>{{ nome }}</option>
-        {% endfor %}
-      </select>
-      <button type="button" class="btn-mes-nav" onclick="mudarMes(1)" title="Próximo mês">→</button>
-    </div>
-  </div>
+{% set endpoint_filtro = "financeiro.antecipacao_dividendos" %}
+{% include "components/filtro_antecipacao.html" %}
 
-  {% if areas|length > 1 %}
-  <div>
-    <label for="filtroArea">Área</label><br>
-    <select id="filtroArea" style="min-width: 180px;">
-      <option value="">(Todas)</option>
-      {% for a in areas %}
-        <option value="{{ a.id_area }}" {% if a.id_area == area_sel %}selected{% endif %}>{{ a.nome_area }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  {% endif %}
-
-  {% if areas|sum(attribute="filiais", start=[])|length > 1 %}
-  <div>
-    <label for="filtroFilial">Filial</label><br>
-    <!-- As opções saem do JS: acompanham a área escolhida. -->
-    <select id="filtroFilial" style="min-width: 180px;"></select>
-  </div>
-  {% endif %}
-</div>
+{% for categoria, msg in get_flashed_messages(with_categories=true) %}
+  <div class="aviso {{ 'erro' if categoria == 'erro' else 'ok' }}">{{ msg }}</div>
+{% endfor %}
 
 <div class="topo">
-  <button type="button" class="btn-novo" id="btnNovaData">+ Nova Data</button>
-  <span style="color:#666; font-size:14px">Valores retirados das contas, por filial e data. O que você digitar é salvo automaticamente.</span>
+  <button type="button" class="btn-novo" id="btnNovo" onclick="abrirNovo()">+ Informar Antecipação</button>
+  <a class="link-outra" href="{{ url_consultar }}">Consultar em planilha →</a>
 </div>
 
-<div class="rolagem">
-  <table>
+{# Campos do filtro que acompanham toda gravação, para a tela voltar no mesmo recorte. #}
+{% macro campos_filtro() %}
+  {% for k, v in filtro.items() if v is not none %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+{% endmacro %}
+
+{% macro seletor_filial(form_id, selecionada) %}
+  <select name="cod_filial" form="{{ form_id }}" required>
+    <option value="">Escolha a filial</option>
+    {% for a in areas %}
+      <optgroup label="{{ a.nome_area }}">
+        {% for f in a.filiais %}
+          <option value="{{ f.cod_filial }}" {% if f.cod_filial == selecionada %}selected{% endif %}>{{ f.nome_filial }}</option>
+        {% endfor %}
+      </optgroup>
+    {% endfor %}
+  </select>
+{% endmacro %}
+
+<div class="bloco">
+  <table class="lista">
     <thead>
-      <tr id="cabAreas"></tr>
-      <tr id="cabFiliais"></tr>
+      <tr>
+        <th style="width:150px">Data</th>
+        <th>Filial</th>
+        <th class="num">Valor</th>
+        <th>Observação</th>
+        <th></th>
+      </tr>
     </thead>
-    <tbody id="corpo"></tbody>
-    <tfoot id="rodape"></tfoot>
+    <tbody>
+      {# Linha nova: só aparece no "+ Informar Antecipação". #}
+      <tr class="edicao edicao-oculta" id="linhaNova">
+        <td><input type="date" name="data" form="form-novo" value="{{ data_sugerida }}" required></td>
+        <td>{{ seletor_filial("form-novo", filtro.filial) }}</td>
+        <td class="num"><input type="text" name="valor" class="valor" form="form-novo" placeholder="0,00" inputmode="decimal" required></td>
+        <td><input type="text" name="observacao" class="obs" form="form-novo" placeholder="Ex.: Aplicação CDB DI (opcional)" maxlength="200"></td>
+        <td class="acoes">
+          <form id="form-novo" method="post" action="{{ url_for('financeiro.salvar_antecipacao_dividendos') }}" onsubmit="return travarEnvio(this)">
+            {{ campos_filtro() }}
+            <button type="submit" class="btn-mini btn-salvar">Salvar</button>
+            <button type="button" class="btn-mini btn-cancelar" onclick="fecharNovo()">Cancelar</button>
+          </form>
+        </td>
+      </tr>
+
+      {% for l in linhas %}
+        <tr id="ver-{{ l.id }}">
+          <td>{{ l.data.strftime("%d/%m/%Y") }} <span class="dia">{{ l.dia_semana[:3] }}</span></td>
+          <td>{{ l.nome_filial }} <span class="dia">{{ l.nome_area }}</span></td>
+          <td class="num">{{ l.valor | br }}</td>
+          <td>{{ l.observacao }}{% if l.nome_usuario %} <span class="quem">— {{ l.nome_usuario }}</span>{% endif %}</td>
+          <td class="acoes">
+            <button type="button" class="btn-mini btn-editar" onclick="editar({{ l.id }})">Editar</button>
+            <form method="post" style="display:inline"
+                  action="{{ url_for('financeiro.excluir_antecipacao_dividendos', id_antecipacao=l.id) }}"
+                  data-msg="Excluir a antecipação de {{ l.nome_filial }} em {{ l.data.strftime('%d/%m/%Y') }} (R$ {{ l.valor | br }})?"
+                  onsubmit="return confirmarEnvio(this, this.dataset.msg)">
+              {{ campos_filtro() }}
+              <button type="submit" class="btn-mini btn-excluir">Excluir</button>
+            </form>
+          </td>
+        </tr>
+        <tr class="edicao edicao-oculta" id="editar-{{ l.id }}">
+          <td><input type="date" name="data" form="form-{{ l.id }}" value="{{ l.data.isoformat() }}" required></td>
+          <td>{{ seletor_filial("form-" ~ l.id, l.cod_filial) }}</td>
+          <td class="num"><input type="text" name="valor" class="valor" form="form-{{ l.id }}" inputmode="decimal" required
+                     value="{{ l.valor | br }}"></td>
+          <td><input type="text" name="observacao" class="obs" form="form-{{ l.id }}" value="{{ l.observacao }}" maxlength="200"></td>
+          <td class="acoes">
+            <form id="form-{{ l.id }}" method="post" action="{{ url_for('financeiro.salvar_antecipacao_dividendos') }}" onsubmit="return travarEnvio(this)">
+              <input type="hidden" name="id_antecipacao" value="{{ l.id }}">
+              {{ campos_filtro() }}
+              <button type="submit" class="btn-mini btn-salvar">Salvar</button>
+              <button type="button" class="btn-mini btn-cancelar" onclick="cancelarEdicao({{ l.id }})">Cancelar</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="vazio">Nenhuma antecipação lançada neste mês{% if filtro.area or filtro.filial %} para o filtro escolhido{% endif %}.</td></tr>
+      {% endfor %}
+    </tbody>
+    {% if linhas %}
+    <tfoot>
+      <tr>
+        <td colspan="2">Total do mês ({{ linhas | length }} lançamento{{ "s" if linhas | length != 1 }})</td>
+        <td class="num">{{ total | br }}</td>
+        <td colspan="2"></td>
+      </tr>
+    </tfoot>
+    {% endif %}
   </table>
 </div>
 
-<div class="status-msg" id="status"></div>
-
 <script>
-  const TODAS_AREAS = {{ areas | tojson }};
-  // Colunas na tela: todas as áreas/filiais ou só as do filtro.
-  let AREAS = TODAS_AREAS;
-
-  function filtroAtual() {
-    const area = document.getElementById("filtroArea");
-    const filial = document.getElementById("filtroFilial");
-    return {
-      ano: parseInt(document.getElementById("filtroAno").value, 10),
-      mes: parseInt(document.getElementById("filtroMes").value, 10),
-      area: area ? area.value : "",
-      filial: filial ? filial.value : "",
-    };
+  // Um envio por clique: o duplo clique gravaria o lançamento duas vezes.
+  function travarEnvio(form) {
+    if (form.dataset.enviando) return false;
+    form.dataset.enviando = "1";
+    form.querySelectorAll("button").forEach(b => b.disabled = true);
+    return true;
   }
 
-  function paramsFiltro() {
-    const f = filtroAtual();
-    const params = new URLSearchParams({ ano: f.ano, mes: f.mes });
-    if (f.area) params.set("area", f.area);
-    if (f.filial) params.set("filial", f.filial);
-    return params;
+  function abrirNovo() {
+    const tr = document.getElementById("linhaNova");
+    tr.classList.remove("edicao-oculta");
+    tr.querySelector('[name="valor"]').focus();
   }
 
-  // Áreas da área escolhida e, com filial escolhida, só a coluna dela.
-  function recortarAreas() {
-    const f = filtroAtual();
-    return TODAS_AREAS
-      .filter(a => !f.area || String(a.id_area) === f.area)
-      .map(a => ({ ...a, filiais: a.filiais.filter(fl => !f.filial || String(fl.cod_filial) === f.filial) }))
-      .filter(a => a.filiais.length);
+  function fecharNovo() {
+    document.getElementById("linhaNova").classList.add("edicao-oculta");
   }
 
-  // Lista de filiais da área escolhida (todas, agrupadas por área, sem área).
-  // A filial escolhida que não pertence à nova área volta para "(Todas)".
-  function montarOpcoesFilial(selecionada) {
-    const sel = document.getElementById("filtroFilial");
-    if (!sel) return;
-    const area = filtroAtual().area;
-    const areas = TODAS_AREAS.filter(a => !area || String(a.id_area) === area);
-    let html = '<option value="">(Todas)</option>';
-    areas.forEach(a => {
-      const opcoes = a.filiais.map(f => `<option value="${f.cod_filial}">${f.nome_filial}</option>`).join("");
-      html += areas.length > 1 ? `<optgroup label="${a.nome_area}">${opcoes}</optgroup>` : opcoes;
+  function editar(id) {
+    document.getElementById(`ver-${id}`).style.display = "none";
+    const tr = document.getElementById(`editar-${id}`);
+    tr.classList.remove("edicao-oculta");
+    tr.querySelector('[name="valor"]').select();
+  }
+
+  // Cancelar devolve os campos ao valor gravado, para a próxima edição não
+  // começar com o que foi digitado e descartado.
+  function cancelarEdicao(id) {
+    const tr = document.getElementById(`editar-${id}`);
+    // reset() alcança também os campos ligados ao form pelo atributo form=.
+    document.getElementById(`form-${id}`).reset();
+    tr.classList.add("edicao-oculta");
+    document.getElementById(`ver-${id}`).style.display = "";
+  }
+
+  // Valor formatado ao sair do campo: "1234,5" → "1.234,50".
+  document.querySelectorAll(".lista input.valor").forEach(i => {
+    i.addEventListener("blur", () => {
+      const limpo = i.value.trim().replace(/\./g, "").replace(",", ".");
+      if (limpo === "" || isNaN(Number(limpo))) return;
+      i.value = Number(limpo).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     });
-    sel.innerHTML = html;
-    sel.value = [...sel.options].some(o => o.value === String(selecionada)) ? String(selecionada) : "";
-  }
-
-  // Seta anda de mês em mês; na virada de dezembro/janeiro o ano acompanha.
-  function mudarMes(delta) {
-    const f = filtroAtual();
-    let mes = f.mes + delta, ano = f.ano;
-    if (mes < 1) { mes = 12; ano -= 1; }
-    if (mes > 12) { mes = 1; ano += 1; }
-    const selAno = document.getElementById("filtroAno");
-    if (![...selAno.options].some(o => o.value === String(ano))) {
-      // Ano ainda sem lançamento: entra na lista na posição certa (decrescente).
-      const opt = new Option(String(ano), String(ano));
-      const depois = [...selAno.options].find(o => parseInt(o.value, 10) < ano);
-      selAno.add(opt, depois || null);
-    }
-    selAno.value = String(ano);
-    document.getElementById("filtroMes").value = String(mes);
-    aplicarFiltro();
-  }
-
-  async function aplicarFiltro() {
-    history.replaceState(null, "", `${location.pathname}?${paramsFiltro()}`);
-    // O que estava sendo digitado grava antes de a grade ser trocada.
-    await gravarPendentes();
-    AREAS = recortarAreas();
-    montarCabecalho();
-    carregar();
-  }
-
-  function gravarPendentes() {
-    return Promise.all([...document.querySelectorAll("#corpo tr")].map(tr => {
-      if (tr._timerSalvar) salvarAgora(tr);
-      return tr._fila;
-    }));
-  }
-
-  function primeiroDiaFiltro() {
-    const f = filtroAtual();
-    return `${f.ano}-${String(f.mes).padStart(2, "0")}-01`;
-  }
-
-  // Data sugerida para "+ Nova Data": hoje, se o mês do filtro for o atual;
-  // senão o dia 1 do mês filtrado.
-  function dataSugerida() {
-    const hoje = hojeISO();
-    return hoje.slice(0, 8) === primeiroDiaFiltro().slice(0, 8) ? hoje : primeiroDiaFiltro();
-  }
-
-  function mostrarStatus(msg, erro) {
-    const el = document.getElementById("status");
-    el.textContent = msg;
-    el.className = "status-msg " + (erro ? "erro" : "ok");
-  }
-
-  function formatarValor(v) {
-    return (v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-
-  // Tolerante a texto meio digitado: "1.234,5", "1234,", "".
-  function paraNumero(txt) {
-    if (txt === null || txt === undefined) return 0;
-    const limpo = String(txt).replace(/\./g, "").replace(",", ".").replace(/[^0-9.\-]/g, "");
-    const n = parseFloat(limpo);
-    return isNaN(n) ? 0 : n;
-  }
-
-  function hojeISO() {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }
-
-  function montarCabecalho() {
-    let linhaAreas = '<th class="col-data"></th><th></th>';
-    let linhaFiliais = '<th class="col-data">Data</th><th>Observação</th>';
-
-    AREAS.forEach(a => {
-      linhaAreas += `<th class="area" colspan="${a.filiais.length + 1}">${a.nome_area}</th>`;
-      a.filiais.forEach(f => {
-        linhaFiliais += `<th class="num">${f.nome_filial}</th>`;
-      });
-      linhaFiliais += '<th class="num subtotal">Subtotal</th>';
-    });
-
-    linhaAreas += '<th class="area" rowspan="2">Total Geral</th><th rowspan="2"></th>';
-    document.getElementById("cabAreas").innerHTML = linhaAreas;
-    document.getElementById("cabFiliais").innerHTML = linhaFiliais;
-  }
-
-  function recalcular(tr) {
-    let totalGeral = 0;
-    AREAS.forEach(a => {
-      let subtotal = 0;
-      a.filiais.forEach(f => {
-        subtotal += paraNumero(tr.querySelector(`.valor[data-filial="${f.cod_filial}"]`).value);
-      });
-      tr.querySelector(`.sub[data-area="${a.id_area}"]`).textContent = formatarValor(subtotal);
-      totalGeral += subtotal;
-    });
-    tr.querySelector(".tot").textContent = formatarValor(totalGeral);
-    recalcularRodape();
-  }
-
-  function recalcularRodape() {
-    const linhas = [...document.querySelectorAll("#corpo tr")];
-    let html = '<tr class="total-geral"><td class="col-data total-geral">Total do quadro</td><td class="total-geral"></td>';
-    let totalGeral = 0;
-
-    AREAS.forEach(a => {
-      let subtotalArea = 0;
-      a.filiais.forEach(f => {
-        let soma = 0;
-        linhas.forEach(tr => {
-          soma += paraNumero(tr.querySelector(`.valor[data-filial="${f.cod_filial}"]`).value);
-        });
-        subtotalArea += soma;
-        html += `<td class="num total-geral">${formatarValor(soma)}</td>`;
-      });
-      html += `<td class="num subtotal">${formatarValor(subtotalArea)}</td>`;
-      totalGeral += subtotalArea;
-    });
-
-    html += `<td class="num total-geral">${formatarValor(totalGeral)}</td><td></td></tr>`;
-    document.getElementById("rodape").innerHTML = html;
-  }
-
-  function linha(dados) {
-    const tr = document.createElement("tr");
-    const valores = dados.valores || {};
-    const salvo = !!dados.data && !dados.nova;
-
-    const obs = (dados.observacao || "").replace(/"/g, "&quot;");
-    let html = `<td class="col-data"><input type="date" class="data" value="${dados.data || hojeISO()}" ${salvo ? "disabled" : ""}></td>
-                <td><input type="text" class="obs" placeholder="Observação" value="${obs}"></td>`;
-
-    AREAS.forEach(a => {
-      a.filiais.forEach(f => {
-        const v = valores[String(f.cod_filial)];
-        html += `<td class="num"><input type="text" class="valor" data-filial="${f.cod_filial}"
-                   value="${v ? formatarValor(v) : ""}"></td>`;
-      });
-      html += `<td class="num sub subtotal" data-area="${a.id_area}">0,00</td>`;
-    });
-
-    html += `<td class="num tot total-geral">0,00</td>
-             <td>
-               <span class="selo"></span>
-               <button type="button" class="btn-mini btn-excluir">Excluir</button>
-             </td>`;
-
-    tr.innerHTML = html;
-    tr.querySelectorAll(".valor").forEach(i => {
-      i.addEventListener("input", () => { recalcular(tr); agendarSalvamento(tr); });
-      // Ao sair do campo, formata e grava na hora (sem esperar o debounce).
-      i.addEventListener("blur", () => {
-        formatarCampo(i);
-        salvarAgora(tr);
-      });
-      // Enter grava na hora e passa para o próximo valor da mesma linha.
-      i.addEventListener("keydown", ev => {
-        if (ev.key !== "Enter") return;
-        ev.preventDefault();
-        formatarCampo(i);
-        salvarAgora(tr);
-        const campos = [...tr.querySelectorAll(".valor")];
-        const proximo = campos[campos.indexOf(i) + 1];
-        if (proximo) { proximo.focus(); proximo.select(); }
-        else { i.blur(); }
-      });
-    });
-    tr._obsSalva = dados.observacao || "";
-    const campoObs = tr.querySelector(".obs");
-    // A observação NÃO grava a cada tecla: cada prefixo digitado ("Baixa",
-    // "Baixa Fi", "Baixa Fiado"…) virava uma linha nova no banco.
-    campoObs.addEventListener("blur", () => salvarAgora(tr));
-    campoObs.addEventListener("keydown", ev => {
-      if (ev.key !== "Enter") return;
-      ev.preventDefault();
-      const primeiro = tr.querySelector(".valor");
-      if (primeiro) { primeiro.focus(); primeiro.select(); }
-      else { campoObs.blur(); }
-      salvarAgora(tr);
-    });
-    tr.querySelector(".data").addEventListener("change", () => salvarAgora(tr));
-    tr.querySelector(".btn-excluir").addEventListener("click", () => excluir(tr));
-    // Linha que veio do banco já está gravada — não regrava só por ter perdido o foco.
-    if (salvo) { tr._ultimoSalvo = assinaturaLinha(tr); selo(tr, "salvo", ""); }
-    return tr;
-  }
-
-  let numeroCarga = 0;
-
-  async function carregar() {
-    const corpo = document.getElementById("corpo");
-    corpo.innerHTML = "";
-    mostrarStatus("", false);
-    const params = paramsFiltro();
-    // Setas clicadas em sequência deixam várias cargas em voo: só a última
-    // desenha, senão as linhas de dois meses se misturariam na grade.
-    const minhaCarga = ++numeroCarga;
-    try {
-      const resp = await fetch(`/api/antecipacao-dividendos?${params}`);
-      const dados = await resp.json();
-      if (minhaCarga !== numeroCarga) return;
-      if (!resp.ok || !dados.ok) throw new Error(dados.erro || "Erro ao carregar.");
-      if (!(dados.linhas || []).length) {
-        mostrarStatus("Nenhuma antecipação lançada neste mês.", false);
-      }
-      (dados.linhas || []).forEach(l => {
-        const tr = linha(l);
-        corpo.appendChild(tr);
-        recalcular(tr);
-      });
-      recalcularRodape();
-    } catch (e) {
-      mostrarStatus(e.message || "Erro ao carregar.", true);
-    }
-  }
-
-  const ESPERA_SALVAR = 800;   // ms de silêncio na digitação antes de gravar
-
-  function selo(tr, texto, classe) {
-    const el = tr.querySelector(".selo");
-    if (!el) return;
-    el.textContent = texto;
-    el.className = "selo " + (classe || "");
-  }
-
-  function formatarCampo(i) {
-    i.value = i.value.trim() === "" ? "" : formatarValor(paraNumero(i.value));
-  }
-
-  // Enquanto o campo de observação está em foco, a linha continua sendo a que
-  // já está no banco — é o texto final (no blur/Enter) que renomeia a linha.
-  function obsParaGravar(tr) {
-    const campo = tr.querySelector(".obs");
-    return document.activeElement === campo ? (tr._obsSalva || "") : campo.value.trim();
-  }
-
-  function assinaturaLinha(tr) {
-    const valores = {};
-    tr.querySelectorAll(".valor").forEach(i => { valores[i.dataset.filial] = paraNumero(i.value); });
-    return JSON.stringify([tr.querySelector(".data").value, obsParaGravar(tr), valores]);
-  }
-
-  function agendarSalvamento(tr) {
-    clearTimeout(tr._timerSalvar);
-    selo(tr, "digitando…", "salvando");
-    tr._timerSalvar = setTimeout(() => salvarAgora(tr), ESPERA_SALVAR);
-  }
-
-  // Grava a linha inteira. Não recarrega a tela: redesenhar durante a digitação
-  // é o que causava os valores instáveis na tela de Saldos.
-  // Uma gravação de cada vez por linha: com duas em voo (debounce + blur, por
-  // exemplo) as duas liam a mesma observação anterior e a segunda inseria uma
-  // linha nova em vez de renomear a primeira.
-  function salvarAgora(tr) {
-    clearTimeout(tr._timerSalvar);
-    tr._timerSalvar = null;
-    tr._fila = (tr._fila || Promise.resolve()).then(() => enviarLinha(tr)).catch(() => {});
-    return tr._fila;
-  }
-
-  async function enviarLinha(tr) {
-    // A observação é lida uma vez só, antes do envio: depois do await o foco
-    // pode ter mudado e _obsSalva passaria a valer outro texto.
-    const obsEnviada = obsParaGravar(tr);
-    const data = tr.querySelector(".data").value;
-    if (!data) { selo(tr, "informe a data", "erro"); return; }
-
-    const valores = {};
-    tr.querySelectorAll(".valor").forEach(i => {
-      valores[i.dataset.filial] = paraNumero(i.value);
-    });
-
-    const assinatura = assinaturaLinha(tr);
-    if (assinatura === tr._ultimoSalvo) { selo(tr, "salvo", ""); return; }
-
-    selo(tr, "salvando…", "salvando");
-    try {
-      const resp = await fetch("/api/antecipacao-dividendos", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          data, valores,
-          observacao: obsEnviada,
-          observacao_anterior: tr._obsSalva,
-          // Grava/renomeia só nas filiais da área filtrada (vazio = todas).
-          id_area: filtroAtual().area,
-          cod_filial: filtroAtual().filial,
-        }),
-      });
-      const dados = await resp.json();
-      if (!resp.ok || !dados.ok) throw new Error(dados.erro || "Erro ao salvar.");
-      tr._ultimoSalvo = assinatura;
-      tr._obsSalva = obsEnviada;
-      // A data de uma linha nova só fica livre até o primeiro save.
-      if (tr.dataset.nova === "1") {
-        tr.dataset.nova = "0";
-        tr.querySelector(".data").disabled = true;
-      }
-      selo(tr, "salvo", "");
-      mostrarStatus("", false);
-    } catch (e) {
-      selo(tr, "não salvou", "erro");
-      mostrarStatus(e.message || "Erro ao salvar.", true);
-    }
-  }
-
-  function excluir(tr) {
-    const data = tr.querySelector(".data").value;
-    if (tr.dataset.nova === "1" || !data) { tr.remove(); recalcularRodape(); return; }
-    const obs = tr._obsSalva || "(sem observação)";
-    mostrarConfirmacaoGlobal(
-      "EXCLUIR LANÇAMENTO",
-      `Excluir os lançamentos de <strong>${data.split("-").reverse().join("/")}</strong> — ${obs}?`,
-      () => excluirConfirmado(tr, data));
-  }
-
-  async function excluirConfirmado(tr, data) {
-    try {
-      const resp = await fetch(
-        `/api/antecipacao-dividendos?data=${data}&observacao=${encodeURIComponent(tr._obsSalva || "")}&area=${filtroAtual().area}&filial=${filtroAtual().filial}`,
-        { method: "DELETE" });
-      const dados = await resp.json();
-      if (!resp.ok || !dados.ok) throw new Error(dados.erro || "Erro ao excluir.");
-      await carregar();
-      // Zero removidos é linha que não existia mais no banco — dizer "excluído"
-      // aqui seria mentir para quem está olhando a tela.
-      mostrarStatus(dados.removidos ? "Lançamento excluído." :
-                    "Nada foi excluído: a linha não existe mais no banco.",
-                    !dados.removidos);
-    } catch (e) {
-      mostrarStatus(e.message || "Erro ao excluir.", true);
-    }
-  }
-
-  document.getElementById("btnNovaData").addEventListener("click", () => {
-    const tr = linha({ data: dataSugerida(), observacao: "", valores: {}, nova: true });
-    tr.dataset.nova = "1";
-    document.getElementById("corpo").prepend(tr);
-    recalcular(tr);
   });
 
-  document.getElementById("filtroAno").addEventListener("change", aplicarFiltro);
-  document.getElementById("filtroMes").addEventListener("change", aplicarFiltro);
-  const selArea = document.getElementById("filtroArea");
-  if (selArea) selArea.addEventListener("change", () => {
-    montarOpcoesFilial(filtroAtual().filial);
-    aplicarFiltro();
+  // Esc fecha o que estiver aberto.
+  document.addEventListener("keydown", ev => {
+    if (ev.key !== "Escape") return;
+    fecharNovo();
+    document.querySelectorAll('tr.edicao[id^="editar-"]:not(.edicao-oculta)').forEach(tr => {
+      cancelarEdicao(tr.id.replace("editar-", ""));
+    });
   });
-  const selFilial = document.getElementById("filtroFilial");
-  if (selFilial) selFilial.addEventListener("change", aplicarFiltro);
 
-  montarOpcoesFilial({{ filial_sel | tojson }});
-  AREAS = recortarAreas();
-  montarCabecalho();
-  carregar();
+  {% if not linhas %}abrirNovo();{% endif %}
 </script>
 
 {% endblock %}

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .rolagem { overflow-x: auto; background: #fff; border: 1px solid #e2e6ea; border-radius: 10px; padding: 12px; }
+  .planilha { border-collapse: collapse; }
+  .planilha th, .planilha td { padding: 6px 9px; font-size: 13px; border-bottom: 1px solid #eceff1; white-space: nowrap; }
+  .planilha thead th { background: #f5f7f9; font-weight: 700; }
+  .planilha th.area { color: #1e5aa8; text-align: center; border-bottom: 2px solid #1e5aa8; }
+  .planilha th.num, .planilha td.num { text-align: right; }
+  .planilha .col-data { position: sticky; left: 0; background: #fff; z-index: 2; font-weight: 600; }
+  .planilha thead .col-data { background: #f5f7f9; z-index: 3; }
+  .planilha .dia { color: #777; font-size: 12px; font-weight: 400; }
+  .planilha .subtotal { background: #eef4fb; font-weight: 700; }
+  .planilha .total-geral { background: #e6efe6; font-weight: 700; }
+  .planilha tfoot td { background: #e6efe6; font-weight: 700; }
+  .planilha tfoot td.subtotal { background: #dbe8f6; }
+  .planilha td.zero { color: #bbb; }
+  .vazio { color: #777; font-style: italic; padding: 18px; }
+</style>
+
+<div class="pagina-titulo">Consultar Antecipação de Dividendos</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+{% set endpoint_filtro = "financeiro.consultar_antecipacao_dividendos" %}
+{% include "components/filtro_antecipacao.html" %}
+
+<div class="topo">
+  <a class="link-outra" href="{{ url_informar }}">← Informar antecipação</a>
+</div>
+
+{% macro celula(v) %}<td class="num{% if not v %} zero{% endif %}">{{ v | br if v else "-" }}</td>{% endmacro %}
+
+<div class="rolagem">
+  {% if linhas %}
+  <table class="planilha">
+    <thead>
+      <tr>
+        <th class="col-data"></th><th></th>
+        {% for a in recorte %}<th class="area" colspan="{{ a.filiais | length + 1 }}">{{ a.nome_area }}</th>{% endfor %}
+        {% if recorte | length > 1 %}<th class="area" rowspan="2">Total Geral</th>{% endif %}
+      </tr>
+      <tr>
+        <th class="col-data">Data</th><th>Observação</th>
+        {% for a in recorte %}
+          {% for f in a.filiais %}<th class="num">{{ f.nome_filial }}</th>{% endfor %}
+          <th class="num subtotal">Subtotal</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in linhas %}
+        <tr>
+          <td class="col-data">{{ l.data.strftime("%d/%m/%Y") }} <span class="dia">{{ l.dia_semana[:3] }}</span></td>
+          <td>{{ l.observacao or "Sem observação" }}</td>
+          {% for a in recorte %}
+            {% for f in a.filiais %}{{ celula(l.valores.get(f.cod_filial, 0)) }}{% endfor %}
+            <td class="num subtotal">{{ l.subtotais[a.id_area] | br }}</td>
+          {% endfor %}
+          {% if recorte | length > 1 %}<td class="num total-geral">{{ l.total | br }}</td>{% endif %}
+        </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td class="col-data">Total do mês</td><td></td>
+        {% for a in recorte %}
+          {% for f in a.filiais %}<td class="num">{{ rodape.valores.get(f.cod_filial, 0) | br }}</td>{% endfor %}
+          <td class="num subtotal">{{ rodape.subtotais[a.id_area] | br }}</td>
+        {% endfor %}
+        {% if recorte | length > 1 %}<td class="num">{{ rodape.total | br }}</td>{% endif %}
+      </tr>
+    </tfoot>
+  </table>
+  {% else %}
+    <div class="vazio">Nenhuma antecipação lançada neste mês{% if filtro.area or filtro.filial %} para o filtro escolhido{% endif %}.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

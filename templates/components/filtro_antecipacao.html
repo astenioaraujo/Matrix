@@ -1,0 +1,96 @@
+{#
+  Filtro das telas de Antecipação de Dividendos (Informar e Consultar).
+  A tela define `endpoint_filtro` antes do include; usa `filtro`, `anos`,
+  `areas` (todas do usuário) e `areas_filtro` (as da área escolhida).
+  Cada mudança recarrega a página: o recorte é feito no servidor, que larga a
+  filial que não pertence à área escolhida.
+#}
+<style>
+  .pagina-titulo { font-size: 30px; font-weight: 800; margin-bottom: 6px; }
+  .empresa { font-size: 17px; margin-bottom: 18px; }
+
+  .filtros { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; margin-bottom: 16px; }
+  .filtros label { font-size: 13px; font-weight: 600; color: #444; }
+  .filtros select { height: 38px; border: 1px solid #c7c7c7; border-radius: 9px; padding: 0 8px; font-size: 14px; }
+  .mes-nav { display: flex; align-items: center; gap: 6px; }
+  .btn-mes-nav {
+    width: 38px; height: 38px; border: 1px solid #c7c7c7; border-radius: 9px;
+    background: #c8e6c9; color: #111; font-size: 18px; font-weight: 900; cursor: pointer; padding: 0;
+  }
+  .btn-mes-nav:hover { background: #a5d6a7; }
+
+  .topo { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
+  .btn-novo { background: #1e5aa8; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-weight: 700; cursor: pointer; font-size: 14px; }
+  .btn-novo:hover { background: #17488a; }
+  .link-outra { color: #1e5aa8; font-weight: 600; text-decoration: none; }
+  .link-outra:hover { text-decoration: underline; }
+
+  .aviso { padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 14px; }
+  .aviso.ok { background: #e6f4ea; color: #1e6b34; border: 1px solid #b7dfc2; }
+  .aviso.erro { background: #fdecea; color: #9f2f2f; border: 1px solid #f3c1bc; }
+</style>
+
+<form method="get" action="{{ url_for(endpoint_filtro) }}" class="filtros" id="formFiltro">
+  <div>
+    <label for="filtroAno">Ano / Mês</label>
+    <div class="mes-nav">
+      <button type="button" class="btn-mes-nav" onclick="mudarMesFiltro(-1)" title="Mês anterior">←</button>
+      <select id="filtroAno" name="ano" onchange="this.form.submit()">
+        {% for a in anos %}
+          <option value="{{ a }}" {% if a == filtro.ano %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+      <select id="filtroMes" name="mes" onchange="this.form.submit()">
+        {% for nome in ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"] %}
+          <option value="{{ loop.index }}" {% if loop.index == filtro.mes %}selected{% endif %}>{{ nome }}</option>
+        {% endfor %}
+      </select>
+      <button type="button" class="btn-mes-nav" onclick="mudarMesFiltro(1)" title="Próximo mês">→</button>
+    </div>
+  </div>
+
+  {% if areas | length > 1 %}
+  <div>
+    <label for="filtroArea">Área</label><br>
+    <select id="filtroArea" name="area" style="min-width: 180px;" onchange="this.form.submit()">
+      <option value="">(Todas)</option>
+      {% for a in areas %}
+        <option value="{{ a.id_area }}" {% if a.id_area == filtro.area %}selected{% endif %}>{{ a.nome_area }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+
+  {% if areas | sum(attribute="filiais", start=[]) | length > 1 %}
+  <div>
+    <label for="filtroFilial">Filial</label><br>
+    <select id="filtroFilial" name="filial" style="min-width: 180px;" onchange="this.form.submit()">
+      <option value="">(Todas)</option>
+      {% for a in areas_filtro %}
+        {% if areas_filtro | length > 1 %}<optgroup label="{{ a.nome_area }}">{% endif %}
+        {% for f in a.filiais %}
+          <option value="{{ f.cod_filial }}" {% if f.cod_filial == filtro.filial %}selected{% endif %}>{{ f.nome_filial }}</option>
+        {% endfor %}
+        {% if areas_filtro | length > 1 %}</optgroup>{% endif %}
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+</form>
+
+<script>
+  // Seta anda de mês em mês; na virada de dezembro/janeiro o ano acompanha.
+  function mudarMesFiltro(delta) {
+    const selAno = document.getElementById("filtroAno");
+    const selMes = document.getElementById("filtroMes");
+    let ano = parseInt(selAno.value, 10), mes = parseInt(selMes.value, 10) + delta;
+    if (mes < 1) { mes = 12; ano -= 1; }
+    if (mes > 12) { mes = 1; ano += 1; }
+    if (![...selAno.options].some(o => o.value === String(ano))) {
+      selAno.add(new Option(String(ano), String(ano)));
+    }
+    selAno.value = String(ano);
+    selMes.value = String(mes);
+    document.getElementById("formFiltro").submit();
+  }
+</script>

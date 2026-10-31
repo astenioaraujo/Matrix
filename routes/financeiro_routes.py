@@ -6847,15 +6847,9 @@ def _areas_com_filiais(cur, cod_empresa):
     return resultado
 
 
-def _areas_antecipacao(cur, cod_empresa, id_area, cod_filial=None):
-    """Áreas do usuário, recortadas na área e na filial do filtro da tela
-    (None = todas). Área que fica sem filial no recorte sai da lista.
-
-    Gravar, renomear e excluir valem só para as filiais do recorte: com a área I
-    filtrada, excluir uma linha não pode levar junto o que a área II lançou na
-    mesma data e observação — e, com uma filial, o que as outras lançaram.
-    """
-    areas = _areas_com_filiais(cur, cod_empresa)
+def _recortar_areas(areas, id_area, cod_filial):
+    """Áreas recortadas na área e na filial do filtro (None = todas). Área que
+    fica sem filial no recorte sai da lista."""
     if id_area is not None:
         areas = [a for a in areas if a["id_area"] == id_area]
     if cod_filial is not None:
@@ -6867,212 +6861,297 @@ def _areas_antecipacao(cur, cod_empresa, id_area, cod_filial=None):
     return areas
 
 
-def _int_param(valor):
-    try:
-        return int(valor) if valor not in (None, "") else None
-    except (TypeError, ValueError):
-        return None
+def _filtro_antecipacao(areas):
+    """Ano/mês/área/filial da URL (ou dos campos ocultos do formulário),
+    conferidos contra as áreas do usuário. Abre no mês corrente."""
+    hoje = _hoje_local()
+    ano = request.values.get("ano", type=int) or hoje.year
+    mes = request.values.get("mes", type=int) or hoje.month
+    if not 1 <= mes <= 12:
+        mes = hoje.month
+    id_area = request.values.get("area", type=int)
+    if id_area not in {a["id_area"] for a in areas}:
+        id_area = None
+    cod_filial = request.values.get("filial", type=int)
+    if cod_filial not in {f["cod_filial"] for a in _recortar_areas(areas, id_area, None)
+                          for f in a["filiais"]}:
+        cod_filial = None
+    return {"ano": ano, "mes": mes, "area": id_area, "filial": cod_filial}
 
 
+def _url_antecipacao(endpoint, filtro):
+    return url_for(endpoint, **{k: v for k, v in filtro.items() if v is not None})
+
+
+def _lancamentos_antecipacao(cur, cod_empresa, filtro, recorte):
+    """Lançamentos do mês nas filiais do recorte, um por linha da tabela.
+
+    Valor zero fica de fora: a planilha antiga gravava zero em toda filial em
+    branco da linha (157 dos 188 registros da EMP010 em 31/10/2026), e isso
+    não é antecipação. O formulário novo recusa zero.
+    """
+    codigos = [f["cod_filial"] for a in recorte for f in a["filiais"]]
+    if not codigos:
+        return []
+    inicio = date(filtro["ano"], filtro["mes"], 1)
+    fim = date(filtro["ano"] + (filtro["mes"] == 12), filtro["mes"] % 12 + 1, 1)
+    cur.execute("""
+        SELECT ad.id_antecipacao, ad.data, ad.cod_filial, ad.observacao, ad.valor,
+               u.nome AS nome_usuario, ad.atualizado_em
+          FROM antecipacao_dividendos ad
+          LEFT JOIN usuarios u ON u.id_usuario = ad.usuario_lancamento
+         WHERE ad.cod_empresa = %s AND ad.cod_filial = ANY(%s)
+           AND ad.data >= %s AND ad.data < %s
+           AND ad.valor <> 0
+    """, (cod_empresa, codigos, inicio, fim))
+    return cur.fetchall()
+
+
+def _anos_antecipacao(cur, cod_empresa, filtro):
+    cur.execute("""
+        SELECT DISTINCT EXTRACT(YEAR FROM data)::int AS ano
+          FROM antecipacao_dividendos
+         WHERE cod_empresa = %s
+    """, (cod_empresa,))
+    anos = {r["ano"] for r in cur.fetchall()} | {_hoje_local().year, filtro["ano"]}
+    return sorted(anos, reverse=True)
+
+
+# Informar é um lançamento por vez, gravado pelo botão Salvar e editado pelo
+# id. Até 31/10/2026 a tela era uma planilha que gravava a cada tecla, e a
+# observação fazia parte da identidade da linha: editar o texto duplicava o
+# registro. A planilha virou só consulta (consultar_antecipacao_dividendos).
 @financeiro_bp.route("/saldos/antecipacao-dividendos")
 @permissao_obrigatoria("FINANCEIRO", "ANTECIPACAO_DIVIDENDOS")
 def antecipacao_dividendos():
     cod_empresa = str(session["cod_empresa"]).strip()
-    hoje = _hoje_local()
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
         areas = _areas_com_filiais(cur, cod_empresa)
-        cur.execute("""
-            SELECT DISTINCT EXTRACT(YEAR FROM data)::int AS ano
-              FROM antecipacao_dividendos
-             WHERE cod_empresa = %s
-        """, (cod_empresa,))
-        anos = {r["ano"] for r in cur.fetchall()}
+        filtro = _filtro_antecipacao(areas)
+        recorte = _recortar_areas(areas, filtro["area"], filtro["filial"])
+        lancamentos = _lancamentos_antecipacao(cur, cod_empresa, filtro, recorte)
+        anos = _anos_antecipacao(cur, cod_empresa, filtro)
     finally:
         cur.close()
         conn.close()
 
-    # Abre no mês corrente; ano/mês/área na URL mantêm o filtro ao recarregar.
-    ano = request.args.get("ano", type=int) or hoje.year
-    mes = request.args.get("mes", type=int) or hoje.month
-    if not 1 <= mes <= 12:
-        mes = hoje.month
-    id_area = request.args.get("area", type=int)
-    if id_area not in {a["id_area"] for a in areas}:
-        id_area = None
-    cod_filial = request.args.get("filial", type=int)
-    if cod_filial not in {f["cod_filial"] for a in areas for f in a["filiais"]
-                          if id_area is None or a["id_area"] == id_area}:
-        cod_filial = None
-    anos |= {hoje.year, ano}
+    posicao = {}
+    for ia, a in enumerate(areas):
+        for jf, f in enumerate(a["filiais"]):
+            posicao[f["cod_filial"]] = (ia, jf, a["nome_area"], f["nome_filial"])
+
+    linhas = []
+    for r in lancamentos:
+        ia, jf, nome_area, nome_filial = posicao[int(r["cod_filial"])]
+        linhas.append({
+            "id": r["id_antecipacao"],
+            "data": r["data"],
+            "dia_semana": DIAS_SEMANA_PT[r["data"].weekday()],
+            "cod_filial": int(r["cod_filial"]),
+            "nome_area": nome_area,
+            "nome_filial": nome_filial,
+            "observacao": r["observacao"] or "",
+            "valor": float(r["valor"] or 0),
+            "nome_usuario": r["nome_usuario"] or "",
+            "_ordem": (-r["data"].toordinal(), ia, jf, (r["observacao"] or "").lower()),
+        })
+    linhas.sort(key=lambda l: l["_ordem"])
+
+    hoje = _hoje_local()
+    data_sugerida = hoje if (hoje.year, hoje.month) == (filtro["ano"], filtro["mes"]) \
+        else date(filtro["ano"], filtro["mes"], 1)
 
     return render_template(
         "antecipacao_dividendos.html",
         areas=areas,
-        anos=sorted(anos, reverse=True),
-        ano_sel=ano,
-        mes_sel=mes,
-        area_sel=id_area,
-        filial_sel=cod_filial,
+        areas_filtro=_recortar_areas(areas, filtro["area"], None),
+        filtro=filtro,
+        anos=anos,
+        linhas=linhas,
+        total=sum(l["valor"] for l in linhas),
+        data_sugerida=data_sugerida.isoformat(),
+        url_consultar=_url_antecipacao("financeiro.consultar_antecipacao_dividendos", filtro),
         empresa_ativa=cod_empresa,
         nome_empresa_ativa=session["nome_empresa"],
         url_voltar=url_for("financeiro.menu_saldos"),
     )
 
 
-@financeiro_bp.route("/api/antecipacao-dividendos", methods=["GET"])
+def _valor_br_estrito(texto):
+    """"1.234,56" → 1234.56. Texto que não é número devolve None — gravar zero
+    calado foi o bug da tela de Saldos."""
+    texto = (texto or "").strip().replace(".", "").replace(",", ".")
+    try:
+        return round(float(texto), 2)
+    except ValueError:
+        return None
+
+
+@financeiro_bp.route("/saldos/antecipacao-dividendos/salvar", methods=["POST"])
 @permissao_obrigatoria("FINANCEIRO", "ANTECIPACAO_DIVIDENDOS")
-def api_listar_antecipacao_dividendos():
+def salvar_antecipacao_dividendos():
     cod_empresa = str(session["cod_empresa"]).strip()
-    id_area = _int_param(request.args.get("area"))
-    cod_filial = _int_param(request.args.get("filial"))
-    ano = request.args.get("ano", type=int)
-    mes = request.args.get("mes", type=int)
-    if not ano or not mes or not 1 <= mes <= 12:
-        return jsonify({"ok": False, "erro": "Informe mês e ano."}), 400
-    inicio = date(ano, mes, 1)
-    fim = date(ano + (mes == 12), mes % 12 + 1, 1)
+    id_antecipacao = request.form.get("id_antecipacao", type=int)
+    cod_filial = request.form.get("cod_filial", type=int)
+    observacao = (request.form.get("observacao") or "").strip()
+    valor = _valor_br_estrito(request.form.get("valor"))
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        areas = _areas_antecipacao(cur, cod_empresa, id_area, cod_filial)
-        codigos = [f["cod_filial"] for a in areas for f in a["filiais"]]
+        areas = _areas_com_filiais(cur, cod_empresa)
+        filtro = _filtro_antecipacao(areas)
+        nomes = {f["cod_filial"]: f["nome_filial"] for a in areas for f in a["filiais"]}
 
-        lancamentos = []
-        if codigos:
-            cur.execute("""
-                SELECT data, observacao, cod_filial, valor
-                  FROM antecipacao_dividendos
-                 WHERE cod_empresa = %s AND cod_filial = ANY(%s)
-                   AND data >= %s AND data < %s
-                 ORDER BY data DESC, observacao
-            """, (cod_empresa, codigos, inicio, fim))
-            lancamentos = cur.fetchall()
+        erro = None
+        try:
+            data = datetime.strptime(request.form.get("data") or "", "%Y-%m-%d").date()
+        except ValueError:
+            data = None
+            erro = "Informe a data."
+        if not erro and cod_filial not in nomes:
+            erro = "Escolha uma filial das suas áreas."
+        if not erro and (valor is None or valor == 0):
+            erro = "Informe o valor."
+
+        if erro:
+            flash(erro, "erro")
+            return redirect(_url_antecipacao("financeiro.antecipacao_dividendos", filtro))
+
+        try:
+            if id_antecipacao:
+                # A linha antiga também tem que ser de uma filial do usuário:
+                # sem isso daria para "mover" para si o lançamento de outra área.
+                cur.execute("""
+                    UPDATE antecipacao_dividendos
+                       SET data = %s, cod_filial = %s, observacao = %s, valor = %s,
+                           usuario_lancamento = %s, atualizado_em = NOW()
+                     WHERE id_antecipacao = %s AND cod_empresa = %s
+                       AND cod_filial = ANY(%s)
+                """, (data, cod_filial, observacao, valor, session["id_usuario"],
+                      id_antecipacao, cod_empresa, list(nomes)))
+                if cur.rowcount == 0:
+                    conn.rollback()
+                    flash("Lançamento não encontrado — pode ter sido excluído. Nada foi gravado.", "erro")
+                    return redirect(_url_antecipacao("financeiro.antecipacao_dividendos", filtro))
+            else:
+                cur.execute("""
+                    INSERT INTO antecipacao_dividendos
+                        (cod_empresa, cod_filial, data, observacao, valor, usuario_lancamento)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (cod_empresa, cod_filial, data, observacao, valor, session["id_usuario"]))
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            # uq_antecipacao_dividendos: uma linha por filial + data + observação.
+            # Somar calado num lançamento existente esconderia a duplicidade.
+            if getattr(e, "pgcode", None) == "23505":
+                flash(f"Já existe antecipação de {nomes[cod_filial]} em {data:%d/%m/%Y} "
+                      f"{'com a observação “' + observacao + '”' if observacao else 'sem observação'}. "
+                      "Edite o lançamento existente ou use outra observação.", "erro")
+                return redirect(_url_antecipacao("financeiro.antecipacao_dividendos", filtro))
+            raise
     finally:
         cur.close()
         conn.close()
 
-    # Uma linha por data + observação, com o valor de cada filial: a mesma data
-    # repete quando as observações são diferentes.
-    por_linha = OrderedDict()
-    for r in lancamentos:
-        chave = (r["data"], r["observacao"] or "")
-        linha = por_linha.setdefault(chave, {})
-        linha[str(int(r["cod_filial"]))] = float(r["valor"] or 0)
-
-    return jsonify({
-        "ok": True,
-        "areas": areas,
-        "linhas": [
-            {"data": d.isoformat(), "observacao": obs, "valores": v}
-            for (d, obs), v in por_linha.items()
-        ],
-    })
+    flash(f"Antecipação {'alterada' if id_antecipacao else 'lançada'}: {nomes[cod_filial]}, "
+          f"{data:%d/%m/%Y}, R$ {formatar_numero_br(valor)}.", "ok")
+    # Volta no mês do lançamento, para ele aparecer na lista; filtro de área ou
+    # filial que o esconderia é largado.
+    filtro.update(ano=data.year, mes=data.month)
+    if filtro["filial"] not in (None, cod_filial):
+        filtro["filial"] = None
+    if filtro["area"] is not None and cod_filial not in {
+            f["cod_filial"] for a in _recortar_areas(areas, filtro["area"], None) for f in a["filiais"]}:
+        filtro["area"] = None
+    return redirect(_url_antecipacao("financeiro.antecipacao_dividendos", filtro))
 
 
-@financeiro_bp.route("/api/antecipacao-dividendos", methods=["PUT"])
+@financeiro_bp.route("/saldos/antecipacao-dividendos/<int:id_antecipacao>/excluir", methods=["POST"])
 @permissao_obrigatoria("FINANCEIRO", "ANTECIPACAO_DIVIDENDOS")
-def api_salvar_antecipacao_dividendos():
+def excluir_antecipacao_dividendos(id_antecipacao):
     cod_empresa = str(session["cod_empresa"]).strip()
-    dados = request.get_json(silent=True) or {}
-
-    data_str = (dados.get("data") or "").strip()
-    valores = dados.get("valores") or {}
-    observacao = (dados.get("observacao") or "").strip()
-    # Observação faz parte da identidade da linha; quando ela é editada, é
-    # preciso saber qual linha renomear em vez de criar outra.
-    observacao_anterior = (dados.get("observacao_anterior") or observacao).strip()
-    id_area = _int_param(dados.get("id_area"))
-    cod_filial_filtro = _int_param(dados.get("cod_filial"))
-
-    try:
-        data = datetime.strptime(data_str, "%Y-%m-%d").date()
-    except ValueError:
-        return jsonify({"ok": False, "erro": "Data inválida."}), 400
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        areas = _areas_antecipacao(cur, cod_empresa, id_area, cod_filial_filtro)
-        permitidas = {f["cod_filial"] for a in areas for f in a["filiais"]}
-        codigos = sorted(permitidas)
-
-        if observacao_anterior != observacao:
-            cur.execute("""
-                UPDATE antecipacao_dividendos
-                   SET observacao = %s, atualizado_em = NOW()
-                 WHERE cod_empresa = %s AND data = %s AND observacao = %s
-                   AND cod_filial = ANY(%s)
-            """, (observacao, cod_empresa, data, observacao_anterior, codigos))
-
-        for cod_filial, valor in valores.items():
-            cod_filial = int(cod_filial)
-            if cod_filial not in permitidas:
-                conn.rollback()
-                return jsonify({"ok": False, "erro": "Filial fora das suas áreas."}), 403
-
-            cur.execute("""
-                INSERT INTO antecipacao_dividendos
-                    (cod_empresa, cod_filial, data, observacao, valor, usuario_lancamento)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (cod_empresa, cod_filial, data, observacao)
-                DO UPDATE SET valor = EXCLUDED.valor,
-                              usuario_lancamento = EXCLUDED.usuario_lancamento,
-                              atualizado_em = NOW()
-            """, (cod_empresa, cod_filial, data, observacao,
-                  float(valor or 0), session["id_usuario"]))
-
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        return jsonify({"ok": False, "erro": str(e)}), 400
-    finally:
-        cur.close()
-        conn.close()
-
-    return jsonify({"ok": True})
-
-
-@financeiro_bp.route("/api/antecipacao-dividendos", methods=["DELETE"])
-@permissao_obrigatoria("FINANCEIRO", "ANTECIPACAO_DIVIDENDOS")
-def api_excluir_antecipacao_dividendos():
-    cod_empresa = str(session["cod_empresa"]).strip()
-    data_str = (request.args.get("data") or "").strip()
-    observacao = (request.args.get("observacao") or "").strip()
-    id_area = _int_param(request.args.get("area"))
-    cod_filial = _int_param(request.args.get("filial"))
-
-    try:
-        data = datetime.strptime(data_str, "%Y-%m-%d").date()
-    except ValueError:
-        return jsonify({"ok": False, "erro": "Data inválida."}), 400
-
-    conn = get_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    try:
-        areas = _areas_antecipacao(cur, cod_empresa, id_area, cod_filial)
+        areas = _areas_com_filiais(cur, cod_empresa)
+        filtro = _filtro_antecipacao(areas)
         codigos = [f["cod_filial"] for a in areas for f in a["filiais"]]
-        # Apaga só a linha daquela observação — a mesma data pode ter outras.
         cur.execute("""
             DELETE FROM antecipacao_dividendos
-             WHERE cod_empresa = %s AND data = %s AND observacao = %s
-               AND cod_filial = ANY(%s)
-        """, (cod_empresa, data, observacao, codigos))
-        # A tela avisa quando nada foi removido: responder "ok" para uma linha
-        # que não existe mais faz a linha sumir da tela sem sumir do banco.
+             WHERE id_antecipacao = %s AND cod_empresa = %s AND cod_filial = ANY(%s)
+        """, (id_antecipacao, cod_empresa, codigos))
         removidos = cur.rowcount
         conn.commit()
-    except Exception as e:
-        conn.rollback()
-        return jsonify({"ok": False, "erro": str(e)}), 400
     finally:
         cur.close()
         conn.close()
 
-    return jsonify({"ok": True, "removidos": removidos})
+    if removidos:
+        flash("Lançamento excluído.", "ok")
+    else:
+        flash("Nada foi excluído: o lançamento não existe mais.", "erro")
+    return redirect(_url_antecipacao("financeiro.antecipacao_dividendos", filtro))
+
+
+@financeiro_bp.route("/saldos/antecipacao-dividendos/consultar")
+@permissao_obrigatoria("FINANCEIRO", "ANTECIPACAO_DIVIDENDOS")
+def consultar_antecipacao_dividendos():
+    """Planilha só de leitura: uma linha por data + observação, uma coluna por
+    filial, subtotal por área e total geral."""
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        areas = _areas_com_filiais(cur, cod_empresa)
+        filtro = _filtro_antecipacao(areas)
+        recorte = _recortar_areas(areas, filtro["area"], filtro["filial"])
+        lancamentos = _lancamentos_antecipacao(cur, cod_empresa, filtro, recorte)
+        anos = _anos_antecipacao(cur, cod_empresa, filtro)
+    finally:
+        cur.close()
+        conn.close()
+
+    por_linha = defaultdict(lambda: defaultdict(float))
+    for r in lancamentos:
+        por_linha[(r["data"], r["observacao"] or "")][int(r["cod_filial"])] += float(r["valor"] or 0)
+
+    def montar(valores):
+        subtotais = {a["id_area"]: sum(valores.get(f["cod_filial"], 0.0) for f in a["filiais"])
+                     for a in recorte}
+        return {"valores": valores, "subtotais": subtotais, "total": sum(subtotais.values())}
+
+    linhas = []
+    for (d, obs) in sorted(por_linha, key=lambda k: (-k[0].toordinal(), k[1] == "", k[1].lower())):
+        linha = montar(por_linha[(d, obs)])
+        linha.update(data=d, dia_semana=DIAS_SEMANA_PT[d.weekday()], observacao=obs)
+        linhas.append(linha)
+
+    soma = defaultdict(float)
+    for valores in por_linha.values():
+        for cod, v in valores.items():
+            soma[cod] += v
+
+    return render_template(
+        "consultar_antecipacao_dividendos.html",
+        areas=areas,
+        areas_filtro=_recortar_areas(areas, filtro["area"], None),
+        recorte=recorte,
+        filtro=filtro,
+        anos=anos,
+        linhas=linhas,
+        rodape=montar(soma),
+        url_informar=_url_antecipacao("financeiro.antecipacao_dividendos", filtro),
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_saldos"),
+    )
 
 
 # Rótulo das antecipações lançadas sem explicação: a linha precisa aparecer
