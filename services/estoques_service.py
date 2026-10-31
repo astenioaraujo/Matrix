@@ -215,6 +215,25 @@ def linhas_estoque(cur, cod_empresa, data_base, codigos_filiais=None):
             ORDER BY cod_filial, cod_produto, data_compra DESC, id_compra DESC
         ),
 
+        -- Filial sem compra própria (posto novo, carga comprada por outro
+        -- posto): vale o preço da compra que foi descarregada nela.
+        ultimo_descarrego AS (
+            SELECT DISTINCT ON (d.cod_filial_descarga, d.cod_produto)
+                d.cod_filial_descarga AS cod_filial,
+                d.cod_produto,
+                cc.preco_unitario AS preco_descarregado
+            FROM descarregos_combustiveis d
+            JOIN compras_combustiveis cc
+              ON cc.cod_empresa = d.cod_empresa
+             AND cc.id_compra = d.id_compra
+            WHERE d.cod_empresa = %s
+              AND d.data_descarrego <= %s
+              AND d.cod_filial_descarga IS NOT NULL
+              AND COALESCE(cc.preco_unitario, 0) > 0
+            ORDER BY d.cod_filial_descarga, d.cod_produto,
+                     d.data_descarrego DESC, d.id_descarrego DESC
+        ),
+
         preco_data AS (
             SELECT DISTINCT ON (cod_produto)
                 cod_produto,
@@ -222,6 +241,7 @@ def linhas_estoque(cur, cod_empresa, data_base, codigos_filiais=None):
             FROM precos_compra
             WHERE cod_empresa = %s
             AND data_preco <= %s
+            AND COALESCE(preco_compra, 0) > 0  -- campo em branco na tela grava 0
             ORDER BY cod_produto, data_preco DESC
         ),
 
@@ -261,10 +281,10 @@ def linhas_estoque(cur, cod_empresa, data_base, codigos_filiais=None):
 
             COALESCE(mat.medicao_atual, 0) AS medicao_atual,
 
-            COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, uce.preco_empresa, 0) AS preco_ultima_compra,
+            COALESCE(NULLIF(uc.preco_ultima_compra, 0), ud.preco_descarregado, pd.preco_tabela, uce.preco_empresa, 0) AS preco_ultima_compra,
 
             COALESCE(mat.medicao_atual, 0)
-            * COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, uce.preco_empresa, 0) AS estoque_atual_rs,
+            * COALESCE(NULLIF(uc.preco_ultima_compra, 0), ud.preco_descarregado, pd.preco_tabela, uce.preco_empresa, 0) AS estoque_atual_rs,
             (
                 COALESCE(mat.medicao_atual, 0)
                 - (
@@ -273,12 +293,12 @@ def linhas_estoque(cur, cod_empresa, data_base, codigos_filiais=None):
                     - COALESCE(v.vendas, 0)
                 )
             )
-            * COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, uce.preco_empresa, 0) AS perda_sobra_rs,
+            * COALESCE(NULLIF(uc.preco_ultima_compra, 0), ud.preco_descarregado, pd.preco_tabela, uce.preco_empresa, 0) AS perda_sobra_rs,
 
             COALESCE(cd.compras_rs, 0) AS compras_rs,
 
             COALESCE(t.estoque_transito, 0)
-            * COALESCE(NULLIF(uc.preco_ultima_compra, 0), pd.preco_tabela, uce.preco_empresa, 0) AS transito_rs
+            * COALESCE(NULLIF(uc.preco_ultima_compra, 0), ud.preco_descarregado, pd.preco_tabela, uce.preco_empresa, 0) AS transito_rs
 
         FROM base b
 
@@ -314,6 +334,10 @@ def linhas_estoque(cur, cod_empresa, data_base, codigos_filiais=None):
           ON uc.cod_filial = b.cod_filial
          AND uc.cod_produto = b.cod_produto
 
+        LEFT JOIN ultimo_descarrego ud
+          ON ud.cod_filial = b.cod_filial
+         AND ud.cod_produto = b.cod_produto
+
         LEFT JOIN preco_data pd
           ON pd.cod_produto = b.cod_produto
 
@@ -345,6 +369,8 @@ def linhas_estoque(cur, cod_empresa, data_base, codigos_filiais=None):
             cod_empresa, data_sel,       # medicao_atual
 
             cod_empresa, data_anterior,  # ultima_compra
+
+            cod_empresa, data_anterior,  # ultimo_descarrego
 
             cod_empresa, data_sel,       # preco_data
 

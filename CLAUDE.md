@@ -526,6 +526,15 @@ coligada.
 
 A consulta grande saiu da rota para `services/estoques_service.py` (`linhas_estoque`, `totais_estoque_rs`): a importação em Saldos usa a **mesma** função, para os números não divergirem com o tempo. O cursor precisa ser `RealDictCursor`.
 
+**Preço por litro** (Estoque Atual R$, Trânsito R$ e Perda/Sobra R$; Compras R$ é o `valor_comprado` da própria compra), o primeiro que existir e for **> 0**:
+
+1. última compra **feita pela** filial (`ultima_compra`)
+2. última compra **descarregada na** filial, de qualquer posto (`ultimo_descarrego`) — posto novo cuja carga foi comprada por outro (Goiana, filial 24 da EMP010, abastecida por compras do Bonito I)
+3. tabela de Informar Preço de Compra (`preco_data`), que é da empresa, não da filial
+4. última compra da empresa (`ultima_compra_empresa`)
+
+**Zero não é preço em nenhum passo.** Campo em branco em Informar Preço de Compra grava 0, e até 31/10/2026 o passo da tabela aceitava esse zero e parava a cadeia ali: a Goiana saía com Gasolina e Etanol zerados em R$.
+
 ## Aferições de Bicos (26/10/2026)
 
 Botão **Aferições** no menu de Operações, atrás de `INFORMAR_AFERICOES` (500) /
