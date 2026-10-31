@@ -33,6 +33,17 @@
   .selo.salvando { color: #8a6d1f; }
   .selo.erro { color: #b3261e; }
 
+  .filtros { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; margin-bottom: 16px; }
+  .filtros label { font-size: 13px; font-weight: 600; color: #444; }
+  .filtros select { height: 38px; border: 1px solid #c7c7c7; border-radius: 9px; padding: 0 8px; font-size: 14px; }
+  .mes-nav { display: flex; align-items: center; gap: 6px; }
+  .btn-mes-nav {
+    width: 38px; height: 38px; border: 1px solid #c7c7c7; border-radius: 9px;
+    background: #c8e6c9; color: #111; font-size: 18px; font-weight: 900; cursor: pointer; padding: 0;
+  }
+  .btn-mes-nav:hover { background: #a5d6a7; }
+  .vazio { color: #777; font-style: italic; padding: 14px 8px; }
+
   .status-msg { margin-top: 10px; font-size: 14px; min-height: 20px; }
   .status-msg.erro { color: #b3261e; }
   .status-msg.ok { color: #1e7a34; }
@@ -42,6 +53,46 @@
 
 <div class="empresa">
   <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<div class="filtros">
+  <div>
+    <label for="filtroAno">Ano / Mês</label>
+    <div class="mes-nav">
+      <button type="button" class="btn-mes-nav" onclick="mudarMes(-1)" title="Mês anterior">←</button>
+      <select id="filtroAno">
+        {% for a in anos %}
+          <option value="{{ a }}" {% if a == ano_sel %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+      <select id="filtroMes">
+        {% for nome in ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"] %}
+          <option value="{{ loop.index }}" {% if loop.index == mes_sel %}selected{% endif %}>{{ nome }}</option>
+        {% endfor %}
+      </select>
+      <button type="button" class="btn-mes-nav" onclick="mudarMes(1)" title="Próximo mês">→</button>
+    </div>
+  </div>
+
+  {% if areas|length > 1 %}
+  <div>
+    <label for="filtroArea">Área</label><br>
+    <select id="filtroArea" style="min-width: 180px;">
+      <option value="">(Todas)</option>
+      {% for a in areas %}
+        <option value="{{ a.id_area }}" {% if a.id_area == area_sel %}selected{% endif %}>{{ a.nome_area }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+
+  {% if areas|sum(attribute="filiais", start=[])|length > 1 %}
+  <div>
+    <label for="filtroFilial">Filial</label><br>
+    <!-- As opções saem do JS: acompanham a área escolhida. -->
+    <select id="filtroFilial" style="min-width: 180px;"></select>
+  </div>
+  {% endif %}
 </div>
 
 <div class="topo">
@@ -63,7 +114,99 @@
 <div class="status-msg" id="status"></div>
 
 <script>
-  const AREAS = {{ areas | tojson }};
+  const TODAS_AREAS = {{ areas | tojson }};
+  // Colunas na tela: todas as áreas/filiais ou só as do filtro.
+  let AREAS = TODAS_AREAS;
+
+  function filtroAtual() {
+    const area = document.getElementById("filtroArea");
+    const filial = document.getElementById("filtroFilial");
+    return {
+      ano: parseInt(document.getElementById("filtroAno").value, 10),
+      mes: parseInt(document.getElementById("filtroMes").value, 10),
+      area: area ? area.value : "",
+      filial: filial ? filial.value : "",
+    };
+  }
+
+  function paramsFiltro() {
+    const f = filtroAtual();
+    const params = new URLSearchParams({ ano: f.ano, mes: f.mes });
+    if (f.area) params.set("area", f.area);
+    if (f.filial) params.set("filial", f.filial);
+    return params;
+  }
+
+  // Áreas da área escolhida e, com filial escolhida, só a coluna dela.
+  function recortarAreas() {
+    const f = filtroAtual();
+    return TODAS_AREAS
+      .filter(a => !f.area || String(a.id_area) === f.area)
+      .map(a => ({ ...a, filiais: a.filiais.filter(fl => !f.filial || String(fl.cod_filial) === f.filial) }))
+      .filter(a => a.filiais.length);
+  }
+
+  // Lista de filiais da área escolhida (todas, agrupadas por área, sem área).
+  // A filial escolhida que não pertence à nova área volta para "(Todas)".
+  function montarOpcoesFilial(selecionada) {
+    const sel = document.getElementById("filtroFilial");
+    if (!sel) return;
+    const area = filtroAtual().area;
+    const areas = TODAS_AREAS.filter(a => !area || String(a.id_area) === area);
+    let html = '<option value="">(Todas)</option>';
+    areas.forEach(a => {
+      const opcoes = a.filiais.map(f => `<option value="${f.cod_filial}">${f.nome_filial}</option>`).join("");
+      html += areas.length > 1 ? `<optgroup label="${a.nome_area}">${opcoes}</optgroup>` : opcoes;
+    });
+    sel.innerHTML = html;
+    sel.value = [...sel.options].some(o => o.value === String(selecionada)) ? String(selecionada) : "";
+  }
+
+  // Seta anda de mês em mês; na virada de dezembro/janeiro o ano acompanha.
+  function mudarMes(delta) {
+    const f = filtroAtual();
+    let mes = f.mes + delta, ano = f.ano;
+    if (mes < 1) { mes = 12; ano -= 1; }
+    if (mes > 12) { mes = 1; ano += 1; }
+    const selAno = document.getElementById("filtroAno");
+    if (![...selAno.options].some(o => o.value === String(ano))) {
+      // Ano ainda sem lançamento: entra na lista na posição certa (decrescente).
+      const opt = new Option(String(ano), String(ano));
+      const depois = [...selAno.options].find(o => parseInt(o.value, 10) < ano);
+      selAno.add(opt, depois || null);
+    }
+    selAno.value = String(ano);
+    document.getElementById("filtroMes").value = String(mes);
+    aplicarFiltro();
+  }
+
+  async function aplicarFiltro() {
+    history.replaceState(null, "", `${location.pathname}?${paramsFiltro()}`);
+    // O que estava sendo digitado grava antes de a grade ser trocada.
+    await gravarPendentes();
+    AREAS = recortarAreas();
+    montarCabecalho();
+    carregar();
+  }
+
+  function gravarPendentes() {
+    return Promise.all([...document.querySelectorAll("#corpo tr")].map(tr => {
+      if (tr._timerSalvar) salvarAgora(tr);
+      return tr._fila;
+    }));
+  }
+
+  function primeiroDiaFiltro() {
+    const f = filtroAtual();
+    return `${f.ano}-${String(f.mes).padStart(2, "0")}-01`;
+  }
+
+  // Data sugerida para "+ Nova Data": hoje, se o mês do filtro for o atual;
+  // senão o dia 1 do mês filtrado.
+  function dataSugerida() {
+    const hoje = hojeISO();
+    return hoje.slice(0, 8) === primeiroDiaFiltro().slice(0, 8) ? hoje : primeiroDiaFiltro();
+  }
 
   function mostrarStatus(msg, erro) {
     const el = document.getElementById("status");
@@ -206,13 +349,24 @@
     return tr;
   }
 
+  let numeroCarga = 0;
+
   async function carregar() {
     const corpo = document.getElementById("corpo");
     corpo.innerHTML = "";
+    mostrarStatus("", false);
+    const params = paramsFiltro();
+    // Setas clicadas em sequência deixam várias cargas em voo: só a última
+    // desenha, senão as linhas de dois meses se misturariam na grade.
+    const minhaCarga = ++numeroCarga;
     try {
-      const resp = await fetch("/api/antecipacao-dividendos");
+      const resp = await fetch(`/api/antecipacao-dividendos?${params}`);
       const dados = await resp.json();
+      if (minhaCarga !== numeroCarga) return;
       if (!resp.ok || !dados.ok) throw new Error(dados.erro || "Erro ao carregar.");
+      if (!(dados.linhas || []).length) {
+        mostrarStatus("Nenhuma antecipação lançada neste mês.", false);
+      }
       (dados.linhas || []).forEach(l => {
         const tr = linha(l);
         corpo.appendChild(tr);
@@ -263,6 +417,7 @@
   // linha nova em vez de renomear a primeira.
   function salvarAgora(tr) {
     clearTimeout(tr._timerSalvar);
+    tr._timerSalvar = null;
     tr._fila = (tr._fila || Promise.resolve()).then(() => enviarLinha(tr)).catch(() => {});
     return tr._fila;
   }
@@ -291,6 +446,9 @@
           data, valores,
           observacao: obsEnviada,
           observacao_anterior: tr._obsSalva,
+          // Grava/renomeia só nas filiais da área filtrada (vazio = todas).
+          id_area: filtroAtual().area,
+          cod_filial: filtroAtual().filial,
         }),
       });
       const dados = await resp.json();
@@ -323,7 +481,7 @@
   async function excluirConfirmado(tr, data) {
     try {
       const resp = await fetch(
-        `/api/antecipacao-dividendos?data=${data}&observacao=${encodeURIComponent(tr._obsSalva || "")}`,
+        `/api/antecipacao-dividendos?data=${data}&observacao=${encodeURIComponent(tr._obsSalva || "")}&area=${filtroAtual().area}&filial=${filtroAtual().filial}`,
         { method: "DELETE" });
       const dados = await resp.json();
       if (!resp.ok || !dados.ok) throw new Error(dados.erro || "Erro ao excluir.");
@@ -339,12 +497,24 @@
   }
 
   document.getElementById("btnNovaData").addEventListener("click", () => {
-    const tr = linha({ data: hojeISO(), observacao: "", valores: {}, nova: true });
+    const tr = linha({ data: dataSugerida(), observacao: "", valores: {}, nova: true });
     tr.dataset.nova = "1";
     document.getElementById("corpo").prepend(tr);
     recalcular(tr);
   });
 
+  document.getElementById("filtroAno").addEventListener("change", aplicarFiltro);
+  document.getElementById("filtroMes").addEventListener("change", aplicarFiltro);
+  const selArea = document.getElementById("filtroArea");
+  if (selArea) selArea.addEventListener("change", () => {
+    montarOpcoesFilial(filtroAtual().filial);
+    aplicarFiltro();
+  });
+  const selFilial = document.getElementById("filtroFilial");
+  if (selFilial) selFilial.addEventListener("change", aplicarFiltro);
+
+  montarOpcoesFilial({{ filial_sel | tojson }});
+  AREAS = recortarAreas();
   montarCabecalho();
   carregar();
 </script>
