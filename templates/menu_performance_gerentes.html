@@ -68,6 +68,16 @@
     background: #25834a;
     border-color: #25834a;
   }
+
+  .btn-premiacao {
+    background: #7b3fa0;
+    border: 1px solid #7b3fa0;
+  }
+
+  .btn-premiacao:hover {
+    background: #653285;
+    border-color: #653285;
+  }
 </style>
 
 <div class="pagina-titulo">Performance de Gerentes</div>
@@ -93,6 +103,12 @@
   {% if pode_metas %}
     <a href="{{ url_for('performances.menu_metas') }}" class="btn-metas">
       Metas
+    </a>
+  {% endif %}
+
+  {% if pode_regras_premiacao %}
+    <a href="{{ url_for('performances.regras_premiacao') }}" class="btn-premiacao">
+      Regras de Premiação
     </a>
   {% endif %}
 

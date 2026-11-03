@@ -1,0 +1,320 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 30px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .pagina-subtitulo {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .bloco-titulo {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 26px 0 10px;
+    color: #b02a37;
+  }
+
+  .flash-msg {
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-weight: 600;
+    max-width: 760px;
+  }
+
+  .flash-success {
+    background: #e6f4ea;
+    color: #1e6b34;
+    border: 1px solid #b7dfc2;
+  }
+
+  .flash-error {
+    background: #fdeaea;
+    color: #9f2f2f;
+    border: 1px solid #efc2c2;
+  }
+
+  .aviso {
+    background: #fff8e1;
+    border: 1px solid #f0d08a;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    max-width: 760px;
+  }
+
+  .form-regra {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 10px;
+    padding: 18px;
+    max-width: 760px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .form-regra label {
+    display: block;
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 5px;
+  }
+
+  .form-regra input,
+  .form-regra select {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #c7c7c7;
+    background: #fff;
+    font-size: 15px;
+    box-sizing: border-box;
+  }
+
+  .form-regra input {
+    width: 100%;
+    text-align: right;
+  }
+
+  .form-acoes {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .form-obs {
+    grid-column: 1 / -1;
+    font-size: 13px;
+    color: #666;
+  }
+
+  .btn-acao {
+    display: inline-block;
+    padding: 9px 15px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 700;
+    border: 1px solid #c7c7c7;
+    background: #f7f7f7;
+    color: #1f3c88;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .btn-salvar {
+    background: #2e9b57;
+    color: #fff;
+    border-color: #2e9b57;
+  }
+
+  .btn-salvar:hover {
+    background: #25834a;
+  }
+
+  .btn-mini {
+    padding: 4px 10px;
+    font-size: 13px;
+    border-radius: 8px;
+  }
+
+  .btn-excluir {
+    color: #b02a37;
+  }
+
+  .tabela-wrap {
+    border: 1px solid #d9d9d9;
+    border-radius: 8px;
+    background: #fff;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  table {
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #dddddd;
+    padding: 7px 14px;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  th {
+    background: #dbe8f4;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  td.rotulo {
+    text-align: left;
+  }
+
+  td.total {
+    font-weight: 700;
+  }
+
+  td.acoes {
+    display: flex;
+    gap: 6px;
+  }
+
+  td.acoes form {
+    margin: 0;
+  }
+
+  tbody tr:nth-child(even) {
+    background: #fafafa;
+  }
+
+  .regras-texto {
+    max-width: 760px;
+    font-size: 14px;
+    margin-top: 14px;
+    line-height: 1.5;
+  }
+
+  .regras-texto ol {
+    margin: 6px 0 10px;
+    padding-left: 22px;
+  }
+
+  @media (max-width: 600px) {
+    .form-regra { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="pagina-titulo">Regras de Premiação</div>
+<div class="pagina-subtitulo"><strong>Empresa:</strong> {{ nome_empresa }}</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endwith %}
+
+{% if regra_atual %}
+  <div class="bloco-titulo" style="margin-top:0;">Tabela de premiação em vigor</div>
+
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>RESULTADO ALCANÇADO</th>
+          <th>PRÊMIO ADICIONAL</th>
+          <th>PREMIAÇÃO TOTAL</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in exemplos %}
+          <tr>
+            <td class="rotulo">
+              {% if e.litros %}Meta + {{ formatar_numero_br(e.litros, 0) }} litros{% else %}Meta atingida{% endif %}
+            </td>
+            <td>{% if e.litros %}R$ {{ formatar_numero_br(e.adicional) }}{% else %}—{% endif %}</td>
+            <td class="total">R$ {{ formatar_numero_br(e.total) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="regras-texto">
+    <ol>
+      <li><strong>Meta não atingida:</strong> não haverá premiação.</li>
+      <li><strong>Meta atingida:</strong> premiação de R$ {{ formatar_numero_br(regra_atual.premio_meta) }}.</li>
+      <li><strong>Superação da meta:</strong> acréscimo de R$ {{ formatar_numero_br(regra_atual.premio_faixa) }} a cada {{ formatar_numero_br(regra_atual.litros_faixa, 0) }} litros completos acima da meta.</li>
+    </ol>
+    Não existe limite máximo de premiação, desde que o volume adicional de vendas seja alcançado.
+  </div>
+{% else %}
+  <div class="aviso">Nenhuma regra em vigor neste mês. Sem regra, o Acompanhamento de Metas não mostra a coluna de prêmio.</div>
+{% endif %}
+
+<div class="bloco-titulo">{% if em_edicao %}Editar a regra de {{ em_edicao.rotulo }}{% else %}Cadastrar regra{% endif %}</div>
+
+<form class="form-regra" method="post">
+  <div>
+    <label for="vigencia_mes">Vale a partir de</label>
+    <select id="vigencia_mes" name="vigencia_mes">
+      {% for nome in nomes_meses %}
+        <option value="{{ loop.index }}" {% if loop.index == form_mes %}selected{% endif %}>{{ nome }}</option>
+      {% endfor %}
+    </select>
+    <select name="vigencia_ano" aria-label="Ano">
+      {% for a in anos %}
+        <option value="{{ a }}" {% if a == form_ano %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="premio_meta">Prêmio ao atingir a meta (R$)</label>
+    <input id="premio_meta" name="premio_meta" inputmode="decimal" autocomplete="off" required value="{{ form_premio_meta }}">
+  </div>
+  <div>
+    <label for="litros_faixa">A cada quantos litros acima da meta</label>
+    <input id="litros_faixa" name="litros_faixa" inputmode="numeric" autocomplete="off" required value="{{ form_litros_faixa }}">
+  </div>
+  <div>
+    <label for="premio_faixa">Acréscimo por faixa completa (R$)</label>
+    <input id="premio_faixa" name="premio_faixa" inputmode="decimal" autocomplete="off" required value="{{ form_premio_faixa }}">
+  </div>
+  <div class="form-acoes">
+    <button type="submit" class="btn-acao btn-salvar">Salvar regra</button>
+    {% if em_edicao %}<a class="btn-acao" href="{{ url_for('performances.regras_premiacao') }}">Cancelar</a>{% endif %}
+  </div>
+  <div class="form-obs">
+    Para mudar a regra de um mês em diante, cadastre uma vigência nova: os meses anteriores continuam com a regra antiga.
+    Salvar sobre uma vigência que já existe substitui os valores dela e muda o prêmio de todos os meses que ela cobre.
+  </div>
+</form>
+
+{% if regras %}
+  <div class="bloco-titulo">Vigências cadastradas</div>
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>VALE A PARTIR DE</th>
+          <th>PRÊMIO DA META</th>
+          <th>A CADA (LITROS)</th>
+          <th>ACRÉSCIMO</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in regras %}
+          <tr>
+            <td class="rotulo">{{ r.rotulo }}</td>
+            <td>R$ {{ formatar_numero_br(r.premio_meta) }}</td>
+            <td>{{ formatar_numero_br(r.litros_faixa, 0) }}</td>
+            <td>R$ {{ formatar_numero_br(r.premio_faixa) }}</td>
+            <td class="acoes">
+              <a class="btn-acao btn-mini" href="{{ url_for('performances.regras_premiacao', editar=r.id_vendas_premiacao_regra) }}">Editar</a>
+              <form method="post"
+                    action="{{ url_for('performances.excluir_regra_premiacao', id_regra=r.id_vendas_premiacao_regra) }}"
+                    onsubmit="return confirmarEnvio(this, 'Excluir a regra de {{ r.rotulo }}?')">
+                <button type="submit" class="btn-acao btn-mini btn-excluir">Excluir</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+
+{% endblock %}

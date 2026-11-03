@@ -36,6 +36,27 @@
     font-size: 15px;
   }
 
+  /* Mesmas setas do matricial. */
+  .btn-mes-nav {
+    width: 38px;
+    height: 38px;
+    box-sizing: border-box;
+    border: 1px solid #c7c7c7;
+    border-radius: 9px;
+    background: #c8e6c9;
+    color: #111;
+    font-size: 18px;
+    font-weight: 900;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+  }
+
+  .btn-mes-nav:hover {
+    background: #a5d6a7;
+  }
+
   .bloco-titulo {
     font-size: 22px;
     font-weight: 700;
@@ -156,8 +177,33 @@
   .oculta-vendido [data-col="vendido"],
   .oculta-projecao [data-col="projecao"],
   .oculta-meta [data-col="meta"],
-  .oculta-falta [data-col="falta"] {
+  .oculta-falta [data-col="falta"],
+  .oculta-premio [data-col="premio"] {
     display: none;
+  }
+
+  /* A coluna em branco separa o resultado do dinheiro: é só um respiro, sem
+     fundo de cabeçalho, zebra nem rodapé. */
+  th.col-espaco,
+  td.col-espaco {
+    width: 18px;
+    min-width: 18px;
+    padding: 0;
+    background: #fff !important;
+    border-top: none;
+    border-bottom: none;
+  }
+
+  .col-premio {
+    min-width: 120px;
+    font-weight: 700;
+  }
+
+  th.col-premio .previsao {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: #8a5a00;
   }
 
   .legenda {
@@ -172,6 +218,7 @@
 <div class="pagina-subtitulo"><strong>Empresa:</strong> {{ nome_empresa }}</div>
 
 <form class="filtro" method="get">
+  <a class="btn-mes-nav" href="{{ url_for('performances.acompanhamento_metas', ano=ano_anterior, mes=mes_anterior) }}" title="Mês anterior">←</a>
   <label for="mes">Mês:</label>
   <select id="mes" name="mes" onchange="this.form.submit()">
     {% for nome in nomes_meses %}
@@ -185,6 +232,7 @@
       <option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>
     {% endfor %}
   </select>
+  <a class="btn-mes-nav" href="{{ url_for('performances.acompanhamento_metas', ano=ano_proximo, mes=mes_proximo) }}" title="Próximo mês">→</a>
   <noscript><button type="submit">Aplicar</button></noscript>
 </form>
 
@@ -208,6 +256,7 @@
   {% if projetado %}<label><input type="checkbox" data-alvo="projecao" checked> Projeção</label>{% endif %}
   <label><input type="checkbox" data-alvo="meta" checked> Meta</label>
   <label><input type="checkbox" data-alvo="falta" checked> Falta</label>
+  {% if tem_regra_premio %}<label><input type="checkbox" data-alvo="premio" checked> Prêmio</label>{% endif %}
 </div>
 
 <div class="tabela-wrap" id="tabela-acompanhamento">
@@ -221,6 +270,10 @@
         <th class="col-num" data-col="meta">META</th>
         <th class="col-num" data-col="falta">FALTA</th>
         <th class="col-pct">% ATINGIDO</th>
+        {% if tem_regra_premio %}
+          <th class="col-espaco" data-col="premio"></th>
+          <th class="col-premio" data-col="premio">PRÊMIO{% if projetado %}<span class="previsao">previsão</span>{% endif %}</th>
+        {% endif %}
       </tr>
     </thead>
 
@@ -240,6 +293,10 @@
           <td class="col-pct" style="background: {{ l.pct_cor }};">
             {% if l.pct is not none %}{{ formatar_numero_br(l.pct, 1) }}%{% endif %}
           </td>
+          {% if tem_regra_premio %}
+            <td class="col-espaco" data-col="premio"></td>
+            <td class="col-premio" data-col="premio">{% if l.premio %}R$ {{ formatar_numero_br(l.premio) }}{% endif %}</td>
+          {% endif %}
         </tr>
       {% endfor %}
     </tbody>
@@ -255,6 +312,10 @@
         <td class="col-num" data-col="meta">{% if total.meta %}{{ formatar_numero_br(total.meta, 0) }}{% endif %}</td>
         <td class="col-num" data-col="falta">{% if total.falta %}{{ formatar_numero_br(total.falta, 0) }}{% endif %}</td>
         <td class="col-pct">{% if total.pct is not none %}{{ formatar_numero_br(total.pct, 1) }}%{% endif %}</td>
+        {% if tem_regra_premio %}
+          <td class="col-espaco" data-col="premio"></td>
+          <td class="col-premio" data-col="premio">{% if total.premio %}R$ {{ formatar_numero_br(total.premio) }}{% endif %}</td>
+        {% endif %}
       </tr>
     </tfoot>
   </table>
@@ -267,6 +328,7 @@
   Do maior para o menor percentual. Mapa de calor de 51 faixas no % atingido, os postos comparados entre si.
   {% if projetado %}O % e a falta usam a <strong>projeção</strong> do mês (vendido ÷ dias com venda × dias do mês), como na tela de Vendas do gerente.{% endif %}
   O total soma só os postos com meta.
+  {% if tem_regra_premio %}O prêmio segue as Regras de Premiação{% if projetado %} e, enquanto o mês não fecha, é uma <strong>previsão</strong> sobre a projeção{% endif %}.{% endif %}
 </div>
 
 <script>

@@ -3636,11 +3636,15 @@ def vendas_por_dia():
 # ano/mês/filial. O mês corrente é projetado do mesmo jeito que a importação
 # projeta — acumulado ÷ dias com venda × dias do mês —, que é o que permite
 # comparar as duas telas linha a linha.
-def _agregar_diarias_sintetico(cur, cod_empresa):
+def _agregar_diarias_sintetico(cur, cod_empresa, ate=None):
     """Devolve (registros_qtd, registros_valor, registros_mb, meta).
 
     `meta` traz dia_base (dias com venda no último mês) e dias_mes, os mesmos
     dois números que vendas_painel_importacoes guarda.
+
+    `ate` = (ano, mes) corta os meses seguintes, para rever um mês que passou.
+    Só o último mês com venda da empresa é projetado: o mês anterior a ele já
+    fechou, e o que está lançado é o resultado final.
     """
     cur.execute(f"""
         SELECT
@@ -3661,7 +3665,18 @@ def _agregar_diarias_sintetico(cur, cod_empresa):
     if not linhas:
         return [], [], [], None
 
-    ultimo_ano, ultimo_mes = max((int(l["ano"]), int(l["mes"])) for l in linhas)
+    meses = sorted({(int(l["ano"]), int(l["mes"])) for l in linhas})
+    mes_mais_recente = meses[-1]
+
+    # Mês sem venda (ou no futuro) cai no mais recente com venda até ele.
+    if ate:
+        ate = max((m for m in meses if m <= tuple(ate)), default=meses[0])
+    else:
+        ate = mes_mais_recente
+
+    linhas = [l for l in linhas if (int(l["ano"]), int(l["mes"])) <= ate]
+    ultimo_ano, ultimo_mes = ate
+    posicao = meses.index(ate)
 
     # Dias com venda no último mês — a contagem é da empresa, não da filial,
     # porque é assim que a importação sintética conta o "dia base".
@@ -3675,7 +3690,11 @@ def _agregar_diarias_sintetico(cur, cod_empresa):
     dia_base = int(cur.fetchone()["dias"] or 0)
     dias_mes = calendar.monthrange(ultimo_ano, ultimo_mes)[1]
 
-    fator = (dias_mes / dia_base) if dia_base and dia_base < dias_mes else 1.0
+    fator = (
+        (dias_mes / dia_base)
+        if ate == mes_mais_recente and dia_base and dia_base < dias_mes
+        else 1.0
+    )
 
     regs_qtd, regs_val, regs_mb = [], [], []
 
@@ -3696,7 +3715,10 @@ def _agregar_diarias_sintetico(cur, cod_empresa):
         "mes": ultimo_mes,
         "dia_base": dia_base,
         "dias_mes": dias_mes,
-        "projetado": fator != 1.0
+        "projetado": fator != 1.0,
+        "mes_anterior": meses[posicao - 1] if posicao > 0 else None,
+        "mes_seguinte": meses[posicao + 1] if posicao + 1 < len(meses) else None,
+        "periodo": f"{obter_nome_mes_abrev(ultimo_mes)}/{str(ultimo_ano)[-2:]}"
     }
 
     return regs_qtd, regs_val, regs_mb, meta
@@ -3838,7 +3860,13 @@ def vendas_painel_diarias():
         """, (cod_empresa,))
         filiais = cur.fetchall()
 
-        regs_qtd, regs_val, regs_mb, meta = _agregar_diarias_sintetico(cur, cod_empresa)
+        ano_tela = request.args.get("ano", type=int)
+        mes_tela = request.args.get("mes", type=int)
+        ate = (ano_tela, mes_tela) if ano_tela and mes_tela else None
+
+        regs_qtd, regs_val, regs_mb, meta = _agregar_diarias_sintetico(
+            cur, cod_empresa, ate=ate
+        )
         variacoes_projecoes = _variacoes_projecoes_diarias(cur, cod_empresa, meta)
         comparativo = _comparativo_sintetico_diarias(
             cur, cod_empresa, regs_qtd, regs_val, regs_mb
@@ -4054,7 +4082,9 @@ def api_painel_diarias_detalhe():
             resposta = _detalhe_periodo(cur, cod_empresa, ano, mes)
         elif escopo == "filial":
             resposta = _detalhe_filial(cur, cod_empresa, metrica, cod_filial,
-                                       nomes_filiais)
+                                       nomes_filiais,
+                                       ate_ano=request.args.get("ate_ano", type=int),
+                                       ate_mes=request.args.get("ate_mes", type=int))
         elif escopo == "mes_filial":
             resposta = _detalhe_mes_filial(cur, cod_empresa, metrica, ano, mes,
                                            cod_filial, nomes_filiais)
@@ -4233,8 +4263,13 @@ def _detalhe_mes_total(cur, cod_empresa, metrica, ano, mes, nomes):
     }
 
 
-def _detalhe_filial(cur, cod_empresa, metrica, cod_filial, nomes):
-    """Produtos × meses de um posto — o que está atrás do nome da coluna."""
+def _detalhe_filial(cur, cod_empresa, metrica, cod_filial, nomes,
+                    ate_ano=None, ate_mes=None):
+    """Produtos × meses de um posto — o que está atrás do nome da coluna.
+
+    `ate_ano`/`ate_mes` acompanham o mês escolhido na tela, para a janela não
+    mostrar os meses que a grade cortou.
+    """
     cur.execute(f"""
         SELECT
             descricao,
@@ -4251,6 +4286,10 @@ def _detalhe_filial(cur, cod_empresa, metrica, cod_filial, nomes):
         ORDER BY 2, 3
     """, (cod_empresa, cod_filial))
     linhas = cur.fetchall()
+
+    if ate_ano and ate_mes:
+        linhas = [r for r in linhas
+                  if (int(r["ano"]), int(r["mes"])) <= (ate_ano, ate_mes)]
 
     meses = sorted({(int(r["ano"]), int(r["mes"])) for r in linhas})[-24:]
     validos = set(meses)

@@ -206,6 +206,38 @@
     border-color: #25834a;
   }  
   
+  .nav-mes {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 16px;
+    font-weight: 800;
+  }
+
+  .btn-mes-nav {
+    width: 38px;
+    height: 38px;
+    border: 1px solid #c7c7c7;
+    border-radius: 9px;
+    background: #c8e6c9;
+    color: #111;
+    font-size: 18px;
+    font-weight: 900;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+  }
+
+  a.btn-mes-nav:hover {
+    background: #a5d6a7;
+  }
+
+  .btn-mes-nav.desligado {
+    opacity: .35;
+  }
+
   .resumo-projecao {
     width: 390px;
     border: 2px solid #2c2c2c;
@@ -225,6 +257,13 @@
     padding: 8px 10px;
     border-bottom: 2px solid #2c2c2c;
     color: #d61f1f;
+  }
+
+  .resumo-topo div.resultado-final {
+    font-size: 16px;
+    white-space: nowrap;
+    padding-left: 4px;
+    padding-right: 4px;
   }
 
   .resumo-linha {
@@ -364,7 +403,7 @@
           <th class="col-total">TOTAL</th>
           {% for filial in filiais %}
             <th class="col-filial clicavel"
-                onclick="abrirDetalhe({metrica: '{{ metrica }}', escopo: 'filial', filial: {{ filial.cod_filial }}})">
+                onclick="abrirDetalhe({metrica: '{{ metrica }}', escopo: 'filial', filial: {{ filial.cod_filial }}, ate_ano: {{ meta.ano }}, ate_mes: {{ meta.mes }}})">
               <span class="numero-filial">{{ filial.cod_filial }}</span>
               <span class="nome-filial">{{ filial.nome_filial }}</span>
             </th>
@@ -468,10 +507,29 @@
 
   {% if resumo_projecao %}
   <div class="bloco-resumo">
+    <div class="nav-mes">
+      {% if meta.mes_anterior %}
+        <a class="btn-mes-nav" title="Mês anterior"
+           href="{{ url_for('vendas.vendas_painel_diarias', ano=meta.mes_anterior[0], mes=meta.mes_anterior[1]) }}">←</a>
+      {% else %}
+        <span class="btn-mes-nav desligado">←</span>
+      {% endif %}
+      <span>{{ meta.periodo }}</span>
+      {% if meta.mes_seguinte %}
+        <a class="btn-mes-nav" title="Mês seguinte"
+           href="{{ url_for('vendas.vendas_painel_diarias', ano=meta.mes_seguinte[0], mes=meta.mes_seguinte[1]) }}">→</a>
+      {% else %}
+        <span class="btn-mes-nav desligado">→</span>
+      {% endif %}
+    </div>
     <div class="resumo-projecao">
       <div class="resumo-topo clicavel"
            onclick="abrirDetalhe({escopo: 'periodo', ano: {{ meta.ano }}, mes: {{ meta.mes }}})">
-        <div>PROJEÇÃO</div>
+        {% if meta.projetado %}
+          <div>PROJEÇÃO</div>
+        {% else %}
+          <div class="resultado-final">RESULTADO FINAL</div>
+        {% endif %}
         <div>{{ resumo_projecao.periodo }}</div>
       </div>
 

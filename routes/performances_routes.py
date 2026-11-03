@@ -4,6 +4,7 @@ from db import get_connection
 from security_helpers import permissao_obrigatoria, usuario_tem_permissao
 from datetime import date
 from collections import defaultdict
+import math
 
 # Os mesmos formatadores/heatmap do painel de Vendas — a tela de gerentes é o
 # mesmo grid, só que recortado por filial.
@@ -243,6 +244,7 @@ def menu_performance_gerentes():
     if tipo_global == "superusuario":
         pode_vendas = True
         pode_acompanhamento = True
+        pode_regras_premiacao = True
     else:
         pode_vendas = usuario_tem_permissao(
             session["id_usuario"],
@@ -256,6 +258,12 @@ def menu_performance_gerentes():
             "PERFORMANCES",
             "ACOMPANHAMENTO_METAS",
         )
+        pode_regras_premiacao = usuario_tem_permissao(
+            session["id_usuario"],
+            str(session["cod_empresa"]).strip(),
+            "PERFORMANCES",
+            "REGRAS_PREMIACAO",
+        )
 
     pode_consultar_metas, pode_informar_metas = permissoes_metas()
 
@@ -267,6 +275,7 @@ def menu_performance_gerentes():
         pode_vendas=pode_vendas,
         pode_acompanhamento=pode_acompanhamento,
         pode_metas=pode_consultar_metas or pode_informar_metas,
+        pode_regras_premiacao=pode_regras_premiacao,
     )
 
 
@@ -676,7 +685,11 @@ def _parse_meta(texto):
     elif texto.count(".") >= 1 and len(texto.rsplit(".", 1)[1]) == 3:
         # "80.000" é milhar, não decimal.
         texto = texto.replace(".", "")
-    return float(texto)
+    valor = float(texto)
+    # float() aceita "nan" e "inf", que passariam pelas validações de "< 0".
+    if not math.isfinite(valor):
+        raise ValueError
+    return valor
 
 
 @performances_bp.route("/gerentes/metas")
@@ -946,6 +959,180 @@ def informar_metas():
 
 
 # ---------------------------------------
+# REGRAS DE PREMIAÇÃO (por meta de vendas)
+# ---------------------------------------
+QTD_FAIXAS_EXEMPLO = 10
+
+
+def regra_premiacao_do_mes(cur, cod_empresa, ano, mes):
+    """A regra que vale no mês: a última vigência até ele. Sem nenhuma, None."""
+    cur.execute("""
+        SELECT premio_meta, litros_faixa, premio_faixa
+        FROM vendas_premiacao_regras
+        WHERE cod_empresa = %s
+          AND (vigencia_ano, vigencia_mes) <= (%s, %s)
+        ORDER BY vigencia_ano DESC, vigencia_mes DESC
+        LIMIT 1
+    """, (cod_empresa, ano, mes))
+    return cur.fetchone()
+
+
+def calcular_premio(venda, meta, regra):
+    """Meta não atingida não premia. Atingida, `premio_meta` mais `premio_faixa`
+    a cada `litros_faixa` COMPLETOS acima da meta, sem limite máximo.
+
+    Arredonda o excedente nos 3 decimais da quantidade: sem isso, ruído de float
+    deixaria 9.999,9999999 litros a um passo de perder a faixa de 10.000."""
+    if not (regra and meta and venda):
+        return None
+
+    excedente = round(float(venda) - float(meta), 3)
+    if excedente < 0:
+        return None
+
+    faixas = int(excedente // int(regra["litros_faixa"]))
+    return round(float(regra["premio_meta"]) + faixas * float(regra["premio_faixa"]), 2)
+
+
+def exemplos_premiacao(regra):
+    """A tabela "Meta + N litros" é derivada da regra, nunca cadastrada."""
+    linhas = []
+    for faixa in range(QTD_FAIXAS_EXEMPLO + 1):
+        adicional = faixa * float(regra["premio_faixa"])
+        linhas.append({
+            "litros": faixa * int(regra["litros_faixa"]),
+            "adicional": adicional,
+            "total": float(regra["premio_meta"]) + adicional,
+        })
+    return linhas
+
+
+@performances_bp.route("/gerentes/regras-premiacao", methods=["GET", "POST"])
+@permissao_obrigatoria(
+    "PERFORMANCES",
+    "REGRAS_PREMIACAO",
+    redirecionar_para="performances.menu_performance_gerentes",
+)
+def regras_premiacao():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    hoje = date.today()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if request.method == "POST":
+            try:
+                ano = int(request.form["vigencia_ano"])
+                mes = int(request.form["vigencia_mes"])
+                premio_meta = _parse_meta(request.form["premio_meta"])
+                litros_faixa = _parse_meta(request.form["litros_faixa"])
+                premio_faixa = _parse_meta(request.form["premio_faixa"])
+
+                if (
+                    not 1 <= mes <= 12
+                    or premio_meta is None or premio_meta < 0
+                    or litros_faixa is None or litros_faixa <= 0
+                    or litros_faixa != int(litros_faixa)
+                    or premio_faixa is None or premio_faixa < 0
+                ):
+                    raise ValueError
+            except (KeyError, ValueError):
+                flash(
+                    "Confira os valores: prêmios em reais e litros inteiros "
+                    "acima de zero. Nada foi gravado.",
+                    "erro",
+                )
+            else:
+                cur.execute("""
+                    INSERT INTO vendas_premiacao_regras
+                        (cod_empresa, vigencia_ano, vigencia_mes,
+                         premio_meta, litros_faixa, premio_faixa)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (cod_empresa, vigencia_ano, vigencia_mes)
+                    DO UPDATE SET premio_meta = EXCLUDED.premio_meta,
+                                  litros_faixa = EXCLUDED.litros_faixa,
+                                  premio_faixa = EXCLUDED.premio_faixa,
+                                  atualizado_em = now()
+                """, (cod_empresa, ano, mes, premio_meta, int(litros_faixa), premio_faixa))
+                conn.commit()
+                flash(f"Regra gravada, valendo a partir de {NOMES_MESES[mes - 1]}/{ano}.", "success")
+                return redirect(url_for("performances.regras_premiacao"))
+
+        cur.execute("""
+            SELECT id_vendas_premiacao_regra, vigencia_ano, vigencia_mes,
+                   premio_meta, litros_faixa, premio_faixa
+            FROM vendas_premiacao_regras
+            WHERE cod_empresa = %s
+            ORDER BY vigencia_ano DESC, vigencia_mes DESC
+        """, (cod_empresa,))
+        regras = cur.fetchall() or []
+
+        regra_atual = regra_premiacao_do_mes(cur, cod_empresa, hoje.year, hoje.month)
+    finally:
+        cur.close()
+        conn.close()
+
+    for regra in regras:
+        regra["rotulo"] = f"{NOMES_MESES[int(regra['vigencia_mes']) - 1]}/{regra['vigencia_ano']}"
+
+    # "Editar" abre o formulário já com os valores daquela vigência; sem isso,
+    # ele parte da regra em vigor, com o mês corrente como início.
+    id_editar = request.args.get("editar", type=int)
+    em_edicao = next(
+        (r for r in regras if r["id_vendas_premiacao_regra"] == id_editar), None
+    )
+    base = em_edicao or regra_atual
+
+    return render_template(
+        "regras_premiacao.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("performances.menu_performance_gerentes"),
+        texto_voltar="← Voltar",
+        regras=regras,
+        regra_atual=regra_atual,
+        exemplos=exemplos_premiacao(regra_atual) if regra_atual else [],
+        em_edicao=em_edicao,
+        form_ano=int(em_edicao["vigencia_ano"]) if em_edicao else hoje.year,
+        form_mes=int(em_edicao["vigencia_mes"]) if em_edicao else hoje.month,
+        form_premio_meta=formatar_numero_br(base["premio_meta"]) if base else "",
+        form_litros_faixa=formatar_numero_br(base["litros_faixa"], 0) if base else "",
+        form_premio_faixa=formatar_numero_br(base["premio_faixa"]) if base else "",
+        anos=list(range(hoje.year - 2, hoje.year + 3)),
+        nomes_meses=NOMES_MESES,
+        formatar_numero_br=formatar_numero_br,
+    )
+
+
+@performances_bp.route("/gerentes/regras-premiacao/<int:id_regra>/excluir", methods=["POST"])
+@permissao_obrigatoria(
+    "PERFORMANCES",
+    "REGRAS_PREMIACAO",
+    redirecionar_para="performances.menu_performance_gerentes",
+)
+def excluir_regra_premiacao(id_regra):
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            DELETE FROM vendas_premiacao_regras
+            WHERE id_vendas_premiacao_regra = %s AND cod_empresa = %s
+        """, (id_regra, cod_empresa))
+        removidas = cur.rowcount
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+    if removidas:
+        flash("Regra excluída.", "success")
+    else:
+        flash("Regra não encontrada.", "erro")
+    return redirect(url_for("performances.regras_premiacao"))
+
+
+# ---------------------------------------
 # ACOMPANHAMENTO DE METAS (ranking dos postos no mês)
 # ---------------------------------------
 @performances_bp.route("/gerentes/acompanhamento-metas")
@@ -987,6 +1174,8 @@ def acompanhamento_metas():
         """, (cod_empresa, ano, mes))
         mapa_meta = {int(r["cod_filial"]): float(r["meta_quantidade"]) for r in cur.fetchall()}
 
+        regra_premio = regra_premiacao_do_mes(cur, cod_empresa, ano, mes)
+
         cur.execute("""
             SELECT DISTINCT ano FROM vendas_metas WHERE cod_empresa = %s
         """, (cod_empresa,))
@@ -1026,6 +1215,8 @@ def acompanhamento_metas():
             "pct": pct,
             "falta": meta - venda if meta and (venda or 0) < meta else None,
             "status_meta": status_meta(pct),
+            # Sobre a mesma venda do % e da falta: projetada se o mês não fechou.
+            "premio": calcular_premio(venda, meta, regra_premio),
         })
 
     # Maior percentual primeiro; posto sem meta (ou sem venda) vai para o fim.
@@ -1053,6 +1244,7 @@ def acompanhamento_metas():
         "pct": pct_total,
         "falta": meta_total - venda_total if meta_total and venda_total < meta_total else None,
         "status_meta": status_meta(pct_total),
+        "premio": sum(l["premio"] or 0 for l in linhas) or None,
     }
 
     return render_template(
@@ -1069,6 +1261,12 @@ def acompanhamento_metas():
         projetado=projetado,
         projecao=projecao if projetado else None,
         sem_meta=not mapa_meta,
+        # Setas ← →: na virada do ano, o ano acompanha.
+        ano_anterior=ano if mes > 1 else ano - 1,
+        mes_anterior=mes - 1 if mes > 1 else 12,
+        ano_proximo=ano if mes < 12 else ano + 1,
+        mes_proximo=mes + 1 if mes < 12 else 1,
+        tem_regra_premio=bool(regra_premio),
         formatar_numero_br=formatar_numero_br,
     )
 
