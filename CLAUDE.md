@@ -732,6 +732,14 @@ tamanho (MB) e, pra vídeo, a duração (segundos) logo abaixo do botão; linhas
 de aferições antigas (arquivo já apagado pela retenção) simplesmente não têm
 nenhum botão nessa célula.
 
+**Aviso vermelho de filiais sem aferição** (04/11/2026), no desenho do aviso de
+Consultar Medições. O controle é **por data**, não por mês, porque cada rede tem a sua
+frequência (semanal, quinzenal): com um mês escolhido, cada data em que **qualquer**
+filial da empresa aferiu abre um bloco com as filiais (ativas e com tanque, recortadas
+pelas do usuário e pelo filtro) sem aferição **naquela data**, mais recente primeiro.
+Aferir em outro dia não cobre a falta, e a falta do dia 3 continua aparecendo depois do
+dia 10. Com mês em branco não há aviso.
+
 **Filtro de Mês/Ano** (30/10/2026) — como as aferições agora ficam guardadas
 pra sempre (só o arquivo é apagado), o volume na Consulta deixou de ser
 pequeno e previsível; junto do filtro de filial já existente, `ano` e `mes`

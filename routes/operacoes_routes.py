@@ -959,6 +959,7 @@ def consultar_afericoes():
     filial_sel = None
     ano_sel = datetime.now(ZoneInfo("America/Sao_Paulo")).year
     mes_sel = None
+    faltas_afericao = []
 
     try:
         filiais = _filiais_do_usuario(cur, cod_empresa, id_usuario, tipo_global)
@@ -1071,6 +1072,50 @@ def consultar_afericoes():
             l["arquivos"] = arquivos_por_afericao.get(l["id_afericao"], [])
             l["normal"] = abs(float(l["diferenca_ml"] or 0)) <= LIMITE_DIFERENCA_NORMAL_ML
 
+        # O controle é por dia: cada data do mês em que alguma filial da EMPRESA
+        # (mesmo fora do recorte do usuário) aferiu cobra as filiais que não
+        # aferiram naquela data. Aferir em outro dia não cobre a falta.
+        if mes_sel:
+            cur.execute(
+                """
+                WITH datas AS (
+                    SELECT DISTINCT data_afericao
+                    FROM afericoes
+                    WHERE cod_empresa = %s
+                      AND EXTRACT(YEAR FROM data_afericao) = %s
+                      AND EXTRACT(MONTH FROM data_afericao) = %s
+                )
+                SELECT d.data_afericao, f.cod_filial, f.nome_filial
+                FROM datas d
+                CROSS JOIN filiais f
+                WHERE f.cod_empresa = %s
+                  AND f.cod_filial = ANY(%s)
+                  AND f.ativo = TRUE
+                  AND EXISTS (
+                    SELECT 1
+                    FROM capacidade_tanques ct
+                    WHERE ct.cod_empresa = f.cod_empresa
+                      AND ct.cod_filial = f.cod_filial
+                      AND COALESCE(ct.capacidade_tanque, 0) > 0
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM afericoes a
+                    WHERE a.cod_empresa = f.cod_empresa
+                      AND a.cod_filial = f.cod_filial
+                      AND a.data_afericao = d.data_afericao
+                  )
+                ORDER BY d.data_afericao DESC, f.cod_filial
+                """,
+                (cod_empresa, ano_sel, mes_sel, cod_empresa, filiais_consulta),
+            )
+            faltas_por_data = {}
+            for r in cur.fetchall() or []:
+                faltas_por_data.setdefault(r["data_afericao"], []).append(r)
+            faltas_afericao = [
+                {"data": d, "filiais": fs} for d, fs in faltas_por_data.items()
+            ]
+
     except Exception as e:
         conn.rollback()
         flash(f"Erro ao consultar aferições: {e}", "error")
@@ -1088,6 +1133,7 @@ def consultar_afericoes():
         ano=ano_sel,
         mes=mes_sel,
         linhas=linhas,
+        faltas_afericao=faltas_afericao,
         limite_diferenca=LIMITE_DIFERENCA_NORMAL_ML,
         url_voltar=url_for("operacoes.menu_afericoes"),
         texto_voltar="← Voltar",

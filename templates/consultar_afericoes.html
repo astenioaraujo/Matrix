@@ -293,6 +293,28 @@
   </form>
 </div>
 
+<!-- ALERTA DE FILIAIS SEM AFERIÇÃO, UM BLOCO POR DATA -->
+{% for falta in faltas_afericao %}
+  <div style="
+    max-width: 1400px;
+    margin: 0 0 20px 0;
+    padding: 16px 20px;
+    border-radius: 14px;
+    background: #ffe5e5;
+    border: 1px solid #ff9b9b;
+    color: #b00020;
+    font-weight: 800;
+  ">
+    Filiais sem aferição lançada para a data {{ falta.data.strftime("%d/%m/%Y") }}:
+
+    <ul style="margin: 10px 0 0 22px;">
+      {% for f in falta.filiais %}
+        <li>{{ f.cod_filial }} - {{ f.nome_filial }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endfor %}
+
 {% if linhas %}
   {% set ns = namespace(filial_atual='') %}
 
