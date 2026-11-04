@@ -7,6 +7,12 @@ from zoneinfo import ZoneInfo
 
 from db import get_connection
 from services.estoques_service import linhas_estoque
+from services.afericoes_ciclos_service import (
+    DIAS_SEMANA_AFERICAO,
+    FREQUENCIAS_AFERICAO,
+    faltas_por_ciclo,
+    parametros_afericao,
+)
 from services.supabase_storage import (
     upload_arquivo as afericao_upload,
     url_publica as afericao_url,
@@ -667,6 +673,83 @@ def menu_afericoes():
         texto_voltar="← Voltar",
         pode_informar=pode_informar,
         pode_consultar=pode_consultar,
+        pode_parametros=_pode_afericoes("CONFIGURACOES"),
+    )
+
+
+# ---------------------------------------
+# PARAMETROS DE AFERICAO
+# ---------------------------------------
+@operacoes_bp.route("/afericoes/parametros", methods=["GET", "POST"])
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONFIGURACOES",
+    redirecionar_para="operacoes.menu_afericoes",
+)
+def parametros_afericoes_tela():
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        if request.method == "POST":
+            dia_txt = (request.form.get("dia_semana") or "").strip()
+            frequencia = (request.form.get("frequencia") or "").strip()
+            referencia_txt = (request.form.get("data_referencia") or "").strip()
+
+            dia_semana = int(dia_txt) if dia_txt.isdigit() else None
+            referencia = None
+            erro = None
+
+            if dia_semana not in [d for d, _ in DIAS_SEMANA_AFERICAO]:
+                erro = "Dia da aferição inválido."
+            elif frequencia not in [f for f, _ in FREQUENCIAS_AFERICAO]:
+                erro = "Frequência inválida."
+            elif frequencia in ("DUAS_SEMANAS", "TRES_SEMANAS"):
+                try:
+                    referencia = date.fromisoformat(referencia_txt)
+                except ValueError:
+                    erro = "Informe a data de início de um ciclo."
+                else:
+                    if referencia.weekday() != dia_semana:
+                        erro = "A data de início do ciclo precisa cair no dia da aferição escolhido."
+
+            if erro:
+                flash(erro, "error")
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO afericoes_parametros (cod_empresa, dia_semana, frequencia, data_referencia)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (cod_empresa) DO UPDATE
+                    SET dia_semana = EXCLUDED.dia_semana,
+                        frequencia = EXCLUDED.frequencia,
+                        data_referencia = EXCLUDED.data_referencia,
+                        atualizado_em = now()
+                    """,
+                    (cod_empresa, dia_semana, frequencia, referencia),
+                )
+                conn.commit()
+                flash("Parâmetros salvos.", "success")
+
+            return redirect(url_for("operacoes.parametros_afericoes_tela"))
+
+        parametros = parametros_afericao(cur, cod_empresa)
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "afericoes_parametros.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=session.get("nome_empresa", ""),
+        parametros=parametros,
+        dias_semana=DIAS_SEMANA_AFERICAO,
+        frequencias=FREQUENCIAS_AFERICAO,
+        url_voltar=url_for("operacoes.menu_afericoes"),
+        texto_voltar="← Voltar",
     )
 
 
@@ -960,6 +1043,7 @@ def consultar_afericoes():
     ano_sel = datetime.now(ZoneInfo("America/Sao_Paulo")).year
     mes_sel = None
     faltas_afericao = []
+    sem_parametros = False
 
     try:
         filiais = _filiais_do_usuario(cur, cod_empresa, id_usuario, tipo_global)
@@ -1072,49 +1156,15 @@ def consultar_afericoes():
             l["arquivos"] = arquivos_por_afericao.get(l["id_afericao"], [])
             l["normal"] = abs(float(l["diferenca_ml"] or 0)) <= LIMITE_DIFERENCA_NORMAL_ML
 
-        # O controle é por dia: cada data do mês em que alguma filial da EMPRESA
-        # (mesmo fora do recorte do usuário) aferiu cobra as filiais que não
-        # aferiram naquela data. Aferir em outro dia não cobre a falta.
-        if mes_sel:
-            cur.execute(
-                """
-                WITH datas AS (
-                    SELECT DISTINCT data_afericao
-                    FROM afericoes
-                    WHERE cod_empresa = %s
-                      AND EXTRACT(YEAR FROM data_afericao) = %s
-                      AND EXTRACT(MONTH FROM data_afericao) = %s
-                )
-                SELECT d.data_afericao, f.cod_filial, f.nome_filial
-                FROM datas d
-                CROSS JOIN filiais f
-                WHERE f.cod_empresa = %s
-                  AND f.cod_filial = ANY(%s)
-                  AND f.ativo = TRUE
-                  AND EXISTS (
-                    SELECT 1
-                    FROM capacidade_tanques ct
-                    WHERE ct.cod_empresa = f.cod_empresa
-                      AND ct.cod_filial = f.cod_filial
-                      AND COALESCE(ct.capacidade_tanque, 0) > 0
-                  )
-                  AND NOT EXISTS (
-                    SELECT 1
-                    FROM afericoes a
-                    WHERE a.cod_empresa = f.cod_empresa
-                      AND a.cod_filial = f.cod_filial
-                      AND a.data_afericao = d.data_afericao
-                  )
-                ORDER BY d.data_afericao DESC, f.cod_filial
-                """,
-                (cod_empresa, ano_sel, mes_sel, cod_empresa, filiais_consulta),
+        # O controle é por ciclo (parâmetros da empresa): aferir em qualquer dia
+        # do ciclo cumpre o ciclo. Só faz sentido com um mês escolhido.
+        parametros = parametros_afericao(cur, cod_empresa)
+        sem_parametros = parametros is None
+        if parametros and mes_sel:
+            faltas_afericao = faltas_por_ciclo(
+                cur, cod_empresa, ano_sel, mes_sel, filiais_consulta, parametros,
+                datetime.now(ZoneInfo("America/Sao_Paulo")).date(),
             )
-            faltas_por_data = {}
-            for r in cur.fetchall() or []:
-                faltas_por_data.setdefault(r["data_afericao"], []).append(r)
-            faltas_afericao = [
-                {"data": d, "filiais": fs} for d, fs in faltas_por_data.items()
-            ]
 
     except Exception as e:
         conn.rollback()
@@ -1134,6 +1184,7 @@ def consultar_afericoes():
         mes=mes_sel,
         linhas=linhas,
         faltas_afericao=faltas_afericao,
+        sem_parametros=sem_parametros,
         limite_diferenca=LIMITE_DIFERENCA_NORMAL_ML,
         url_voltar=url_for("operacoes.menu_afericoes"),
         texto_voltar="← Voltar",

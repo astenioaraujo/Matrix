@@ -71,6 +71,12 @@
     </a>
   {% endif %}
 
+  {% if pode_parametros %}
+    <a href="{{ url_for('operacoes.parametros_afericoes_tela') }}" class="btn-informar">
+      Parâmetros de Aferição
+    </a>
+  {% endif %}
+
 </div>
 
 {% endblock %}

@@ -733,12 +733,18 @@ de aferições antigas (arquivo já apagado pela retenção) simplesmente não t
 nenhum botão nessa célula.
 
 **Aviso vermelho de filiais sem aferição** (04/11/2026), no desenho do aviso de
-Consultar Medições. O controle é **por data**, não por mês, porque cada rede tem a sua
-frequência (semanal, quinzenal): com um mês escolhido, cada data em que **qualquer**
-filial da empresa aferiu abre um bloco com as filiais (ativas e com tanque, recortadas
-pelas do usuário e pelo filtro) sem aferição **naquela data**, mais recente primeiro.
-Aferir em outro dia não cobre a falta, e a falta do dia 3 continua aparecendo depois do
-dia 10. Com mês em branco não há aviso.
+Consultar Medições. O controle é **por ciclo**, definido por empresa em **Aferições →
+Parâmetros de Aferição** (`afericoes_parametros`, `migrations/criar_afericoes_parametros.sql`,
+atrás de `OPERACOES/CONFIGURACOES`): dia da semana (segunda a sexta) e frequência (1, 2 ou
+3 semanas, ou mês). O ciclo vai do dia parametrizado até a véspera do próximo: com terça
+semanal, 03 a 09/11 é um ciclo só, e quem aferiu no dia 4 está em dia. Regras em
+`services/afericoes_ciclos_service.py`. Cada ciclo **já começado** do mês escolhido abre um
+bloco com as filiais (ativas e com tanque, recortadas pelas do usuário e pelo filtro) sem
+aferição dentro dele, mais recente primeiro; o ciclo acende no próprio dia, mesmo sem
+ninguém ter aferido, e pertence ao mês em que começa. Ciclo anterior à primeira aferição da
+empresa não cobra, senão todo o histórico viraria falta. Em 2 ou 3 semanas, `data_referencia`
+diz qual é a semana do ciclo. Empresa sem parâmetro ou mês em branco: sem aviso. EMP010:
+terça, semanal.
 
 **Filtro de Mês/Ano** (30/10/2026) — como as aferições agora ficam guardadas
 pra sempre (só o arquivo é apagado), o volume na Consulta deixou de ser

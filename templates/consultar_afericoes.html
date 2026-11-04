@@ -293,7 +293,13 @@
   </form>
 </div>
 
-<!-- ALERTA DE FILIAIS SEM AFERIÇÃO, UM BLOCO POR DATA -->
+{% if sem_parametros %}
+  <div style="max-width: 1400px; margin: 0 0 20px 0; padding: 12px 20px; border-radius: 14px; background: #fff8e1; border: 1px solid #ffd54f; color: #7a5b00; font-weight: 700;">
+    Aviso de aferições faltantes desligado: cadastre o dia e a frequência em Aferições → Parâmetros de Aferição.
+  </div>
+{% endif %}
+
+<!-- ALERTA DE FILIAIS SEM AFERIÇÃO, UM BLOCO POR CICLO -->
 {% for falta in faltas_afericao %}
   <div style="
     max-width: 1400px;
@@ -305,7 +311,7 @@
     color: #b00020;
     font-weight: 800;
   ">
-    Filiais sem aferição lançada para a data {{ falta.data.strftime("%d/%m/%Y") }}:
+    Filiais sem aferição lançada para o ciclo de {{ falta.inicio.strftime("%d/%m/%Y") }} (até {{ falta.fim.strftime("%d/%m/%Y") }}):
 
     <ul style="margin: 10px 0 0 22px;">
       {% for f in falta.filiais %}
