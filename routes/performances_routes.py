@@ -1068,6 +1068,14 @@ def regras_premiacao():
         regras = cur.fetchall() or []
 
         regra_atual = regra_premiacao_do_mes(cur, cod_empresa, hoje.year, hoje.month)
+
+        cur.execute("""
+            SELECT *
+            FROM vendas_pontuacao_periodos
+            WHERE cod_empresa = %s
+            ORDER BY ano_inicio DESC, mes_inicio DESC
+        """, (cod_empresa,))
+        periodos = cur.fetchall() or []
     finally:
         cur.close()
         conn.close()
@@ -1083,8 +1091,34 @@ def regras_premiacao():
     )
     base = em_edicao or regra_atual
 
+    for periodo in periodos:
+        periodo["rotulo"] = (
+            f"{NOMES_MESES[int(periodo['mes_inicio']) - 1]}/{periodo['ano_inicio']} a "
+            f"{NOMES_MESES[int(periodo['mes_fim']) - 1]}/{periodo['ano_fim']}"
+        )
+    id_editar_periodo = request.args.get("editar_periodo", type=int)
+    periodo_em_edicao = next(
+        (p for p in periodos if p["id_vendas_pontuacao_periodo"] == id_editar_periodo),
+        None,
+    )
+
     return render_template(
         "regras_premiacao.html",
+        periodos=periodos,
+        periodo_em_edicao=periodo_em_edicao,
+        # Sem período em edição, o formulário sugere o ano seguinte ao último,
+        # de janeiro a dezembro, com a mesma tabela de pontos.
+        form_periodo=periodo_em_edicao or {
+            "ano_inicio": (int(periodos[0]["ano_fim"]) + 1) if periodos else hoje.year,
+            "mes_inicio": 1,
+            "ano_fim": (int(periodos[0]["ano_fim"]) + 1) if periodos else hoje.year,
+            "mes_fim": 12,
+            "pontos_1": periodos[0]["pontos_1"] if periodos else 10,
+            "pontos_2": periodos[0]["pontos_2"] if periodos else 8,
+            "pontos_3": periodos[0]["pontos_3"] if periodos else 6,
+            "pontos_4": periodos[0]["pontos_4"] if periodos else 4,
+            "pontos_demais": periodos[0]["pontos_demais"] if periodos else 2,
+        },
         nome_empresa=session.get("nome_empresa"),
         url_voltar=url_for("performances.menu_performance_gerentes"),
         texto_voltar="← Voltar",
@@ -1097,7 +1131,7 @@ def regras_premiacao():
         form_premio_meta=formatar_numero_br(base["premio_meta"]) if base else "",
         form_litros_faixa=formatar_numero_br(base["litros_faixa"], 0) if base else "",
         form_premio_faixa=formatar_numero_br(base["premio_faixa"]) if base else "",
-        anos=list(range(hoje.year - 2, hoje.year + 3)),
+        anos=list(range(hoje.year - 2, hoje.year + 4)),
         nomes_meses=NOMES_MESES,
         formatar_numero_br=formatar_numero_br,
     )
@@ -1130,6 +1164,194 @@ def excluir_regra_premiacao(id_regra):
     else:
         flash("Regra não encontrada.", "erro")
     return redirect(url_for("performances.regras_premiacao"))
+
+
+# ---------------------------------------
+# PONTUAÇÃO POR META DE VENDAS
+# ---------------------------------------
+def periodo_pontuacao_do_mes(cur, cod_empresa, ano, mes):
+    """O período que cobre o mês. Fora de qualquer período, None: não há pontos."""
+    cur.execute("""
+        SELECT *
+        FROM vendas_pontuacao_periodos
+        WHERE cod_empresa = %s
+          AND (ano_inicio, mes_inicio) <= (%s, %s)
+          AND (ano_fim, mes_fim) >= (%s, %s)
+        ORDER BY ano_inicio DESC, mes_inicio DESC
+        LIMIT 1
+    """, (cod_empresa, ano, mes, ano, mes))
+    return cur.fetchone()
+
+
+def pontos_da_colocacao(periodo, posicao):
+    if posicao <= 4:
+        return int(periodo[f"pontos_{posicao}"])
+    return int(periodo["pontos_demais"])
+
+
+def ranking_do_mes(vendas, metas, periodo=None):
+    """{cod_filial: (posicao, pontos)} dos postos com venda e meta no mês, do
+    maior % para o menor. Sempre da rede inteira: recortado pelos postos do
+    usuário, o gerente de um posto só seria sempre o 1º.
+
+    Só pontua quem bateu a meta, com a mesma conta do prêmio."""
+    concorrentes = [
+        (vendas[cod] / meta, cod)
+        for cod, meta in metas.items()
+        if meta and vendas.get(cod)
+    ]
+    concorrentes.sort(key=lambda c: (-c[0], c[1]))
+
+    ranking = {}
+    for posicao, (_, cod) in enumerate(concorrentes, start=1):
+        bateu = round(vendas[cod] - metas[cod], 3) >= 0
+        pontos = pontos_da_colocacao(periodo, posicao) if periodo and bateu else 0
+        ranking[cod] = (posicao, pontos)
+    return ranking
+
+
+def acumular_pontos(periodo, ano, mes, regs_qtd, regs_metas, cods_rede):
+    """{cod_filial: pontos} do início do período até o mês, inclusive."""
+    vendas_mes = defaultdict(dict)
+    for r in regs_qtd:
+        if int(r["cod_filial"]) in cods_rede:
+            vendas_mes[(int(r["ano"]), int(r["mes"]))][int(r["cod_filial"])] = float(
+                r["quantidade_vendida"] or 0
+            )
+
+    metas_mes = defaultdict(dict)
+    for r in regs_metas:
+        if int(r["cod_filial"]) in cods_rede:
+            metas_mes[(int(r["ano"]), int(r["mes"]))][int(r["cod_filial"])] = float(
+                r["meta_quantidade"]
+            )
+
+    inicio = (int(periodo["ano_inicio"]), int(periodo["mes_inicio"]))
+    acumulado = defaultdict(int)
+    for chave, metas in metas_mes.items():
+        if inicio <= chave <= (ano, mes):
+            for cod, (_, pontos) in ranking_do_mes(
+                vendas_mes.get(chave, {}), metas, periodo
+            ).items():
+                acumulado[cod] += pontos
+    return acumulado
+
+
+def _campo_inteiro(nome):
+    """Inteiro do formulário, sem aceitar negativo. ValueError se não for."""
+    valor = int(str(request.form[nome]).strip())
+    if valor < 0:
+        raise ValueError
+    return valor
+
+
+@performances_bp.route("/gerentes/regras-premiacao/pontuacao", methods=["POST"])
+@permissao_obrigatoria(
+    "PERFORMANCES",
+    "REGRAS_PREMIACAO",
+    redirecionar_para="performances.menu_performance_gerentes",
+)
+def salvar_periodo_pontuacao():
+    cod_empresa = str(session["cod_empresa"]).strip()
+    id_periodo = request.form.get("id_periodo", type=int)
+    voltar = redirect(url_for("performances.regras_premiacao") + "#pontuacao")
+
+    try:
+        valores = {
+            campo: _campo_inteiro(campo)
+            for campo in (
+                "ano_inicio", "mes_inicio", "ano_fim", "mes_fim",
+                "pontos_1", "pontos_2", "pontos_3", "pontos_4", "pontos_demais",
+            )
+        }
+        inicio = (valores["ano_inicio"], valores["mes_inicio"])
+        fim = (valores["ano_fim"], valores["mes_fim"])
+        if not (1 <= inicio[1] <= 12 and 1 <= fim[1] <= 12) or fim < inicio:
+            raise ValueError
+    except (KeyError, ValueError):
+        flash(
+            "Confira o período (o fim não pode vir antes do início) e os pontos "
+            "(números inteiros). Nada foi gravado.",
+            "erro",
+        )
+        return voltar
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        # Dois períodos no mesmo mês dariam dois acumulados para a mesma venda.
+        cur.execute("""
+            SELECT ano_inicio, mes_inicio, ano_fim, mes_fim
+            FROM vendas_pontuacao_periodos
+            WHERE cod_empresa = %s
+              AND id_vendas_pontuacao_periodo IS DISTINCT FROM %s
+              AND (ano_inicio, mes_inicio) <= (%s, %s)
+              AND (ano_fim, mes_fim) >= (%s, %s)
+            LIMIT 1
+        """, (cod_empresa, id_periodo, *fim, *inicio))
+        conflito = cur.fetchone()
+        if conflito:
+            flash(
+                f"Esse período se sobrepõe ao de "
+                f"{conflito['mes_inicio']:02d}/{conflito['ano_inicio']} a "
+                f"{conflito['mes_fim']:02d}/{conflito['ano_fim']}. Nada foi gravado.",
+                "erro",
+            )
+            return voltar
+
+        colunas = list(valores)
+        if id_periodo:
+            atribuicoes = ", ".join(f"{c} = %s" for c in colunas)
+            cur.execute(f"""
+                UPDATE vendas_pontuacao_periodos
+                SET {atribuicoes}, atualizado_em = now()
+                WHERE id_vendas_pontuacao_periodo = %s AND cod_empresa = %s
+            """, ([valores[c] for c in colunas] + [id_periodo, cod_empresa]))
+            if not cur.rowcount:
+                conn.rollback()
+                flash("Período não encontrado.", "erro")
+                return voltar
+        else:
+            cur.execute(f"""
+                INSERT INTO vendas_pontuacao_periodos (cod_empresa, {", ".join(colunas)})
+                VALUES (%s, {", ".join(["%s"] * len(colunas))})
+            """, ([cod_empresa] + [valores[c] for c in colunas]))
+        conn.commit()
+        flash("Período de pontuação gravado.", "success")
+    finally:
+        cur.close()
+        conn.close()
+
+    return voltar
+
+
+@performances_bp.route("/gerentes/regras-premiacao/pontuacao/<int:id_periodo>/excluir", methods=["POST"])
+@permissao_obrigatoria(
+    "PERFORMANCES",
+    "REGRAS_PREMIACAO",
+    redirecionar_para="performances.menu_performance_gerentes",
+)
+def excluir_periodo_pontuacao(id_periodo):
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            DELETE FROM vendas_pontuacao_periodos
+            WHERE id_vendas_pontuacao_periodo = %s AND cod_empresa = %s
+        """, (id_periodo, cod_empresa))
+        removidos = cur.rowcount
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+    if removidos:
+        flash("Período excluído.", "success")
+    else:
+        flash("Período não encontrado.", "erro")
+    return redirect(url_for("performances.regras_premiacao") + "#pontuacao")
 
 
 # ---------------------------------------
@@ -1175,6 +1397,22 @@ def acompanhamento_metas():
         mapa_meta = {int(r["cod_filial"]): float(r["meta_quantidade"]) for r in cur.fetchall()}
 
         regra_premio = regra_premiacao_do_mes(cur, cod_empresa, ano, mes)
+        periodo = periodo_pontuacao_do_mes(cur, cod_empresa, ano, mes)
+
+        # A colocação e os pontos comparam a rede inteira, seja quem for que
+        # está olhando — não só os postos da lista do usuário.
+        cods_rede = {int(f["cod_filial"]) for f in _filiais_ativas(cur, cod_empresa)}
+
+        regs_metas_periodo = []
+        if periodo:
+            cur.execute("""
+                SELECT cod_filial, ano, mes, meta_quantidade
+                FROM vendas_metas
+                WHERE cod_empresa = %s
+                  AND (ano, mes) >= (%s, %s)
+                  AND (ano, mes) <= (%s, %s)
+            """, (cod_empresa, periodo["ano_inicio"], periodo["mes_inicio"], ano, mes))
+            regs_metas_periodo = cur.fetchall() or []
 
         cur.execute("""
             SELECT DISTINCT ano FROM vendas_metas WHERE cod_empresa = %s
@@ -1198,6 +1436,16 @@ def acompanhamento_metas():
         if (int(r["ano"]), int(r["mes"])) == (ano, mes)
     }
 
+    ranking = ranking_do_mes(
+        {c: v for c, v in mapa_venda.items() if c in cods_rede},
+        {c: m for c, m in mapa_meta.items() if c in cods_rede},
+        periodo,
+    )
+    acumulado = (
+        acumular_pontos(periodo, ano, mes, regs_qtd, regs_metas_periodo, cods_rede)
+        if periodo else {}
+    )
+
     linhas = []
     for filial in filiais:
         cod = int(filial["cod_filial"])
@@ -1217,6 +1465,9 @@ def acompanhamento_metas():
             "status_meta": status_meta(pct),
             # Sobre a mesma venda do % e da falta: projetada se o mês não fechou.
             "premio": calcular_premio(venda, meta, regra_premio),
+            "posicao": ranking[cod][0] if cod in ranking else None,
+            "pontos": ranking[cod][1] if cod in ranking else 0,
+            "pontos_acumulados": acumulado.get(cod, 0),
         })
 
     # Maior percentual primeiro; posto sem meta (ou sem venda) vai para o fim.
@@ -1224,8 +1475,7 @@ def acompanhamento_metas():
 
     # Mapa de calor de 51 faixas no % atingido — os postos entre si.
     pcts = [l["pct"] for l in linhas if l["pct"] is not None]
-    for posicao, linha in enumerate(linhas, start=1):
-        linha["posicao"] = posicao if linha["pct"] is not None else None
+    for linha in linhas:
         linha["pct_cor"] = (
             cor_excel_51(linha["pct"], min(pcts), max(pcts))
             if linha["pct"] is not None else ""
@@ -1267,6 +1517,17 @@ def acompanhamento_metas():
         ano_proximo=ano if mes < 12 else ano + 1,
         mes_proximo=mes + 1 if mes < 12 else 1,
         tem_regra_premio=bool(regra_premio),
+        periodo=periodo,
+        rotulo_periodo=(
+            f"{obter_nome_mes_abrev(int(periodo['mes_inicio']))}/{str(periodo['ano_inicio'])[-2:]} a "
+            f"{obter_nome_mes_abrev(int(periodo['mes_fim']))}/{str(periodo['ano_fim'])[-2:]}"
+        ) if periodo else "",
+        # O acumulado também é previsão se a conta passou pelo mês em aberto.
+        acumulado_previsao=bool(
+            periodo and projecao and projecao["projetado"]
+            and (int(periodo["ano_inicio"]), int(periodo["mes_inicio"]))
+                <= (projecao["ano"], projecao["mes"]) <= (ano, mes)
+        ),
         formatar_numero_br=formatar_numero_br,
     )
 

@@ -178,7 +178,8 @@
   .oculta-projecao [data-col="projecao"],
   .oculta-meta [data-col="meta"],
   .oculta-falta [data-col="falta"],
-  .oculta-premio [data-col="premio"] {
+  .oculta-premio [data-col="premio"],
+  .oculta-pontos [data-col="pontos"] {
     display: none;
   }
 
@@ -197,6 +198,25 @@
   .col-premio {
     min-width: 120px;
     font-weight: 700;
+  }
+
+  .col-pontos {
+    min-width: 90px;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  /* Zero confundia com as pontuações de verdade. */
+  .sem-pontos {
+    color: #bbb;
+    font-weight: 400;
+  }
+
+  th .previsao {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: #8a5a00;
   }
 
   th.col-premio .previsao {
@@ -257,6 +277,7 @@
   <label><input type="checkbox" data-alvo="meta" checked> Meta</label>
   <label><input type="checkbox" data-alvo="falta" checked> Falta</label>
   {% if tem_regra_premio %}<label><input type="checkbox" data-alvo="premio" checked> Prêmio</label>{% endif %}
+  {% if periodo %}<label><input type="checkbox" data-alvo="pontos" checked> Pontos</label>{% endif %}
 </div>
 
 <div class="tabela-wrap" id="tabela-acompanhamento">
@@ -273,6 +294,11 @@
         {% if tem_regra_premio %}
           <th class="col-espaco" data-col="premio"></th>
           <th class="col-premio" data-col="premio">PRÊMIO{% if projetado %}<span class="previsao">previsão</span>{% endif %}</th>
+        {% endif %}
+        {% if periodo %}
+          <th class="col-espaco" data-col="pontos"></th>
+          <th class="col-pontos" data-col="pontos">PONTOS MÊS{% if projetado %}<span class="previsao">previsão</span>{% endif %}</th>
+          <th class="col-pontos" data-col="pontos">ACUMULADO<span class="previsao">{{ rotulo_periodo }}{% if acumulado_previsao %} · previsão{% endif %}</span></th>
         {% endif %}
       </tr>
     </thead>
@@ -297,6 +323,11 @@
             <td class="col-espaco" data-col="premio"></td>
             <td class="col-premio" data-col="premio">{% if l.premio %}R$ {{ formatar_numero_br(l.premio) }}{% endif %}</td>
           {% endif %}
+          {% if periodo %}
+            <td class="col-espaco" data-col="pontos"></td>
+            <td class="col-pontos" data-col="pontos">{% if l.pontos %}{{ l.pontos }}{% endif %}</td>
+            <td class="col-pontos" data-col="pontos">{% if l.pontos_acumulados %}{{ l.pontos_acumulados }}{% else %}<span class="sem-pontos">–</span>{% endif %}</td>
+          {% endif %}
         </tr>
       {% endfor %}
     </tbody>
@@ -316,6 +347,11 @@
           <td class="col-espaco" data-col="premio"></td>
           <td class="col-premio" data-col="premio">{% if total.premio %}R$ {{ formatar_numero_br(total.premio) }}{% endif %}</td>
         {% endif %}
+        {% if periodo %}
+          <td class="col-espaco" data-col="pontos"></td>
+          <td class="col-pontos" data-col="pontos"></td>
+          <td class="col-pontos" data-col="pontos"></td>
+        {% endif %}
       </tr>
     </tfoot>
   </table>
@@ -329,6 +365,7 @@
   {% if projetado %}O % e a falta usam a <strong>projeção</strong> do mês (vendido ÷ dias com venda × dias do mês), como na tela de Vendas do gerente.{% endif %}
   O total soma só os postos com meta.
   {% if tem_regra_premio %}O prêmio segue as Regras de Premiação{% if projetado %} e, enquanto o mês não fecha, é uma <strong>previsão</strong> sobre a projeção{% endif %}.{% endif %}
+  {% if periodo %}Pontos: só quem bateu a meta, pela colocação na rede ({{ periodo.pontos_1 }}, {{ periodo.pontos_2 }}, {{ periodo.pontos_3 }}, {{ periodo.pontos_4 }} e {{ periodo.pontos_demais }} do 5º em diante); o acumulado soma do início do período até este mês.{% endif %}
 </div>
 
 <script>

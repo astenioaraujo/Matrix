@@ -85,6 +85,13 @@
     text-align: right;
   }
 
+  .pontos-faixas {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+  }
+
   .form-acoes {
     grid-column: 1 / -1;
     display: flex;
@@ -194,6 +201,7 @@
 
   @media (max-width: 600px) {
     .form-regra { grid-template-columns: 1fr; }
+    .pontos-faixas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 </style>
 
@@ -307,6 +315,94 @@
               <form method="post"
                     action="{{ url_for('performances.excluir_regra_premiacao', id_regra=r.id_vendas_premiacao_regra) }}"
                     onsubmit="return confirmarEnvio(this, 'Excluir a regra de {{ r.rotulo }}?')">
+                <button type="submit" class="btn-acao btn-mini btn-excluir">Excluir</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+
+<div class="bloco-titulo" id="pontuacao">Pontuação — {% if periodo_em_edicao %}editar o período de {{ periodo_em_edicao.rotulo }}{% else %}cadastrar período{% endif %}</div>
+
+<form class="form-regra" method="post" action="{{ url_for('performances.salvar_periodo_pontuacao') }}">
+  {% if periodo_em_edicao %}
+    <input type="hidden" name="id_periodo" value="{{ periodo_em_edicao.id_vendas_pontuacao_periodo }}">
+  {% endif %}
+  <div>
+    <label for="mes_inicio">Início do período</label>
+    <select id="mes_inicio" name="mes_inicio">
+      {% for nome in nomes_meses %}
+        <option value="{{ loop.index }}" {% if loop.index == form_periodo.mes_inicio %}selected{% endif %}>{{ nome }}</option>
+      {% endfor %}
+    </select>
+    <select name="ano_inicio" aria-label="Ano do início">
+      {% for a in anos %}
+        <option value="{{ a }}" {% if a == form_periodo.ano_inicio %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="mes_fim">Fim do período</label>
+    <select id="mes_fim" name="mes_fim">
+      {% for nome in nomes_meses %}
+        <option value="{{ loop.index }}" {% if loop.index == form_periodo.mes_fim %}selected{% endif %}>{{ nome }}</option>
+      {% endfor %}
+    </select>
+    <select name="ano_fim" aria-label="Ano do fim">
+      {% for a in anos %}
+        <option value="{{ a }}" {% if a == form_periodo.ano_fim %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="pontos-faixas">
+    {% for rotulo, campo in [("1º lugar", "pontos_1"), ("2º lugar", "pontos_2"), ("3º lugar", "pontos_3"), ("4º lugar", "pontos_4"), ("5º em diante", "pontos_demais")] %}
+      <div>
+        <label for="{{ campo }}">{{ rotulo }}</label>
+        <input id="{{ campo }}" name="{{ campo }}" inputmode="numeric" autocomplete="off" required value="{{ form_periodo[campo] }}">
+      </div>
+    {% endfor %}
+  </div>
+  <div class="form-acoes">
+    <button type="submit" class="btn-acao btn-salvar">Salvar período</button>
+    {% if periodo_em_edicao %}<a class="btn-acao" href="{{ url_for('performances.regras_premiacao') }}#pontuacao">Cancelar</a>{% endif %}
+  </div>
+  <div class="form-obs">
+    Só pontua quem bateu a meta do mês, pela colocação no % atingido da rede. Os pontos acumulam dentro do período e recomeçam no período seguinte. Mês fora de qualquer período não pontua.
+  </div>
+</form>
+
+{% if periodos %}
+  <div class="bloco-titulo">Períodos cadastrados</div>
+  <div class="tabela-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>PERÍODO</th>
+          <th>1º</th>
+          <th>2º</th>
+          <th>3º</th>
+          <th>4º</th>
+          <th>5º EM DIANTE</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in periodos %}
+          <tr>
+            <td class="rotulo">{{ p.rotulo }}</td>
+            <td>{{ p.pontos_1 }}</td>
+            <td>{{ p.pontos_2 }}</td>
+            <td>{{ p.pontos_3 }}</td>
+            <td>{{ p.pontos_4 }}</td>
+            <td>{{ p.pontos_demais }}</td>
+            <td class="acoes">
+              <a class="btn-acao btn-mini" href="{{ url_for('performances.regras_premiacao', editar_periodo=p.id_vendas_pontuacao_periodo) }}#pontuacao">Editar</a>
+              <form method="post"
+                    action="{{ url_for('performances.excluir_periodo_pontuacao', id_periodo=p.id_vendas_pontuacao_periodo) }}"
+                    onsubmit="return confirmarEnvio(this, 'Excluir o período de {{ p.rotulo }}?')">
                 <button type="submit" class="btn-acao btn-mini btn-excluir">Excluir</button>
               </form>
             </td>
