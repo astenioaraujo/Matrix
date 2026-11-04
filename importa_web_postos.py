@@ -407,6 +407,36 @@ def remover_contas_sinteticas_importadas(conn, cod_empresa):
         cur.close()
 
 
+def remover_contas_zeradas_importadas(conn, cod_empresa):
+    """Tira da temporaria as contas com valor zero: nao ha o que transferir,
+    e sem classificacao elas barrariam a transferencia.
+
+    Conta zerada COM detalhamento fica: houve movimento que se anulou no mes.
+    """
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            DELETE FROM importacoes i
+            WHERE i.cod_empresa = %s
+              AND i.valor = 0
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM importacoes_detalhamento d
+                  WHERE d.cod_empresa = i.cod_empresa
+                    AND d.cod_filial = i.cod_filial
+                    AND d.ano = i.ano
+                    AND d.mes = i.mes
+                    AND d.historico_conta = i.historico
+              )
+        """, (str(cod_empresa).strip(),))
+
+        return cur.rowcount
+
+    finally:
+        cur.close()
+
+
 def somar_importacoes_empresa(conn, cod_empresa):
     cur = conn.cursor()
 
@@ -685,6 +715,8 @@ def Importa_Fluxo_Caixa_PDF(
             cod_empresa
         )
 
+        qtd_zeradas_removidas = remover_contas_zeradas_importadas(conn, cod_empresa)
+
         total_classificado = classificar_lancamentos_importados(
             cod_empresa_fixo=cod_empresa,
             conn=conn
@@ -697,6 +729,7 @@ def Importa_Fluxo_Caixa_PDF(
         return {
             "total_importado": total_importado,
             "total_sinteticas_removidas": qtd_sinteticas_removidas,
+            "total_zeradas_removidas": qtd_zeradas_removidas,
             "total_classificado": total_classificado,
             "auditoria_movimento": auditoria_movimento["linhas"],
             "total_pdf": auditoria_movimento["total_pdf"],
@@ -785,6 +818,9 @@ def limpar_historico_analitico(codigo, descricao):
     """Monta o historico no mesmo formato que o sintetico grava."""
     descricao = re.sub(r"#\s*\d+\s*,\s*\d+", "", descricao or "")
     descricao = re.sub(r"\s+", " ", descricao).strip()
+    # Relatorio com varias colunas de mes: os valores dos meses anteriores
+    # ficam na descricao e mudariam o historico da conta a cada mes.
+    descricao = re.sub(r"(?:\s*(?:" + _RE_VALOR_ANALITICO + r"))+$", "", descricao).strip()
     return f"{codigo} - {descricao}".strip()
 
 
@@ -1250,6 +1286,8 @@ def Importa_Fluxo_Caixa_PDF_Analitico(cod_empresa_fixo, caminho_pdf,
             cod_empresa
         )
 
+        qtd_zeradas_removidas = remover_contas_zeradas_importadas(conn, cod_empresa)
+
         total_classificado = classificar_lancamentos_importados(
             cod_empresa_fixo=cod_empresa,
             conn=conn
@@ -1267,6 +1305,7 @@ def Importa_Fluxo_Caixa_PDF_Analitico(cod_empresa_fixo, caminho_pdf,
             "total_importado": total_contas,
             "total_detalhes": total_detalhes,
             "total_sinteticas_removidas": qtd_sinteticas_removidas,
+            "total_zeradas_removidas": qtd_zeradas_removidas,
             "total_classificado": total_classificado,
             "total_propagado": total_propagado,
             "auditoria_movimento": auditoria_movimento["linhas"],
