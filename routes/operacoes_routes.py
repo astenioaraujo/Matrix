@@ -54,6 +54,36 @@ def parse_valor_br(valor_txt):
     except ValueError:
         return 0.0
 
+def aviso_filial_sem_tanque(cur, cod_empresa, cod_filial, cod_produto):
+    """Mensagem de recusa quando a filial não tem tanque do produto; senão None.
+
+    Filial sem nenhuma capacidade preenchida fica de fora: ali o cadastro não
+    foi feito (toda a EMP011 está zerada) e o zero não quer dizer "sem tanque".
+    Coligada não passa por aqui: não controlamos os tanques dela.
+    """
+    cur.execute("""
+        SELECT
+            COALESCE(MAX(t.capacidade_tanque), 0) AS maior_tanque,
+            COALESCE(MAX(t.capacidade_tanque) FILTER (WHERE t.cod_produto = %s), 0) AS tanque_produto,
+            (SELECT nome_filial FROM filiais
+              WHERE cod_empresa = %s AND cod_filial = %s) AS nome_filial,
+            (SELECT descricao FROM combustiveis
+              WHERE cod_empresa = %s AND cod_produto = %s) AS produto
+        FROM capacidade_tanques t
+        WHERE t.cod_empresa = %s
+          AND t.cod_filial = %s
+    """, (cod_produto, cod_empresa, cod_filial, cod_empresa, cod_produto, cod_empresa, cod_filial))
+    linha = cur.fetchone()
+
+    if float(linha["maior_tanque"]) <= 0 or float(linha["tanque_produto"]) > 0:
+        return None
+
+    return (
+        f"{linha['nome_filial']} não tem tanque de {linha['produto'] or cod_produto}. "
+        "Descarrego não gravado: troque o produto da compra ou escolha outro destino."
+    )
+
+
 def recalcular_status_compra(cur, cod_empresa, id_compra):
     """O status da compra é o saldo dela: FECHADA quando tudo foi descarregado.
 
@@ -2884,6 +2914,15 @@ def informar_descarregos_combustiveis():
                 return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
 
             cod_produto = str(compra["cod_produto"]).strip()
+
+            if cod_filial_descarga is not None:
+                aviso_tanque = aviso_filial_sem_tanque(
+                    cur, cod_empresa, cod_filial_descarga, cod_produto
+                )
+                if aviso_tanque:
+                    conn.rollback()
+                    flash(aviso_tanque, "error")
+                    return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
 
             # INSERT REAL NA TABELA DE DESCARREGOS
             cur.execute("""
