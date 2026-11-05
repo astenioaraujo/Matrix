@@ -4445,21 +4445,58 @@ def consultar_perdas_sobras():
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
+    filiais_disponiveis = []
+    mostrar_filtro_filiais = False
+    filiais_selecionadas = set()
+
     try:
+        FILIAIS_ELEGIVEIS_SQL = """
+            SELECT DISTINCT f.cod_filial, f.nome_filial
+            FROM filiais f
+            JOIN capacidade_tanques ct
+              ON ct.cod_empresa = f.cod_empresa
+             AND ct.cod_filial = f.cod_filial
+            WHERE f.cod_empresa = %s
+              AND f.ativo = TRUE
+              AND COALESCE(ct.capacidade_tanque, 0) > 0
+        """
+
         if tipo_global == "superusuario":
-            filtro_filiais_sql = ""
-            params_filiais = []
+            cur.execute(FILIAIS_ELEGIVEIS_SQL + " ORDER BY f.cod_filial", [cod_empresa])
+            filiais_disponiveis = cur.fetchall()
+            filiais_permitidas_set = {int(f["cod_filial"]) for f in filiais_disponiveis}
         else:
-            filiais_permitidas = [
+            filiais_permitidas_lista = [
                 int(x) for x in usuario_filiais_ativas(id_usuario, cod_empresa)
             ]
 
-            if not filiais_permitidas:
+            if not filiais_permitidas_lista:
                 flash("Você não possui filiais habilitadas.", "error")
                 return redirect(url_for("operacoes.menu_operacoes"))
 
-            filtro_filiais_sql = "AND f.cod_filial = ANY(%s)"
-            params_filiais = [filiais_permitidas]
+            cur.execute(
+                FILIAIS_ELEGIVEIS_SQL + " AND f.cod_filial = ANY(%s) ORDER BY f.cod_filial",
+                [cod_empresa, filiais_permitidas_lista],
+            )
+            filiais_disponiveis = cur.fetchall()
+            filiais_permitidas_set = set(filiais_permitidas_lista)
+
+        # com apenas uma filial permitida o seletor não faz sentido: o usuário
+        # já so acessa aquela filial, então o filtro fica oculto e implícito
+        mostrar_filtro_filiais = len(filiais_disponiveis) > 1
+
+        sel_filial_args = request.args.getlist("sel_filial")
+        flt_submetido = request.args.get("flt") == "1"
+
+        if mostrar_filtro_filiais and flt_submetido:
+            filiais_selecionadas = {
+                int(x) for x in sel_filial_args if x.strip().lstrip("-").isdigit()
+            } & filiais_permitidas_set
+        else:
+            filiais_selecionadas = set(filiais_permitidas_set)
+
+        filtro_filiais_sql = "AND f.cod_filial = ANY(%s)"
+        params_filiais = [sorted(filiais_selecionadas) if filiais_selecionadas else [-1]]
 
         BASE_CTE = f"""
             base AS (
@@ -4824,7 +4861,30 @@ def consultar_perdas_sobras():
         cur.close()
         conn.close()
 
-    anos_disponiveis = list(range(hoje.year - 3, hoje.year + 1))
+    anos_disponiveis = sorted(set(range(hoje.year - 3, hoje.year + 1)) | {ano})
+
+    def _url_navegacao(mes_dest, ano_dest):
+        partes = [f"vis={vis}", f"sel_mes={mes_dest}", f"sel_ano={ano_dest}"]
+        partes.append(f"desloc={'1' if desloc else '0'}")
+        partes.append("flt=1")
+        for fcod in sorted(filiais_selecionadas):
+            partes.append(f"sel_filial={fcod}")
+        return url_for("operacoes.consultar_perdas_sobras") + "?" + "&".join(partes)
+
+    if mes == 1:
+        mes_anterior, ano_do_mes_anterior = 12, ano - 1
+    else:
+        mes_anterior, ano_do_mes_anterior = mes - 1, ano
+
+    if mes == 12:
+        mes_seguinte, ano_do_mes_seguinte = 1, ano + 1
+    else:
+        mes_seguinte, ano_do_mes_seguinte = mes + 1, ano
+
+    url_mes_anterior = _url_navegacao(mes_anterior, ano_do_mes_anterior)
+    url_mes_seguinte = _url_navegacao(mes_seguinte, ano_do_mes_seguinte)
+    url_ano_anterior = _url_navegacao(mes, ano - 1)
+    url_ano_seguinte = _url_navegacao(mes, ano + 1)
 
     return render_template(
         "consultar_perdas_sobras.html",
@@ -4835,6 +4895,13 @@ def consultar_perdas_sobras():
         ano=ano,
         mes=mes,
         mes_num=mes,
+        filiais_disponiveis=filiais_disponiveis,
+        filiais_selecionadas=filiais_selecionadas,
+        mostrar_filtro_filiais=mostrar_filtro_filiais,
+        url_mes_anterior=url_mes_anterior,
+        url_mes_seguinte=url_mes_seguinte,
+        url_ano_anterior=url_ano_anterior,
+        url_ano_seguinte=url_ano_seguinte,
         ano_num=ano,
         anos_disponiveis=anos_disponiveis,
         ultimo_dia=ultimo_dia,

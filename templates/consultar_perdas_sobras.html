@@ -82,6 +82,50 @@
   .vis-toggle input[type=radio] { display: none; }
   .vis-toggle input[type=radio]:checked + label { background: #1565c0; color: #fff; }
 
+  .campo-com-setas { display: flex; align-items: center; gap: 6px; }
+
+  .seta-nav {
+    width: 38px; height: 38px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid #c7c7c7; border-radius: 9px;
+    background: #c8e6c9; color: #111;
+    font-weight: 900; font-size: 18px;
+    text-decoration: none; cursor: pointer;
+  }
+  .seta-nav:hover { background: #a5d6a7; }
+
+  .filial-dropdown { position: relative; }
+
+  .filial-dropdown-btn {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    min-width: 220px; height: 38px; padding: 0 12px;
+    border: 1px solid #cfcfcf; border-radius: 6px;
+    background: #fff; font-weight: 700; font-size: 13px; color: #333;
+    cursor: pointer;
+  }
+  .filial-dropdown-btn:hover { background: #f7f7f7; }
+
+  .seta-dropdown { color: #1565c0; font-size: 11px; transition: transform 0.15s; }
+  .filial-dropdown.aberto .seta-dropdown { transform: rotate(180deg); }
+
+  .filial-dropdown-painel {
+    display: none;
+    position: fixed; z-index: 1000;
+    border: 1px solid #cfcfcf; border-radius: 6px;
+    padding: 8px; max-height: 220px; min-width: 240px;
+    overflow-y: auto; background: #fff;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+  }
+  .filial-dropdown.aberto .filial-dropdown-painel { display: block; }
+
+  .filial-acoes { display: flex; gap: 12px; margin-bottom: 6px; font-size: 12px; }
+  .filial-acoes a { color: #1565c0; font-weight: 700; text-decoration: none; cursor: pointer; }
+  .filial-item {
+    display: flex; align-items: center; gap: 6px;
+    font-weight: 400; font-size: 13px; margin-bottom: 4px;
+    cursor: pointer; white-space: nowrap;
+  }
+
   .col-filial { width: 150px; font-weight: 800; }
   .col-produto { width: 190px; font-weight: 700; }
   .col-dia { width: 62px; text-align: right; }
@@ -147,23 +191,78 @@
       {% if vis == "mes" %}
       <div>
         <label for="sel_mes">Mês</label>
-        <select id="sel_mes" name="sel_mes">
-          {% for i in range(1, 13) %}
-            <option value="{{ i }}" {% if i == mes_num %}selected{% endif %}>{{ nomes_meses_completos[i-1] }}</option>
-          {% endfor %}
-        </select>
+        <div class="campo-com-setas">
+          <a class="seta-nav" href="{{ url_mes_anterior }}" title="Mês anterior">←</a>
+          <select id="sel_mes" name="sel_mes">
+            {% for i in range(1, 13) %}
+              <option value="{{ i }}" {% if i == mes_num %}selected{% endif %}>{{ nomes_meses_completos[i-1] }}</option>
+            {% endfor %}
+          </select>
+        </div>
       </div>
-      {% endif %}
 
       <div>
         <label for="sel_ano">Ano</label>
-        <select id="sel_ano" name="sel_ano">
-          {% for a in anos_disponiveis %}
-            <option value="{{ a }}" {% if a == ano_num %}selected{% endif %}>{{ a }}</option>
-          {% endfor %}
-        </select>
+        <div class="campo-com-setas">
+          <select id="sel_ano" name="sel_ano">
+            {% for a in anos_disponiveis %}
+              <option value="{{ a }}" {% if a == ano_num %}selected{% endif %}>{{ a }}</option>
+            {% endfor %}
+          </select>
+          <a class="seta-nav" href="{{ url_mes_seguinte }}" title="Próximo mês">→</a>
+        </div>
       </div>
+      {% else %}
 
+      <div>
+        <label for="sel_ano">Ano</label>
+        <div class="campo-com-setas">
+          <a class="seta-nav" href="{{ url_ano_anterior }}" title="Ano anterior">←</a>
+          <select id="sel_ano" name="sel_ano">
+            {% for a in anos_disponiveis %}
+              <option value="{{ a }}" {% if a == ano_num %}selected{% endif %}>{{ a }}</option>
+            {% endfor %}
+          </select>
+          <a class="seta-nav" href="{{ url_ano_seguinte }}" title="Próximo ano">→</a>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if mostrar_filtro_filiais %}
+      {% set n_sel = filiais_selecionadas | length %}
+      {% set n_tot = filiais_disponiveis | length %}
+      <div>
+        <label>Filiais</label>
+        <div class="filial-dropdown" id="filial-dropdown">
+          <button type="button" class="filial-dropdown-btn" onclick="toggleFiliais(event)">
+            <span id="filial-dropdown-label">
+              {% if n_sel == n_tot %}Todas as filiais
+              {% elif n_sel == 0 %}Nenhuma filial
+              {% elif n_sel == 1 %}1 filial selecionada
+              {% else %}{{ n_sel }} filiais selecionadas
+              {% endif %}
+            </span>
+            <span class="seta-dropdown">▾</span>
+          </button>
+          <div class="filial-dropdown-painel">
+            <div class="filial-acoes">
+              <a onclick="marcarFiliais(true); return false;" href="#">Marcar todos</a>
+              <a onclick="marcarFiliais(false); return false;" href="#">Desmarcar todos</a>
+            </div>
+            {% for f in filiais_disponiveis %}
+              <label class="filial-item">
+                <input type="checkbox" name="sel_filial" value="{{ f.cod_filial }}"
+                       {% if f.cod_filial in filiais_selecionadas %}checked{% endif %}
+                       onchange="atualizarLabelFiliais()">
+                {{ f.cod_filial }} - {{ f.nome_filial }}
+              </label>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      <input type="hidden" name="flt" value="1">
       <input type="hidden" name="vis" id="input-vis" value="{{ vis }}">
 
       {% if vis == "mes" %}
@@ -352,6 +451,60 @@
 function trocarVis(v) {
   document.getElementById("input-vis").value = v;
   document.querySelector("form").submit();
+}
+
+function toggleFiliais(ev) {
+  ev.stopPropagation();
+  var dd = document.getElementById("filial-dropdown");
+  var vaiAbrir = !dd.classList.contains("aberto");
+
+  if (vaiAbrir) {
+    var btn = dd.querySelector(".filial-dropdown-btn");
+    var painel = dd.querySelector(".filial-dropdown-painel");
+    var r = btn.getBoundingClientRect();
+    painel.style.top = (r.bottom + 4) + "px";
+    painel.style.left = r.left + "px";
+    painel.style.width = r.width + "px";
+  }
+
+  dd.classList.toggle("aberto", vaiAbrir);
+}
+
+document.addEventListener("click", function (ev) {
+  var dd = document.getElementById("filial-dropdown");
+  if (dd && !dd.contains(ev.target)) {
+    dd.classList.remove("aberto");
+  }
+});
+
+window.addEventListener("scroll", function (ev) {
+  var dd = document.getElementById("filial-dropdown");
+  if (dd && dd.classList.contains("aberto") && !dd.contains(ev.target)) {
+    dd.classList.remove("aberto");
+  }
+}, true);
+
+function marcarFiliais(marcar) {
+  document.querySelectorAll('input[name="sel_filial"]').forEach(function (cb) {
+    cb.checked = marcar;
+  });
+  atualizarLabelFiliais();
+}
+
+function atualizarLabelFiliais() {
+  var caixas = document.querySelectorAll('input[name="sel_filial"]');
+  var marcadas = document.querySelectorAll('input[name="sel_filial"]:checked').length;
+  var total = caixas.length;
+  var label = document.getElementById("filial-dropdown-label");
+  if (!label) return;
+
+  if (marcadas === total) {
+    label.textContent = "Todas as filiais";
+  } else if (marcadas === 0) {
+    label.textContent = "Nenhuma filial";
+  } else {
+    label.textContent = marcadas + (marcadas > 1 ? " filiais selecionadas" : " filial selecionada");
+  }
 }
 </script>
 
