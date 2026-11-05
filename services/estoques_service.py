@@ -406,3 +406,62 @@ def totais_estoque_rs(cur, cod_empresa, data_base, codigos_filiais):
             filial[origem] += float(linha.get(coluna) or 0)
 
     return totais
+
+
+# Origens que dependem da medição de `data_base`. Compra e Trânsito saem das
+# compras do dia anterior e não precisam dela.
+ORIGENS_COM_MEDICAO = {"ESTOQUE", "PERDA_SOBRA"}
+
+
+def tanques_sem_medicao(cur, cod_empresa, data_base, codigos_filiais):
+    """Filial × produto com tanque e sem medição em `data_base`.
+
+    Sem medição, `linhas_estoque` devolve estoque zero — e a importação em
+    Saldos gravaria esse zero calada (foi o que aconteceu em 05/11/2026: oito
+    postos lançaram a medição depois da importação). Devolve
+    [{"nome_filial", "produtos": [..], "todos"}] na ordem das filiais —
+    `todos` quando o posto não mediu tanque nenhum.
+    """
+    cur.execute("""
+        SELECT DISTINCT f.cod_filial, f.nome_filial, c.cod_produto, c.descricao AS produto,
+               EXISTS (
+                SELECT 1 FROM medicoes m
+                 WHERE m.cod_empresa = f.cod_empresa
+                   AND m.cod_filial = f.cod_filial
+                   AND m.cod_produto = ct.cod_produto
+                   AND m.data_medicao = %s
+               ) AS medido
+          FROM filiais f
+          JOIN capacidade_tanques ct
+            ON ct.cod_empresa = f.cod_empresa AND ct.cod_filial = f.cod_filial
+          JOIN combustiveis c
+            ON c.cod_empresa = ct.cod_empresa AND c.cod_produto = ct.cod_produto
+         WHERE f.cod_empresa = %s
+           AND f.ativo = TRUE
+           AND COALESCE(ct.capacidade_tanque, 0) > 0
+           AND f.cod_filial = ANY(%s)
+         ORDER BY f.cod_filial, c.cod_produto
+    """, (data_base, cod_empresa, list(codigos_filiais)))
+
+    filiais = {}
+    for linha in cur.fetchall():
+        item = filiais.setdefault(linha["cod_filial"], {
+            "nome_filial": linha["nome_filial"], "produtos": [], "todos": True,
+        })
+        if linha["medido"]:
+            item["todos"] = False
+        else:
+            item["produtos"].append(linha["produto"])
+    return [f for f in filiais.values() if f["produtos"]]
+
+
+def msg_tanques_sem_medicao(faltas, data_base):
+    """Mensagem de recusa da importação, com os postos que faltam."""
+    postos = ", ".join(
+        f["nome_filial"] if f["todos"] else f"{f['nome_filial']} ({', '.join(f['produtos'])})"
+        for f in faltas
+    )
+    return (
+        f"Falta a medição de {data_base.strftime('%d/%m/%Y')} em: {postos}. "
+        "Importe depois que esses postos lançarem a medição — sem ela o estoque entraria zerado."
+    )

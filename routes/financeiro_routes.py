@@ -15,7 +15,9 @@ from services.vendas_mb_service import (
 )
 from security_helpers import usuario_tem_permissao, permissao_obrigatoria
 from services.dashboard_service import montar_dashboard
-from services.estoques_service import totais_estoque_rs
+from services.estoques_service import (
+    ORIGENS_COM_MEDICAO, msg_tanques_sem_medicao, tanques_sem_medicao, totais_estoque_rs,
+)
 from services.bloqueios_service import datas_bloqueio_pendentes
 from services.emprestimos_service import gerar_parcelas
 from services.caixas_faltas_sobras_service import importar_faltas_sobras, nomes_exibicao
@@ -8057,6 +8059,16 @@ def _contexto_importacao_base(cur, cod_empresa, dados):
     }
 
 
+def _exigir_medicao_dia_seguinte(cur, cod_empresa, data_ref, origem, codigos_filiais):
+    """Estoque e Perdas/Sobras usam a medição de D+1: sem ela, recusa (409)."""
+    if origem not in ORIGENS_COM_MEDICAO:
+        return
+    data_medicao = data_ref + timedelta(days=1)
+    faltas = tanques_sem_medicao(cur, cod_empresa, data_medicao, codigos_filiais)
+    if faltas:
+        raise ErroConsulta(msg_tanques_sem_medicao(faltas, data_medicao), 409)
+
+
 def _contexto_importacao_estoque(cur, cod_empresa, dados):
     """Base + o indicador de recebível ligado à origem pedida."""
     ctx = _contexto_importacao_base(cur, cod_empresa, dados)
@@ -8241,12 +8253,14 @@ def api_importar_estoque_saldos():
         if float(cur.fetchone()["soma"] or 0) != 0:
             raise ErroConsulta("Já existem valores lançados nesta linha. Zere-os antes de importar.", 409)
 
+        origem = str(dados.get("origem") or "").strip().upper()
+        _exigir_medicao_dia_seguinte(cur, cod_empresa, data_ref, origem, codigos_filiais)
+
         # A Consulta de Estoques é sempre um dia à frente do saldo: o saldo do
         # dia 10 fecha com o relatório de estoques do dia 11, que traz a
         # medição da manhã do 11 (o fechamento do 10) e as compras e o
         # trânsito do próprio dia 10.
         totais = totais_estoque_rs(cur, cod_empresa, data_ref + timedelta(days=1), codigos_filiais)
-        origem = str(dados.get("origem") or "").strip().upper()
         valores = {f: round(totais[f][origem], 2) for f in codigos_filiais}
 
         _gravar_valores_recebivel(cur, cod_empresa, data_ref, ctx["id_indicador"], valores, id_usuario)
@@ -8462,6 +8476,8 @@ def api_importar_informado_saldos():
         """, (cod_empresa, data_ref, codigos_filiais))
         if float(cur.fetchone()["soma"] or 0) != 0:
             raise ErroConsulta("Já existem valores lançados nesta linha. Zere-os antes de importar.", 409)
+
+        _exigir_medicao_dia_seguinte(cur, cod_empresa, data_ref, ctx["origem"], codigos_filiais)
 
         # Mesmo deslocamento de um dia das outras importações: o saldo do dia 10
         # fecha com a Consulta de Estoques do dia 11.
