@@ -1,0 +1,542 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 10px; }
+  .empresa { font-size: 22px; margin-bottom: 24px; }
+
+  .flash-msg { padding: 10px 14px; border-radius: 8px; margin-bottom: 15px; font-weight: 600; }
+  .flash-success { background: #e6f4ea; color: #1e6b34; border: 1px solid #b7dfc2; }
+  .flash-error { background: #fdeaea; color: #9f2f2f; border: 1px solid #efc2c2; }
+
+  .painel-form {
+    max-width: 1100px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 26px;
+  }
+
+  .campo label { display: block; font-weight: 700; margin-bottom: 6px; }
+
+  .campo input,
+  .campo select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid #c7c7c7;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+
+  .grid-topo {
+    display: grid;
+    grid-template-columns: 320px 170px 130px;
+    gap: 18px;
+    margin-bottom: 20px;
+  }
+
+  @media (max-width: 760px) {
+    .grid-topo { grid-template-columns: 1fr 1fr; }
+    .grid-topo .campo-filial { grid-column: span 2; }
+  }
+
+  .titulo-folha {
+    background: #6a1b9a;
+    color: #fff;
+    font-weight: 800;
+    text-align: center;
+    padding: 9px 12px;
+    border-radius: 10px 10px 0 0;
+    font-size: 14px;
+    letter-spacing: .3px;
+  }
+
+  .folha-wrapper {
+    overflow-x: auto;
+    border: 1px solid #d0c3dc;
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    margin-bottom: 12px;
+  }
+
+  table.folha { border-collapse: collapse; font-size: 14px; min-width: 100%; }
+
+  table.folha th,
+  table.folha td { border: 1px solid #e2d8ea; padding: 4px; }
+
+  table.folha th.rotulo {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: #f6f0fa;
+    text-align: left;
+    font-weight: 700;
+    padding: 6px 10px;
+    white-space: nowrap;
+    min-width: 200px;
+  }
+
+  table.folha td { min-width: 150px; }
+
+  /* No celular o rótulo quebra em duas linhas e cede espaço ao tanque. */
+  @media (max-width: 640px) {
+    .painel-form { padding: 14px; }
+    table.folha th.rotulo { min-width: 0; width: 120px; white-space: normal; font-size: 12px; line-height: 1.25; }
+    table.folha td { min-width: 130px; }
+  }
+
+  table.folha td input,
+  table.folha td select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 7px 8px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    font-size: 14px;
+    text-align: center;
+  }
+
+  table.folha td input:focus,
+  table.folha td select:focus {
+    outline: none;
+    background: #fffbe6;
+    box-shadow: inset 0 0 0 2px #b38be0;
+  }
+
+  /* Exemplo, não valor: claro e em itálico para ninguém achar que já está preenchido. */
+  table.folha td input::placeholder { color: #c4c4c4; font-style: italic; font-weight: 400; }
+
+  table.folha thead td { background: #faf7fc; }
+  table.folha thead td input { font-weight: 800; }
+
+  .col-oculta { display: none; }
+
+  .unidade { font-weight: 400; color: #888; font-size: 12px; }
+
+  .btn-tanque {
+    padding: 8px 14px;
+    border-radius: 9px;
+    border: 1px dashed #6a1b9a;
+    background: #faf5fd;
+    color: #6a1b9a;
+    font-weight: 700;
+    cursor: pointer;
+    margin-bottom: 20px;
+  }
+
+  .ajuda { font-size: 12px; color: #777; margin-top: 4px; }
+
+  .botoes-captura { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+
+  .btn-captura {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid #e0c067;
+    background: #ffe9a8;
+    color: #5c4400;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+
+  .btn-captura:hover { background: #ffdf85; }
+
+  .input-oculto {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .lista-arquivos { list-style: none; margin: 0 0 6px; padding: 0; font-size: 13px; color: #333; }
+  .lista-arquivos li { padding: 3px 0; }
+  .lista-arquivos .remover { border: none; background: none; color: #b00020; font-weight: 800; cursor: pointer; }
+
+  .tipo-tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; margin-right: 6px; }
+  .tipo-tag-video { background: #e6f4ea; color: #1e6b34; }
+  .tipo-tag-imagem { background: #eaf1fb; color: #1a4f8a; }
+  .hora-foto { color: #6a1b9a; font-weight: 700; margin-left: 6px; }
+
+  .campo-responsavel { max-width: 480px; margin-top: 22px; }
+
+  .btn-salvar {
+    padding: 12px 22px;
+    border-radius: 10px;
+    border: 1px solid #6a1b9a;
+    background: #6a1b9a;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 15px;
+    margin-top: 16px;
+  }
+
+  .btn-salvar:hover { background: #4a148c; }
+  .btn-salvar:disabled { opacity: .6; cursor: wait; }
+
+  .sem-filial { font-weight: 700; color: #9f2f2f; }
+
+  .titulo-secao { font-weight: 800; font-size: 18px; margin: 10px 0 10px; }
+
+  .tabela-wrapper { max-width: 1100px; overflow-x: auto; }
+
+  table.recentes { width: 100%; border-collapse: collapse; font-size: 14px; background: #fff; }
+  table.recentes th, table.recentes td { border: 1px solid #dcdcdc; padding: 8px 12px; white-space: nowrap; }
+  table.recentes th { background: #f1f1f1; text-align: left; }
+  table.recentes td.valor { text-align: right; font-family: monospace; }
+
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-weight: 700; font-size: 12px; }
+  .badge-ok { background: #e6f4ea; color: #1e6b34; }
+  .badge-agua { background: #fdeaea; color: #9f2f2f; }
+</style>
+
+<div class="pagina-titulo">Informar Drenagens</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<div class="painel-form">
+  <form method="post" enctype="multipart/form-data" id="formDrenagem" onsubmit="return prepararEnvio(this)">
+    <div class="grid-topo">
+      <div class="campo campo-filial">
+        <label for="cod_filial">Posto</label>
+        <select id="cod_filial" name="cod_filial" onchange="trocarFilial(this.value)">
+          <option value="">Selecione</option>
+          {% for f in filiais %}
+            <option value="{{ f.cod_filial }}" {% if filial_sel|string == f.cod_filial|string %}selected{% endif %}>
+              {{ f.cod_filial }} - {{ f.nome_filial }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      {% if filial_sel and produtos %}
+        <div class="campo">
+          <label for="data_drenagem">Data da coleta</label>
+          <input type="date" id="data_drenagem" name="data_drenagem" value="{{ hoje_iso }}" max="{{ hoje_iso }}" required>
+        </div>
+
+        <div class="campo">
+          <label for="hora_drenagem">Hora</label>
+          <input type="time" id="hora_drenagem" name="hora_drenagem" value="{{ agora_iso }}" required>
+        </div>
+      {% endif %}
+    </div>
+
+    {% if filial_sel %}
+      {% if produtos %}
+        <datalist id="lista-aspectos">
+          {% for a in aspectos %}<option value="{{ a }}">{% endfor %}
+        </datalist>
+        <datalist id="lista-cores">
+          {% for c in cores %}<option value="{{ c }}">{% endfor %}
+        </datalist>
+
+        <div class="titulo-folha">DADOS DA DRENAGEM DO FUNDO DE TANQUES DE ÓLEO DIESEL</div>
+        <div class="folha-wrapper">
+          <table class="folha" id="folha">
+            <thead>
+              <tr>
+                <th class="rotulo">Tanque</th>
+                {% for i in range(1, max_tanques + 1) %}
+                  <td class="col-{{ i }} {% if i > 1 %}col-oculta{% endif %}">
+                    <input type="text" name="tanque_{{ i }}" placeholder="TQ {{ i }}" maxlength="20" autocomplete="off">
+                  </td>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th class="rotulo">Produto</th>
+                {% for i in range(1, max_tanques + 1) %}
+                  <td class="col-{{ i }} {% if i > 1 %}col-oculta{% endif %}">
+                    <select name="cod_produto_{{ i }}" onchange="sugerirCapacidade(this, {{ i }})">
+                      <option value="">—</option>
+                      {% for p in produtos %}
+                        <option value="{{ p.cod_produto }}" data-capacidade="{{ p.capacidade_tanque | int }}">{{ p.descricao }}</option>
+                      {% endfor %}
+                    </select>
+                  </td>
+                {% endfor %}
+              </tr>
+              <tr>
+                <th class="rotulo">Capacidade <span class="unidade">(L)</span></th>
+                {% for i in range(1, max_tanques + 1) %}
+                  <td class="col-{{ i }} {% if i > 1 %}col-oculta{% endif %}">
+                    <input type="text" inputmode="decimal" name="capacidade_litros_{{ i }}" placeholder="15.000">
+                  </td>
+                {% endfor %}
+              </tr>
+              <tr>
+                <th class="rotulo">Presença de água no medidor <span class="unidade">(mm)</span></th>
+                {% for i in range(1, max_tanques + 1) %}
+                  <td class="col-{{ i }} {% if i > 1 %}col-oculta{% endif %}">
+                    <input type="text" inputmode="decimal" name="agua_medidor_mm_{{ i }}" placeholder="0">
+                  </td>
+                {% endfor %}
+              </tr>
+              <tr>
+                <th class="rotulo">Aspecto</th>
+                {% for i in range(1, max_tanques + 1) %}
+                  <td class="col-{{ i }} {% if i > 1 %}col-oculta{% endif %}">
+                    <input type="text" name="aspecto_{{ i }}" list="lista-aspectos" placeholder="LII" maxlength="60">
+                  </td>
+                {% endfor %}
+              </tr>
+              <tr>
+                <th class="rotulo">Cor</th>
+                {% for i in range(1, max_tanques + 1) %}
+                  <td class="col-{{ i }} {% if i > 1 %}col-oculta{% endif %}">
+                    <input type="text" name="cor_{{ i }}" list="lista-cores" placeholder="Amarelado" maxlength="60">
+                  </td>
+                {% endfor %}
+              </tr>
+              <tr>
+                <th class="rotulo">Volume de amostra drenado <span class="unidade">(L)</span></th>
+                {% for i in range(1, max_tanques + 1) %}
+                  <td class="col-{{ i }} {% if i > 1 %}col-oculta{% endif %}">
+                    <input type="text" inputmode="decimal" name="volume_amostra_litros_{{ i }}" placeholder="1">
+                  </td>
+                {% endfor %}
+              </tr>
+              <tr>
+                <th class="rotulo">Presença de água?</th>
+                {% for i in range(1, max_tanques + 1) %}
+                  <td class="col-{{ i }} {% if i > 1 %}col-oculta{% endif %}">
+                    <select name="presenca_agua_{{ i }}">
+                      <option value="N">Não</option>
+                      <option value="S">Sim</option>
+                    </select>
+                  </td>
+                {% endfor %}
+              </tr>
+              <tr>
+                <th class="rotulo">Volume de água drenado <span class="unidade">(L)</span></th>
+                {% for i in range(1, max_tanques + 1) %}
+                  <td class="col-{{ i }} {% if i > 1 %}col-oculta{% endif %}">
+                    <input type="text" inputmode="decimal" name="volume_agua_litros_{{ i }}" placeholder="0">
+                  </td>
+                {% endfor %}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <button type="button" class="btn-tanque" id="btnMaisTanque" onclick="mostrarProximoTanque()">+ Outro tanque</button>
+        <div class="ajuda" style="margin: -12px 0 20px;">
+          Volumes em litros: 1.000 ml = <strong>1</strong>; meio litro = <strong>0,5</strong>. Até {{ max_tanques }} tanques por drenagem.
+        </div>
+
+        <div class="campo">
+          <label>Fotos e vídeos do volume drenado</label>
+
+          <div class="botoes-captura" id="botoesCaptura">
+            <label class="btn-captura" for="capturar_foto">📷 Tirar foto agora</label>
+            <label class="btn-captura" for="capturar_video">🎥 Gravar vídeo agora</label>
+            <label class="btn-captura" for="escolher_arquivos">📁 Escolher da galeria</label>
+          </div>
+
+          <div id="inputsArquivos">
+            <input type="file" id="capturar_foto" name="arquivos" accept="image/*" capture="environment" class="input-oculto" onchange="arquivoEscolhido(this)">
+            <input type="file" id="capturar_video" name="arquivos" accept="video/*" capture="environment" class="input-oculto" onchange="arquivoEscolhido(this)">
+            <input type="file" id="escolher_arquivos" name="arquivos" accept="image/*,video/*" multiple class="input-oculto" onchange="arquivoEscolhido(this)">
+          </div>
+          <input type="hidden" name="datas_arquivos" id="datas_arquivos">
+
+          <ul class="lista-arquivos" id="listaArquivos"></ul>
+
+          <div class="ajuda">
+            A foto recebe no rodapé a data e a hora em que foi tirada. As fotos são reduzidas no envio e
+            guardadas por {{ meses_retencao }} meses; a drenagem fica guardada para sempre.
+          </div>
+        </div>
+
+        <div class="campo campo-responsavel">
+          <label for="responsavel">Nome do responsável pela drenagem</label>
+          <input type="text" id="responsavel" name="responsavel" maxlength="120" placeholder="Nome de quem fez a drenagem" required>
+        </div>
+
+        <div class="ajuda" style="margin-top: 14px;">Registrado por: <strong>{{ nome_usuario }}</strong></div>
+
+        <button type="submit" class="btn-salvar" id="btnSalvar">Salvar Drenagem</button>
+      {% else %}
+        <div class="sem-filial">Este posto não tem tanque de diesel S10 nem S500 cadastrado (Configurações → Capacidade de Tanques).</div>
+      {% endif %}
+    {% else %}
+      <div class="sem-filial">Selecione o posto para informar a drenagem.</div>
+    {% endif %}
+  </form>
+</div>
+
+{% if filial_sel and drenagens_recentes %}
+  <div class="titulo-secao">Últimas drenagens deste posto</div>
+
+  <div class="tabela-wrapper">
+    <table class="recentes">
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Hora</th>
+          <th>Responsável</th>
+          <th>Tanque</th>
+          <th>Produto</th>
+          <th class="valor">Água medidor (mm)</th>
+          <th class="valor">Água drenada (L)</th>
+          <th>Situação</th>
+          <th class="valor">Arquivos</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in drenagens_recentes %}
+          {% set com_agua = d.presenca_agua or (d.volume_agua_litros or 0) > 0 or (d.agua_medidor_mm or 0) > 0 %}
+          <tr>
+            <td>{{ d.data_drenagem.strftime("%d/%m/%Y") }}</td>
+            <td>{{ d.hora_drenagem.strftime("%H:%M") }}</td>
+            <td>{{ d.responsavel }}</td>
+            <td>{{ d.tanque }}</td>
+            <td>{{ d.descricao_produto or d.cod_produto }}</td>
+            <td class="valor">{{ d.agua_medidor_mm | br }}</td>
+            <td class="valor">{{ d.volume_agua_litros | br }}</td>
+            <td>
+              {% if com_agua %}<span class="badge badge-agua">Com água</span>{% else %}<span class="badge badge-ok">Sem água</span>{% endif %}
+            </td>
+            <td class="valor">{{ d.qtd_arquivos }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+
+<script>
+  function trocarFilial(filial) {
+    window.location = "{{ url_for('operacoes.informar_drenagens') }}?cod_filial=" + filial;
+  }
+
+  const MAX_TANQUES = {{ max_tanques }};
+  let tanquesVisiveis = 1;
+
+  function mostrarProximoTanque() {
+    if (tanquesVisiveis >= MAX_TANQUES) return;
+    tanquesVisiveis += 1;
+    document.querySelectorAll(".col-" + tanquesVisiveis).forEach(function (c) {
+      c.classList.remove("col-oculta");
+    });
+    if (tanquesVisiveis >= MAX_TANQUES) {
+      document.getElementById("btnMaisTanque").style.display = "none";
+    }
+  }
+
+  // A capacidade cadastrada é sugestão: o posto pode ter mais de um tanque do
+  // mesmo diesel, com tamanhos diferentes — por isso só preenche se vazio.
+  function sugerirCapacidade(select, i) {
+    const campo = document.querySelector('[name="capacidade_litros_' + i + '"]');
+    const opcao = select.options[select.selectedIndex];
+    const capacidade = opcao ? opcao.getAttribute("data-capacidade") : "";
+    if (campo && !campo.value.trim() && capacidade && capacidade !== "0") {
+      campo.value = Number(capacidade).toLocaleString("pt-BR");
+    }
+  }
+
+  // Cada escolha de arquivo fica no seu próprio <input>: o usado sai de cena
+  // e um novo, vazio, toma o lugar dele. Assim "Tirar foto" duas vezes junta
+  // as duas fotos em vez de a segunda substituir a primeira.
+  function arquivoEscolhido(input) {
+    if (!input.files || !input.files.length) return;
+
+    const novo = input.cloneNode(false);
+    novo.value = "";
+    input.removeAttribute("id");
+    input.dataset.usado = "1";
+    input.parentNode.appendChild(novo);
+    renderizarLista();
+  }
+
+  function inputsUsados() {
+    return Array.from(document.querySelectorAll('#inputsArquivos input[data-usado="1"]'));
+  }
+
+  function horaLocal(ms) {
+    const d = new Date(ms);
+    const dois = function (n) { return String(n).padStart(2, "0"); };
+    return dois(d.getDate()) + "/" + dois(d.getMonth() + 1) + "/" + d.getFullYear()
+      + " " + dois(d.getHours()) + ":" + dois(d.getMinutes());
+  }
+
+  function renderizarLista() {
+    const lista = document.getElementById("listaArquivos");
+    lista.innerHTML = "";
+
+    inputsUsados().forEach(function (input) {
+      Array.from(input.files).forEach(function (arquivo) {
+        const ehVideo = arquivo.type.startsWith("video");
+        const li = document.createElement("li");
+
+        const tag = document.createElement("span");
+        tag.className = "tipo-tag " + (ehVideo ? "tipo-tag-video" : "tipo-tag-imagem");
+        tag.textContent = ehVideo ? "Vídeo" : "Foto";
+        li.appendChild(tag);
+        li.appendChild(document.createTextNode(arquivo.name));
+
+        const hora = document.createElement("span");
+        hora.className = "hora-foto";
+        hora.textContent = horaLocal(arquivo.lastModified);
+        li.appendChild(hora);
+
+        const remover = document.createElement("button");
+        remover.type = "button";
+        remover.className = "remover";
+        remover.title = "Tirar da lista";
+        remover.textContent = " ×";
+        remover.onclick = function () { input.remove(); renderizarLista(); };
+        li.appendChild(remover);
+
+        lista.appendChild(li);
+      });
+    });
+  }
+
+  // Manda o lastModified de cada arquivo na mesma ordem em que o navegador
+  // envia os arquivos (ordem dos <input> no formulário). O servidor usa o
+  // EXIF da foto e, sem ele, esta data para o carimbo.
+  function prepararEnvio(form) {
+    const datas = [];
+    form.querySelectorAll('input[type="file"][name="arquivos"]').forEach(function (input) {
+      Array.from(input.files || []).forEach(function (arquivo) { datas.push(arquivo.lastModified); });
+    });
+    document.getElementById("datas_arquivos").value = JSON.stringify(datas);
+
+    const botao = document.getElementById("btnSalvar");
+    if (botao) {
+      botao.disabled = true;
+      botao.textContent = "Enviando…";
+    }
+    return true;
+  }
+</script>
+
+{% endblock %}

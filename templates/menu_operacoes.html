@@ -61,6 +61,17 @@
     border-color: #c56a15;
   }
 
+  /* 🟣 DRENAGEM DE TANQUES (roxo) */
+  .btn-drenagens {
+    background: #6a1b9a;
+    border: 1px solid #6a1b9a;
+  }
+
+  .btn-drenagens:hover {
+    background: #4a148c;
+    border-color: #4a148c;
+  }
+
   /* 🔶 CONSULTAR (marrom médio) */
   .btn-consultar {
     background: #064d29;
@@ -121,9 +132,15 @@
     </a>
   {% endif %}
 
-  {% if pode_informar_afericoes or pode_consultar_afericoes %}
+  {% if pode_menu_afericoes or pode_informar_afericoes or pode_consultar_afericoes %}
     <a href="{{ url_for('operacoes.menu_afericoes') }}" class="btn-afericoes">
       Aferições
+    </a>
+  {% endif %}
+
+  {% if pode_menu_drenagens %}
+    <a href="{{ url_for('operacoes.menu_drenagens') }}" class="btn-drenagens">
+      Drenagem de Tanques
     </a>
   {% endif %}
 

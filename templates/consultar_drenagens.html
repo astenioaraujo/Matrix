@@ -1,0 +1,464 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .painel-filtro {
+    max-width: 1400px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+  }
+
+  .linha-filtros {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    align-items: end;
+  }
+
+  .mes-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .mes-nav input {
+    width: 90px;
+    height: 36px;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid #c7c7c7;
+    border-radius: 8px;
+  }
+
+  .btn-mes-nav {
+    width: 38px;
+    height: 38px;
+    border: 1px solid #c7c7c7;
+    border-radius: 9px;
+    background: #c8e6c9;
+    color: #111;
+    font-size: 18px;
+    font-weight: 900;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .btn-mes-nav:hover {
+    background: #a5d6a7;
+  }
+
+  .campo label {
+    display: block;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .campo select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid #c7c7c7;
+    border-radius: 8px;
+  }
+
+  .acoes {
+    display: flex;
+    gap: 10px;
+  }
+
+  .btn-filtrar {
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid #1565c0;
+    background: #1565c0;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn-limpar {
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid #c7c7c7;
+    background: #f7f7f7;
+    color: #1f3c88;
+    text-decoration: none;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .bloco-filial {
+    max-width: 1400px;
+    margin-bottom: 22px;
+  }
+
+  .titulo-filial {
+    font-weight: 800;
+    font-size: 18px;
+    margin-bottom: 8px;
+    padding: 10px 14px;
+    background: #f1f1f1;
+    border: 1px solid #d9d9d9;
+    border-radius: 12px;
+  }
+
+  .tabela-wrapper {
+    max-width: 1400px;
+    overflow: auto;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  th, td {
+    border: 1px solid #dcdcdc;
+    padding: 10px 12px;
+    white-space: nowrap;
+  }
+
+  th {
+    background: #f1f1f1;
+    text-align: left;
+  }
+
+  td.valor {
+    text-align: right;
+    font-family: monospace;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 12px;
+  }
+
+  .badge-normal {
+    background: #e6f4ea;
+    color: #1e6b34;
+  }
+
+  .badge-anormal {
+    background: #fdeaea;
+    color: #9f2f2f;
+  }
+
+  .btn-assistir {
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid #064d29;
+    background: #064d29;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 13px;
+  }
+
+  .btn-assistir:hover {
+    background: #043d20;
+  }
+
+  .item-arquivo {
+    display: inline-block;
+    text-align: center;
+    margin: 2px 8px 4px 0;
+    vertical-align: top;
+  }
+
+  .info-arquivo {
+    font-size: 11px;
+    color: #777;
+    margin-top: 3px;
+    white-space: nowrap;
+  }
+
+  .sem-dados {
+    max-width: 1400px;
+    font-weight: 700;
+    color: #666;
+    margin-top: 12px;
+  }
+
+  .modal-video-fundo {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.75);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-video-fundo.aberto {
+    display: flex;
+  }
+
+  .modal-video-caixa {
+    background: #000;
+    border-radius: 12px;
+    padding: 10px;
+    max-width: 90vw;
+  }
+
+  .modal-video-caixa video,
+  .modal-video-caixa img {
+    max-width: 85vw;
+    max-height: 80vh;
+    display: block;
+    border-radius: 8px;
+  }
+
+  .modal-video-fechar {
+    display: block;
+    margin: 10px auto 0;
+    padding: 8px 18px;
+    border-radius: 8px;
+    border: none;
+    background: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .badge-agua { background: #fdeaea; color: #9f2f2f; }
+  .linha-agua td { background: #fff3f3; }
+  .hora-foto { font-size: 11px; color: #6a1b9a; font-weight: 700; margin-top: 3px; }
+  td.agrupado { vertical-align: top; background: #fcfaff; }
+  .nota-retencao { max-width: 1400px; font-size: 12px; color: #777; margin: -8px 0 16px; }
+</style>
+
+<div class="pagina-titulo">Consultar Drenagens</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div style="max-width:1400px;padding:10px 14px;border-radius:8px;margin-bottom:15px;font-weight:600;background:#fdeaea;color:#9f2f2f;border:1px solid #efc2c2;">{{ message }}</div>
+  {% endfor %}
+{% endwith %}
+
+<div class="painel-filtro">
+  <form method="get">
+    <div class="linha-filtros">
+      <div class="campo">
+        <label for="cod_filial">Posto</label>
+        <select id="cod_filial" name="cod_filial">
+          <option value="">Todos</option>
+          {% for f in filiais %}
+            <option value="{{ f.cod_filial }}" {% if filial_sel|string == f.cod_filial|string %}selected{% endif %}>
+              {{ f.cod_filial }} - {{ f.nome_filial }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="campo">
+        <label for="mes">Mês</label>
+        <div class="mes-nav">
+          <button type="button" class="btn-mes-nav" onclick="mudarMes(-1)">←</button>
+          <input type="number" id="mes" name="mes" value="{{ mes or '' }}" min="1" max="12" placeholder="(todos)">
+          <button type="button" class="btn-mes-nav" onclick="mudarMes(1)">→</button>
+        </div>
+      </div>
+
+      <div class="campo">
+        <label for="ano">Ano</label>
+        <div class="mes-nav">
+          <button type="button" class="btn-mes-nav" onclick="mudarAno(-1)">←</button>
+          <input type="number" id="ano" name="ano" value="{{ ano }}" required>
+          <button type="button" class="btn-mes-nav" onclick="mudarAno(1)">→</button>
+        </div>
+      </div>
+
+      <div class="acoes">
+        <button type="submit" class="btn-filtrar">Filtrar</button>
+        <a href="{{ url_for('operacoes.consultar_drenagens') }}" class="btn-limpar">Limpar</a>
+      </div>
+    </div>
+  </form>
+</div>
+
+<div class="nota-retencao">Fotos e vídeos ficam guardados por {{ meses_retencao }} meses; depois disso a drenagem continua aqui, sem o arquivo.</div>
+
+{% if drenagens %}
+  {% set ns = namespace(filial_atual=None) %}
+
+  {% for d in drenagens %}
+    {% if ns.filial_atual != d.cod_filial %}
+      {% if not loop.first %}</tbody></table></div></div>{% endif %}
+      {% set ns.filial_atual = d.cod_filial %}
+
+      <div class="bloco-filial">
+        <div class="titulo-filial">Posto: {{ d.cod_filial }} - {{ d.nome_filial or "" }}</div>
+        <div class="tabela-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Hora</th>
+                <th>Responsável</th>
+                <th>Tanque</th>
+                <th>Produto</th>
+                <th class="valor">Capacidade (L)</th>
+                <th class="valor">Água medidor (mm)</th>
+                <th>Aspecto</th>
+                <th>Cor</th>
+                <th class="valor">Amostra (L)</th>
+                <th>Presença de água</th>
+                <th class="valor">Água drenada (L)</th>
+                <th>Registrado por</th>
+                <th>Arquivos</th>
+              </tr>
+            </thead>
+            <tbody>
+    {% endif %}
+
+    {% set qtd = d.tanques|length if d.tanques else 1 %}
+    {% for t in (d.tanques or [none]) %}
+      <tr class="{% if t and t.com_agua %}linha-agua{% endif %}">
+        {% if loop.first %}
+          <td class="agrupado" rowspan="{{ qtd }}">{{ d.data_drenagem.strftime("%d/%m/%Y") }}</td>
+          <td class="agrupado" rowspan="{{ qtd }}">{{ d.hora_drenagem.strftime("%H:%M") }}</td>
+          <td class="agrupado" rowspan="{{ qtd }}">{{ d.responsavel }}</td>
+        {% endif %}
+        {% if t %}
+          <td><strong>{{ t.tanque }}</strong></td>
+          <td>{{ t.descricao_produto or t.cod_produto }}</td>
+          <td class="valor">{{ t.capacidade_litros | br if t.capacidade_litros is not none else "" }}</td>
+          <td class="valor">{{ t.agua_medidor_mm | br }}</td>
+          <td>{{ t.aspecto or "" }}</td>
+          <td>{{ t.cor or "" }}</td>
+          <td class="valor">{{ t.volume_amostra_litros | br if t.volume_amostra_litros is not none else "" }}</td>
+          <td>
+            {% if t.com_agua %}<span class="badge badge-agua">{{ "Sim" if t.presenca_agua else "Indício" }}</span>
+            {% else %}<span class="badge badge-normal">Não</span>{% endif %}
+          </td>
+          <td class="valor">{{ t.volume_agua_litros | br }}</td>
+        {% else %}
+          <td colspan="9"></td>
+        {% endif %}
+        {% if loop.first %}
+          <td class="agrupado" rowspan="{{ qtd }}">{{ d.nome_usuario or "" }}</td>
+          <td class="agrupado celula-arquivos" rowspan="{{ qtd }}">
+            {% for arq in d.arquivos %}
+              <div class="item-arquivo">
+                {% if arq.tipo == 'video' %}
+                  <button type="button" class="btn-assistir" onclick="abrirArquivo('video', '{{ arq.url }}')">▶ Vídeo</button>
+                {% else %}
+                  <button type="button" class="btn-assistir" onclick="abrirArquivo('imagem', '{{ arq.url }}')">🖼 Foto</button>
+                {% endif %}
+                {% if arq.capturado_em %}<div class="hora-foto">{{ arq.capturado_em.strftime("%d/%m %H:%M") }}</div>{% endif %}
+                {% if arq.tamanho_mb is not none %}<div class="info-arquivo">{{ arq.tamanho_mb }} MB</div>{% endif %}
+              </div>
+            {% endfor %}
+          </td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+  {% endfor %}
+
+  </tbody></table></div></div>
+{% else %}
+  <div class="sem-dados">Nenhuma drenagem encontrada para os filtros informados.</div>
+{% endif %}
+
+<div class="modal-video-fundo" id="modalVideo" onclick="if (event.target === this) fecharVideo()">
+  <div class="modal-video-caixa">
+    <video id="playerVideo" controls style="display:none;"></video>
+    <img id="imagemVideo" style="display:none;">
+    <button type="button" class="modal-video-fechar" onclick="fecharVideo()">Fechar</button>
+  </div>
+</div>
+
+<script>
+  // Mesmo padrão do Matricial: ← → andam um mês, acompanhando o ano na virada.
+  function mudarMes(delta) {
+    const inputMes = document.getElementById("mes");
+    const inputAno = document.getElementById("ano");
+    if (!inputMes || !inputAno) return;
+
+    let mes = parseInt(inputMes.value || "0", 10);
+    let ano = parseInt(inputAno.value || new Date().getFullYear(), 10);
+
+    if (!mes || mes < 1 || mes > 12) mes = new Date().getMonth() + 1;
+
+    mes += delta;
+    if (mes < 1) { mes = 12; ano -= 1; }
+    if (mes > 12) { mes = 1; ano += 1; }
+
+    inputMes.value = String(mes);
+    inputAno.value = String(ano);
+
+    inputMes.form.submit();
+  }
+
+  function mudarAno(delta) {
+    const inputAno = document.getElementById("ano");
+    if (!inputAno) return;
+
+    const ano = parseInt(inputAno.value || new Date().getFullYear(), 10) + delta;
+    inputAno.value = String(ano);
+    inputAno.form.submit();
+  }
+
+  function abrirArquivo(tipo, url) {
+    const modal = document.getElementById("modalVideo");
+    const player = document.getElementById("playerVideo");
+    const imagem = document.getElementById("imagemVideo");
+
+    if (tipo === "video") {
+      imagem.style.display = "none";
+      imagem.removeAttribute("src");
+      player.style.display = "block";
+      player.src = url;
+      player.play().catch(() => {});
+    } else {
+      player.pause();
+      player.style.display = "none";
+      player.removeAttribute("src");
+      imagem.style.display = "block";
+      imagem.src = url;
+    }
+
+    modal.classList.add("aberto");
+  }
+
+  function fecharVideo() {
+    const modal = document.getElementById("modalVideo");
+    const player = document.getElementById("playerVideo");
+    const imagem = document.getElementById("imagemVideo");
+    player.pause();
+    player.removeAttribute("src");
+    player.load();
+    imagem.removeAttribute("src");
+    modal.classList.remove("aberto");
+  }
+</script>
+
+{% endblock %}

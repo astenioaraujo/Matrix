@@ -314,7 +314,15 @@
           </td>
           {% for m in meses %}
             {% set v = conta.valores[m] %}
-            <td class="col-num {% if v.projetado %}projetado{% endif %} {% if v.valor < 0 %}negativo{% elif v.valor > 0 %}positivo{% endif %}">
+            {# Mês realizado abre o detalhamento daquela conta naquele mês,
+               em todas as filiais (a tela é da empresa inteira). Projetado
+               não tem lançamento por trás: não abre. #}
+            {% set detalhavel = not v.projetado and v.valor != 0 and conta.cod_conta is not none %}
+            <td class="col-num {% if v.projetado %}projetado{% endif %} {% if v.valor < 0 %}negativo{% elif v.valor > 0 %}positivo{% endif %}{% if detalhavel %} celula-detalhavel{% endif %}"
+                {% if detalhavel %}data-grupo="{{ grupo.grupo }}" data-conta="{{ conta.cod_conta }}"
+                data-descricao="{{ conta.descricao }}" data-ano="{{ ano_sel }}" data-mes="{{ m }}"
+                title="Ver o detalhamento de {{ nomes_meses[m - 1] }}/{{ ano_sel }}"
+                onclick="abrirDetalhamentoLargo(this, 'conta')"{% endif %}>
               {{ formatar_numero_br(v.valor) if v.valor != 0 else "" }}
             </td>
           {% endfor %}
@@ -580,5 +588,9 @@
     aplicarMapaCalor();
   });
 </script>
+
+{% set det_ano = ano_sel %}
+{% set det_mes = "" %}
+{% include "components/detalhamento_fluxo.html" %}
 
 {% endblock %}

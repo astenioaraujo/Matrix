@@ -131,6 +131,8 @@ O Excel "Movimentação de Cartões" traz a bandeira na coluna **Administradora*
 
 **Contas que entram na projeção**: coluna `projetar boolean NOT NULL DEFAULT true` em `contas_gerenciais` (`migrations/adicionar_projetar_contas_gerenciais.sql`). Checkbox na coluna "Proj." do grid (só nas linhas de conta) e também na tela de Contas Gerenciais — os dois gravam no mesmo campo. Desmarcada, os meses projetados saem **em branco** (valor 0, que o template já renderiza vazio) e não somam nos totais. Vale para os **dois** tipos de análise. Endpoint: `PUT /api/contas-projecao`. Ao marcar/desmarcar a página recarrega (totais são calculados no servidor); o estado visual — tipo de análise, analítico/sintético e filtro de grupos — é preservado via `sessionStorage`.
 
+**Detalhamento nos meses realizados** (06/11/2026): cada valor **real** de uma linha de conta abre a janela de detalhamento (componente `templates/components/detalhamento_fluxo.html`, endpoint `GET /api/matricial/detalhamento`) com `escopo=conta` — a conta em **todas as filiais** naquele mês, em grade, e da grade um clique desce aos lançamentos do posto. É `conta` e não `celula` porque a tela é da empresa inteira (sem filtro de filial): o número da célula é a soma das filiais, e `celula` sem filial misturaria os lançamentos de todos os postos sem dizer de qual é cada um. Meses projetados, células zeradas e linhas calculadas (total do grupo, MB, totais) não abrem. Como aqui o mês muda de coluna para coluna, a célula leva `data-ano`/`data-mes`, que o componente usa no lugar de `det_ano`/`det_mes` (a página define só o ano; `det_mes` vazio). O período do clique fica em `detAno`/`detMes` para a descida da grade aos lançamentos consultar o mesmo mês. Mês sem PDF analítico abre o aviso padrão.
+
 > **Armadilha**: `contas_gerenciais` tem **triggers** que bloqueiam `INSERT` e `DELETE`, e um terceiro que impede alterar as colunas-chave no `UPDATE`. A tabela é alimentada pela importação. Portanto **nada de upsert** nela — só `UPDATE`, e tratar `rowcount == 0` como "conta não existe no cadastro".
 
 ## Crédito (workflow de análise de crédito de novo cliente)
@@ -545,8 +547,10 @@ A consulta grande saiu da rota para `services/estoques_service.py` (`linhas_esto
 
 Botão **Aferições** no menu de Operações, atrás de `INFORMAR_AFERICOES` (500) /
 `CONSULTAR_AFERICOES` (510) — menu próprio (`templates/menu_afericoes.html`,
-`GET /operacoes/afericoes/menu`) que abre com **qualquer uma** das duas, mesmo
-princípio do menu de Crédito.
+`GET /operacoes/afericoes/menu`) que abre com `OPERACOES/MENU_AFERICOES` (495,
+`migrations/permissao_menu_afericoes.sql`, 10/11/2026 — antes não havia "Aferições" para
+marcar na tela de acessos) **ou** com qualquer uma das duas, mesmo princípio de
+`MENU_ABASTECIMENTOS`. A migration deu o menu a quem já tinha uma das duas.
 
 **Concedida na EMP010 (Lucena)** em `migrations/conceder_acesso_afericoes_medicoes_lucena.sql`
 (26/10/2026): todo usuário que já tinha `INFORMAR_MEDICOES`/`CONSULTAR_MEDICOES`
@@ -760,6 +764,55 @@ filiais que o usuário pode consultar), não o mês atual nem "todos" — sem
 dado nenhum, cai no mês/ano atuais. Qualquer filtro explícito (o `<form>`
 sempre envia `ano`) é respeitado à risca, inclusive mês em branco pra ver
 o ano inteiro.
+
+## Drenagem de Tanques (10/11/2026)
+
+Botão **roxo** "Drenagem de Tanques" no menu de Operações, ao lado de Aferições, abrindo um menu
+próprio (`templates/menu_drenagens.html`, `GET /operacoes/drenagens/menu`) com Informar e Consultar.
+Permissões `OPERACOES/MENU_DRENAGENS` 515, `INFORMAR_DRENAGENS` 520, `CONSULTAR_DRENAGENS` 525
+(`migrations/criar_drenagens_tanques.sql`). O menu
+abre com qualquer uma das três (mesmo princípio de Aferições). Código em `routes/operacoes_routes.py`,
+seção "DRENAGEM DE TANQUES".
+
+**Concedida na EMP010** (`migrations/conceder_acesso_drenagens_lucena.sql`, re-executável): as três
+opções para os chefes de pista `medicoesNN@lucena.com.br` (cada um preso à sua filial NN em
+`usuarios_filiais` — é daí que sai o posto, não da permissão), Heloísa e Jefferson Rangel (todos os
+postos). 26 usuários. Nas outras empresas, ninguém.
+
+Transcreve a folha em papel "Dados da drenagem do fundo de tanques de óleo diesel" (Resolução ANP
+968/2024, art. 21): uma folha = um posto + data/hora + responsável, com **até 5 colunas de tanque**
+(`MAX_TANQUES_DRENAGEM`). Três tabelas, RLS habilitado:
+
+| | |
+|---|---|
+| `drenagens` | a folha: filial, data, hora, `responsavel` (nome), usuário que registrou |
+| `drenagens_tanques` | cada coluna: tanque ("TQ 3", texto livre em maiúsculas), produto, capacidade, água no medidor (mm), aspecto, cor, volume da amostra (L), presença de água (S/N), volume de água drenado (L) |
+| `drenagens_arquivos` | fotos/vídeos, com `capturado_em` (quando a foto foi tirada) |
+
+- **RG e assinatura não são guardados** (decisão do cliente), nem o CNPJ: o posto é a filial.
+- **Produto só diesel que o posto tem em tanque** (`_diesel_da_filial`: `capacidade_tanques` > 0 e
+  descrição com DIESEL/S10/S500 em `combustiveis`) — a trava vale no POST, não só no `<select>`.
+  A capacidade cadastrada é **sugestão** ao escolher o produto (o posto pode ter dois tanques do
+  mesmo diesel), editável.
+- Volumes em **litros** (1.000 ml = 1). Campo numérico inválido é recusado — `_numero_ou_none` tem
+  validação própria porque `parse_valor_br` devolve **0 para texto inválido** ("abc" virava zero calado).
+- Tanque repetido na mesma folha, data futura e drenagem sem nenhum arquivo são recusados.
+- **"Com água"** na consulta = presença marcada **ou** volume drenado > 0 **ou** água no medidor > 0
+  ("Indício" quando só os números acusam). Calculado na consulta, nunca gravado.
+- **Foto reduzida e carimbada** (`preparar_foto_reduzida` em `services/imagem.py`): lado maior
+  ≤ 1600 px, JPEG 80, rotação do EXIF corrigida e faixa no rodapé com **data/hora em que a foto foi
+  tirada** + posto. A data vem do EXIF; sem EXIF, do `lastModified` que a tela manda em
+  `datas_arquivos` (lista na ordem em que o navegador envia os arquivos — numa foto tirada na hora
+  é o instante da captura). Falhou a conversão, sobe o original. Foto de teste 4000×3000: 189 KB → 21 KB.
+  Vídeo passa pelo mesmo `preparar_video_para_upload` das aferições. Bucket `drenagens`.
+- **Cada escolha de arquivo vira o seu próprio `<input>`** (`arquivoEscolhido` clona o input vazio):
+  "Tirar foto" duas vezes junta as duas fotos. Em Informar Aferições a segunda substitui a primeira.
+- **Retenção**: a drenagem fica para sempre; fotos/vídeos de drenagens com mais de **6 meses**
+  (`MESES_RETENCAO_ARQUIVOS_DRENAGEM`) são apagados a cada novo envio (`_apagar_arquivos_drenagens_antigas`,
+  da empresa inteira), do banco na transação e do Storage depois do commit.
+- Consulta: filtro posto + mês/ano com as setas do matricial (sem filtro na URL abre no último mês
+  com drenagem), um bloco por posto, uma linha por tanque com data/responsável/arquivos agrupados.
+- Não há editar/excluir drenagem (como em Aferições).
 
 ---
 

@@ -1,6 +1,7 @@
 {# Janela de detalhamento analítico do fluxo de caixa.
 
-   Usada pelo matricial e pelo Resultado por Margem Bruta. Antes de incluir,
+   Usada pelo matricial, pelo Resultado por Margem Bruta e pelo Fluxo de
+   Caixa Projetado. Antes de incluir,
    defina o período com {% set det_ano = ... %} e {% set det_mes = ... %} —
    é o recorte que a janela consulta.
 
@@ -10,7 +11,9 @@
      abrirDetalhamentoLargo(elemento, 'grupo') -> o grupo em todas as filiais
 
    O elemento clicado carrega os dados em data-grupo / data-conta /
-   data-descricao / data-filial / data-nome-filial. #}
+   data-descricao / data-filial / data-nome-filial. Onde o mes muda de
+   coluna para coluna (Fluxo de Caixa Projetado), o elemento traz tambem
+   data-ano / data-mes, que valem no lugar de det_ano / det_mes. #}
 
 <style>
   .celula-detalhavel { cursor: pointer; }
@@ -160,6 +163,21 @@
   const DET_ANO = "{{ det_ano | default('', true) }}";
   const DET_MES = "{{ det_mes | default('', true) }}";
 
+  // Periodo da janela aberta: o do elemento clicado (data-ano/data-mes) ou,
+  // sem ele, o fixo da pagina. Guardado para a descida da grade aos
+  // lancamentos consultar o mesmo mes.
+  let detAno = DET_ANO;
+  let detMes = DET_MES;
+
+  function definirPeriodoDet(elemento) {
+    detAno = String(elemento.dataset.ano || DET_ANO);
+    detMes = String(elemento.dataset.mes || DET_MES);
+  }
+
+  function rotuloPeriodoDet() {
+    return detMes ? "  |  " + detMes.padStart(2, "0") + "/" + detAno : "";
+  }
+
   function detBRL(v) {
     return (v || 0).toLocaleString("pt-BR", {
       minimumFractionDigits: 2,
@@ -179,6 +197,7 @@
     const grupo = celula.dataset.grupo;
     const conta = celula.dataset.conta;
     const filial = celula.dataset.filial;
+    definirPeriodoDet(celula);
 
     const modal = document.getElementById("modal-detalhamento");
     const corpo = document.getElementById("det-corpo");
@@ -189,15 +208,15 @@
       grupo + "." + conta + " - " + celula.dataset.descricao;
     document.getElementById("det-sub").textContent =
       celula.dataset.filial + " - " + celula.dataset.nomeFilial +
-      (DET_MES ? "  |  " + DET_MES.padStart(2, "0") + "/" + DET_ANO : "");
+      rotuloPeriodoDet();
     document.getElementById("det-total").textContent = "";
 
     corpo.innerHTML = '<div class="det-vazio">Carregando...</div>';
     modal.classList.add("aberto");
 
     const params = new URLSearchParams({ grupo, conta, filial });
-    if (DET_ANO) params.set("ano", DET_ANO);
-    if (DET_MES) params.set("mes", DET_MES);
+    if (detAno) params.set("ano", detAno);
+    if (detMes) params.set("mes", detMes);
 
     try {
       const resp = await fetch("/api/matricial/detalhamento?" + params.toString());
@@ -231,6 +250,7 @@
     // Uma celula do Resultado por MB carrega a filial: ali o alcance largo e
     // o grupo inteiro, mas de UM posto. Sem data-filial, todas.
     const filial = elemento.dataset.filial || "";
+    definirPeriodoDet(elemento);
 
     const modal = document.getElementById("modal-detalhamento");
     const caixa = modal.querySelector(".det-caixa");
@@ -252,7 +272,7 @@
       : "Todas as filiais";
 
     document.getElementById("det-sub").textContent =
-      alcance + (DET_MES ? "  |  " + String(DET_MES).padStart(2, "0") + "/" + DET_ANO : "");
+      alcance + rotuloPeriodoDet();
 
     document.getElementById("det-total").textContent = "";
     corpo.innerHTML = '<div class="det-vazio">Carregando...</div>';
@@ -261,8 +281,8 @@
     const params = new URLSearchParams({ escopo, grupo });
     if (conta) params.set("conta", conta);
     if (filial) params.set("filial", filial);
-    if (DET_ANO) params.set("ano", DET_ANO);
-    if (DET_MES) params.set("mes", DET_MES);
+    if (detAno) params.set("ano", detAno);
+    if (detMes) params.set("mes", detMes);
 
     try {
       const resp = await fetch("/api/matricial/detalhamento?" + params.toString());
@@ -393,8 +413,8 @@
       filial: celula.dataset.filial,
       codigo_conta: celula.dataset.codigo,
     });
-    if (DET_ANO) params.set("ano", DET_ANO);
-    if (DET_MES) params.set("mes", DET_MES);
+    if (detAno) params.set("ano", detAno);
+    if (detMes) params.set("mes", detMes);
 
     try {
       const resp = await fetch("/api/matricial/detalhamento?" + params.toString());
@@ -402,7 +422,7 @@
 
       document.getElementById("det-sub").textContent =
         celula.dataset.filial + " - " + celula.dataset.nomeFilial +
-        (DET_MES ? "  |  " + DET_MES.padStart(2, "0") + "/" + DET_ANO : "");
+        rotuloPeriodoDet();
 
       if (!dados.contas || !dados.contas.length) {
         corpo.innerHTML = '<div class="det-vazio">Sem lançamentos nesta filial.</div>';

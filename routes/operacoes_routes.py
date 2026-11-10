@@ -19,7 +19,7 @@ from services.supabase_storage import (
     deletar_arquivo as afericao_deletar,
 )
 from services.video import preparar_video_para_upload
-from services.imagem import preparar_imagem_para_upload
+from services.imagem import preparar_imagem_para_upload, preparar_foto_reduzida
 from services.coligadas_service import (
     coligadas_ativas,
     empresa_tem_coligadas,
@@ -210,6 +210,7 @@ def menu_operacoes():
             "pode_consultar_medicoes": True,
             "pode_informar_afericoes": True,
             "pode_consultar_afericoes": True,
+            "pode_menu_afericoes": True,
             "pode_informar_preco_compra": True,
             "pode_consultar_preco_compra": True,
             "pode_informar_compras": True,
@@ -226,6 +227,7 @@ def menu_operacoes():
             "pode_consultar_saldo_emprestimos": True,
             "pode_configuracoes": True,
             "pode_bloquear_movimentacoes": True,
+            "pode_menu_drenagens": True,
         }
     else:
         permissoes = {
@@ -240,6 +242,9 @@ def menu_operacoes():
             ),
             "pode_consultar_afericoes": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_AFERICOES"
+            ),
+            "pode_menu_afericoes": usuario_tem_permissao(
+                id_usuario, cod_empresa, "OPERACOES", "MENU_AFERICOES"
             ),
             "pode_informar_preco_compra": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "INFORMAR_PRECO_COMPRA"
@@ -292,6 +297,10 @@ def menu_operacoes():
             ),
             "pode_bloquear_movimentacoes": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "BLOQUEAR_MOVIMENTACOES"
+            ),
+            "pode_menu_drenagens": any(
+                usuario_tem_permissao(id_usuario, cod_empresa, "OPERACOES", opcao)
+                for opcao in ("MENU_DRENAGENS", "INFORMAR_DRENAGENS", "CONSULTAR_DRENAGENS")
             ),
         }
 
@@ -660,8 +669,8 @@ def menu_afericoes():
     pode_informar = _pode_afericoes("INFORMAR_AFERICOES")
     pode_consultar = _pode_afericoes("CONSULTAR_AFERICOES")
 
-    # O menu abre com qualquer uma das duas.
-    if not (pode_informar or pode_consultar):
+    # O menu abre com a opção de menu ou com qualquer uma das de dentro.
+    if not (_pode_afericoes("MENU_AFERICOES") or pode_informar or pode_consultar):
         flash("Você não tem acesso ao módulo de Aferições.", "error")
         return redirect(url_for("operacoes.menu_operacoes"))
 
@@ -1187,6 +1196,529 @@ def consultar_afericoes():
         sem_parametros=sem_parametros,
         limite_diferenca=LIMITE_DIFERENCA_NORMAL_ML,
         url_voltar=url_for("operacoes.menu_afericoes"),
+        texto_voltar="← Voltar",
+    )
+
+
+#------------------------------------------
+# DRENAGEM DE TANQUES (diesel S10 / S500)
+#------------------------------------------
+# Transcreve a folha "Dados da drenagem do fundo de tanques de óleo diesel":
+# uma drenagem = filial + data + responsável, com até 5 colunas de tanque.
+# RG e assinatura não são guardados. Fotos/vídeos ficam 6 meses; a drenagem
+# fica para sempre.
+BUCKET_DRENAGENS = "drenagens"
+MAX_TANQUES_DRENAGEM = 5
+MESES_RETENCAO_ARQUIVOS_DRENAGEM = 6
+ASPECTOS_DRENAGEM = ["LII", "Turvo", "Com impurezas", "Com água"]
+CORES_DRENAGEM = ["Amarelado", "Incolor", "Vermelho", "Alaranjado", "Escuro"]
+# Combustível de drenagem = diesel. Lido pela descrição do cadastro
+# `combustiveis` (C4 "Diesel S500" e C5 "Diesel S10" na EMP010).
+FILTRO_SQL_DIESEL = (
+    "(c.descricao ILIKE '%%diesel%%' OR c.descricao ILIKE '%%s10%%' OR c.descricao ILIKE '%%s500%%')"
+)
+
+
+def _numero_ou_none(texto):
+    """Número no formato brasileiro ("15.000", "0,5") ou None. Não usa
+    parse_valor_br, que devolve 0 para texto inválido — "abc" viraria zero
+    calado."""
+    texto = (texto or "").strip().replace(" ", "")
+    if not texto:
+        return None
+    try:
+        return float(texto.replace(".", "").replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _diesel_da_filial(cur, cod_empresa, cod_filial):
+    """Só o diesel que o posto tem em tanque (capacidade > 0)."""
+    cur.execute(
+        f"""
+        SELECT c.cod_produto, c.descricao, ct.capacidade_tanque
+        FROM combustiveis c
+        JOIN capacidade_tanques ct
+          ON ct.cod_empresa = c.cod_empresa
+         AND ct.cod_filial = %s
+         AND ct.cod_produto = c.cod_produto
+        WHERE c.cod_empresa = %s
+          AND COALESCE(ct.capacidade_tanque, 0) > 0
+          AND {FILTRO_SQL_DIESEL}
+        ORDER BY c.cod_produto
+        """,
+        (cod_filial, cod_empresa),
+    )
+    return cur.fetchall() or []
+
+
+def _apagar_arquivos_drenagens_antigas(cur, cod_empresa):
+    """Fotos/vídeos de drenagens com mais de 6 meses saem do banco (e, depois
+    do commit, do Storage). A drenagem continua na Consulta, sem arquivo."""
+    cur.execute(
+        """
+        DELETE FROM drenagens_arquivos da
+        USING drenagens d
+        WHERE d.id_drenagem = da.id_drenagem
+          AND d.cod_empresa = %s
+          AND d.data_drenagem < (CURRENT_DATE - make_interval(months => %s))
+        RETURNING da.arquivo
+        """,
+        (cod_empresa, MESES_RETENCAO_ARQUIVOS_DRENAGEM),
+    )
+    return [r["arquivo"] for r in cur.fetchall() or []]
+
+
+def _datas_aparelho(texto_json, quantidade):
+    """lastModified (ms) que a tela manda para cada arquivo, na mesma ordem
+    dos arquivos — numa foto tirada na hora é o instante da captura."""
+    import json
+
+    datas = []
+    try:
+        valores = json.loads(texto_json or "[]")
+    except ValueError:
+        valores = []
+    for i in range(quantidade):
+        try:
+            ms = float(valores[i])
+            datas.append(
+                datetime.fromtimestamp(ms / 1000, ZoneInfo("America/Sao_Paulo")).replace(tzinfo=None)
+            )
+        except (IndexError, TypeError, ValueError, OverflowError, OSError):
+            datas.append(None)
+    return datas
+
+
+@operacoes_bp.route("/drenagens/menu")
+def menu_drenagens():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    pode_informar = _pode_afericoes("INFORMAR_DRENAGENS")
+    pode_consultar = _pode_afericoes("CONSULTAR_DRENAGENS")
+
+    if not (_pode_afericoes("MENU_DRENAGENS") or pode_informar or pode_consultar):
+        flash("Você não tem acesso ao módulo de Drenagem de Tanques.", "error")
+        return redirect(url_for("operacoes.menu_operacoes"))
+
+    return render_template(
+        "menu_drenagens.html",
+        cod_empresa=session.get("cod_empresa", ""),
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("operacoes.menu_operacoes"),
+        texto_voltar="← Voltar",
+        pode_informar=pode_informar,
+        pode_consultar=pode_consultar,
+    )
+
+
+@operacoes_bp.route("/drenagens/informar", methods=["GET", "POST"])
+@permissao_obrigatoria(
+    "OPERACOES",
+    "INFORMAR_DRENAGENS",
+    redirecionar_para="operacoes.menu_drenagens",
+)
+def informar_drenagens():
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+    agora = datetime.now(ZoneInfo("America/Sao_Paulo"))
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    filiais = []
+    filial_sel = None
+    produtos = []
+    drenagens_recentes = []
+
+    try:
+        filiais = _filiais_do_usuario(cur, cod_empresa, id_usuario, tipo_global)
+
+        if not filiais:
+            flash("Você não possui filiais habilitadas.", "error")
+            return redirect(url_for("operacoes.menu_drenagens"))
+
+        codigos_permitidos = [int(f["cod_filial"]) for f in filiais]
+
+        filial_txt = (request.values.get("cod_filial") or "").strip()
+        filial_sel = int(filial_txt) if filial_txt.isdigit() else None
+        if filial_sel is None and len(filiais) == 1:
+            filial_sel = codigos_permitidos[0]
+
+        if filial_sel is not None and filial_sel not in codigos_permitidos:
+            flash("Filial não permitida para este usuário.", "error")
+            return redirect(url_for("operacoes.informar_drenagens"))
+
+        if filial_sel is not None:
+            produtos = _diesel_da_filial(cur, cod_empresa, filial_sel)
+
+        if request.method == "POST":
+            voltar = redirect(url_for("operacoes.informar_drenagens", cod_filial=filial_sel))
+
+            if filial_sel is None:
+                flash("Selecione a filial.", "error")
+                return redirect(url_for("operacoes.informar_drenagens"))
+
+            produtos_validos = {p["cod_produto"] for p in produtos}
+            if not produtos_validos:
+                flash("Este posto não tem tanque de diesel S10 nem S500 cadastrado.", "error")
+                return voltar
+
+            responsavel = " ".join((request.form.get("responsavel") or "").split())
+            try:
+                data_drenagem = date.fromisoformat((request.form.get("data_drenagem") or "").strip())
+                hora_drenagem = time.fromisoformat((request.form.get("hora_drenagem") or "").strip())
+            except ValueError:
+                flash("Informe a data e a hora da drenagem.", "error")
+                return voltar
+
+            if not responsavel:
+                flash("Informe o nome do responsável pela drenagem.", "error")
+                return voltar
+
+            if data_drenagem > agora.date():
+                flash("A data da drenagem não pode ser futura.", "error")
+                return voltar
+
+            # Uma coluna da folha vale quando tem tanque ou produto preenchido.
+            tanques = []
+            nomes_vistos = set()
+            for i in range(1, MAX_TANQUES_DRENAGEM + 1):
+                campo = lambda nome: (request.form.get(f"{nome}_{i}") or "").strip()
+                tanque = " ".join(campo("tanque").upper().split())
+                cod_produto = campo("cod_produto")
+                if not tanque and not cod_produto:
+                    continue
+
+                rotulo = f"Coluna {i}"
+                if not tanque:
+                    flash(f"{rotulo}: informe o tanque (ex.: TQ 3).", "error")
+                    return voltar
+                if tanque in nomes_vistos:
+                    flash(f"O tanque {tanque} aparece duas vezes na mesma drenagem.", "error")
+                    return voltar
+                nomes_vistos.add(tanque)
+                if cod_produto not in produtos_validos:
+                    flash(f"{tanque}: escolha o produto (S10 ou S500).", "error")
+                    return voltar
+
+                presenca_txt = campo("presenca_agua")
+                if presenca_txt not in ("S", "N"):
+                    flash(f"{tanque}: informe se há presença de água (Sim/Não).", "error")
+                    return voltar
+
+                numeros = {}
+                for nome, obrigatorio, rotulo_campo in (
+                    ("capacidade_litros", False, "Capacidade"),
+                    ("agua_medidor_mm", True, "Presença de água no medidor (mm)"),
+                    ("volume_amostra_litros", True, "Volume de amostra drenado"),
+                    ("volume_agua_litros", True, "Volume de água drenado"),
+                ):
+                    texto = campo(nome)
+                    valor = _numero_ou_none(texto)
+                    if (texto and valor is None) or (obrigatorio and valor is None) or (valor is not None and valor < 0):
+                        flash(f"{tanque}: valor inválido ou em branco em '{rotulo_campo}'.", "error")
+                        return voltar
+                    numeros[nome] = valor
+
+                tanques.append({
+                    "tanque": tanque,
+                    "cod_produto": cod_produto,
+                    "aspecto": campo("aspecto")[:60] or None,
+                    "cor": campo("cor")[:60] or None,
+                    "presenca_agua": presenca_txt == "S",
+                    "ordem": i,
+                    **numeros,
+                })
+
+            if not tanques:
+                flash("Preencha ao menos um tanque.", "error")
+                return voltar
+
+            arquivos = [a for a in request.files.getlist("arquivos") if a and a.filename]
+            if not arquivos:
+                flash("Envie ao menos uma foto (ou vídeo) do volume drenado.", "error")
+                return voltar
+
+            classificados = []
+            for a in arquivos:
+                tipo = _tipo_arquivo_afericao(a.filename)
+                if tipo is None:
+                    flash(
+                        f"Formato não suportado em '{a.filename}'. Envie foto "
+                        "(jpg, png, webp, heic) ou vídeo (mp4, mov, webm, 3gp).",
+                        "error",
+                    )
+                    return voltar
+                classificados.append((a, tipo))
+
+            datas_aparelho = _datas_aparelho(request.form.get("datas_arquivos"), len(classificados))
+            nome_filial = next((f["nome_filial"] for f in filiais if int(f["cod_filial"]) == filial_sel), "")
+            legenda = f"{filial_sel} - {nome_filial}"
+
+            uploads = []  # (tipo, caminho_storage, tamanho, duracao, capturado_em)
+            try:
+                for (a, tipo), data_aparelho in zip(classificados, datas_aparelho):
+                    if tipo == "video":
+                        with preparar_video_para_upload(a, a.filename) as (
+                            caminho, nome_arquivo, _ct, tamanho, duracao,
+                        ):
+                            with open(caminho, "rb") as fh:
+                                nome_storage = afericao_upload(fh, nome_arquivo, cod_empresa, bucket=BUCKET_DRENAGENS)
+                        uploads.append(("video", nome_storage, tamanho, duracao, data_aparelho))
+                    else:
+                        with preparar_foto_reduzida(a, a.filename, data_aparelho, legenda) as (
+                            caminho, nome_arquivo, _ct, tamanho, capturado_em,
+                        ):
+                            with open(caminho, "rb") as fh:
+                                nome_storage = afericao_upload(fh, nome_arquivo, cod_empresa, bucket=BUCKET_DRENAGENS)
+                        uploads.append(("imagem", nome_storage, tamanho, None, capturado_em))
+            except Exception as e:
+                for _t, nome_storage, *_ in uploads:
+                    afericao_deletar(nome_storage, bucket=BUCKET_DRENAGENS)
+                flash(f"Erro ao enviar o arquivo: {e}", "error")
+                return voltar
+
+            cur.execute(
+                """
+                INSERT INTO drenagens
+                    (cod_empresa, cod_filial, data_drenagem, hora_drenagem, responsavel, id_usuario)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id_drenagem
+                """,
+                (cod_empresa, filial_sel, data_drenagem, hora_drenagem, responsavel[:120], id_usuario),
+            )
+            id_drenagem = cur.fetchone()["id_drenagem"]
+
+            execute_batch(
+                cur,
+                """
+                INSERT INTO drenagens_tanques (
+                    id_drenagem, cod_empresa, tanque, cod_produto, capacidade_litros,
+                    agua_medidor_mm, aspecto, cor, volume_amostra_litros,
+                    presenca_agua, volume_agua_litros, ordem
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                [
+                    (
+                        id_drenagem, cod_empresa, t["tanque"], t["cod_produto"], t["capacidade_litros"],
+                        t["agua_medidor_mm"], t["aspecto"], t["cor"], t["volume_amostra_litros"],
+                        t["presenca_agua"], t["volume_agua_litros"], t["ordem"],
+                    )
+                    for t in tanques
+                ],
+            )
+
+            execute_batch(
+                cur,
+                """
+                INSERT INTO drenagens_arquivos
+                    (id_drenagem, cod_empresa, tipo, arquivo, tamanho_bytes, duracao_segundos, capturado_em)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                [(id_drenagem, cod_empresa, *u) for u in uploads],
+            )
+
+            arquivos_para_remover = _apagar_arquivos_drenagens_antigas(cur, cod_empresa)
+            conn.commit()
+
+            for caminho in arquivos_para_remover:
+                afericao_deletar(caminho, bucket=BUCKET_DRENAGENS)
+
+            flash(f"Drenagem registrada ({len(tanques)} tanque(s), {len(uploads)} arquivo(s)).", "success")
+            return voltar
+
+        if filial_sel is not None:
+            cur.execute(
+                """
+                SELECT d.id_drenagem, d.data_drenagem, d.hora_drenagem, d.responsavel,
+                       t.tanque, t.cod_produto, c.descricao AS descricao_produto,
+                       t.agua_medidor_mm, t.presenca_agua, t.volume_agua_litros,
+                       (SELECT count(*) FROM drenagens_arquivos a WHERE a.id_drenagem = d.id_drenagem) AS qtd_arquivos
+                FROM drenagens d
+                JOIN drenagens_tanques t ON t.id_drenagem = d.id_drenagem
+                LEFT JOIN combustiveis c
+                  ON c.cod_empresa = t.cod_empresa AND c.cod_produto = t.cod_produto
+                WHERE d.cod_empresa = %s AND d.cod_filial = %s
+                  AND d.id_drenagem IN (
+                      SELECT id_drenagem FROM drenagens
+                      WHERE cod_empresa = %s AND cod_filial = %s
+                      ORDER BY data_drenagem DESC, hora_drenagem DESC
+                      LIMIT 5
+                  )
+                ORDER BY d.data_drenagem DESC, d.hora_drenagem DESC, t.ordem
+                """,
+                (cod_empresa, filial_sel, cod_empresa, filial_sel),
+            )
+            drenagens_recentes = cur.fetchall() or []
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao processar a drenagem: {e}", "error")
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "informar_drenagens.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=session.get("nome_empresa", ""),
+        nome_usuario=session.get("nome_usuario", ""),
+        hoje_iso=agora.date().isoformat(),
+        agora_iso=agora.strftime("%H:%M"),
+        filiais=filiais,
+        filial_sel=filial_sel,
+        produtos=produtos,
+        max_tanques=MAX_TANQUES_DRENAGEM,
+        aspectos=ASPECTOS_DRENAGEM,
+        cores=CORES_DRENAGEM,
+        drenagens_recentes=drenagens_recentes,
+        meses_retencao=MESES_RETENCAO_ARQUIVOS_DRENAGEM,
+        url_voltar=url_for("operacoes.menu_drenagens"),
+        texto_voltar="← Voltar",
+    )
+
+
+@operacoes_bp.route("/drenagens/consultar")
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONSULTAR_DRENAGENS",
+    redirecionar_para="operacoes.menu_drenagens",
+)
+def consultar_drenagens():
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    filiais = []
+    filial_sel = None
+    ano_sel = hoje_br().year
+    mes_sel = None
+    drenagens = []
+
+    try:
+        filiais = _filiais_do_usuario(cur, cod_empresa, id_usuario, tipo_global)
+        codigos_permitidos = [int(f["cod_filial"]) for f in filiais]
+
+        filial_txt = (request.args.get("cod_filial") or "").strip()
+        filial_sel = int(filial_txt) if filial_txt.isdigit() else None
+        if filial_sel is not None and filial_sel not in codigos_permitidos:
+            flash("Filial não permitida para este usuário.", "error")
+            return redirect(url_for("operacoes.consultar_drenagens"))
+
+        filiais_consulta = [filial_sel] if filial_sel is not None else (codigos_permitidos or [-1])
+
+        # Mesma regra da Consulta de Aferições: sem filtro na URL, abre no
+        # último mês com drenagem; com filtro, mês vazio = o ano inteiro.
+        if "ano" in request.args:
+            ano_txt = (request.args.get("ano") or "").strip()
+            if ano_txt.isdigit():
+                ano_sel = int(ano_txt)
+            mes_txt = (request.args.get("mes") or "").strip()
+            mes_sel = int(mes_txt) if mes_txt.isdigit() and 1 <= int(mes_txt) <= 12 else None
+        else:
+            cur.execute(
+                """
+                SELECT max(data_drenagem) AS ultima FROM drenagens
+                WHERE cod_empresa = %s AND cod_filial = ANY(%s)
+                """,
+                (cod_empresa, filiais_consulta),
+            )
+            ultima = (cur.fetchone() or {}).get("ultima")
+            if ultima:
+                ano_sel, mes_sel = ultima.year, ultima.month
+            else:
+                mes_sel = hoje_br().month
+
+        filtro_mes = "AND EXTRACT(MONTH FROM d.data_drenagem) = %s" if mes_sel else ""
+        parametros = [cod_empresa, filiais_consulta, ano_sel] + ([mes_sel] if mes_sel else [])
+
+        cur.execute(
+            f"""
+            SELECT d.id_drenagem, d.cod_filial, f.nome_filial, d.data_drenagem,
+                   d.hora_drenagem, d.responsavel, u.nome AS nome_usuario
+            FROM drenagens d
+            LEFT JOIN filiais f ON f.cod_empresa = d.cod_empresa AND f.cod_filial = d.cod_filial
+            LEFT JOIN usuarios u ON u.id_usuario = d.id_usuario
+            WHERE d.cod_empresa = %s
+              AND d.cod_filial = ANY(%s)
+              AND EXTRACT(YEAR FROM d.data_drenagem) = %s
+              {filtro_mes}
+            ORDER BY d.cod_filial, d.data_drenagem DESC, d.hora_drenagem DESC
+            """,
+            parametros,
+        )
+        drenagens = cur.fetchall() or []
+        ids = [d["id_drenagem"] for d in drenagens]
+
+        cur.execute(
+            """
+            SELECT t.*, c.descricao AS descricao_produto
+            FROM drenagens_tanques t
+            LEFT JOIN combustiveis c ON c.cod_empresa = t.cod_empresa AND c.cod_produto = t.cod_produto
+            WHERE t.id_drenagem = ANY(%s)
+            ORDER BY t.id_drenagem, t.ordem
+            """,
+            (ids,),
+        )
+        tanques_por_drenagem = {}
+        for t in cur.fetchall() or []:
+            # Água achada por qualquer um dos três sinais da folha.
+            t["com_agua"] = bool(
+                t["presenca_agua"]
+                or (t["volume_agua_litros"] or 0) > 0
+                or (t["agua_medidor_mm"] or 0) > 0
+            )
+            tanques_por_drenagem.setdefault(t["id_drenagem"], []).append(t)
+
+        cur.execute(
+            """
+            SELECT id_drenagem, tipo, arquivo, tamanho_bytes, duracao_segundos, capturado_em
+            FROM drenagens_arquivos
+            WHERE id_drenagem = ANY(%s)
+            ORDER BY id_arquivo
+            """,
+            (ids,),
+        )
+        arquivos_por_drenagem = {}
+        for a in cur.fetchall() or []:
+            arquivos_por_drenagem.setdefault(a["id_drenagem"], []).append({
+                "tipo": a["tipo"],
+                "url": afericao_url(a["arquivo"], bucket=BUCKET_DRENAGENS),
+                "tamanho_mb": round(a["tamanho_bytes"] / 1024 / 1024, 2) if a["tamanho_bytes"] else None,
+                "capturado_em": a["capturado_em"],
+            })
+
+        for d in drenagens:
+            d["tanques"] = tanques_por_drenagem.get(d["id_drenagem"], [])
+            d["arquivos"] = arquivos_por_drenagem.get(d["id_drenagem"], [])
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao consultar drenagens: {e}", "error")
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "consultar_drenagens.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=session.get("nome_empresa", ""),
+        filiais=filiais,
+        filial_sel=filial_sel,
+        ano=ano_sel,
+        mes=mes_sel,
+        drenagens=drenagens,
+        meses_retencao=MESES_RETENCAO_ARQUIVOS_DRENAGEM,
+        url_voltar=url_for("operacoes.menu_drenagens"),
         texto_voltar="← Voltar",
     )
 
