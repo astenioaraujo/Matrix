@@ -228,8 +228,8 @@
 
   .modal-video-caixa video,
   .modal-video-caixa img {
-    max-width: 85vw;
-    max-height: 80vh;
+    max-width: 92vw;
+    max-height: 82vh;
     display: block;
     border-radius: 8px;
   }
@@ -249,6 +249,131 @@
   .hora-foto { font-size: 11px; color: #6a1b9a; font-weight: 700; margin-top: 3px; }
   td.agrupado { vertical-align: top; background: #fcfaff; }
   .nota-retencao { max-width: 1400px; font-size: 12px; color: #777; margin: -8px 0 16px; }
+
+  /* Uma drenagem = um cartão: a folha (campos × tanques, como no papel) à
+     esquerda e as fotos à direita. Cabe na tela sem rolar para o lado. */
+  .cartao-drenagem {
+    max-width: 1100px;
+    background: #fff;
+    border: 1px solid #ddd3e6;
+    border-left: 6px solid #6a1b9a;
+    border-radius: 14px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.05);
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+
+  .cartao-com-agua { border-left-color: #e53935; }
+
+  .cartao-cabecalho {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 22px;
+    padding: 12px 16px;
+    background: #faf7fc;
+    border-bottom: 1px solid #eee5f4;
+    font-size: 15px;
+  }
+
+  .cab-data { font-weight: 800; }
+  .cab-rotulo { color: #777; }
+  .cab-registro { color: #777; font-size: 13px; }
+
+  .cartao-corpo {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    padding: 14px 16px;
+    align-items: flex-start;
+  }
+
+  .folha-wrapper { flex: 1 1 420px; overflow-x: auto; }
+
+  table.folha-consulta { border-collapse: collapse; font-size: 14px; width: auto; }
+
+  table.folha-consulta th,
+  table.folha-consulta td {
+    border: 1px solid #ebe3f1;
+    padding: 6px 12px;
+    white-space: nowrap;
+    text-align: center;
+  }
+
+  table.folha-consulta th.rotulo {
+    text-align: left;
+    background: #f6f0fa;
+    font-weight: 700;
+    min-width: 170px;
+  }
+
+  table.folha-consulta th.col-tanque {
+    background: #6a1b9a;
+    color: #fff;
+    min-width: 110px;
+  }
+
+  .unidade { font-weight: 400; color: #888; font-size: 12px; }
+  .valor-alerta { color: #b00020; font-weight: 800; background: #fff3f3; }
+  .nota-indicio { font-size: 12px; color: #9f2f2f; margin-top: 6px; }
+
+  .fotos { display: flex; flex-wrap: wrap; gap: 10px; max-width: 360px; }
+
+  .miniatura {
+    position: relative;
+    width: 110px;
+    height: 110px;
+    padding: 0;
+    border: 1px solid #d0c3dc;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #222;
+    cursor: zoom-in;
+  }
+
+  .miniatura img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .miniatura:hover { box-shadow: 0 0 0 3px #b38be0; }
+
+  .miniatura .lupa {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: rgba(255,255,255,.85);
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 13px;
+    line-height: 24px;
+  }
+
+  .miniatura-video { color: #fff; font-size: 36px; line-height: 110px; display: block; text-align: center; }
+
+  .miniatura-hora {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,.6);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 0;
+  }
+
+  .sem-foto {
+    width: 110px;
+    height: 110px;
+    border: 1px dashed #ccc;
+    border-radius: 10px;
+    color: #999;
+    font-size: 12px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .link-original { display: block; text-align: center; color: #fff; font-size: 13px; margin-top: 8px; }
 </style>
 
 <div class="pagina-titulo">Consultar Drenagens</div>
@@ -306,84 +431,83 @@
 
 <div class="nota-retencao">Fotos e vídeos ficam guardados por {{ meses_retencao }} meses; depois disso a drenagem continua aqui, sem o arquivo.</div>
 
+{# Número sem os ",00" à toa: 10.000,00 → 10.000; 0,50 fica. #}
+{% macro num(v) -%}
+  {%- if v is none -%}—{%- else -%}{{ (v | br) | replace(",00", "") }}{%- endif -%}
+{%- endmacro %}
+
 {% if drenagens %}
   {% set ns = namespace(filial_atual=None) %}
 
   {% for d in drenagens %}
     {% if ns.filial_atual != d.cod_filial %}
-      {% if not loop.first %}</tbody></table></div></div>{% endif %}
+      {% if not loop.first %}</div>{% endif %}
       {% set ns.filial_atual = d.cod_filial %}
-
       <div class="bloco-filial">
         <div class="titulo-filial">Posto: {{ d.cod_filial }} - {{ d.nome_filial or "" }}</div>
-        <div class="tabela-wrapper">
-          <table>
+    {% endif %}
+
+    {% set com_agua = d.tanques | selectattr("com_agua") | list | length > 0 %}
+    <div class="cartao-drenagem {% if com_agua %}cartao-com-agua{% endif %}">
+      <div class="cartao-cabecalho">
+        <span class="cab-data">📅 {{ d.data_drenagem.strftime("%d/%m/%Y") }} · {{ d.hora_drenagem.strftime("%H:%M") }}</span>
+        <span><span class="cab-rotulo">Responsável:</span> <strong>{{ d.responsavel }}</strong></span>
+        <span class="cab-registro">Registrado por {{ d.nome_usuario or "—" }}</span>
+        {% if com_agua %}
+          <span class="badge badge-agua">⚠ Água encontrada</span>
+        {% else %}
+          <span class="badge badge-normal">Sem água</span>
+        {% endif %}
+      </div>
+
+      <div class="cartao-corpo">
+        <div class="folha-wrapper">
+          <table class="folha-consulta">
             <thead>
               <tr>
-                <th>Data</th>
-                <th>Hora</th>
-                <th>Responsável</th>
-                <th>Tanque</th>
-                <th>Produto</th>
-                <th class="valor">Capacidade (L)</th>
-                <th class="valor">Água medidor (mm)</th>
-                <th>Aspecto</th>
-                <th>Cor</th>
-                <th class="valor">Amostra (L)</th>
-                <th>Presença de água</th>
-                <th class="valor">Água drenada (L)</th>
-                <th>Registrado por</th>
-                <th>Arquivos</th>
+                <th class="rotulo">Tanque</th>
+                {% for t in d.tanques %}<th class="col-tanque">{{ t.tanque }}</th>{% endfor %}
               </tr>
             </thead>
             <tbody>
-    {% endif %}
+              <tr><th class="rotulo">Produto</th>{% for t in d.tanques %}<td>{{ t.descricao_produto or t.cod_produto }}</td>{% endfor %}</tr>
+              <tr><th class="rotulo">Capacidade <span class="unidade">(L)</span></th>{% for t in d.tanques %}<td>{{ num(t.capacidade_litros) }}</td>{% endfor %}</tr>
+              <tr><th class="rotulo">Água no medidor <span class="unidade">(mm)</span></th>{% for t in d.tanques %}<td class="{% if (t.agua_medidor_mm or 0) > 0 %}valor-alerta{% endif %}">{{ num(t.agua_medidor_mm) }}</td>{% endfor %}</tr>
+              <tr><th class="rotulo">Aspecto</th>{% for t in d.tanques %}<td>{{ t.aspecto or "—" }}</td>{% endfor %}</tr>
+              <tr><th class="rotulo">Cor</th>{% for t in d.tanques %}<td>{{ t.cor or "—" }}</td>{% endfor %}</tr>
+              <tr><th class="rotulo">Amostra drenada <span class="unidade">(L)</span></th>{% for t in d.tanques %}<td>{{ num(t.volume_amostra_litros) }}</td>{% endfor %}</tr>
+              <tr><th class="rotulo">Presença de água?</th>{% for t in d.tanques %}<td>
+                {% if t.presenca_agua %}<span class="badge badge-agua">Sim</span>
+                {% elif t.com_agua %}<span class="badge badge-agua">Não*</span>
+                {% else %}<span class="badge badge-normal">Não</span>{% endif %}
+              </td>{% endfor %}</tr>
+              <tr><th class="rotulo">Água drenada <span class="unidade">(L)</span></th>{% for t in d.tanques %}<td class="{% if (t.volume_agua_litros or 0) > 0 %}valor-alerta{% endif %}">{{ num(t.volume_agua_litros) }}</td>{% endfor %}</tr>
+            </tbody>
+          </table>
+          {% if d.tanques | selectattr("com_agua") | rejectattr("presenca_agua") | list %}
+            <div class="nota-indicio">* Marcado "Não", mas o medidor ou o volume drenado acusam água.</div>
+          {% endif %}
+        </div>
 
-    {% set qtd = d.tanques|length if d.tanques else 1 %}
-    {% for t in (d.tanques or [none]) %}
-      <tr class="{% if t and t.com_agua %}linha-agua{% endif %}">
-        {% if loop.first %}
-          <td class="agrupado" rowspan="{{ qtd }}">{{ d.data_drenagem.strftime("%d/%m/%Y") }}</td>
-          <td class="agrupado" rowspan="{{ qtd }}">{{ d.hora_drenagem.strftime("%H:%M") }}</td>
-          <td class="agrupado" rowspan="{{ qtd }}">{{ d.responsavel }}</td>
-        {% endif %}
-        {% if t %}
-          <td><strong>{{ t.tanque }}</strong></td>
-          <td>{{ t.descricao_produto or t.cod_produto }}</td>
-          <td class="valor">{{ t.capacidade_litros | br if t.capacidade_litros is not none else "" }}</td>
-          <td class="valor">{{ t.agua_medidor_mm | br }}</td>
-          <td>{{ t.aspecto or "" }}</td>
-          <td>{{ t.cor or "" }}</td>
-          <td class="valor">{{ t.volume_amostra_litros | br if t.volume_amostra_litros is not none else "" }}</td>
-          <td>
-            {% if t.com_agua %}<span class="badge badge-agua">{{ "Sim" if t.presenca_agua else "Indício" }}</span>
-            {% else %}<span class="badge badge-normal">Não</span>{% endif %}
-          </td>
-          <td class="valor">{{ t.volume_agua_litros | br }}</td>
-        {% else %}
-          <td colspan="9"></td>
-        {% endif %}
-        {% if loop.first %}
-          <td class="agrupado" rowspan="{{ qtd }}">{{ d.nome_usuario or "" }}</td>
-          <td class="agrupado celula-arquivos" rowspan="{{ qtd }}">
-            {% for arq in d.arquivos %}
-              <div class="item-arquivo">
-                {% if arq.tipo == 'video' %}
-                  <button type="button" class="btn-assistir" onclick="abrirArquivo('video', '{{ arq.url }}')">▶ Vídeo</button>
-                {% else %}
-                  <button type="button" class="btn-assistir" onclick="abrirArquivo('imagem', '{{ arq.url }}')">🖼 Foto</button>
-                {% endif %}
-                {% if arq.capturado_em %}<div class="hora-foto">{{ arq.capturado_em.strftime("%d/%m %H:%M") }}</div>{% endif %}
-                {% if arq.tamanho_mb is not none %}<div class="info-arquivo">{{ arq.tamanho_mb }} MB</div>{% endif %}
-              </div>
-            {% endfor %}
-          </td>
-        {% endif %}
-      </tr>
-    {% endfor %}
+        <div class="fotos">
+          {% for arq in d.arquivos %}
+            <button type="button" class="miniatura" onclick="abrirArquivo('{{ arq.tipo }}', '{{ arq.url }}')" title="Clique para ampliar">
+              {% if arq.tipo == 'video' %}
+                <span class="miniatura-video">▶</span>
+              {% else %}
+                <img src="{{ arq.url }}" alt="Foto da drenagem" loading="lazy">
+                <span class="lupa">🔍</span>
+              {% endif %}
+              {% if arq.capturado_em %}<span class="miniatura-hora">{{ arq.capturado_em.strftime("%d/%m %H:%M") }}</span>{% endif %}
+            </button>
+          {% else %}
+            <div class="sem-foto">📷<br>sem foto{% if d.data_drenagem %}<br><small>(apagada após {{ meses_retencao }} meses)</small>{% endif %}</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
   {% endfor %}
-
-  </tbody></table></div></div>
+  </div>
 {% else %}
   <div class="sem-dados">Nenhuma drenagem encontrada para os filtros informados.</div>
 {% endif %}
@@ -391,7 +515,9 @@
 <div class="modal-video-fundo" id="modalVideo" onclick="if (event.target === this) fecharVideo()">
   <div class="modal-video-caixa">
     <video id="playerVideo" controls style="display:none;"></video>
+    <div id="carregandoFoto" style="display:none;color:#fff;padding:40px 60px;font-weight:700;">Carregando foto…</div>
     <img id="imagemVideo" style="display:none;">
+    <a id="linkOriginal" class="link-original" href="#" target="_blank" rel="noopener">Abrir em tamanho real ↗</a>
     <button type="button" class="modal-video-fechar" onclick="fecharVideo()">Fechar</button>
   </div>
 </div>
@@ -442,10 +568,14 @@
       player.pause();
       player.style.display = "none";
       player.removeAttribute("src");
-      imagem.style.display = "block";
+      const aviso = document.getElementById("carregandoFoto");
+      imagem.style.display = "none";
+      aviso.style.display = "block";
+      imagem.onload = function () { aviso.style.display = "none"; imagem.style.display = "block"; };
       imagem.src = url;
     }
 
+    document.getElementById("linkOriginal").href = url;
     modal.classList.add("aberto");
   }
 
@@ -457,8 +587,12 @@
     player.removeAttribute("src");
     player.load();
     imagem.removeAttribute("src");
+    document.getElementById("carregandoFoto").style.display = "none";
     modal.classList.remove("aberto");
   }
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") fecharVideo();
+  });
 </script>
 
 {% endblock %}

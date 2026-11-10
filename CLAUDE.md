@@ -811,7 +811,12 @@ Transcreve a folha em papel "Dados da drenagem do fundo de tanques de óleo dies
   (`MESES_RETENCAO_ARQUIVOS_DRENAGEM`) são apagados a cada novo envio (`_apagar_arquivos_drenagens_antigas`,
   da empresa inteira), do banco na transação e do Storage depois do commit.
 - Consulta: filtro posto + mês/ano com as setas do matricial (sem filtro na URL abre no último mês
-  com drenagem), um bloco por posto, uma linha por tanque com data/responsável/arquivos agrupados.
+  com drenagem), um bloco por posto e **um cartão por drenagem**: cabeçalho com data/hora,
+  responsável, quem registrou e selo de água; a folha no desenho do papel (campos nas linhas,
+  tanques nas colunas — não fica larga, são no máximo 5) e, ao lado, **miniaturas das fotos** que
+  ampliam num clique (Esc fecha, link "tamanho real"). Cartão com água tem a borda vermelha e a
+  célula que acusou água em vermelho. A primeira versão era uma linha por tanque com 14 colunas e
+  cortava os campos à direita.
 - Não há editar/excluir drenagem (como em Aferições).
 - **Recusa não pode apagar o que foi digitado** (corrigido em 10/11/2026, no primeiro teste na
   nuvem): o envio recarregava a página, e qualquer recusa — um campo obrigatório em branco — voltava
