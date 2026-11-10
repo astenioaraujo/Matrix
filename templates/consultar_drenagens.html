@@ -373,6 +373,30 @@
     justify-content: center;
   }
 
+  .aviso-parametros {
+    max-width: 1100px;
+    margin: 0 0 20px 0;
+    padding: 12px 20px;
+    border-radius: 14px;
+    background: #fff8e1;
+    border: 1px solid #ffd54f;
+    color: #7a5b00;
+    font-weight: 700;
+  }
+
+  .aviso-faltas {
+    max-width: 1100px;
+    margin: 0 0 20px 0;
+    padding: 16px 20px;
+    border-radius: 14px;
+    background: #ffe5e5;
+    border: 1px solid #ff9b9b;
+    color: #b00020;
+    font-weight: 800;
+  }
+
+  .aviso-faltas ul { margin: 10px 0 0 22px; columns: 3 220px; }
+
   .link-original { display: block; text-align: center; color: #fff; font-size: 13px; margin-top: 8px; }
 </style>
 
@@ -430,6 +454,24 @@
 </div>
 
 <div class="nota-retencao">Fotos e vídeos ficam guardados por {{ meses_retencao }} meses; depois disso a drenagem continua aqui, sem o arquivo.</div>
+
+{% if sem_parametros %}
+  <div class="aviso-parametros">
+    Aviso de drenagens faltantes desligado: cadastre o dia e a frequência em Drenagem de Tanques → Parâmetros de Drenagem.
+  </div>
+{% endif %}
+
+<!-- POSTOS SEM DRENAGEM, UM BLOCO POR CICLO (mesmo desenho das Aferições) -->
+{% for falta in faltas_drenagem %}
+  <div class="aviso-faltas">
+    Postos sem drenagem lançada no ciclo de {{ falta.inicio.strftime("%d/%m/%Y") }} (até {{ falta.fim.strftime("%d/%m/%Y") }}):
+    <ul>
+      {% for f in falta.filiais %}
+        <li>{{ f.cod_filial }} - {{ f.nome_filial }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endfor %}
 
 {# Número sem os ",00" à toa: 10.000,00 → 10.000; 0,50 fica. #}
 {% macro num(v) -%}

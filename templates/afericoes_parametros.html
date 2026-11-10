@@ -44,7 +44,9 @@
   .msg-error   { background: #ffe5e5; color: #b00020; }
 </style>
 
-<div class="pagina-titulo">Parâmetros de Aferição</div>
+{% set titulo = titulo or "Parâmetros de Aferição" %}
+{% set evento = evento or "aferição" %}
+<div class="pagina-titulo">{{ titulo }}</div>
 
 <div class="empresa">
   <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
@@ -56,7 +58,7 @@
 
 <form method="post" class="painel">
   <div class="campo">
-    <label for="dia_semana">Dia da aferição</label>
+    <label for="dia_semana">Dia da {{ evento }}</label>
     <select id="dia_semana" name="dia_semana" required>
       {% for valor, rotulo in dias_semana %}
         <option value="{{ valor }}" {% if parametros and parametros.dia_semana == valor %}selected{% endif %}>{{ rotulo }}</option>
@@ -71,14 +73,14 @@
         <option value="{{ valor }}" {% if parametros and parametros.frequencia == valor %}selected{% endif %}>{{ rotulo }}</option>
       {% endfor %}
     </select>
-    <div class="dica">O ciclo vai do dia da aferição até a véspera do próximo. Na frequência mensal, começa no primeiro dia escolhido do mês.</div>
+    <div class="dica">O ciclo vai do dia da {{ evento }} até a véspera do próximo: o posto que fizer em qualquer dia do ciclo está em dia. Na frequência mensal, começa no primeiro dia escolhido do mês.</div>
   </div>
 
   <div class="campo" id="campo-referencia">
     <label for="data_referencia">Data de início de um ciclo</label>
     <input type="date" id="data_referencia" name="data_referencia"
            value="{{ parametros.data_referencia.isoformat() if parametros and parametros.data_referencia else '' }}">
-    <div class="dica">Indica qual é a semana do ciclo. Precisa cair no dia da aferição escolhido acima.</div>
+    <div class="dica">Indica qual é a semana do ciclo. Precisa cair no dia da {{ evento }} escolhido acima.</div>
   </div>
 
   <button type="submit" class="btn-salvar">Salvar</button>

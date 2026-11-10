@@ -818,6 +818,18 @@ Transcreve a folha em papel "Dados da drenagem do fundo de tanques de óleo dies
   célula que acusou água em vermelho. A primeira versão era uma linha por tanque com 14 colunas e
   cortava os campos à direita.
 - Não há editar/excluir drenagem (como em Aferições).
+- **Aviso de postos sem drenagem, por ciclo** (10/11/2026), o mesmo controle das Aferições:
+  `drenagens_parametros` (`migrations/criar_drenagens_parametros.sql`, dia da semana + frequência
+  por empresa; EMP010 = terça, semanal — o cliente não tinha certeza se é terça ou quarta, ajustar
+  em **Drenagem de Tanques → Parâmetros de Drenagem**, atrás de `CONFIGURACOES`). Drenar em
+  qualquer dia do ciclo cumpre o ciclo. Em Consultar, um bloco vermelho por ciclo já começado do
+  mês com os postos **com tanque de diesel** que não drenaram; só cobra a partir da primeira
+  drenagem da empresa. Em Informar, o posto escolhido mostra "já drenou neste ciclo" (verde) ou
+  "drenagem pendente" (vermelho). O serviço de Aferições virou genérico: `TIPOS_CICLO` em
+  `services/afericoes_ciclos_service.py` diz tabela, coluna de data e quais postos cada tipo
+  cobra; `faltas_por_ciclo(..., tipo=)`, `parametros_ciclo`, `ciclo_de`. A tela de parâmetros é a
+  mesma (`afericoes_parametros.html` com `titulo`/`evento`, via `_tela_parametros_ciclo`).
+  Conferido: o aviso das Aferições de 10 e 11/2026 saiu idêntico ao de antes da mudança.
 - **Recusa não pode apagar o que foi digitado** (corrigido em 10/11/2026, no primeiro teste na
   nuvem): o envio recarregava a página, e qualquer recusa — um campo obrigatório em branco — voltava
   com o formulário vazio e sem as fotos. Agora a tela envia por `XMLHttpRequest` (cabeçalho

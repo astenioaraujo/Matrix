@@ -1,4 +1,4 @@
-"""Ciclos de aferição: do dia parametrizado até a véspera do próximo ciclo."""
+"""Ciclos de aferição e de drenagem: do dia parametrizado até a véspera do próximo ciclo."""
 from calendar import monthrange
 from datetime import date, timedelta
 
@@ -52,12 +52,42 @@ def ciclos_que_comecam_no_mes(ano, mes, dia_semana, frequencia, data_referencia=
     return ciclos
 
 
-def parametros_afericao(cur, cod_empresa):
-    """Parâmetros da empresa, ou None. O cursor precisa ser RealDictCursor."""
+# O mesmo controle por ciclo serve a mais de um evento (10/11/2026: Drenagem
+# de Tanques ganhou o aviso das Aferições). Cada tipo diz de onde vêm os
+# parâmetros, os eventos e quais postos são cobrados. Os nomes de tabela e
+# coluna entram no SQL por f-string — vêm só daqui, nunca da requisição.
+TIPOS_CICLO = {
+    "afericao": {
+        "tabela_parametros": "afericoes_parametros",
+        "tabela": "afericoes",
+        "coluna_data": "data_afericao",
+        # Mesmo universo do aviso de Medições: filial ativa e com tanque.
+        "filtro_tanque": "",
+    },
+    "drenagem": {
+        "tabela_parametros": "drenagens_parametros",
+        "tabela": "drenagens",
+        "coluna_data": "data_drenagem",
+        # Só posto com tanque de diesel drena.
+        "filtro_tanque": """
+              AND EXISTS (
+                SELECT 1 FROM combustiveis c
+                WHERE c.cod_empresa = ct.cod_empresa
+                  AND c.cod_produto = ct.cod_produto
+                  AND (c.descricao ILIKE '%%diesel%%' OR c.descricao ILIKE '%%s10%%'
+                       OR c.descricao ILIKE '%%s500%%')
+              )""",
+    },
+}
+
+
+def parametros_ciclo(cur, cod_empresa, tipo):
+    """Parâmetros da empresa para o tipo, ou None. O cursor precisa ser RealDictCursor."""
+    cfg = TIPOS_CICLO[tipo]
     cur.execute(
-        """
+        f"""
         SELECT dia_semana, frequencia, data_referencia
-        FROM afericoes_parametros
+        FROM {cfg["tabela_parametros"]}
         WHERE cod_empresa = %s
         """,
         (cod_empresa,),
@@ -65,14 +95,32 @@ def parametros_afericao(cur, cod_empresa):
     return cur.fetchone()
 
 
-def faltas_por_ciclo(cur, cod_empresa, ano, mes, filiais_consulta, parametros, hoje):
-    """Filiais sem aferição em cada ciclo já começado do mês, mais recente primeiro.
+def parametros_afericao(cur, cod_empresa):
+    return parametros_ciclo(cur, cod_empresa, "afericao")
 
-    Só cobra a partir da primeira aferição da empresa: antes dela não havia
-    processo de aferição, e todo o histórico viraria falta.
+
+def ciclo_de(data, parametros):
+    """(inicio, fim) do ciclo que contém a data."""
+    for ano, mes in ((data.year, data.month), ((data.year - 1, 12) if data.month == 1 else (data.year, data.month - 1))):
+        for inicio, fim in ciclos_que_comecam_no_mes(
+            ano, mes, parametros["dia_semana"], parametros["frequencia"], parametros["data_referencia"],
+        ):
+            if inicio <= data <= fim:
+                return inicio, fim
+    return None
+
+
+def faltas_por_ciclo(cur, cod_empresa, ano, mes, filiais_consulta, parametros, hoje, tipo="afericao"):
+    """Filiais sem o evento em cada ciclo já começado do mês, mais recente primeiro.
+
+    Só cobra a partir do primeiro evento da empresa: antes dele não havia
+    o processo, e todo o histórico viraria falta.
     """
+    cfg = TIPOS_CICLO[tipo]
+    tabela, coluna = cfg["tabela"], cfg["coluna_data"]
+
     cur.execute(
-        "SELECT MIN(data_afericao) AS primeira FROM afericoes WHERE cod_empresa = %s",
+        f"SELECT MIN({coluna}) AS primeira FROM {tabela} WHERE cod_empresa = %s",
         (cod_empresa,),
     )
     primeira = cur.fetchone()["primeira"]
@@ -90,9 +138,8 @@ def faltas_por_ciclo(cur, cod_empresa, ano, mes, filiais_consulta, parametros, h
     if not ciclos:
         return []
 
-    # Mesmo universo do aviso de Medições: filial ativa e com tanque.
     cur.execute(
-        """
+        f"""
         SELECT f.cod_filial, f.nome_filial
         FROM filiais f
         WHERE f.cod_empresa = %s
@@ -104,6 +151,7 @@ def faltas_por_ciclo(cur, cod_empresa, ano, mes, filiais_consulta, parametros, h
             WHERE ct.cod_empresa = f.cod_empresa
               AND ct.cod_filial = f.cod_filial
               AND COALESCE(ct.capacidade_tanque, 0) > 0
+              {cfg["filtro_tanque"]}
           )
         ORDER BY f.cod_filial
         """,
@@ -112,19 +160,19 @@ def faltas_por_ciclo(cur, cod_empresa, ano, mes, filiais_consulta, parametros, h
     filiais = cur.fetchall() or []
 
     cur.execute(
-        """
-        SELECT DISTINCT cod_filial, data_afericao
-        FROM afericoes
+        f"""
+        SELECT DISTINCT cod_filial, {coluna} AS data_evento
+        FROM {tabela}
         WHERE cod_empresa = %s
-          AND data_afericao BETWEEN %s AND %s
+          AND {coluna} BETWEEN %s AND %s
         """,
         (cod_empresa, ciclos[0][0], ciclos[-1][1]),
     )
-    afericoes = cur.fetchall() or []
+    eventos = cur.fetchall() or []
 
     faltas = []
     for inicio, fim in reversed(ciclos):
-        feitas = {a["cod_filial"] for a in afericoes if inicio <= a["data_afericao"] <= fim}
+        feitas = {e["cod_filial"] for e in eventos if inicio <= e["data_evento"] <= fim}
         pendentes = [f for f in filiais if f["cod_filial"] not in feitas]
         if pendentes:
             faltas.append({"inicio": inicio, "fim": fim, "filiais": pendentes})

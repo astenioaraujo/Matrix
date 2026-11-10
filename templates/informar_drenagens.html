@@ -45,6 +45,10 @@
     .grid-topo .campo-filial { grid-column: span 2; }
   }
 
+  .situacao-ciclo { padding: 10px 14px; border-radius: 10px; font-weight: 700; margin-bottom: 18px; }
+  .situacao-ok { background: #e6f4ea; color: #1e6b34; border: 1px solid #b7dfc2; }
+  .situacao-pendente { background: #ffe5e5; color: #b00020; border: 1px solid #ff9b9b; }
+
   .titulo-folha {
     background: #6a1b9a;
     color: #fff;
@@ -265,6 +269,19 @@
         </div>
       {% endif %}
     </div>
+
+    {% if filial_sel and produtos and ciclo_atual %}
+      {% if ciclo_atual.feita_em %}
+        <div class="situacao-ciclo situacao-ok">
+          ✔ Este posto já drenou neste ciclo ({{ ciclo_atual.inicio.strftime("%d/%m") }} a {{ ciclo_atual.fim.strftime("%d/%m") }}),
+          em {{ ciclo_atual.feita_em.strftime("%d/%m/%Y") }}.
+        </div>
+      {% else %}
+        <div class="situacao-ciclo situacao-pendente">
+          ⚠ Drenagem pendente neste ciclo: {{ ciclo_atual.inicio.strftime("%d/%m") }} a {{ ciclo_atual.fim.strftime("%d/%m/%Y") }}.
+        </div>
+      {% endif %}
+    {% endif %}
 
     {% if filial_sel %}
       {% if produtos %}

@@ -71,6 +71,12 @@
     </a>
   {% endif %}
 
+  {% if pode_parametros %}
+    <a href="{{ url_for('operacoes.parametros_drenagens_tela') }}" class="btn-informar">
+      Parâmetros de Drenagem
+    </a>
+  {% endif %}
+
 </div>
 
 {% endblock %}

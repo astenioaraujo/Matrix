@@ -10,8 +10,10 @@ from services.estoques_service import linhas_estoque
 from services.afericoes_ciclos_service import (
     DIAS_SEMANA_AFERICAO,
     FREQUENCIAS_AFERICAO,
+    ciclo_de,
     faltas_por_ciclo,
     parametros_afericao,
+    parametros_ciclo,
 )
 from services.supabase_storage import (
     upload_arquivo as afericao_upload,
@@ -689,13 +691,10 @@ def menu_afericoes():
 # ---------------------------------------
 # PARAMETROS DE AFERICAO
 # ---------------------------------------
-@operacoes_bp.route("/afericoes/parametros", methods=["GET", "POST"])
-@permissao_obrigatoria(
-    "OPERACOES",
-    "CONFIGURACOES",
-    redirecionar_para="operacoes.menu_afericoes",
-)
-def parametros_afericoes_tela():
+def _tela_parametros_ciclo(tipo, endpoint, titulo, evento, url_voltar):
+    """Aferições e Drenagens têm a mesma tela de ciclo (dia + frequência),
+    cada uma gravando na sua tabela de parâmetros."""
+    tabela = {"afericao": "afericoes_parametros", "drenagem": "drenagens_parametros"}[tipo]
     cod_empresa = str(session["cod_empresa"]).strip()
 
     conn = get_connection()
@@ -712,7 +711,7 @@ def parametros_afericoes_tela():
             erro = None
 
             if dia_semana not in [d for d, _ in DIAS_SEMANA_AFERICAO]:
-                erro = "Dia da aferição inválido."
+                erro = f"Dia da {evento} inválido."
             elif frequencia not in [f for f, _ in FREQUENCIAS_AFERICAO]:
                 erro = "Frequência inválida."
             elif frequencia in ("DUAS_SEMANAS", "TRES_SEMANAS"):
@@ -722,14 +721,14 @@ def parametros_afericoes_tela():
                     erro = "Informe a data de início de um ciclo."
                 else:
                     if referencia.weekday() != dia_semana:
-                        erro = "A data de início do ciclo precisa cair no dia da aferição escolhido."
+                        erro = f"A data de início do ciclo precisa cair no dia da {evento} escolhido."
 
             if erro:
                 flash(erro, "error")
             else:
                 cur.execute(
-                    """
-                    INSERT INTO afericoes_parametros (cod_empresa, dia_semana, frequencia, data_referencia)
+                    f"""
+                    INSERT INTO {tabela} (cod_empresa, dia_semana, frequencia, data_referencia)
                     VALUES (%s, %s, %s, %s)
                     ON CONFLICT (cod_empresa) DO UPDATE
                     SET dia_semana = EXCLUDED.dia_semana,
@@ -742,9 +741,9 @@ def parametros_afericoes_tela():
                 conn.commit()
                 flash("Parâmetros salvos.", "success")
 
-            return redirect(url_for("operacoes.parametros_afericoes_tela"))
+            return redirect(url_for(endpoint))
 
-        parametros = parametros_afericao(cur, cod_empresa)
+        parametros = parametros_ciclo(cur, cod_empresa, tipo)
 
     finally:
         cur.close()
@@ -757,8 +756,23 @@ def parametros_afericoes_tela():
         parametros=parametros,
         dias_semana=DIAS_SEMANA_AFERICAO,
         frequencias=FREQUENCIAS_AFERICAO,
-        url_voltar=url_for("operacoes.menu_afericoes"),
+        titulo=titulo,
+        evento=evento,
+        url_voltar=url_voltar,
         texto_voltar="← Voltar",
+    )
+
+
+@operacoes_bp.route("/afericoes/parametros", methods=["GET", "POST"])
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONFIGURACOES",
+    redirecionar_para="operacoes.menu_afericoes",
+)
+def parametros_afericoes_tela():
+    return _tela_parametros_ciclo(
+        "afericao", "operacoes.parametros_afericoes_tela", "Parâmetros de Aferição", "aferição",
+        url_for("operacoes.menu_afericoes"),
     )
 
 
@@ -1309,7 +1323,20 @@ def menu_drenagens():
         url_voltar=url_for("operacoes.menu_operacoes"),
         texto_voltar="← Voltar",
         pode_informar=pode_informar,
-        pode_consultar=pode_consultar,
+        pode_consultar=pode_consultar,        pode_parametros=_pode_afericoes("CONFIGURACOES"),
+    )
+
+
+@operacoes_bp.route("/drenagens/parametros", methods=["GET", "POST"])
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONFIGURACOES",
+    redirecionar_para="operacoes.menu_drenagens",
+)
+def parametros_drenagens_tela():
+    return _tela_parametros_ciclo(
+        "drenagem", "operacoes.parametros_drenagens_tela", "Parâmetros de Drenagem", "drenagem",
+        url_for("operacoes.menu_drenagens"),
     )
 
 
@@ -1332,6 +1359,7 @@ def informar_drenagens():
     filial_sel = None
     produtos = []
     drenagens_recentes = []
+    ciclo_atual = None
 
     try:
         filiais = _filiais_do_usuario(cur, cod_empresa, id_usuario, tipo_global)
@@ -1552,6 +1580,24 @@ def informar_drenagens():
             )
             drenagens_recentes = cur.fetchall() or []
 
+            # Situação do posto no ciclo de hoje (Parâmetros de Drenagem).
+            parametros = parametros_ciclo(cur, cod_empresa, "drenagem")
+            ciclo = ciclo_de(agora.date(), parametros) if parametros else None
+            if ciclo:
+                cur.execute(
+                    """
+                    SELECT max(data_drenagem) AS ultima FROM drenagens
+                    WHERE cod_empresa = %s AND cod_filial = %s
+                      AND data_drenagem BETWEEN %s AND %s
+                    """,
+                    (cod_empresa, filial_sel, ciclo[0], ciclo[1]),
+                )
+                ciclo_atual = {
+                    "inicio": ciclo[0],
+                    "fim": ciclo[1],
+                    "feita_em": (cur.fetchone() or {}).get("ultima"),
+                }
+
     except Exception as e:
         conn.rollback()
         if request.method == "POST" and request.headers.get("X-Drenagem-Ajax") == "1":
@@ -1576,6 +1622,7 @@ def informar_drenagens():
         aspectos=ASPECTOS_DRENAGEM,
         cores=CORES_DRENAGEM,
         drenagens_recentes=drenagens_recentes,
+        ciclo_atual=ciclo_atual,
         meses_retencao=MESES_RETENCAO_ARQUIVOS_DRENAGEM,
         url_voltar=url_for("operacoes.menu_drenagens"),
         texto_voltar="← Voltar",
@@ -1601,6 +1648,8 @@ def consultar_drenagens():
     ano_sel = hoje_br().year
     mes_sel = None
     drenagens = []
+    faltas_drenagem = []
+    sem_parametros = False
 
     try:
         filiais = _filiais_do_usuario(cur, cod_empresa, id_usuario, tipo_global)
@@ -1699,6 +1748,17 @@ def consultar_drenagens():
             d["tanques"] = tanques_por_drenagem.get(d["id_drenagem"], [])
             d["arquivos"] = arquivos_por_drenagem.get(d["id_drenagem"], [])
 
+        # Aviso vermelho de quem não drenou, ciclo a ciclo (mesmo controle das
+        # Aferições: drenar em qualquer dia do ciclo cumpre o ciclo). Só com
+        # um mês escolhido, e só a partir da primeira drenagem da empresa.
+        parametros = parametros_ciclo(cur, cod_empresa, "drenagem")
+        sem_parametros = parametros is None
+        if parametros and mes_sel:
+            faltas_drenagem = faltas_por_ciclo(
+                cur, cod_empresa, ano_sel, mes_sel, filiais_consulta, parametros, hoje_br(),
+                tipo="drenagem",
+            )
+
     except Exception as e:
         conn.rollback()
         flash(f"Erro ao consultar drenagens: {e}", "error")
@@ -1717,6 +1777,8 @@ def consultar_drenagens():
         mes=mes_sel,
         drenagens=drenagens,
         meses_retencao=MESES_RETENCAO_ARQUIVOS_DRENAGEM,
+        faltas_drenagem=faltas_drenagem,
+        sem_parametros=sem_parametros,
         url_voltar=url_for("operacoes.menu_drenagens"),
         texto_voltar="← Voltar",
     )
