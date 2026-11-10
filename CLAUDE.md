@@ -819,7 +819,8 @@ Transcreve a folha em papel "Dados da drenagem do fundo de tanques de óleo dies
   `X-Drenagem-Ajax`, com % de envio no botão); o servidor responde JSON (`falhar()` em
   `informar_drenagens`, com a coluna e o campo para a tela marcar em vermelho) e a página não sai do
   lugar. Antes de enviar, `conferirNaTela()` já barra os obrigatórios em branco. Os exemplos cinzas
-  nas células ("TQ 1", "0", "1") saíram: pareciam valores preenchidos e foram a causa da recusa.
+  nas células ("TQ 1", "0", "1") pareciam valores preenchidos e foram a causa da recusa; ficam
+  (orientam, pedido do cliente), claros e em itálico — a conferência é que garante o digitado.
   Sair da página ou trocar de posto com dado não gravado pergunta antes.
 
 ---
