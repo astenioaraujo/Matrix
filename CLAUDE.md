@@ -813,6 +813,14 @@ Transcreve a folha em papel "Dados da drenagem do fundo de tanques de óleo dies
 - Consulta: filtro posto + mês/ano com as setas do matricial (sem filtro na URL abre no último mês
   com drenagem), um bloco por posto, uma linha por tanque com data/responsável/arquivos agrupados.
 - Não há editar/excluir drenagem (como em Aferições).
+- **Recusa não pode apagar o que foi digitado** (corrigido em 10/11/2026, no primeiro teste na
+  nuvem): o envio recarregava a página, e qualquer recusa — um campo obrigatório em branco — voltava
+  com o formulário vazio e sem as fotos. Agora a tela envia por `XMLHttpRequest` (cabeçalho
+  `X-Drenagem-Ajax`, com % de envio no botão); o servidor responde JSON (`falhar()` em
+  `informar_drenagens`, com a coluna e o campo para a tela marcar em vermelho) e a página não sai do
+  lugar. Antes de enviar, `conferirNaTela()` já barra os obrigatórios em branco. Os exemplos cinzas
+  nas células ("TQ 1", "0", "1") saíram: pareciam valores preenchidos e foram a causa da recusa.
+  Sair da página ou trocar de posto com dado não gravado pergunta antes.
 
 ---
 

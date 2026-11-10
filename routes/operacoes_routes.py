@@ -1,6 +1,6 @@
 import os
 
-from flask import Blueprint, render_template, session, redirect, url_for, flash, request
+from flask import Blueprint, render_template, session, redirect, url_for, flash, request, jsonify
 from psycopg2.extras import RealDictCursor, execute_batch
 from datetime import datetime, date, time, timedelta
 from zoneinfo import ZoneInfo
@@ -1355,32 +1355,37 @@ def informar_drenagens():
             produtos = _diesel_da_filial(cur, cod_empresa, filial_sel)
 
         if request.method == "POST":
-            voltar = redirect(url_for("operacoes.informar_drenagens", cod_filial=filial_sel))
+            # A tela envia por fetch (cabeçalho X-Drenagem-Ajax) e, na recusa,
+            # fica onde está — com tudo o que foi digitado e as fotos escolhidas.
+            # Recarregar a página na recusa apagava o formulário inteiro.
+            ajax = request.headers.get("X-Drenagem-Ajax") == "1"
+            url_tela = url_for("operacoes.informar_drenagens", cod_filial=filial_sel)
+
+            def falhar(mensagem, coluna=None, campo=None):
+                if ajax:
+                    return jsonify({"ok": False, "erro": mensagem, "coluna": coluna, "campo": campo}), 400
+                flash(mensagem, "error")
+                return redirect(url_tela)
 
             if filial_sel is None:
-                flash("Selecione a filial.", "error")
-                return redirect(url_for("operacoes.informar_drenagens"))
+                return falhar("Selecione o posto.")
 
             produtos_validos = {p["cod_produto"] for p in produtos}
             if not produtos_validos:
-                flash("Este posto não tem tanque de diesel S10 nem S500 cadastrado.", "error")
-                return voltar
+                return falhar("Este posto não tem tanque de diesel S10 nem S500 cadastrado.")
 
             responsavel = " ".join((request.form.get("responsavel") or "").split())
             try:
                 data_drenagem = date.fromisoformat((request.form.get("data_drenagem") or "").strip())
                 hora_drenagem = time.fromisoformat((request.form.get("hora_drenagem") or "").strip())
             except ValueError:
-                flash("Informe a data e a hora da drenagem.", "error")
-                return voltar
+                return falhar("Informe a data e a hora da drenagem.")
 
             if not responsavel:
-                flash("Informe o nome do responsável pela drenagem.", "error")
-                return voltar
+                return falhar("Informe o nome do responsável pela drenagem.", None, "responsavel")
 
             if data_drenagem > agora.date():
-                flash("A data da drenagem não pode ser futura.", "error")
-                return voltar
+                return falhar("A data da drenagem não pode ser futura.")
 
             # Uma coluna da folha vale quando tem tanque ou produto preenchido.
             tanques = []
@@ -1394,20 +1399,16 @@ def informar_drenagens():
 
                 rotulo = f"Coluna {i}"
                 if not tanque:
-                    flash(f"{rotulo}: informe o tanque (ex.: TQ 3).", "error")
-                    return voltar
+                    return falhar(f"{rotulo}: informe o tanque (ex.: TQ 3).", i, "tanque")
                 if tanque in nomes_vistos:
-                    flash(f"O tanque {tanque} aparece duas vezes na mesma drenagem.", "error")
-                    return voltar
+                    return falhar(f"O tanque {tanque} aparece duas vezes na mesma drenagem.", i, "tanque")
                 nomes_vistos.add(tanque)
                 if cod_produto not in produtos_validos:
-                    flash(f"{tanque}: escolha o produto (S10 ou S500).", "error")
-                    return voltar
+                    return falhar(f"{tanque}: escolha o produto (S10 ou S500).", i, "cod_produto")
 
                 presenca_txt = campo("presenca_agua")
                 if presenca_txt not in ("S", "N"):
-                    flash(f"{tanque}: informe se há presença de água (Sim/Não).", "error")
-                    return voltar
+                    return falhar(f"{tanque}: informe se há presença de água (Sim/Não).", i, "presenca_agua")
 
                 numeros = {}
                 for nome, obrigatorio, rotulo_campo in (
@@ -1419,8 +1420,7 @@ def informar_drenagens():
                     texto = campo(nome)
                     valor = _numero_ou_none(texto)
                     if (texto and valor is None) or (obrigatorio and valor is None) or (valor is not None and valor < 0):
-                        flash(f"{tanque}: valor inválido ou em branco em '{rotulo_campo}'.", "error")
-                        return voltar
+                        return falhar(f"{tanque}: valor inválido ou em branco em '{rotulo_campo}'.", i, nome)
                     numeros[nome] = valor
 
                 tanques.append({
@@ -1434,24 +1434,20 @@ def informar_drenagens():
                 })
 
             if not tanques:
-                flash("Preencha ao menos um tanque.", "error")
-                return voltar
+                return falhar("Preencha ao menos um tanque.")
 
             arquivos = [a for a in request.files.getlist("arquivos") if a and a.filename]
             if not arquivos:
-                flash("Envie ao menos uma foto (ou vídeo) do volume drenado.", "error")
-                return voltar
+                return falhar("Envie ao menos uma foto (ou vídeo) do volume drenado.")
 
             classificados = []
             for a in arquivos:
                 tipo = _tipo_arquivo_afericao(a.filename)
                 if tipo is None:
-                    flash(
+                    return falhar(
                         f"Formato não suportado em '{a.filename}'. Envie foto "
-                        "(jpg, png, webp, heic) ou vídeo (mp4, mov, webm, 3gp).",
-                        "error",
+                        "(jpg, png, webp, heic) ou vídeo (mp4, mov, webm, 3gp)."
                     )
-                    return voltar
                 classificados.append((a, tipo))
 
             datas_aparelho = _datas_aparelho(request.form.get("datas_arquivos"), len(classificados))
@@ -1478,8 +1474,7 @@ def informar_drenagens():
             except Exception as e:
                 for _t, nome_storage, *_ in uploads:
                     afericao_deletar(nome_storage, bucket=BUCKET_DRENAGENS)
-                flash(f"Erro ao enviar o arquivo: {e}", "error")
-                return voltar
+                return falhar(f"Erro ao enviar o arquivo: {e}")
 
             cur.execute(
                 """
@@ -1529,7 +1524,9 @@ def informar_drenagens():
                 afericao_deletar(caminho, bucket=BUCKET_DRENAGENS)
 
             flash(f"Drenagem registrada ({len(tanques)} tanque(s), {len(uploads)} arquivo(s)).", "success")
-            return voltar
+            if ajax:
+                return jsonify({"ok": True, "url": url_tela})
+            return redirect(url_tela)
 
         if filial_sel is not None:
             cur.execute(
@@ -1557,6 +1554,8 @@ def informar_drenagens():
 
     except Exception as e:
         conn.rollback()
+        if request.method == "POST" and request.headers.get("X-Drenagem-Ajax") == "1":
+            return jsonify({"ok": False, "erro": f"Erro ao gravar a drenagem: {e}"}), 500
         flash(f"Erro ao processar a drenagem: {e}", "error")
 
     finally:

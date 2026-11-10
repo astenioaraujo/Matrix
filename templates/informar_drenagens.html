@@ -109,8 +109,23 @@
     box-shadow: inset 0 0 0 2px #b38be0;
   }
 
-  /* Exemplo, não valor: claro e em itálico para ninguém achar que já está preenchido. */
-  table.folha td input::placeholder { color: #c4c4c4; font-style: italic; font-weight: 400; }
+  /* Célula obrigatória em branco ou inválida (marcada antes de enviar). */
+  table.folha td.celula-erro { background: #ffe1e1; box-shadow: inset 0 0 0 2px #e53935; }
+  .campo input.campo-erro { border-color: #e53935; background: #fff3f3; }
+  .botoes-captura.campo-erro { outline: 2px solid #e53935; outline-offset: 4px; border-radius: 10px; }
+
+  .erro-envio {
+    display: none;
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: #fdeaea;
+    color: #9f2f2f;
+    border: 1px solid #efc2c2;
+    font-weight: 700;
+  }
+
+  .erro-envio ul { margin: 6px 0 0 18px; padding: 0; font-weight: 600; }
 
   table.folha thead td { background: #faf7fc; }
   table.folha thead td input { font-weight: 800; }
@@ -220,7 +235,7 @@
 {% endwith %}
 
 <div class="painel-form">
-  <form method="post" enctype="multipart/form-data" id="formDrenagem" onsubmit="return prepararEnvio(this)">
+  <form method="post" enctype="multipart/form-data" id="formDrenagem" onsubmit="return enviarDrenagem(event)" novalidate>
     <div class="grid-topo">
       <div class="campo campo-filial">
         <label for="cod_filial">Posto</label>
@@ -264,7 +279,7 @@
                 <th class="rotulo">Tanque</th>
                 {% for i in range(1, max_tanques + 1) %}
                   <td class="col-{{ i }} {% if i > 1 %}col-oculta{% endif %}">
-                    <input type="text" name="tanque_{{ i }}" placeholder="TQ {{ i }}" maxlength="20" autocomplete="off">
+                    <input type="text" name="tanque_{{ i }}" maxlength="20" autocomplete="off">
                   </td>
                 {% endfor %}
               </tr>
@@ -287,7 +302,7 @@
                 <th class="rotulo">Capacidade <span class="unidade">(L)</span></th>
                 {% for i in range(1, max_tanques + 1) %}
                   <td class="col-{{ i }} {% if i > 1 %}col-oculta{% endif %}">
-                    <input type="text" inputmode="decimal" name="capacidade_litros_{{ i }}" placeholder="15.000">
+                    <input type="text" inputmode="decimal" name="capacidade_litros_{{ i }}">
                   </td>
                 {% endfor %}
               </tr>
@@ -295,7 +310,7 @@
                 <th class="rotulo">Presença de água no medidor <span class="unidade">(mm)</span></th>
                 {% for i in range(1, max_tanques + 1) %}
                   <td class="col-{{ i }} {% if i > 1 %}col-oculta{% endif %}">
-                    <input type="text" inputmode="decimal" name="agua_medidor_mm_{{ i }}" placeholder="0">
+                    <input type="text" inputmode="decimal" name="agua_medidor_mm_{{ i }}">
                   </td>
                 {% endfor %}
               </tr>
@@ -303,7 +318,7 @@
                 <th class="rotulo">Aspecto</th>
                 {% for i in range(1, max_tanques + 1) %}
                   <td class="col-{{ i }} {% if i > 1 %}col-oculta{% endif %}">
-                    <input type="text" name="aspecto_{{ i }}" list="lista-aspectos" placeholder="LII" maxlength="60">
+                    <input type="text" name="aspecto_{{ i }}" list="lista-aspectos" maxlength="60">
                   </td>
                 {% endfor %}
               </tr>
@@ -311,7 +326,7 @@
                 <th class="rotulo">Cor</th>
                 {% for i in range(1, max_tanques + 1) %}
                   <td class="col-{{ i }} {% if i > 1 %}col-oculta{% endif %}">
-                    <input type="text" name="cor_{{ i }}" list="lista-cores" placeholder="Amarelado" maxlength="60">
+                    <input type="text" name="cor_{{ i }}" list="lista-cores" maxlength="60">
                   </td>
                 {% endfor %}
               </tr>
@@ -319,7 +334,7 @@
                 <th class="rotulo">Volume de amostra drenado <span class="unidade">(L)</span></th>
                 {% for i in range(1, max_tanques + 1) %}
                   <td class="col-{{ i }} {% if i > 1 %}col-oculta{% endif %}">
-                    <input type="text" inputmode="decimal" name="volume_amostra_litros_{{ i }}" placeholder="1">
+                    <input type="text" inputmode="decimal" name="volume_amostra_litros_{{ i }}">
                   </td>
                 {% endfor %}
               </tr>
@@ -338,7 +353,7 @@
                 <th class="rotulo">Volume de água drenado <span class="unidade">(L)</span></th>
                 {% for i in range(1, max_tanques + 1) %}
                   <td class="col-{{ i }} {% if i > 1 %}col-oculta{% endif %}">
-                    <input type="text" inputmode="decimal" name="volume_agua_litros_{{ i }}" placeholder="0">
+                    <input type="text" inputmode="decimal" name="volume_agua_litros_{{ i }}">
                   </td>
                 {% endfor %}
               </tr>
@@ -348,7 +363,9 @@
 
         <button type="button" class="btn-tanque" id="btnMaisTanque" onclick="mostrarProximoTanque()">+ Outro tanque</button>
         <div class="ajuda" style="margin: -12px 0 20px;">
-          Volumes em litros: 1.000 ml = <strong>1</strong>; meio litro = <strong>0,5</strong>. Até {{ max_tanques }} tanques por drenagem.
+          Obrigatórios em cada tanque: tanque, produto, água no medidor, volume de amostra e volume de água
+          (sem água, digite <strong>0</strong>). Volumes em litros: 1.000 ml = <strong>1</strong>; meio litro = <strong>0,5</strong>.
+          Até {{ max_tanques }} tanques por drenagem.
         </div>
 
         <div class="campo">
@@ -381,6 +398,8 @@
         </div>
 
         <div class="ajuda" style="margin-top: 14px;">Registrado por: <strong>{{ nome_usuario }}</strong></div>
+
+        <div class="erro-envio" id="erroEnvio"></div>
 
         <button type="submit" class="btn-salvar" id="btnSalvar">Salvar Drenagem</button>
       {% else %}
@@ -433,7 +452,24 @@
 {% endif %}
 
 <script>
-  function trocarFilial(filial) {
+  // Algo digitado e ainda não gravado: sair da página perguntaria antes.
+  let alterado = false;
+  let gravado = false;
+  document.addEventListener("input", function (e) {
+    if (e.target.closest && e.target.closest("#formDrenagem") && e.target.id !== "cod_filial") alterado = true;
+  });
+  window.addEventListener("beforeunload", function (e) {
+    if (alterado && !gravado) { e.preventDefault(); e.returnValue = ""; }
+  });
+
+  async function trocarFilial(filial) {
+    if (alterado && !gravado) {
+      if (!await confirmarGlobal("Trocar de posto apaga o que foi digitado nesta drenagem. Continuar?")) {
+        document.getElementById("cod_filial").value = "{{ filial_sel or '' }}";
+        return;
+      }
+      gravado = true;
+    }
     window.location = "{{ url_for('operacoes.informar_drenagens') }}?cod_filial=" + filial;
   }
 
@@ -520,23 +556,171 @@
     });
   }
 
-  // Manda o lastModified de cada arquivo na mesma ordem em que o navegador
-  // envia os arquivos (ordem dos <input> no formulário). O servidor usa o
-  // EXIF da foto e, sem ele, esta data para o carimbo.
-  function prepararEnvio(form) {
+  // ---------------------------------------------------------------------
+  // Envio. Por XMLHttpRequest, sem sair da página: se o servidor recusar,
+  // a mensagem aparece aqui e TUDO continua na tela — campos e fotos.
+  // (Até 10/11/2026 o envio recarregava a página e a recusa apagava o
+  // formulário inteiro.)
+  // ---------------------------------------------------------------------
+  const CAMPOS_TANQUE = ["tanque", "cod_produto", "capacidade_litros", "agua_medidor_mm",
+                         "aspecto", "cor", "volume_amostra_litros", "volume_agua_litros"];
+  const OBRIGATORIOS = {
+    tanque: "tanque",
+    cod_produto: "produto",
+    agua_medidor_mm: "água no medidor",
+    volume_amostra_litros: "volume de amostra",
+    volume_agua_litros: "volume de água drenado",
+  };
+  const NUMERICOS = ["capacidade_litros", "agua_medidor_mm", "volume_amostra_litros", "volume_agua_litros"];
+
+  function campoTanque(nome, i) {
+    return document.querySelector('[name="' + nome + "_" + i + '"]');
+  }
+
+  function numeroValido(texto) {
+    const t = texto.replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+    return t !== "" && !isNaN(Number(t)) && Number(t) >= 0;
+  }
+
+  function limparMarcas() {
+    document.querySelectorAll(".celula-erro").forEach(function (c) { c.classList.remove("celula-erro"); });
+    document.querySelectorAll(".campo-erro").forEach(function (c) { c.classList.remove("campo-erro"); });
+    const caixa = document.getElementById("erroEnvio");
+    caixa.style.display = "none";
+    caixa.innerHTML = "";
+  }
+
+  function marcar(elemento) {
+    if (!elemento) return;
+    const td = elemento.closest("td");
+    if (td) td.classList.add("celula-erro"); else elemento.classList.add("campo-erro");
+  }
+
+  function mostrarErros(erros, primeiro) {
+    const caixa = document.getElementById("erroEnvio");
+    caixa.innerHTML = "Não foi gravado — confira:<ul>" +
+      erros.map(function (e) { return "<li>" + e.replace(/</g, "&lt;") + "</li>"; }).join("") + "</ul>" +
+      "<div style='font-weight:400;margin-top:6px;'>Nada do que foi digitado se perdeu: corrija e salve de novo.</div>";
+    caixa.style.display = "block";
+    const alvo = primeiro || caixa;
+    alvo.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (primeiro && primeiro.focus) setTimeout(function () { primeiro.focus(); }, 300);
+  }
+
+  function conferirNaTela() {
+    const erros = [];
+    let primeiro = null;
+    const anotar = function (msg, el) { erros.push(msg); marcar(el); if (!primeiro) primeiro = el; };
+
+    for (let i = 1; i <= tanquesVisiveis; i++) {
+      const algum = CAMPOS_TANQUE.some(function (n) { const c = campoTanque(n, i); return c && c.value.trim(); });
+      if (i > 1 && !algum) continue;  // coluna aberta e deixada em branco: ignorada
+      const nome = (campoTanque("tanque", i).value.trim() || "Tanque " + i).toUpperCase();
+
+      Object.keys(OBRIGATORIOS).forEach(function (n) {
+        const c = campoTanque(n, i);
+        if (!c.value.trim()) anotar(nome + ": falta " + OBRIGATORIOS[n] + ".", c);
+      });
+      NUMERICOS.forEach(function (n) {
+        const c = campoTanque(n, i);
+        if (c.value.trim() && !numeroValido(c.value)) anotar(nome + ": número inválido em " + (OBRIGATORIOS[n] || "capacidade") + ".", c);
+      });
+    }
+
+    const responsavel = document.getElementById("responsavel");
+    if (!responsavel.value.trim()) anotar("Falta o nome do responsável pela drenagem.", responsavel);
+
+    if (!document.getElementById("data_drenagem").value || !document.getElementById("hora_drenagem").value) {
+      anotar("Falta a data ou a hora da coleta.", document.getElementById("data_drenagem"));
+    }
+
+    const temArquivo = inputsUsados().some(function (inp) { return inp.files && inp.files.length; });
+    if (!temArquivo) anotar("Falta a foto (ou vídeo) do volume drenado.", document.getElementById("botoesCaptura"));
+
+    return { erros: erros, primeiro: primeiro };
+  }
+
+  function enviarDrenagem(evento) {
+    evento.preventDefault();
+    const form = document.getElementById("formDrenagem");
+    const botao = document.getElementById("btnSalvar");
+    if (botao.disabled) return false;
+
+    limparMarcas();
+    const conferencia = conferirNaTela();
+    if (conferencia.erros.length) {
+      mostrarErros(conferencia.erros, conferencia.primeiro);
+      return false;
+    }
+
+    const dados = new FormData(form);
     const datas = [];
     form.querySelectorAll('input[type="file"][name="arquivos"]').forEach(function (input) {
       Array.from(input.files || []).forEach(function (arquivo) { datas.push(arquivo.lastModified); });
     });
-    document.getElementById("datas_arquivos").value = JSON.stringify(datas);
+    dados.set("datas_arquivos", JSON.stringify(datas));
 
-    const botao = document.getElementById("btnSalvar");
-    if (botao) {
-      botao.disabled = true;
-      botao.textContent = "Enviando…";
-    }
-    return true;
+    botao.disabled = true;
+    botao.textContent = "Enviando…";
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", form.getAttribute("action") || window.location.pathname + window.location.search);
+    xhr.setRequestHeader("X-Drenagem-Ajax", "1");
+
+    xhr.upload.onprogress = function (e) {
+      if (e.lengthComputable) {
+        const pct = Math.round(e.loaded / e.total * 100);
+        botao.textContent = pct < 100 ? "Enviando… " + pct + "%" : "Gravando…";
+      }
+    };
+
+    const destravar = function () {
+      botao.disabled = false;
+      botao.textContent = "Salvar Drenagem";
+    };
+
+    xhr.onload = function () {
+      let resposta = null;
+      try { resposta = JSON.parse(xhr.responseText); } catch (e) { resposta = null; }
+
+      if (resposta && resposta.ok) {
+        gravado = true;
+        window.location = resposta.url;
+        return;
+      }
+
+      destravar();
+      if (resposta && resposta.erro) {
+        let el = null;
+        if (resposta.campo === "responsavel") el = document.getElementById("responsavel");
+        else if (resposta.campo && resposta.coluna) el = campoTanque(resposta.campo, resposta.coluna);
+        marcar(el);
+        mostrarErros([resposta.erro], el);
+      } else {
+        mostrarErros(["O servidor não respondeu como esperado (a sessão pode ter expirado). "
+                      + "Entre de novo no Matrix em outra aba e volte aqui para salvar."], null);
+      }
+    };
+
+    xhr.onerror = function () {
+      destravar();
+      mostrarErros(["Sem conexão com o servidor. Confira a internet e toque em Salvar de novo."], null);
+    };
+
+    xhr.send(dados);
+    return false;
   }
+
+  // Ao corrigir uma célula marcada, a marca sai.
+  document.addEventListener("input", function (e) {
+    const td = e.target.closest && e.target.closest("td.celula-erro");
+    if (td) td.classList.remove("celula-erro");
+    if (e.target.classList && e.target.classList.contains("campo-erro")) e.target.classList.remove("campo-erro");
+  });
+  document.addEventListener("change", function (e) {
+    const td = e.target.closest && e.target.closest("td.celula-erro");
+    if (td) td.classList.remove("celula-erro");
+  });
 </script>
 
 {% endblock %}
