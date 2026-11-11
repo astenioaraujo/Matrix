@@ -331,20 +331,26 @@ def fp_consultar():
         cur.execute("""
             SELECT c.id AS id_classificacao,
                    c.nome AS classificacao,
-                   COALESCE(c.valor_orcado, 0) AS orcado,
+                   COALESCE(o.valor_orcado, 0) AS orcado,
                    COALESCE(SUM(l.valor), 0) AS realizado,
                    c.ajustar_ao_real
             FROM fp_classificacoes c
+            -- orçamento é do mês (fp_orcamentos_mensais), não da classificação
+            LEFT JOIN fp_orcamentos_mensais o
+                ON o.id_classificacao = c.id
+               AND o.id_usuario = c.id_usuario
+               AND o.competencia = make_date(%s, %s, 1)
             LEFT JOIN fp_lancamentos l
                 ON l.id_classificacao = c.id
                AND l.id_usuario = %s
                AND EXTRACT(MONTH FROM l.competencia) = %s
                AND EXTRACT(YEAR  FROM l.competencia) = %s
             WHERE c.id_usuario = %s
-            GROUP BY c.id, c.nome, c.valor_orcado, c.ajustar_ao_real, c.ativo
-            -- inativa não some do passado: no mês em que houve lançamento ela
-            -- continua na tela, para o realizado daquele mês não mudar
+            GROUP BY c.id, c.nome, o.valor_orcado, c.ajustar_ao_real, c.ativo
+            -- inativa não some do passado: no mês em que houve lançamento ou
+            -- orçamento ela continua na tela, para aquele mês não mudar
             HAVING c.ativo = TRUE OR COALESCE(SUM(l.valor), 0) <> 0
+                OR COALESCE(o.valor_orcado, 0) <> 0
 
             UNION ALL
 
@@ -361,8 +367,14 @@ def fp_consultar():
             HAVING COALESCE(SUM(valor), 0) <> 0
 
             ORDER BY classificacao
-        """, (id_usuario, mes_sel, ano_sel, id_usuario, id_usuario, mes_sel, ano_sel))
+        """, (ano_sel, mes_sel, id_usuario, mes_sel, ano_sel, id_usuario, id_usuario, mes_sel, ano_sel))
         totais_classificacao = cur.fetchall() or []
+
+        cur.execute("""
+            SELECT EXISTS (SELECT 1 FROM fp_orcamentos_mensais
+                           WHERE id_usuario = %s AND competencia = make_date(%s, %s, 1)) AS tem
+        """, (id_usuario, ano_sel, mes_sel))
+        tem_orcamento_mes = cur.fetchone()["tem"]
 
         total_orcado = sum(r["orcado"] for r in totais_classificacao)
 
@@ -395,6 +407,8 @@ def fp_consultar():
         total=total,
         totais_classificacao=totais_classificacao,
         total_orcado=total_orcado,
+        tem_orcamento_mes=tem_orcamento_mes,
+        pode_configurar=_tem_perm(id_usuario, cod_empresa, "FINANCAS_PESSOAIS_CONFIGURACOES"),
         mes_sel=mes_sel,
         ano_sel=ano_sel,
         anos=anos,
@@ -437,10 +451,19 @@ def fp_pagar():
     try:
         # a classificação precisa ser do próprio usuário
         if id_classificacao:
+            # o sinal sai do orçamento do mês da tela (despesa negativa, receita positiva)
+            try:
+                comp_sinal = date(int(request.form.get("ano")), int(request.form.get("mes")), 1)
+            except (TypeError, ValueError):
+                comp_sinal = _hoje_br().replace(day=1)
             cur.execute("""
-                SELECT COALESCE(valor_orcado, 0) AS orcado FROM fp_classificacoes
-                WHERE id = %s AND id_usuario = %s
-            """, (id_classificacao, id_usuario))
+                SELECT COALESCE(o.valor_orcado, 0) AS orcado
+                FROM fp_classificacoes c
+                LEFT JOIN fp_orcamentos_mensais o
+                    ON o.id_classificacao = c.id AND o.id_usuario = c.id_usuario
+                   AND o.competencia = %s
+                WHERE c.id = %s AND c.id_usuario = %s
+            """, (comp_sinal, id_classificacao, id_usuario))
             linha = cur.fetchone()
             if not linha:
                 flash("Classificação inválida.", "error")
@@ -624,51 +647,141 @@ def fp_config_classificacoes():
 
 @canivete_bp.route("/financas-pessoais/configuracoes/orcamento", methods=["GET", "POST"])
 def fp_config_orcamento():
+    """Orçamento MENSAL: uma linha por classificação × mês (fp_orcamentos_mensais).
+
+    Mês sem linha = sem orçamento. Valor zero apaga a linha do mês. "Copiar do
+    mês anterior" traz o último mês orçado para um mês ainda vazio — nunca
+    sobrescreve um mês que já tem orçamento.
+    """
     r = _guarda_config_fp()
     if r:
         return r
     id_usuario = session["id_usuario"]
+
+    hoje = _hoje_br()
+    try:
+        ano_sel = int(request.values.get("ano") or hoje.year)
+        mes_sel = int(request.values.get("mes") or hoje.month)
+        competencia = date(ano_sel, mes_sel, 1)
+    except (TypeError, ValueError):
+        ano_sel, mes_sel = hoje.year, hoje.month
+        competencia = date(ano_sel, mes_sel, 1)
+    url_mes = url_for("canivete.fp_config_orcamento", ano=ano_sel, mes=mes_sel)
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
         if request.method == "POST":
             is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+            acao = request.form.get("acao") or "salvar"
+
+            if acao == "copiar":
+                cur.execute("""SELECT 1 FROM fp_orcamentos_mensais
+                               WHERE id_usuario = %s AND competencia = %s LIMIT 1""",
+                            (id_usuario, competencia))
+                if cur.fetchone():
+                    flash("Este mês já tem orçamento — nada foi copiado.", "error")
+                    return redirect(url_mes)
+                cur.execute("""SELECT max(competencia) AS origem FROM fp_orcamentos_mensais
+                               WHERE id_usuario = %s AND competencia < %s""",
+                            (id_usuario, competencia))
+                origem = cur.fetchone()["origem"]
+                if not origem:
+                    flash("Não há mês anterior com orçamento para copiar.", "error")
+                    return redirect(url_mes)
+                # só as classificações ativas: a que saiu de uso não vai para o mês novo
+                cur.execute("""
+                    INSERT INTO fp_orcamentos_mensais (id_usuario, id_classificacao, competencia, valor_orcado)
+                    SELECT o.id_usuario, o.id_classificacao, %s, o.valor_orcado
+                    FROM fp_orcamentos_mensais o
+                    JOIN fp_classificacoes c ON c.id = o.id_classificacao AND c.ativo = TRUE
+                    WHERE o.id_usuario = %s AND o.competencia = %s
+                    ON CONFLICT (id_usuario, id_classificacao, competencia) DO NOTHING
+                """, (competencia, id_usuario, origem))
+                copiadas = cur.rowcount
+                conn.commit()
+                flash(f"Orçamento de {origem.month:02d}/{origem.year} copiado: {copiadas} classificações.", "success")
+                return redirect(url_mes)
+
+            # salvar: lê tudo antes de gravar — um valor inválido não grava nada
+            valores = {}
             for key, val in request.form.items():
                 if key.startswith("orcado_"):
                     id_class = key.replace("orcado_", "")
+                    texto = (val or "").strip()
                     try:
-                        valor = float((val or "0").replace(".", "").replace(",", "."))
+                        valores[int(id_class)] = float(texto.replace(".", "").replace(",", ".")) if texto else 0.0
                     except ValueError:
-                        valor = 0.0
-                    ajustar = request.form.get(f"ajustar_{id_class}") == "1"
+                        msg = f"Valor inválido: {texto}"
+                        if is_ajax:
+                            return jsonify({"ok": False, "erro": msg}), 400
+                        flash(msg, "error")
+                        return redirect(url_mes)
+
+            for id_class, valor in valores.items():
+                cur.execute("SELECT 1 FROM fp_classificacoes WHERE id = %s AND id_usuario = %s",
+                            (id_class, id_usuario))
+                if not cur.fetchone():
+                    continue
+                if round(valor, 2) == 0:
+                    cur.execute("""DELETE FROM fp_orcamentos_mensais
+                                   WHERE id_usuario = %s AND id_classificacao = %s AND competencia = %s""",
+                                (id_usuario, id_class, competencia))
+                else:
                     cur.execute("""
-                        UPDATE fp_classificacoes SET valor_orcado = %s, ajustar_ao_real = %s
-                        WHERE id = %s AND id_usuario = %s
-                    """, (valor, ajustar, id_class, id_usuario))
+                        INSERT INTO fp_orcamentos_mensais (id_usuario, id_classificacao, competencia, valor_orcado)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (id_usuario, id_classificacao, competencia)
+                        DO UPDATE SET valor_orcado = EXCLUDED.valor_orcado, atualizado_em = NOW()
+                    """, (id_usuario, id_class, competencia, round(valor, 2)))
+                # "ajustar ao real" é da classificação, não do mês
+                ajustar = request.form.get(f"ajustar_{id_class}") == "1"
+                cur.execute("""UPDATE fp_classificacoes SET ajustar_ao_real = %s
+                               WHERE id = %s AND id_usuario = %s""",
+                            (ajustar, id_class, id_usuario))
             conn.commit()
             if is_ajax:
-                cur.close(); conn.close()
                 return jsonify({"ok": True})
             flash("Orçamento salvo.", "success")
-            return redirect(url_for("canivete.fp_config_orcamento"))
+            return redirect(url_mes)
 
-        # só as ativas: orçar uma classificação que saiu de uso não faz sentido
+        mes_anterior = date(ano_sel - 1, 12, 1) if mes_sel == 1 else date(ano_sel, mes_sel - 1, 1)
+        # ativas + inativas que ainda têm orçamento neste mês (o passado não muda)
         cur.execute("""
-            SELECT id, nome, valor_orcado, ajustar_ao_real
-            FROM fp_classificacoes
-            WHERE id_usuario = %s AND ativo = TRUE
-            ORDER BY nome
-        """, (id_usuario,))
+            SELECT c.id, c.nome, c.ativo, c.ajustar_ao_real,
+                   o.valor_orcado, a.valor_orcado AS valor_anterior
+            FROM fp_classificacoes c
+            LEFT JOIN fp_orcamentos_mensais o
+                   ON o.id_classificacao = c.id AND o.id_usuario = c.id_usuario AND o.competencia = %s
+            LEFT JOIN fp_orcamentos_mensais a
+                   ON a.id_classificacao = c.id AND a.id_usuario = c.id_usuario AND a.competencia = %s
+            WHERE c.id_usuario = %s AND (c.ativo = TRUE OR o.id_orcamento_mensal IS NOT NULL)
+            ORDER BY c.nome
+        """, (competencia, mes_anterior, id_usuario))
         classificacoes = cur.fetchall() or []
+        tem_orcamento = any(c["valor_orcado"] is not None for c in classificacoes)
+
+        cur.execute("""SELECT max(competencia) AS origem FROM fp_orcamentos_mensais
+                       WHERE id_usuario = %s AND competencia < %s""",
+                    (id_usuario, competencia))
+        origem_copia = cur.fetchone()["origem"]
     finally:
         cur.close(); conn.close()
 
+    nomes_meses = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                   "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
     return render_template(
         "canivete/financas_pessoais/config_orcamento.html",
         nome_usuario=session.get("nome_usuario"),
         url_voltar=url_for("canivete.fp_configuracoes"),
         classificacoes=classificacoes,
+        tem_orcamento=tem_orcamento,
+        origem_copia=origem_copia,
+        nome_mes_anterior=nomes_meses[mes_anterior.month - 1],
+        nomes_meses=nomes_meses,
+        mes_sel=mes_sel,
+        ano_sel=ano_sel,
+        anos=list(range(hoje.year - 3, hoje.year + 2)),
     )
 
 

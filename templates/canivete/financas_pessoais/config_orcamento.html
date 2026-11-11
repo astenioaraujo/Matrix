@@ -29,9 +29,21 @@
   .linha-inativa input[type=text] { color:#777; }
   .badge-inativo { font-size:11px; background:#fee2e2; color:#b91c1c; border-radius:4px; padding:2px 6px; font-weight:700; white-space:nowrap; }
   .nota { color:#64748b; font-size:13px; margin-bottom:14px; }
+  .filtro-bar { display:flex; gap:12px; align-items:flex-end; margin-bottom:18px; }
+  .filtro-bar label { display:block; font-size:12px; font-weight:700; color:#555; margin-bottom:4px; }
+  .filtro-bar select { height:38px; border-radius:8px; border:1px solid #ccc; padding:0 12px; font-size:14px; }
+  .mes-nav { display:flex; align-items:center; gap:6px; }
+  .btn-mes-nav { width:38px; height:38px; background:#c8e6c9; color:#111; border:1px solid #c7c7c7; border-radius:9px; font-size:18px; font-weight:900; cursor:pointer; }
+  .btn-mes-nav:hover { background:#a5d6a7; }
+  .aviso-vazio { background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; padding:12px 16px; border-radius:10px; margin-bottom:16px; display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  .btn-copiar { background:#6b21a8; color:#fff; font-weight:700; border:none; border-radius:8px; padding:8px 16px; cursor:pointer; }
+  .btn-copiar:hover { background:#581c87; }
+  .col-ant { color:#64748b; text-align:right; white-space:nowrap; }
+  tfoot td { font-weight:800; background:#f8fafc; border-top:2px solid #ddd; }
+  #status-salvo { font-size:13px; margin-left:12px; }
 </style>
 
-<h2>🎯 Orçamento por Classificação</h2>
+<h2>🎯 Orçamento Mensal</h2>
 <div class="empresa">Usuário: <strong>{{ nome_usuario }}</strong></div>
 
 {% with msgs = get_flashed_messages(with_categories=true) %}
@@ -40,25 +52,75 @@
   {% endfor %}
 {% endwith %}
 
+{% macro br(v) %}{{ '{:,.2f}'.format(v).replace(',','X').replace('.',',').replace('X','.') }}{% endmacro %}
+
+<form method="get" id="form-filtro">
+  <div class="filtro-bar">
+    <div>
+      <label>Mês</label>
+      <div class="mes-nav">
+        <button type="button" class="btn-mes-nav" onclick="mudarMes(-1)" title="Mês anterior">←</button>
+        <select name="mes" id="fp-mes" onchange="this.form.submit()">
+          {% for m in range(1, 13) %}
+            <option value="{{ m }}" {% if m == mes_sel %}selected{% endif %}>{{ nomes_meses[m-1] }}</option>
+          {% endfor %}
+        </select>
+        <button type="button" class="btn-mes-nav" onclick="mudarMes(1)" title="Próximo mês">→</button>
+      </div>
+    </div>
+    <div>
+      <label>Ano</label>
+      <select name="ano" id="fp-ano" onchange="this.form.submit()">
+        {% for a in anos %}
+          <option value="{{ a }}" {% if a == ano_sel %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+</form>
+
+{% if not tem_orcamento %}
+<div class="aviso-vazio">
+  <span><strong>{{ nomes_meses[mes_sel-1] }}/{{ ano_sel }}</strong> ainda não tem orçamento.</span>
+  {% if origem_copia %}
+  <form method="post" style="margin:0;">
+    <input type="hidden" name="acao" value="copiar">
+    <input type="hidden" name="ano" value="{{ ano_sel }}">
+    <input type="hidden" name="mes" value="{{ mes_sel }}">
+    <button type="submit" class="btn-copiar">Copiar de {{ nomes_meses[origem_copia.month-1] }}/{{ origem_copia.year }}</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="card">
-  <div class="nota">Só as classificações ativas entram aqui.</div>
+  <div class="nota">O valor vale só para {{ nomes_meses[mes_sel-1] }}/{{ ano_sel }}. Despesa negativa, receita positiva; valor zero tira a classificação do orçamento do mês. "Ajustar ao real" é da classificação e vale para todos os meses.</div>
   <form method="post" id="form-orcamento">
+    <input type="hidden" name="acao" value="salvar">
+    <input type="hidden" name="ano" value="{{ ano_sel }}">
+    <input type="hidden" name="mes" value="{{ mes_sel }}">
     <div class="table-wrapper">
       <table>
         <thead>
           <tr>
             <th>Classificação</th>
-            <th style="width:180px;">Valor Orçado (R$)</th>
+            <th style="width:150px; text-align:right;">{{ nome_mes_anterior }} (R$)</th>
+            <th style="width:180px;">Orçado no mês (R$)</th>
             <th style="width:160px; text-align:center;">Ajustar ao real</th>
           </tr>
         </thead>
         <tbody>
+          {% set ns = namespace(tot=0, tot_ant=0) %}
           {% for c in classificacoes %}
-          <tr>
-            <td>{{ c.nome }}</td>
+          {% set ns.tot = ns.tot + (c.valor_orcado or 0) %}
+          {% set ns.tot_ant = ns.tot_ant + (c.valor_anterior or 0) %}
+          <tr {% if not c.ativo %}class="linha-inativa"{% endif %}>
+            <td>{{ c.nome }} {% if not c.ativo %}<span class="badge-inativo">inativa</span>{% endif %}</td>
+            <td class="col-ant">{{ br(c.valor_anterior) if c.valor_anterior is not none else '—' }}</td>
             <td>
-              <input type="text" name="orcado_{{ c.id }}"
-                     value="{{ '{:,.2f}'.format(c.valor_orcado or 0).replace(',','X').replace('.',',').replace('X','.') }}"
+              <input type="text" name="orcado_{{ c.id }}" class="inp-orcado"
+                     value="{{ br(c.valor_orcado) if c.valor_orcado is not none else '' }}"
+                     placeholder="0,00"
                      style="text-align:right;" onblur="autoSalvarOrcamento()">
             </td>
             <td style="text-align:center;">
@@ -72,26 +134,69 @@
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="3" style="color:#888; font-style:italic; text-align:center; padding:18px;">Nenhuma classificação ativa.</td></tr>
+          <tr><td colspan="4" style="color:#888; font-style:italic; text-align:center; padding:18px;">Nenhuma classificação ativa.</td></tr>
           {% endfor %}
         </tbody>
+        <tfoot>
+          <tr>
+            <td>TOTAL</td>
+            <td class="col-ant">{{ br(ns.tot_ant) }}</td>
+            <td style="text-align:right; padding-right:22px;" id="tot-orcado">{{ br(ns.tot) }}</td>
+            <td></td>
+          </tr>
+        </tfoot>
       </table>
     </div>
     <div style="margin-top:16px;">
       <button type="submit" class="btn-incluir">Salvar Orçamento</button>
+      <span id="status-salvo"></span>
     </div>
   </form>
 </div>
 
 
 <script>
+  function paraNumeroBR(t) {
+    t = (t || "").trim();
+    if (!t) return 0;
+    const n = parseFloat(t.replace(/\./g, "").replace(",", "."));
+    return isNaN(n) ? 0 : n;
+  }
+  function recalcularTotal() {
+    let tot = 0;
+    document.querySelectorAll(".inp-orcado").forEach(i => tot += paraNumeroBR(i.value));
+    document.getElementById("tot-orcado").textContent =
+      tot.toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  }
   function autoSalvarOrcamento() {
+    recalcularTotal();
+    const status = document.getElementById("status-salvo");
     const fd = new FormData(document.getElementById("form-orcamento"));
     fetch(window.location.pathname, {
       method: "POST",
       headers: { "X-Requested-With": "XMLHttpRequest" },
       body: fd
-    });
+    }).then(r => r.json().then(j => ({ok: r.ok && j.ok, j})))
+      .then(({ok, j}) => {
+        status.style.color = ok ? "#15803d" : "#b91c1c";
+        status.textContent = ok ? "✓ salvo" : ("Não salvou: " + (j.erro || "erro"));
+      })
+      .catch(() => { status.style.color = "#b91c1c"; status.textContent = "Não salvou: falha de conexão"; });
+  }
+  // Setas ← →: andam um mês, virando o ano em dezembro/janeiro (mesmo padrão do Matricial)
+  function mudarMes(delta) {
+    const selMes = document.getElementById("fp-mes");
+    const selAno = document.getElementById("fp-ano");
+    let mes = parseInt(selMes.value, 10) + delta;
+    let ano = parseInt(selAno.value, 10);
+    if (mes < 1)  { mes = 12; ano -= 1; }
+    if (mes > 12) { mes = 1;  ano += 1; }
+    if (!Array.from(selAno.options).some(o => o.value === String(ano))) {
+      selAno.add(new Option(ano, ano), delta < 0 ? 0 : undefined);
+    }
+    selMes.value = String(mes);
+    selAno.value = String(ano);
+    selMes.form.submit();
   }
 </script>
 {% endblock %}

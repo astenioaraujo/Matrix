@@ -238,6 +238,15 @@
   </div>
 </form>
 
+{% if not tem_orcamento_mes %}
+<div style="background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; padding:10px 14px; border-radius:8px; margin-bottom:14px;">
+  {{ nomes_meses[mes_sel-1] }}/{{ ano_sel }} ainda não tem orçamento — o Orçado sai zerado.
+  {% if pode_configurar %}
+  <a href="{{ url_for('canivete.fp_config_orcamento', ano=ano_sel, mes=mes_sel) }}" style="color:#6b21a8; font-weight:700;">Montar o orçamento do mês →</a>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if totais_classificacao %}
 <div class="layout-consulta">
 
