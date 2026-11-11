@@ -135,10 +135,16 @@
   <div class="box">
     <div class="box-topo">
       <div class="titulo">Escolher empresa</div>
-      {% if tem_atalhos %}
-        <button type="button" class="btn-config-atalhos" id="btn-config-atalhos"
-                onclick="alternarAtalhos()">⚙ Configurar atalhos da barra do topo</button>
-      {% endif %}
+      <div style="display:flex; flex-direction:column; align-items:flex-end; gap:2px;">
+        {% if tem_atalhos %}
+          <button type="button" class="btn-config-atalhos" id="btn-config-atalhos"
+                  onclick="alternarAtalhos()">⚙ Configurar atalhos da barra do topo</button>
+        {% endif %}
+        {% if (session.get('tipo_global') or '')|lower == 'superusuario' %}
+          <a href="{{ url_for('auth.empresas_arquivadas') }}" class="btn-config-atalhos"
+             style="text-decoration:none;">🗄 Empresas arquivadas</a>
+        {% endif %}
+      </div>
     </div>
 
     {% with mensagens = get_flashed_messages(with_categories=true) %}

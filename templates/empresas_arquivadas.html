@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+  .box-arq {
+    width: 720px;
+    max-width: 100%;
+    margin: 40px auto;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 12px;
+    padding: 24px;
+    box-sizing: border-box;
+  }
+  .box-arq .topo {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .box-arq .titulo { font-size: 24px; font-weight: 700; }
+  .box-arq .ajuda { font-size: 13px; color: #666; margin-bottom: 16px; }
+  .box-arq table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .box-arq th {
+    text-align: left;
+    background: #f2f2f2;
+    border-bottom: 1px solid #d9d9d9;
+    padding: 8px 10px;
+  }
+  .box-arq td { border-bottom: 1px solid #eee; padding: 8px 10px; color: #555; }
+  .box-arq td.num { text-align: right; }
+  .box-arq .vazio { color: #777; font-style: italic; padding: 12px 0; }
+  .box-arq a.voltar { color: #1565c0; text-decoration: none; font-size: 14px; }
+</style>
+
+<div class="box-arq">
+  <div class="topo">
+    <div class="titulo">🗄 Empresas arquivadas</div>
+    <a class="voltar" href="{{ url_for('auth.escolher_empresa') }}">← Voltar</a>
+  </div>
+  <div class="ajuda">
+    Empresas arquivadas não aparecem no seletor nem nos atalhos do topo e não podem ser
+    acessadas, mas os dados delas continuam guardados. O código de uma empresa arquivada
+    não pode ser usado por outra empresa.
+  </div>
+
+  {% if empresas %}
+    <table>
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Empresa</th>
+          <th style="text-align:right;">Filiais</th>
+          <th>Arquivada em</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in empresas %}
+          <tr>
+            <td>{{ e.cod_empresa }}</td>
+            <td>{{ e.nome_fantasia }}</td>
+            <td class="num">{{ e.qtd_filiais }}</td>
+            <td>{{ e.arquivada_em.strftime('%d/%m/%Y') if e.arquivada_em else '' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="vazio">Nenhuma empresa arquivada.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

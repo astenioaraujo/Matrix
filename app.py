@@ -111,6 +111,49 @@ from db import fechar_conexao_da_requisicao
 app.teardown_appcontext(fechar_conexao_da_requisicao)
 
 
+@app.before_request
+def _barrar_empresa_arquivada():
+    """
+    O login já não oferece empresa arquivada, mas uma sessão aberta antes do
+    arquivamento ainda carrega a empresa na lista e talvez como empresa atual.
+    Aqui ela sai da sessão, e quem estava dentro dela volta ao seletor.
+    """
+    from flask import session, request, redirect, url_for, flash
+
+    if not session.get("id_usuario") or request.endpoint in (None, "static"):
+        return None
+
+    try:
+        from services.empresas_service import codigos_arquivados
+        arquivadas = codigos_arquivados()
+    except Exception:
+        return None
+    if not arquivadas:
+        return None
+
+    disponiveis = session.get("empresas_disponiveis") or []
+    filtradas = [e for e in disponiveis if e.get("cod_empresa") not in arquivadas]
+    if len(filtradas) != len(disponiveis):
+        session["empresas_disponiveis"] = filtradas
+    atalhos = session.get("atalhos_empresas") or []
+    if any(c in arquivadas for c in atalhos):
+        session["atalhos_empresas"] = [c for c in atalhos if c not in arquivadas]
+
+    atual = str(session.get("cod_empresa") or "").strip()
+    if atual and atual in arquivadas:
+        session.pop("cod_empresa", None)
+        session.pop("nome_empresa", None)
+        session.pop("perfil_empresa", None)
+        if not filtradas:
+            session.clear()
+            flash("A empresa foi arquivada e não está mais disponível.", "error")
+            return redirect(url_for("auth.index"))
+        flash("A empresa foi arquivada e não está mais disponível.", "error")
+        return redirect(url_for("auth.escolher_empresa"))
+
+    return None
+
+
 @app.context_processor
 def _injetar_atalhos_topo():
     """

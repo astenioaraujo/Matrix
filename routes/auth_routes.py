@@ -15,6 +15,11 @@ def _carregar_atalhos_empresas(cur, id_usuario):
         SELECT cod_empresa
         FROM usuarios_atalhos_empresas
         WHERE id_usuario = %s
+          AND NOT EXISTS (
+              SELECT 1 FROM empresas e
+              WHERE e.cod_empresa = usuarios_atalhos_empresas.cod_empresa
+                AND e.arquivada
+          )
     """, (id_usuario,))
     return [str(r["cod_empresa"]).strip() for r in cur.fetchall()]
 
@@ -59,6 +64,7 @@ def index():
                 cur.execute("""
                     SELECT cod_empresa, nome_fantasia
                     FROM empresas
+                    WHERE NOT arquivada
                     ORDER BY cod_empresa
                 """)
                 empresas = cur.fetchall()
@@ -79,6 +85,7 @@ def index():
                       ON e.cod_empresa = ue.cod_empresa
                     WHERE ue.id_usuario = %s
                       AND ue.ativo = TRUE
+                      AND NOT e.arquivada
                     ORDER BY e.cod_empresa
                 """, (usuario["id_usuario"],))
                 empresas = cur.fetchall()
@@ -215,6 +222,23 @@ def trocar_empresa_direto(cod):
     session["perfil_empresa"] = empresa["perfil_empresa"]
 
     return redirect(url_for("sistema.selecionar_sistema"))
+
+
+@auth_bp.route("/empresas_arquivadas")
+def empresas_arquivadas():
+    """Só para o superusuário: quais empresas estão arquivadas.
+
+    É uma lista, não um ponto de entrada — arquivar/desarquivar é feito no
+    banco, e a empresa arquivada não abre nem para o superusuário.
+    """
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+    if str(session.get("tipo_global") or "").strip().lower() != "superusuario":
+        flash("Acesso restrito ao superusuário.", "error")
+        return redirect(url_for("auth.escolher_empresa"))
+
+    from services.empresas_service import empresas_arquivadas as listar
+    return render_template("empresas_arquivadas.html", empresas=listar())
 
 
 @auth_bp.route("/logout")
