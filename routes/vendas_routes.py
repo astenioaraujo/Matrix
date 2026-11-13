@@ -167,6 +167,16 @@ def formatar_data_brasil(dt):
     except Exception:
         return dt.strftime("%d/%m/%y")
 
+# PROVISÓRIO. Posto renomeado no WebPostos: durante a troca o relatório de
+# vendas diárias traz o mesmo posto com os dois nomes (o antigo até a virada,
+# o novo depois). Empresa → {nome antigo: nome novo, que é o do cadastro}.
+# Quando os arquivos pararem de trazer o nome antigo, apagar a entrada.
+APELIDOS_FILIAL_IMPORTACAO = {
+    # Carnaubais (filial 11): renomeado em 11/11/2026.
+    "EMP012": {"AUTO POSTO SAO JOAO CARNAUBAIS": "POSTO CARNAUBAIS"},
+}
+
+
 def normalizar_nome_filial_importacao(nome):
     if not nome:
         return ""
@@ -2250,6 +2260,13 @@ def vendas_importar_diarias():
 
             if nome_norm:
                 mapa_filiais[nome_norm] = int(cod_filial)
+
+        # Nome antigo que o WebPostos ainda manda para um posto renomeado:
+        # as linhas dele caem na mesma filial do nome novo.
+        for antigo, novo in APELIDOS_FILIAL_IMPORTACAO.get(cod_empresa, {}).items():
+            cod_novo = mapa_filiais.get(normalizar_nome_filial_importacao(novo))
+            if cod_novo is not None:
+                mapa_filiais[normalizar_nome_filial_importacao(antigo)] = cod_novo
 
         # --- validação prévia de filiais ---
         nomes_excel = set()
