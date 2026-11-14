@@ -68,6 +68,12 @@
     </a>
   {% endif %}
 
+  {% if pode_problemas %}
+    <a class="menu-card" style="background:#b45309;" href="{{ url_for('canivete.problemas_pastas') }}">
+      🧩 Gerenciador de Problemas
+    </a>
+  {% endif %}
+
 </div>
 
 {% endblock %}

@@ -268,7 +268,10 @@
         <tbody>
           {% set ns_tot = namespace(saldo_sum=0, extrap_sum=0) %}
           {% for t in totais_classificacao %}
-            {% set orcado_ef = t.realizado | float if t.ajustar_ao_real else t.orcado | float %}
+            {# "ajustar ao real" só troca o orçado pelo realizado depois que houve pagamento:
+               sem nada pago, o orçado continua valendo — senão o saldo zerava e a conta
+               sumia do "Com saldo" antes de ser paga (UNIMED, 11/2026) #}
+            {% set orcado_ef = t.realizado | float if (t.ajustar_ao_real and t.realizado | float != 0) else t.orcado | float %}
             {% set saldo_real = (t.realizado | float) - orcado_ef %}
             {% if filtro != 'com_saldo' or saldo_real > 0 %}
             {% set saldo_exib = saldo_real if saldo_real > 0 else 0 %}

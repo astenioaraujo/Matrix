@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  h2 { font-size: 26px; font-weight: 800; margin-bottom: 4px; }
+  .sub { color:#64748b; font-size:13.5px; margin-bottom:4px; }
+  .pasta-desc { color:#475569; font-size:14px; white-space:pre-wrap; margin:6px 0 16px; }
+  .msg-ok  { background:#eef9d2; color:#2f4f00; border:1px solid #d7ef98; padding:10px 14px; border-radius:8px; margin-bottom:14px; }
+  .msg-err { background:#ffe6e6; color:#8b0000; border:1px solid #f2b6b6; padding:10px 14px; border-radius:8px; margin-bottom:14px; }
+  .btn { border:none; border-radius:8px; padding:8px 18px; font-weight:700; cursor:pointer; color:#fff; font-size:14px; }
+  .btn-verde { background:#16a34a; } .btn-verde:hover { background:#15803d; }
+  .btn-azul  { background:#1d4ed8; } .btn-azul:hover  { background:#1e40af; }
+  .btn-vermelho { background:#dc2626; } .btn-vermelho:hover { background:#b91c1c; }
+  .btn-cinza { background:#e5e7eb; color:#111; }
+  .barra { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:12px 0 18px; }
+  .chip { text-decoration:none; padding:6px 12px; border-radius:999px; font-size:13px; font-weight:700; border:1px solid #cbd5e1; color:#334155; background:#fff; }
+  .chip.ativo { background:#1d4ed8; border-color:#1d4ed8; color:#fff; }
+  .form-problema { display:none; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:16px; margin-bottom:18px; }
+  .form-problema.aberta { display:block; }
+  .linha-campos { display:grid; grid-template-columns: 2fr 1fr 1fr 1.3fr; gap:10px; }
+  .campo { margin-bottom:10px; }
+  .campo label { display:block; font-size:13px; font-weight:700; color:#334155; margin-bottom:4px; }
+  .campo input, .campo textarea, .campo select { width:100%; border:1px solid #ccc; border-radius:7px; padding:7px 10px; font-size:14px; font-family:inherit; background:#fff; }
+  .problema { background:#fff; border:1px solid #ddd; border-left:6px solid #94a3b8; border-radius:12px; padding:14px 16px; margin-bottom:12px; }
+  .problema.st-ABERTO { border-left-color:#dc2626; }
+  .problema.st-EM_ANDAMENTO { border-left-color:#f59e0b; }
+  .problema.st-RESOLVIDO { border-left-color:#16a34a; background:#fafdfb; }
+  .cab { display:flex; gap:10px; align-items:center; flex-wrap:wrap; cursor:pointer; }
+  .titulo { font-size:16px; font-weight:800; color:#111; flex:1; min-width:200px; }
+  .st-RESOLVIDO .titulo { color:#475569; }
+  .selo { font-size:12px; font-weight:700; border-radius:6px; padding:3px 8px; white-space:nowrap; }
+  .s-ABERTO { background:#fee2e2; color:#b91c1c; }
+  .s-EM_ANDAMENTO { background:#fef3c7; color:#92400e; }
+  .s-RESOLVIDO { background:#dcfce7; color:#166534; }
+  .p-ALTA { background:#7f1d1d; color:#fff; }
+  .p-MEDIA { background:#e0e7ff; color:#3730a3; }
+  .p-BAIXA { background:#f1f5f9; color:#475569; }
+  .meta { color:#64748b; font-size:12.5px; margin-top:6px; }
+  .resumo { color:#334155; font-size:14px; white-space:pre-wrap; margin-top:6px; }
+  .solucao { background:#f0fdf4; border-radius:8px; padding:8px 10px; margin-top:8px; font-size:14px; white-space:pre-wrap; color:#14532d; }
+  .editar { display:none; border-top:1px dashed #ddd; margin-top:12px; padding-top:12px; }
+  .editar.aberta { display:block; }
+  .vazio { color:#888; font-style:italic; padding:24px; text-align:center; background:#fff; border:1px dashed #ccc; border-radius:12px; }
+  @media (max-width: 800px) { .linha-campos { grid-template-columns: 1fr; } }
+</style>
+
+<h2>📁 {{ pasta.nome }}</h2>
+<div class="sub">Empresa: <strong>{{ nome_empresa }}</strong> · Pasta criada em {{ pasta.criado_em.strftime('%d/%m/%Y às %H:%M') if pasta.criado_em else '—' }}{% if pasta.criado_por %} por {{ pasta.criado_por }}{% endif %}</div>
+{% if pasta.descricao %}<div class="pasta-desc">{{ pasta.descricao }}</div>{% endif %}
+
+{% with msgs = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in msgs %}
+    <div class="{{ 'msg-ok' if cat == 'success' else 'msg-err' }}">{{ msg }}</div>
+  {% endfor %}
+{% endwith %}
+
+<div class="barra">
+  <button type="button" class="btn btn-verde" onclick="abrirNovo()">+ Novo Problema</button>
+  <span style="width:12px;"></span>
+  {% for chave, rotulo in [('PENDENTES','Pendentes'), ('ABERTO','Abertos'), ('EM_ANDAMENTO','Em andamento'), ('RESOLVIDO','Resolvidos'), ('TODOS','Todos')] %}
+    <a class="chip {{ 'ativo' if filtro == chave }}" href="{{ url_for('canivete.problemas_pasta', id_pasta=pasta.id_pasta, status=chave) }}">{{ rotulo }} ({{ contagem.get(chave, 0) }})</a>
+  {% endfor %}
+</div>
+
+{% macro campos(p=None) %}
+  <div class="linha-campos">
+    <div class="campo"><label>Título</label><input type="text" name="titulo" value="{{ p.titulo if p else '' }}" required maxlength="200"></div>
+    <div class="campo"><label>Prioridade</label>
+      <select name="prioridade">
+        {% for v, r in prioridade_opcoes %}<option value="{{ v }}" {{ 'selected' if (p and p.prioridade == v) or (not p and v == 'MEDIA') }}>{{ r }}</option>{% endfor %}
+      </select></div>
+    <div class="campo"><label>Status</label>
+      <select name="status">
+        {% for v, r in status_opcoes %}<option value="{{ v }}" {{ 'selected' if (p and p.status == v) or (not p and v == 'ABERTO') }}>{{ r }}</option>{% endfor %}
+      </select></div>
+    <div class="campo"><label>Responsável</label><input type="text" name="responsavel" value="{{ p.responsavel or '' if p else '' }}" maxlength="120"></div>
+  </div>
+  <div class="campo"><label>Descrição do problema</label><textarea name="descricao" rows="3">{{ p.descricao or '' if p else '' }}</textarea></div>
+  <div class="campo"><label>Solução / encaminhamento</label><textarea name="solucao" rows="2">{{ p.solucao or '' if p else '' }}</textarea></div>
+{% endmacro %}
+
+<form method="post" id="novo-problema" class="form-problema">
+  <input type="hidden" name="acao" value="incluir">
+  <input type="hidden" name="filtro" value="{{ filtro }}">
+  {{ campos() }}
+  <button type="submit" class="btn btn-verde">Registrar problema</button>
+  <button type="button" class="btn btn-cinza" onclick="document.getElementById('novo-problema').classList.remove('aberta')">Cancelar</button>
+</form>
+
+{% for p in problemas %}
+<div class="problema st-{{ p.status }}">
+  <div class="cab" onclick="alternar({{ p.id_problema }})" title="Clique para editar">
+    <span class="titulo">{{ p.titulo }}</span>
+    <span class="selo p-{{ p.prioridade }}">{{ rotulo_prioridade.get(p.prioridade, p.prioridade) }}</span>
+    <span class="selo s-{{ p.status }}">{{ rotulo_status.get(p.status, p.status) }}</span>
+  </div>
+  {% if p.descricao %}<div class="resumo">{{ p.descricao }}</div>{% endif %}
+  {% if p.solucao %}<div class="solucao"><strong>Solução:</strong> {{ p.solucao }}</div>{% endif %}
+  <div class="meta">
+    Registrado em {{ p.criado_em.strftime('%d/%m/%Y %H:%M') }}{% if p.criado_por %} por {{ p.criado_por }}{% endif %}
+    {% if p.responsavel %} · Responsável: <strong>{{ p.responsavel }}</strong>{% endif %}
+    {% if p.status == 'RESOLVIDO' and p.resolvido_em %}
+      · Resolvido em {{ p.resolvido_em.strftime('%d/%m/%Y') }} ({{ p.dias }} dia{{ 's' if p.dias != 1 }})
+    {% else %}
+      · Em aberto há {{ p.dias }} dia{{ 's' if p.dias != 1 }}
+    {% endif %}
+  </div>
+  <div class="editar" id="editar-{{ p.id_problema }}">
+    <form method="post" style="margin:0;">
+      <input type="hidden" name="acao" value="editar">
+      <input type="hidden" name="id_problema" value="{{ p.id_problema }}">
+      <input type="hidden" name="filtro" value="{{ filtro }}">
+      {{ campos(p) }}
+      <div style="display:flex; gap:8px;">
+        <button type="submit" class="btn btn-azul">Salvar</button>
+        <button type="button" class="btn btn-cinza" onclick="alternar({{ p.id_problema }})">Fechar</button>
+        <span style="flex:1;"></span>
+        <button type="submit" form="excluir-{{ p.id_problema }}" class="btn btn-vermelho">Excluir</button>
+      </div>
+    </form>
+    <form method="post" id="excluir-{{ p.id_problema }}" style="display:none;" onsubmit="return confirmarEnvio(this, 'Excluir este problema?')">
+      <input type="hidden" name="acao" value="excluir">
+      <input type="hidden" name="id_problema" value="{{ p.id_problema }}">
+      <input type="hidden" name="filtro" value="{{ filtro }}">
+    </form>
+  </div>
+</div>
+{% else %}
+  <div class="vazio">{% if contagem.TODOS %}Nenhum problema neste filtro.{% else %}Nenhum problema nesta pasta. Use "+ Novo Problema".{% endif %}</div>
+{% endfor %}
+
+<script>
+  function abrirNovo() {
+    const f = document.getElementById("novo-problema");
+    f.classList.toggle("aberta");
+    if (f.classList.contains("aberta")) f.querySelector("input[name=titulo]").focus();
+  }
+  function alternar(id) { document.getElementById("editar-" + id).classList.toggle("aberta"); }
+</script>
+{% endblock %}

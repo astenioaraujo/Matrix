@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  h2 { font-size: 26px; font-weight: 800; margin-bottom: 6px; }
+  .empresa { font-size: 17px; margin-bottom: 20px; color: #444; }
+  .msg-ok  { background:#eef9d2; color:#2f4f00; border:1px solid #d7ef98; padding:10px 14px; border-radius:8px; margin-bottom:14px; }
+  .msg-err { background:#ffe6e6; color:#8b0000; border:1px solid #f2b6b6; padding:10px 14px; border-radius:8px; margin-bottom:14px; }
+  .barra { display:flex; gap:10px; align-items:center; margin-bottom:18px; }
+  .btn { border:none; border-radius:8px; padding:8px 18px; font-weight:700; cursor:pointer; color:#fff; font-size:14px; }
+  .btn-verde { background:#16a34a; } .btn-verde:hover { background:#15803d; }
+  .btn-azul  { background:#1d4ed8; } .btn-azul:hover  { background:#1e40af; }
+  .btn-vermelho { background:#dc2626; } .btn-vermelho:hover { background:#b91c1c; }
+  .btn-cinza { background:#e5e7eb; color:#111; }
+  .nova-pasta { display:none; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:16px; margin-bottom:20px; }
+  .nova-pasta.aberta { display:block; }
+  .campo { margin-bottom:10px; }
+  .campo label { display:block; font-size:13px; font-weight:700; color:#334155; margin-bottom:4px; }
+  .campo input, .campo textarea { width:100%; border:1px solid #ccc; border-radius:7px; padding:7px 10px; font-size:14px; font-family:inherit; }
+  .grade-pastas { display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:16px; }
+  .pasta { background:#fff; border:1px solid #ddd; border-left:6px solid #f59e0b; border-radius:12px; padding:16px 18px; display:flex; flex-direction:column; gap:8px; }
+  .pasta-nome { font-size:18px; font-weight:800; color:#111; text-decoration:none; }
+  .pasta-nome:hover { text-decoration:underline; }
+  .pasta-desc { color:#475569; font-size:14px; white-space:pre-wrap; }
+  .pasta-criada { color:#64748b; font-size:12.5px; }
+  .contadores { display:flex; flex-wrap:wrap; gap:6px; }
+  .selo { font-size:12px; font-weight:700; border-radius:6px; padding:3px 8px; }
+  .selo-aberto { background:#fee2e2; color:#b91c1c; }
+  .selo-andamento { background:#fef3c7; color:#92400e; }
+  .selo-resolvido { background:#dcfce7; color:#166534; }
+  .selo-alta { background:#7f1d1d; color:#fff; }
+  .selo-vazio { background:#f1f5f9; color:#64748b; }
+  .acoes { display:flex; gap:8px; margin-top:4px; }
+  .acoes .btn { padding:5px 12px; font-size:13px; }
+  .editar { display:none; border-top:1px dashed #ddd; padding-top:10px; }
+  .editar.aberta { display:block; }
+  .vazio { color:#888; font-style:italic; padding:24px; text-align:center; background:#fff; border:1px dashed #ccc; border-radius:12px; }
+</style>
+
+<h2>🧩 Gerenciador de Problemas</h2>
+<div class="empresa">Empresa: <strong>{{ nome_empresa }}</strong></div>
+
+{% with msgs = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in msgs %}
+    <div class="{{ 'msg-ok' if cat == 'success' else 'msg-err' }}">{{ msg }}</div>
+  {% endfor %}
+{% endwith %}
+
+<div class="barra">
+  <button type="button" class="btn btn-verde" onclick="document.getElementById('nova-pasta').classList.toggle('aberta'); document.getElementById('nome-nova').focus();">+ Nova Pasta</button>
+</div>
+
+<form method="post" id="nova-pasta" class="nova-pasta">
+  <input type="hidden" name="acao" value="incluir">
+  <div class="campo"><label>Nome da pasta</label><input type="text" name="nome" id="nome-nova" required maxlength="120"></div>
+  <div class="campo"><label>Descrição (opcional)</label><textarea name="descricao" rows="2"></textarea></div>
+  <button type="submit" class="btn btn-verde">Criar pasta</button>
+  <button type="button" class="btn btn-cinza" onclick="document.getElementById('nova-pasta').classList.remove('aberta')">Cancelar</button>
+</form>
+
+{% if pastas %}
+<div class="grade-pastas">
+  {% for p in pastas %}
+  <div class="pasta">
+    <a class="pasta-nome" href="{{ url_for('canivete.problemas_pasta', id_pasta=p.id_pasta) }}">📁 {{ p.nome }}</a>
+    <div class="pasta-criada">Criada em {{ p.criado_em.strftime('%d/%m/%Y às %H:%M') if p.criado_em else '—' }}{% if p.criado_por %} por {{ p.criado_por }}{% endif %}</div>
+    {% if p.descricao %}<div class="pasta-desc">{{ p.descricao }}</div>{% endif %}
+    <div class="contadores">
+      {% if p.total == 0 %}
+        <span class="selo selo-vazio">Nenhum problema</span>
+      {% else %}
+        {% if p.abertos %}<span class="selo selo-aberto">{{ p.abertos }} aberto{{ 's' if p.abertos > 1 }}</span>{% endif %}
+        {% if p.andamento %}<span class="selo selo-andamento">{{ p.andamento }} em andamento</span>{% endif %}
+        {% if p.resolvidos %}<span class="selo selo-resolvido">{{ p.resolvidos }} resolvido{{ 's' if p.resolvidos > 1 }}</span>{% endif %}
+        {% if p.altas %}<span class="selo selo-alta">{{ p.altas }} alta prioridade</span>{% endif %}
+      {% endif %}
+    </div>
+    <div class="acoes">
+      <a class="btn btn-azul" style="text-decoration:none;" href="{{ url_for('canivete.problemas_pasta', id_pasta=p.id_pasta) }}">Abrir</a>
+      <button type="button" class="btn btn-cinza" onclick="document.getElementById('editar-{{ p.id_pasta }}').classList.toggle('aberta')">Editar</button>
+      {% if p.total == 0 %}
+      <form method="post" style="margin:0;" onsubmit="return confirmarEnvio(this, 'Excluir esta pasta?')">
+        <input type="hidden" name="acao" value="excluir">
+        <input type="hidden" name="id_pasta" value="{{ p.id_pasta }}">
+        <button type="submit" class="btn btn-vermelho">Excluir</button>
+      </form>
+      {% endif %}
+    </div>
+    <form method="post" id="editar-{{ p.id_pasta }}" class="editar">
+      <input type="hidden" name="acao" value="editar">
+      <input type="hidden" name="id_pasta" value="{{ p.id_pasta }}">
+      <div class="campo"><label>Nome</label><input type="text" name="nome" value="{{ p.nome }}" required maxlength="120"></div>
+      <div class="campo"><label>Descrição</label><textarea name="descricao" rows="2">{{ p.descricao or '' }}</textarea></div>
+      <button type="submit" class="btn btn-azul">Salvar</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+  <div class="vazio">Nenhuma pasta criada. Comece por "+ Nova Pasta" e, dentro dela, registre os problemas.</div>
+{% endif %}
+
+{% endblock %}

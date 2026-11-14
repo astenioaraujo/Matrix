@@ -48,6 +48,7 @@ def menu_canivete():
         url_voltar=url_for("sistema.selecionar_sistema"),
         pode_financas_pessoais=_tem_perm(id_usuario, cod_empresa, "FINANCAS_PESSOAIS_MENU"),
         pode_agenda=_tem_perm(id_usuario, cod_empresa, "AGENDA"),
+        pode_problemas=_tem_perm(id_usuario, cod_empresa, "PROBLEMAS"),
     )
 
 
@@ -2608,3 +2609,264 @@ def agenda_dia_journal_excluir():
     if r:
         return jsonify({"ok": False}), 401
     return _journal_dia(_journal_excluir)
+
+
+# ===========================================================
+# GERENCIADOR DE PROBLEMAS (por empresa)
+# -----------------------------------------------------------
+# Pasta → problemas. Tudo por cod_empresa: quem tem CANIVETE/PROBLEMAS na
+# empresa vê as mesmas pastas. Contagens e dias em aberto são calculados na
+# consulta, nunca gravados. criado_em vem do NOW() do banco, que roda em UTC.
+# ===========================================================
+
+from datetime import timedelta as _timedelta_problemas
+
+STATUS_PROBLEMA = [
+    ("ABERTO", "Aberto"),
+    ("EM_ANDAMENTO", "Em andamento"),
+    ("RESOLVIDO", "Resolvido"),
+]
+PRIORIDADES_PROBLEMA = [
+    ("ALTA", "Alta"),
+    ("MEDIA", "Média"),
+    ("BAIXA", "Baixa"),
+]
+_STATUS_VALIDOS = {s for s, _ in STATUS_PROBLEMA}
+_PRIORIDADES_VALIDAS = {p for p, _ in PRIORIDADES_PROBLEMA}
+
+
+def _utc_para_local(dt):
+    """timestamp sem fuso gravado pelo NOW() do banco (UTC) → horário daqui."""
+    if not dt:
+        return dt
+    return dt - _timedelta_problemas(hours=3)
+
+
+def _guarda_problemas():
+    r = _checar_login()
+    if r:
+        return r
+    if not _tem_perm(session["id_usuario"], str(session["cod_empresa"]).strip(), "PROBLEMAS"):
+        flash("Você não tem permissão para acessar o Gerenciador de Problemas.", "error")
+        return redirect(url_for("canivete.menu_canivete"))
+    return None
+
+
+@canivete_bp.route("/problemas", methods=["GET", "POST"])
+def problemas_pastas():
+    r = _guarda_problemas()
+    if r:
+        return r
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if request.method == "POST":
+            acao = request.form.get("acao")
+            nome = (request.form.get("nome") or "").strip()
+            descricao = (request.form.get("descricao") or "").strip() or None
+            id_pasta = request.form.get("id_pasta", type=int)
+
+            if acao in ("incluir", "editar"):
+                if not nome:
+                    flash("Informe o nome da pasta.", "error")
+                    return redirect(url_for("canivete.problemas_pastas"))
+                cur.execute("""
+                    SELECT 1 FROM problemas_pastas
+                     WHERE cod_empresa = %s AND upper(btrim(nome)) = upper(btrim(%s))
+                       AND id_pasta IS DISTINCT FROM %s
+                """, (cod_empresa, nome, id_pasta if acao == "editar" else None))
+                if cur.fetchone():
+                    flash(f'Já existe uma pasta chamada "{nome}".', "error")
+                    return redirect(url_for("canivete.problemas_pastas"))
+
+            if acao == "incluir":
+                cur.execute("""
+                    INSERT INTO problemas_pastas (cod_empresa, nome, descricao, id_usuario_criacao)
+                    VALUES (%s, %s, %s, %s) RETURNING id_pasta
+                """, (cod_empresa, nome, descricao, id_usuario))
+                novo = cur.fetchone()["id_pasta"]
+                conn.commit()
+                flash(f'Pasta "{nome}" criada.', "success")
+                return redirect(url_for("canivete.problemas_pasta", id_pasta=novo))
+
+            if acao == "editar" and id_pasta:
+                cur.execute("""
+                    UPDATE problemas_pastas SET nome = %s, descricao = %s, atualizado_em = NOW()
+                     WHERE id_pasta = %s AND cod_empresa = %s
+                """, (nome, descricao, id_pasta, cod_empresa))
+                conn.commit()
+                flash("Pasta atualizada.", "success")
+
+            elif acao == "excluir" and id_pasta:
+                cur.execute("SELECT count(*) AS n FROM problemas WHERE id_pasta = %s AND cod_empresa = %s",
+                            (id_pasta, cod_empresa))
+                if cur.fetchone()["n"]:
+                    flash("A pasta tem problemas cadastrados. Exclua os problemas antes de excluir a pasta.", "error")
+                else:
+                    cur.execute("DELETE FROM problemas_pastas WHERE id_pasta = %s AND cod_empresa = %s",
+                                (id_pasta, cod_empresa))
+                    conn.commit()
+                    flash("Pasta excluída." if cur.rowcount else "Pasta não encontrada.",
+                          "success" if cur.rowcount else "error")
+            return redirect(url_for("canivete.problemas_pastas"))
+
+        cur.execute("""
+            SELECT p.id_pasta, p.nome, p.descricao, p.criado_em, u.nome AS criado_por,
+                   count(pr.id_problema)                                         AS total,
+                   count(pr.id_problema) FILTER (WHERE pr.status = 'ABERTO')       AS abertos,
+                   count(pr.id_problema) FILTER (WHERE pr.status = 'EM_ANDAMENTO') AS andamento,
+                   count(pr.id_problema) FILTER (WHERE pr.status = 'RESOLVIDO')    AS resolvidos,
+                   count(pr.id_problema) FILTER (WHERE pr.status <> 'RESOLVIDO'
+                                                   AND pr.prioridade = 'ALTA')     AS altas
+              FROM problemas_pastas p
+              LEFT JOIN usuarios u  ON u.id_usuario = p.id_usuario_criacao
+              LEFT JOIN problemas pr ON pr.id_pasta = p.id_pasta
+             WHERE p.cod_empresa = %s
+             GROUP BY p.id_pasta, u.nome
+             ORDER BY p.ordem, upper(p.nome)
+        """, (cod_empresa,))
+        pastas = cur.fetchall() or []
+        for p in pastas:
+            p["criado_em"] = _utc_para_local(p["criado_em"])
+    finally:
+        cur.close(); conn.close()
+
+    return render_template(
+        "canivete/problemas/pastas.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("canivete.menu_canivete"),
+        pastas=pastas,
+    )
+
+
+@canivete_bp.route("/problemas/pasta/<int:id_pasta>", methods=["GET", "POST"])
+def problemas_pasta(id_pasta):
+    r = _guarda_problemas()
+    if r:
+        return r
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    filtro = (request.args.get("status") or "PENDENTES").upper()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT p.id_pasta, p.nome, p.descricao, p.criado_em, u.nome AS criado_por
+              FROM problemas_pastas p
+              LEFT JOIN usuarios u ON u.id_usuario = p.id_usuario_criacao
+             WHERE p.id_pasta = %s AND p.cod_empresa = %s
+        """, (id_pasta, cod_empresa))
+        pasta = cur.fetchone()
+        if not pasta:
+            flash("Pasta não encontrada.", "error")
+            return redirect(url_for("canivete.problemas_pastas"))
+        pasta["criado_em"] = _utc_para_local(pasta["criado_em"])
+
+        if request.method == "POST":
+            acao = request.form.get("acao")
+            id_problema = request.form.get("id_problema", type=int)
+            voltar = redirect(url_for("canivete.problemas_pasta", id_pasta=id_pasta,
+                                      status=request.form.get("filtro") or filtro))
+
+            if acao in ("incluir", "editar"):
+                titulo = (request.form.get("titulo") or "").strip()
+                descricao = (request.form.get("descricao") or "").strip() or None
+                responsavel = (request.form.get("responsavel") or "").strip() or None
+                solucao = (request.form.get("solucao") or "").strip() or None
+                status = (request.form.get("status") or "ABERTO").upper()
+                prioridade = (request.form.get("prioridade") or "MEDIA").upper()
+                if not titulo:
+                    flash("Informe o título do problema.", "error")
+                    return voltar
+                if status not in _STATUS_VALIDOS or prioridade not in _PRIORIDADES_VALIDAS:
+                    flash("Status ou prioridade inválidos.", "error")
+                    return voltar
+
+                if acao == "incluir":
+                    cur.execute("""
+                        INSERT INTO problemas (cod_empresa, id_pasta, titulo, descricao, status,
+                                               prioridade, responsavel, solucao, resolvido_em,
+                                               id_usuario_criacao)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s,
+                                CASE WHEN %s = 'RESOLVIDO' THEN NOW() END, %s)
+                    """, (cod_empresa, id_pasta, titulo, descricao, status, prioridade,
+                          responsavel, solucao, status, id_usuario))
+                    conn.commit()
+                    flash("Problema registrado.", "success")
+                elif id_problema:
+                    # resolvido_em: nasce ao virar RESOLVIDO, mantém se já era, limpa se reabrir.
+                    cur.execute("""
+                        UPDATE problemas
+                           SET titulo = %s, descricao = %s, status = %s, prioridade = %s,
+                               responsavel = %s, solucao = %s,
+                               resolvido_em = CASE WHEN %s = 'RESOLVIDO'
+                                                   THEN COALESCE(resolvido_em, NOW()) END,
+                               atualizado_em = NOW()
+                         WHERE id_problema = %s AND id_pasta = %s AND cod_empresa = %s
+                    """, (titulo, descricao, status, prioridade, responsavel, solucao,
+                          status, id_problema, id_pasta, cod_empresa))
+                    conn.commit()
+                    flash("Problema atualizado." if cur.rowcount else "Problema não encontrado.",
+                          "success" if cur.rowcount else "error")
+
+            elif acao == "excluir" and id_problema:
+                cur.execute("DELETE FROM problemas WHERE id_problema = %s AND id_pasta = %s AND cod_empresa = %s",
+                            (id_problema, id_pasta, cod_empresa))
+                conn.commit()
+                flash("Problema excluído." if cur.rowcount else "Problema não encontrado.",
+                      "success" if cur.rowcount else "error")
+            return voltar
+
+        cond = ""
+        if filtro == "PENDENTES":
+            cond = "AND pr.status <> 'RESOLVIDO'"
+        elif filtro in _STATUS_VALIDOS:
+            cond = "AND pr.status = %(status)s"
+        else:
+            filtro = "TODOS"
+        cur.execute(f"""
+            SELECT pr.*, u.nome AS criado_por
+              FROM problemas pr
+              LEFT JOIN usuarios u ON u.id_usuario = pr.id_usuario_criacao
+             WHERE pr.id_pasta = %(pasta)s AND pr.cod_empresa = %(emp)s {cond}
+             ORDER BY (pr.status = 'RESOLVIDO'),
+                      CASE pr.prioridade WHEN 'ALTA' THEN 1 WHEN 'MEDIA' THEN 2 ELSE 3 END,
+                      pr.criado_em
+        """, {"pasta": id_pasta, "emp": cod_empresa, "status": filtro})
+        problemas = cur.fetchall() or []
+
+        cur.execute("""
+            SELECT status, count(*) AS n FROM problemas
+             WHERE id_pasta = %s AND cod_empresa = %s GROUP BY status
+        """, (id_pasta, cod_empresa))
+        contagem = {row["status"]: row["n"] for row in cur.fetchall()}
+    finally:
+        cur.close(); conn.close()
+
+    hoje = _hoje_br()
+    for p in problemas:
+        p["criado_em"] = _utc_para_local(p["criado_em"])
+        p["resolvido_em"] = _utc_para_local(p["resolvido_em"])
+        fim = p["resolvido_em"].date() if p["resolvido_em"] else hoje
+        p["dias"] = (fim - p["criado_em"].date()).days
+
+    contagem["PENDENTES"] = contagem.get("ABERTO", 0) + contagem.get("EM_ANDAMENTO", 0)
+    contagem["TODOS"] = contagem["PENDENTES"] + contagem.get("RESOLVIDO", 0)
+
+    return render_template(
+        "canivete/problemas/pasta.html",
+        nome_empresa=session.get("nome_empresa"),
+        url_voltar=url_for("canivete.problemas_pastas"),
+        pasta=pasta,
+        problemas=problemas,
+        filtro=filtro,
+        contagem=contagem,
+        status_opcoes=STATUS_PROBLEMA,
+        prioridade_opcoes=PRIORIDADES_PROBLEMA,
+        rotulo_status=dict(STATUS_PROBLEMA),
+        rotulo_prioridade=dict(PRIORIDADES_PROBLEMA),
+    )
