@@ -4987,6 +4987,10 @@ def consultar_saldo_emprestimos():
 # CONSULTAR PERDAS E SOBRAS
 # --------------------------------
 
+# dia maximo de inicio do mes deslocado em Perdas e Sobras (fevereiro tem 28)
+MAX_DIA_INICIO_PERDAS = 10
+
+
 @operacoes_bp.route("/estoques/perdas-sobras")
 @permissao_obrigatoria(
     "OPERACOES",
@@ -5028,12 +5032,20 @@ def consultar_perdas_sobras():
 
     limite_dia = hoje_br() - timedelta(days=1)
 
-    # Deslocamento de 1 dia: a medicao registrada num dia se refere ao dia
-    # anterior, entao o mes "condizente" vai do dia 2 ate o dia 1 do mes
-    # seguinte. Marcado por padrao (ausente = marcado; so o form manda "0").
-    # o form manda sempre o hidden "0" antes do checkbox; vale o ultimo valor
-    _desloc_vals = request.args.getlist("desloc")
-    desloc = (_desloc_vals[-1].strip() if _desloc_vals else "1") != "0"
+    # Deslocamento: a medicao registrada num dia se refere ao dia anterior,
+    # entao o mes "condizente" comeca no dia 2 (padrao) e termina no dia 1 do
+    # mes seguinte. O dia de inicio e escolhido na tela (1 = mes cheio, sem
+    # deslocamento); mes mais curto que o dia escolhido nao existe, dai o teto.
+    dia_inicio = 2
+    _dia_arg = (request.args.get("dia_inicio") or "").strip()
+    if _dia_arg.isdigit():
+        dia_inicio = min(max(int(_dia_arg), 1), MAX_DIA_INICIO_PERDAS)
+    else:
+        # compatibilidade com o checkbox antigo (desloc=0/1)
+        _desloc_vals = request.args.getlist("desloc")
+        if _desloc_vals and _desloc_vals[-1].strip() == "0":
+            dia_inicio = 1
+    desloc = dia_inicio > 1
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -5171,12 +5183,8 @@ def consultar_perdas_sobras():
             prim_mes = date(ano, mes, 1)
             prox_mes = date(ano + 1, 1, 1) if mes == 12 else date(ano, mes + 1, 1)
 
-            if desloc:
-                data_ini = prim_mes + timedelta(days=1)
-                data_fim = prox_mes + timedelta(days=1)
-            else:
-                data_ini = prim_mes
-                data_fim = prox_mes
+            data_ini = prim_mes + timedelta(days=dia_inicio - 1)
+            data_fim = prox_mes + timedelta(days=dia_inicio - 1)
 
             if data_ini <= limite_dia < data_fim:
                 data_fim_consulta = limite_dia + timedelta(days=1)
@@ -5458,7 +5466,7 @@ def consultar_perdas_sobras():
 
     def _url_navegacao(mes_dest, ano_dest):
         partes = [f"vis={vis}", f"sel_mes={mes_dest}", f"sel_ano={ano_dest}"]
-        partes.append(f"desloc={'1' if desloc else '0'}")
+        partes.append(f"dia_inicio={dia_inicio}")
         partes.append("flt=1")
         for fcod in sorted(filiais_selecionadas):
             partes.append(f"sel_filial={fcod}")
@@ -5485,6 +5493,8 @@ def consultar_perdas_sobras():
         nome_empresa=nome_empresa,
         vis=vis,
         desloc=desloc,
+        dia_inicio=dia_inicio,
+        dias_inicio_opcoes=list(range(1, MAX_DIA_INICIO_PERDAS + 1)),
         ano=ano,
         mes=mes,
         mes_num=mes,
