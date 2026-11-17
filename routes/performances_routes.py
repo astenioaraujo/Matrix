@@ -401,7 +401,8 @@ def gerentes_vendas():
             # vendas_unidades_sintetico, que depende da importação do painel:
             # sem ela o mês corrente não aparecia, e as colunas de combustível
             # mostravam só o acumulado — a meta seria comparada com meio mês.
-            regs_qtd, _, _, projecao = _agregar_diarias_sintetico(cur, cod_empresa)
+            regs_qtd, _, _, projecao = _agregar_diarias_sintetico(
+                cur, cod_empresa, sem_extras=True)  # venda extra não é do gerente
             registros_qtd = [r for r in regs_qtd if int(r["cod_filial"]) in cods]
 
             # Quantidades por combustível — vêm das vendas diárias importadas,
@@ -416,6 +417,7 @@ def gerentes_vendas():
                 FROM vendas_diarias
                 WHERE cod_empresa = %s
                   AND cod_filial = ANY(%s)
+                  AND NOT venda_extra
                   AND COALESCE(TRIM(descricao), '') <> ''
                   {FILTRO_SQL_COMBUSTIVEL}
                 GROUP BY 1, 2, 3
@@ -492,6 +494,7 @@ def gerentes_vendas_detalhe():
         return _detalhe_mes_filial(
             cur, cod_empresa, "qtd", ano, mes, cod_filial, permitidas,
             normalizar=normalizar_combustivel, produto=produto,
+            sem_extras=True,
         )
     finally:
         cur.close()
@@ -1385,7 +1388,8 @@ def acompanhamento_metas():
         filiais = cod_filiais_gerente(cur, cod_empresa)
         cods = [int(f["cod_filial"]) for f in filiais]
 
-        regs_qtd, _, _, projecao = _agregar_diarias_sintetico(cur, cod_empresa)
+        regs_qtd, _, _, projecao = _agregar_diarias_sintetico(
+                cur, cod_empresa, sem_extras=True)  # venda extra não é do gerente
 
         cur.execute("""
             SELECT cod_filial, meta_quantidade

@@ -100,6 +100,15 @@ def carregar_filiais_importacao(cur, cod_empresa):
                 "nome_filial": nome_filial,
             }
 
+    # Posto renomeado no WebPostos: o nome antigo e apelido do novo, e o que
+    # vier nele cai no posto atual (ex.: Carnaubais da EMP012).
+    from services.apelidos_filiais import apelidos_da_empresa
+
+    for antigo, novo in apelidos_da_empresa(cod_empresa).items():
+        filial = filiais.get(normalizar_texto(novo))
+        if filial:
+            filiais.setdefault(normalizar_texto(antigo), filial)
+
     return filiais
 
 
@@ -170,6 +179,41 @@ def inserir_importacoes_em_lote(cur, registros):
     """, valores)
 
     return len(registros)
+
+
+def consolidar_contas_repetidas(cur, cod_empresa):
+    """Soma numa linha so as contas repetidas de (filial, ano, mes, historico).
+
+    Acontece quando o mesmo posto vem em duas secoes "Filial:" do PDF (posto
+    renomeado no WebPostos: o nome antigo ate a troca, o novo depois - os dois
+    apontam para a mesma filial). Fica a linha de menor id, com a soma.
+    """
+    cur.execute("""
+        WITH grupos AS (
+            SELECT MIN(id_lancamento) AS id_fica, SUM(valor) AS soma,
+                   cod_filial, ano, mes, historico
+            FROM importacoes
+            WHERE cod_empresa = %s
+            GROUP BY cod_filial, ano, mes, historico
+            HAVING COUNT(*) > 1
+        ),
+        atualiza AS (
+            UPDATE importacoes i
+               SET valor = g.soma
+              FROM grupos g
+             WHERE i.id_lancamento = g.id_fica
+            RETURNING i.id_lancamento
+        )
+        DELETE FROM importacoes i
+         USING grupos g
+         WHERE i.cod_empresa = %s
+           AND i.cod_filial = g.cod_filial
+           AND i.ano = g.ano
+           AND i.mes = g.mes
+           AND i.historico = g.historico
+           AND i.id_lancamento <> g.id_fica
+    """, (cod_empresa, cod_empresa))
+    return cur.rowcount
 
 
 def classificar_lancamentos_importados(cod_empresa_fixo, conn):
@@ -1267,6 +1311,12 @@ def Importa_Fluxo_Caixa_PDF_Analitico(cod_empresa_fixo, caminho_pdf,
         flush_contas()
         flush_detalhes()
 
+        # Posto que veio em duas secoes (nome antigo + nome novo, mesma
+        # filial): a mesma conta aparece duas vezes no mes. Vira uma linha so,
+        # somada - o detalhamento se liga a conta pelo historico, e a
+        # conferencia compara conta a conta.
+        consolidar_contas_repetidas(cur, cod_empresa)
+
         # Importar zero linhas nao e sucesso: antes disso a tela dizia
         # "concluida" e a consulta abria vazia, sem ninguem saber por que.
         if total_contas == 0:
@@ -1293,6 +1343,19 @@ def Importa_Fluxo_Caixa_PDF_Analitico(cod_empresa_fixo, caminho_pdf,
             conn=conn
         )
 
+        # Reclassificacao de lancamentos: depois da classificacao por conta,
+        # tira da conta os lancamentos que casam com uma regra (estorno) e
+        # cria o lancamento "RECLASSIFICADO - <destino>", que a classificacao
+        # automatica (de-para) leva para a conta gerencial certa.
+        from services.reclassificacao_lancamentos_service import aplicar_reclassificacoes
+        reclassificacao = aplicar_reclassificacoes(conn, cod_empresa)
+
+        if reclassificacao["total_lancamentos"]:
+            total_classificado += classificar_lancamentos_importados(
+                cod_empresa_fixo=cod_empresa,
+                conn=conn
+            )
+
         total_propagado = propagar_classificacao_detalhamento(conn, cod_empresa)
 
         auditoria_detalhe = auditoria_detalhamento(conn, cod_empresa)
@@ -1308,6 +1371,7 @@ def Importa_Fluxo_Caixa_PDF_Analitico(cod_empresa_fixo, caminho_pdf,
             "total_zeradas_removidas": qtd_zeradas_removidas,
             "total_classificado": total_classificado,
             "total_propagado": total_propagado,
+            "reclassificacao": reclassificacao,
             "auditoria_movimento": auditoria_movimento["linhas"],
             "total_pdf": auditoria_movimento["total_pdf"],
             "total_sistema": auditoria_movimento["total_sistema"],

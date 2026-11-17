@@ -167,14 +167,9 @@ def formatar_data_brasil(dt):
     except Exception:
         return dt.strftime("%d/%m/%y")
 
-# PROVISÓRIO. Posto renomeado no WebPostos: durante a troca o relatório de
-# vendas diárias traz o mesmo posto com os dois nomes (o antigo até a virada,
-# o novo depois). Empresa → {nome antigo: nome novo, que é o do cadastro}.
-# Quando os arquivos pararem de trazer o nome antigo, apagar a entrada.
-APELIDOS_FILIAL_IMPORTACAO = {
-    # Carnaubais (filial 11): renomeado em 11/11/2026.
-    "EMP012": {"AUTO POSTO SAO JOAO CARNAUBAIS": "POSTO CARNAUBAIS"},
-}
+# PROVISÓRIO. Posto renomeado no WebPostos (nome antigo = apelido do novo).
+# A lista mora em services/apelidos_filiais.py, comum às importações.
+from services.apelidos_filiais import APELIDOS_FILIAL_IMPORTACAO  # noqa: E402
 
 
 def normalizar_nome_filial_importacao(nome):
@@ -214,6 +209,30 @@ def localizar_filial_por_nome_importacao(nome_planilha, mapa_filiais):
     return melhor_cod
 
 
+def _gerar_cores_excel_51():
+    """As 51 faixas da escala de 3 cores do Excel: vermelho -> amarelo -> verde.
+
+    Interpolação linear, a mesma curva de `getColorExcel` do matricial. A lista
+    antiga era digitada à mão e não era contínua (perto do topo escurecia e
+    voltava a clarear: o 2º colocado saía mais escuro que o 1º).
+    """
+    vermelho, amarelo, verde = (248, 105, 107), (255, 235, 132), (99, 190, 123)
+    cores = []
+    for faixa in range(51):
+        ratio = faixa / 50
+        if ratio <= 0.5:
+            a, b, t = vermelho, amarelo, ratio / 0.5
+        else:
+            a, b, t = amarelo, verde, (ratio - 0.5) / 0.5
+        cores.append("#%02x%02x%02x" % tuple(
+            int(round(a[k] + (b[k] - a[k]) * t)) for k in range(3)
+        ))
+    return cores
+
+
+CORES_EXCEL_51 = _gerar_cores_excel_51()
+
+
 def cor_excel_51(valor, minimo, maximo):
     try:
         v = float(valor)
@@ -223,7 +242,7 @@ def cor_excel_51(valor, minimo, maximo):
         return "#ffffff"
 
     if mx == mn:
-        return "#f5da90"
+        return CORES_EXCEL_51[25]
 
     if mx < mn:
         return "#ffffff"
@@ -234,20 +253,7 @@ def cor_excel_51(valor, minimo, maximo):
     faixa = int(round(ratio * 50))
     faixa = max(0, min(50, faixa))
 
-    cores = [
-        "#f8696b", "#f96d6c", "#f9716d", "#fa756e", "#fa796f",
-        "#fb7d70", "#fb8171", "#fc8572", "#fc8973", "#fd8d74",
-        "#fd9175", "#fe9576", "#fe9977", "#ef9e78", "#f0a37a",
-        "#f0a87c", "#f1ad7e", "#f1b280", "#f2b782", "#f2bc84",
-        "#f3c186", "#f3c688", "#f4cb8a", "#f4d08c", "#f5d58e",
-        "#f5da90", "#efe08f", "#e9e58e", "#e3ea8d", "#dde68d",
-        "#d7e28c", "#d1df8b", "#cbdb8a", "#c5d789", "#bfd489",
-        "#b9d088", "#b3cc87", "#add986", "#a7c585", "#a1c184",
-        "#9bbe84", "#95ba83", "#8fb682", "#89b281", "#83af80",
-        "#7dab80", "#77a77f", "#71a37e", "#6ba07d", "#67c07b",
-        "#63be7b"
-    ]
-    return cores[faixa]
+    return CORES_EXCEL_51[faixa]
 
 
 def aplicar_heatmap_na_grade(grade):
@@ -420,6 +426,7 @@ def limpar_importacao_diaria_periodo(cur, conn, cod_empresa, data_ini, data_fim,
                 FROM vendas_diarias
                 WHERE cod_empresa = %s
                   AND data BETWEEN %s AND %s
+                  AND NOT venda_extra
                 LIMIT %s
             )
         """, (cod_empresa, data_ini, data_fim, lote))
@@ -3653,8 +3660,14 @@ def vendas_por_dia():
 # ano/mês/filial. O mês corrente é projetado do mesmo jeito que a importação
 # projeta — acumulado ÷ dias com venda × dias do mês —, que é o que permite
 # comparar as duas telas linha a linha.
-def _agregar_diarias_sintetico(cur, cod_empresa, ate=None):
+def _agregar_diarias_sintetico(cur, cod_empresa, ate=None, sem_extras=False):
     """Devolve (registros_qtd, registros_valor, registros_mb, meta).
+
+    Vendas extras (Vendas → Informar Vendas Extras, `venda_extra`) entram
+    somadas, mas **fora da projeção**: são um fato avulso, e multiplicá-las
+    pelo fator do mês inventaria outras iguais nos dias que faltam. Também não
+    contam como "dia com venda". `sem_extras=True` tira-as de vez — é como a
+    Performance de Gerentes lê, porque a venda extra não é mérito do gerente.
 
     `meta` traz dia_base (dias com venda no último mês) e dias_mes, os mesmos
     dois números que vendas_painel_importacoes guarda.
@@ -3668,11 +3681,15 @@ def _agregar_diarias_sintetico(cur, cod_empresa, ate=None):
             EXTRACT(YEAR FROM data)::int  AS ano,
             EXTRACT(MONTH FROM data)::int AS mes,
             cod_filial,
-            SUM(quantidade)   AS quantidade,
-            SUM(valor)        AS valor,
-            SUM(margem_bruta) AS margem_bruta
+            SUM(quantidade)   FILTER (WHERE NOT venda_extra) AS quantidade,
+            SUM(valor)        FILTER (WHERE NOT venda_extra) AS valor,
+            SUM(margem_bruta) FILTER (WHERE NOT venda_extra) AS margem_bruta,
+            SUM(quantidade)   FILTER (WHERE venda_extra)     AS quantidade_extra,
+            SUM(valor)        FILTER (WHERE venda_extra)     AS valor_extra,
+            SUM(margem_bruta) FILTER (WHERE venda_extra)     AS margem_bruta_extra
         FROM vendas_diarias
         WHERE cod_empresa = %s
+        {"AND NOT venda_extra" if sem_extras else ""}
         {FILTRO_SQL_COMBUSTIVEL}
         GROUP BY 1, 2, 3
         ORDER BY 1, 2, 3
@@ -3702,6 +3719,7 @@ def _agregar_diarias_sintetico(cur, cod_empresa, ate=None):
         SELECT COUNT(DISTINCT data) AS dias
         FROM vendas_diarias
         WHERE cod_empresa = %s
+          AND NOT venda_extra
           AND EXTRACT(YEAR FROM data)::int = %s
           AND EXTRACT(MONTH FROM data)::int = %s
     """, (cod_empresa, ultimo_ano, ultimo_mes))
@@ -3726,6 +3744,7 @@ def _agregar_diarias_sintetico(cur, cod_empresa, ate=None):
             SELECT cod_filial, COUNT(DISTINCT data) AS dias
             FROM vendas_diarias
             WHERE cod_empresa = %s
+              AND NOT venda_extra
               AND EXTRACT(YEAR FROM data)::int = %s
               AND EXTRACT(MONTH FROM data)::int = %s
             GROUP BY cod_filial
@@ -3753,9 +3772,12 @@ def _agregar_diarias_sintetico(cur, cod_empresa, ate=None):
         base = {"cod_empresa": cod_empresa, "cod_filial": cod_filial,
                 "ano": ano, "mes": mes}
 
-        regs_qtd.append(dict(base, quantidade_vendida=float(l["quantidade"] or 0) * f))
-        regs_val.append(dict(base, valor_vendido=float(l["valor"] or 0) * f))
-        regs_mb.append(dict(base, margem_bruta=float(l["margem_bruta"] or 0) * f))
+        regs_qtd.append(dict(base, quantidade_vendida=float(l["quantidade"] or 0) * f
+                             + float(l["quantidade_extra"] or 0)))
+        regs_val.append(dict(base, valor_vendido=float(l["valor"] or 0) * f
+                             + float(l["valor_extra"] or 0)))
+        regs_mb.append(dict(base, margem_bruta=float(l["margem_bruta"] or 0) * f
+                            + float(l["margem_bruta_extra"] or 0)))
 
     meta = {
         "ano": ultimo_ano,
@@ -3784,9 +3806,13 @@ def _variacoes_projecoes_diarias(cur, cod_empresa, meta):
     cur.execute(f"""
         SELECT
             data,
-            SUM(quantidade)   AS quantidade,
-            SUM(valor)        AS valor,
-            SUM(margem_bruta) AS margem_bruta
+            SUM(quantidade)   FILTER (WHERE NOT venda_extra) AS quantidade,
+            SUM(valor)        FILTER (WHERE NOT venda_extra) AS valor,
+            SUM(margem_bruta) FILTER (WHERE NOT venda_extra) AS margem_bruta,
+            SUM(quantidade)   FILTER (WHERE venda_extra)     AS quantidade_extra,
+            SUM(valor)        FILTER (WHERE venda_extra)     AS valor_extra,
+            SUM(margem_bruta) FILTER (WHERE venda_extra)     AS margem_bruta_extra,
+            BOOL_OR(NOT venda_extra)                         AS dia_normal
         FROM vendas_diarias
         WHERE cod_empresa = %s
           AND EXTRACT(YEAR FROM data)::int = %s
@@ -3799,19 +3825,29 @@ def _variacoes_projecoes_diarias(cur, cod_empresa, meta):
 
     dias_mes = meta["dias_mes"]
     acum_qtd = acum_val = acum_mb = 0.0
+    extra_qtd = extra_val = extra_mb = 0.0
     registros = []
+    i = 0
 
-    for i, d in enumerate(dias, start=1):
+    # Venda extra soma por fora da projeção (não é multiplicada) e não conta
+    # como dia — mesma regra de _agregar_diarias_sintetico.
+    for d in dias:
         acum_qtd += float(d["quantidade"] or 0)
         acum_val += float(d["valor"] or 0)
         acum_mb += float(d["margem_bruta"] or 0)
+        extra_qtd += float(d["quantidade_extra"] or 0)
+        extra_val += float(d["valor_extra"] or 0)
+        extra_mb += float(d["margem_bruta_extra"] or 0)
+        if not d["dia_normal"]:
+            continue
+        i += 1
 
         registros.append({
             "dia_base": i,
             "dias_mes": dias_mes,
-            "quantidade_proj": acum_qtd / i * dias_mes,
-            "valor_proj": acum_val / i * dias_mes,
-            "mb_proj": acum_mb / i * dias_mes,
+            "quantidade_proj": acum_qtd / i * dias_mes + extra_qtd,
+            "valor_proj": acum_val / i * dias_mes + extra_val,
+            "mb_proj": acum_mb / i * dias_mes + extra_mb,
             "data_importacao": d["data"]
         })
 
@@ -3881,6 +3917,70 @@ def _comparativo_sintetico_diarias(cur, cod_empresa, regs_qtd, regs_val, regs_mb
     return linhas
 
 
+def _rankings_mes(filiais, regs_qtd, regs_val, regs_mb, meta):
+    """Rankings por posto no mês do quadro de projeção, do maior para o menor:
+    quantidade, valor, MB e MUN.
+
+    Usa os mesmos registros (já projetados no mês corrente) que fecham o
+    quadro, então cada total é o número de lá. MUN = MB ÷ quantidade do posto,
+    e o total é MB total ÷ quantidade total (não a soma nem a média dos MUN).
+    Mapa de calor de 51 faixas só nos postos; o total fica de fora.
+    """
+    if not meta:
+        return []
+
+    def somar(regs, campo):
+        por_filial = defaultdict(float)
+        for r in regs:
+            if (r["ano"], r["mes"]) == (meta["ano"], meta["mes"]):
+                por_filial[int(r["cod_filial"])] += r[campo]
+        return por_filial
+
+    qtd = somar(regs_qtd, "quantidade_vendida")
+    val = somar(regs_val, "valor_vendido")
+    mb = somar(regs_mb, "margem_bruta")
+    mun = {cod: mb.get(cod, 0.0) / q for cod, q in qtd.items() if q}
+
+    total_qtd, total_mb = sum(qtd.values()), sum(mb.values())
+    nomes = {int(f["cod_filial"]): f["nome_filial"] for f in filiais}
+
+    rankings = []
+    for metrica, titulo, valores, total in (
+        ("qtd", "QUANTIDADE", qtd, total_qtd),
+        ("valor", "VALOR", val, sum(val.values())),
+        ("mb", "MB", mb, total_mb),
+        ("mun", "MUN", mun, (total_mb / total_qtd) if total_qtd else 0.0),
+    ):
+        linhas = sorted(
+            ({"cod_filial": cod, "nome_filial": nomes.get(cod, str(cod)), "valor": v}
+             for cod, v in valores.items()),
+            key=lambda l: l["valor"], reverse=True
+        )
+        if not linhas:
+            continue
+
+        minimo = min(l["valor"] for l in linhas)
+        maximo = max(l["valor"] for l in linhas)
+        # % acumulado sobre o total, fora do quadro. MUN não se soma (é uma
+        # razão), então não tem acumulado.
+        acumulado = 0.0
+        for pos, l in enumerate(linhas, start=1):
+            l["posicao"] = pos
+            l["cor"] = cor_excel_51(l["valor"], minimo, maximo) if len(linhas) > 1 else ""
+            acumulado += l["valor"]
+            # Sem casas decimais, truncado (14,61% -> 14%). O round antes do
+            # int evita que 99,9999...% do último posto caia para 99%.
+            l["perc_acum"] = (
+                int(round(acumulado / total * 100, 6))
+                if metrica != "mun" and total else None
+            )
+
+        rankings.append({"metrica": metrica, "titulo": titulo,
+                         "linhas": linhas, "total": total})
+
+    return rankings
+
+
 @vendas_bp.route("/painel-diarias")
 @permissao_obrigatoria("VENDAS", "CONSULTAR_VENDAS_SINTETICAS",
                        redirecionar_para="sistema.menu_vendas")
@@ -3944,9 +4044,11 @@ def vendas_painel_diarias():
         grade_mb,
         dias_mes=meta["dias_mes"] if meta else None
     )
+    rankings = _rankings_mes(filiais, regs_qtd, regs_val, regs_mb, meta)
 
     return render_template(
         "vendas_painel_diarias.html",
+        rankings=rankings,
         nome_empresa=nome_empresa,
         filiais=filiais,
         grade_unidades=grade_unidades,
@@ -4007,6 +4109,7 @@ def _fator_projecao_mes(cur, cod_empresa, ano, mes):
         SELECT COUNT(DISTINCT data) AS dias
         FROM vendas_diarias
         WHERE cod_empresa = %s
+          AND NOT venda_extra
           AND EXTRACT(YEAR FROM data)::int = %s
           AND EXTRACT(MONTH FROM data)::int = %s
     """, (cod_empresa, int(ano), int(mes)))
@@ -4195,7 +4298,7 @@ def _cabecalho_projecao(cur, cod_empresa, ano, mes, acum, metrica, acum_colunas)
 
 
 def _detalhe_mes_filial(cur, cod_empresa, metrica, ano, mes, cod_filial, nomes,
-                        normalizar=None, produto=None):
+                        normalizar=None, produto=None, sem_extras=False):
     """Produtos × dias de um posto no mês.
 
     `normalizar` junta as variações de nome do mesmo produto (a Performance de
@@ -4214,6 +4317,7 @@ def _detalhe_mes_filial(cur, cod_empresa, metrica, ano, mes, cod_filial, nomes,
           AND cod_filial = %s
           AND EXTRACT(YEAR FROM data)::int = %s
           AND EXTRACT(MONTH FROM data)::int = %s
+          {"AND NOT venda_extra" if sem_extras else ""}
           {FILTRO_SQL_COMBUSTIVEL}
         GROUP BY descricao, 2
         ORDER BY descricao, 2
@@ -4613,3 +4717,271 @@ def api_analise_andamento(job_id):
         return jsonify({"ok": False, "erro": "A análise se perdeu. Clique em Analisar de novo."}), 404
 
     return jsonify({"ok": True, "job": job})
+
+
+# =========================
+# VENDAS EXTRAS
+# =========================
+# Venda real que não veio no relatório do WebPostos. Vive na própria
+# vendas_diarias com venda_extra = true (migrations/criar_vendas_extras.sql):
+# entra em Consultar Vendas, Estoques e Perdas e Sobras sem nenhuma consulta
+# precisar saber dela, a reimportação do período não a apaga, e a
+# Performance de Gerentes lê com sem_extras=True.
+#
+# valor = preço de venda × quantidade e margem = valor − preço de compra ×
+# quantidade são calculados aqui, nunca digitados.
+
+def _numero_extra(txt):
+    """Número digitado no formato brasileiro (14.550 / 6,99). None se inválido."""
+    txt = str(txt or "").strip().replace("R$", "").replace(" ", "")
+    if not txt:
+        return None
+    if "," in txt:
+        txt = txt.replace(".", "").replace(",", ".")
+    elif txt.count(".") > 1 or re.fullmatch(r"\d{1,3}(\.\d{3})+", txt):
+        # 14.550 é milhar, não decimal
+        txt = txt.replace(".", "")
+    try:
+        return Decimal(txt)
+    except InvalidOperation:
+        return None
+
+
+def _descricao_venda_extra(cur, cod_empresa, cod_filial, cod_produto, descricao_cadastro):
+    """(codigo_produto, descricao) com que o produto aparece nas vendas importadas.
+
+    A venda extra tem que cair na MESMA linha das vendas do posto: as consultas
+    agrupam pela descrição, e Perdas e Sobras casa o produto pelo
+    codigo_produto. Por isso copia a grafia mais usada nos últimos 90 dias
+    (do posto; se ele nunca vendeu o produto, da empresa), sem FROTA.
+    """
+    for filtro_filial in (True, False):
+        cur.execute(f"""
+            SELECT codigo_produto, descricao, COUNT(*) AS n
+            FROM vendas_diarias
+            WHERE cod_empresa = %s
+              {"AND cod_filial = %s" if filtro_filial else ""}
+              AND NOT venda_extra
+              AND data >= CURRENT_DATE - 90
+              AND UPPER(COALESCE(descricao, '')) NOT LIKE '%%FROTA%%'
+            GROUP BY codigo_produto, descricao
+            ORDER BY n DESC
+        """, (cod_empresa, cod_filial) if filtro_filial else (cod_empresa,))
+        for r in cur.fetchall():
+            if _cod_produto_das_vendas(r["descricao"]) == cod_produto:
+                return r["codigo_produto"], r["descricao"]
+    return None, str(descricao_cadastro or cod_produto).upper()
+
+
+@vendas_bp.route("/extras", methods=["GET"])
+@permissao_obrigatoria("VENDAS", "INFORMAR_VENDAS_EXTRAS", redirecionar_para="sistema.menu_vendas")
+def vendas_extras():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+    hoje = datetime.now(ZoneInfo("America/Recife")).date()
+
+    ano_txt = (request.args.get("ano") or "").strip()
+    ano = int(ano_txt) if ano_txt.isdigit() else hoje.year
+    filial_txt = (request.args.get("filial") or "").strip()
+    filial_sel = int(filial_txt) if filial_txt.isdigit() else None
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT cod_filial, nome_filial
+            FROM filiais
+            WHERE cod_empresa = %s AND ativo = TRUE
+            ORDER BY cod_filial
+        """, (cod_empresa,))
+        filiais = cur.fetchall()
+        nomes = {int(f["cod_filial"]): f["nome_filial"] for f in filiais}
+
+        cur.execute("""
+            SELECT cod_produto, descricao
+            FROM combustiveis
+            WHERE cod_empresa = %s
+            ORDER BY cod_produto
+        """, (cod_empresa,))
+        produtos = cur.fetchall()
+
+        cur.execute(f"""
+            SELECT id, data, cod_filial, descricao, custo, preco_venda,
+                   quantidade, valor, margem_bruta, observacao
+            FROM vendas_diarias
+            WHERE cod_empresa = %s
+              AND venda_extra
+              AND EXTRACT(YEAR FROM data)::int = %s
+              {"AND cod_filial = %s" if filial_sel else ""}
+            ORDER BY data DESC, cod_filial, id DESC
+        """, (cod_empresa, ano, filial_sel) if filial_sel else (cod_empresa, ano))
+        vendas = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+    total = {
+        "quantidade": sum(float(v["quantidade"] or 0) for v in vendas),
+        "valor": sum(float(v["valor"] or 0) for v in vendas),
+        "margem_bruta": sum(float(v["margem_bruta"] or 0) for v in vendas),
+    }
+    for v in vendas:
+        v["nome_filial"] = nomes.get(int(v["cod_filial"]), "")
+        v["dia_semana"] = DIAS_SEMANA_PT[v["data"].weekday()]
+        v["cod_produto"] = _cod_produto_das_vendas(v["descricao"]) or ""
+
+    return render_template(
+        "vendas_extras.html",
+        nome_empresa=nome_empresa,
+        ano=ano,
+        filial_sel=filial_sel,
+        filiais=filiais,
+        produtos=produtos,
+        vendas=vendas,
+        total=total,
+        hoje=hoje.isoformat(),
+        formatar_numero_br=formatar_numero_br,
+    )
+
+
+@vendas_bp.route("/extras/salvar", methods=["POST"])
+@permissao_obrigatoria("VENDAS", "INFORMAR_VENDAS_EXTRAS", redirecionar_para="sistema.menu_vendas")
+def vendas_extras_salvar():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    f = request.form
+    id_txt = (f.get("id") or "").strip()
+    voltar = url_for("vendas.vendas_extras", ano=f.get("ano_filtro") or None,
+                     filial=f.get("filial_filtro") or None)
+
+    def recusar(msg):
+        flash(msg, "error")
+        return redirect(voltar)
+
+    try:
+        data_venda = date.fromisoformat((f.get("data") or "").strip())
+    except ValueError:
+        return recusar("Informe a data da venda.")
+    hoje = datetime.now(ZoneInfo("America/Recife")).date()
+    if data_venda > hoje:
+        return recusar("A data da venda não pode ser futura.")
+
+    filial_txt = (f.get("cod_filial") or "").strip()
+    if not filial_txt.isdigit():
+        return recusar("Escolha o posto.")
+    cod_filial = int(filial_txt)
+    cod_produto = (f.get("cod_produto") or "").strip()
+
+    custo = _numero_extra(f.get("custo"))
+    preco = _numero_extra(f.get("preco_venda"))
+    qtd = _numero_extra(f.get("quantidade"))
+    if f.get("custo", "").strip() and custo is None:
+        return recusar("Preço de compra inválido.")
+    if preco is None or preco <= 0:
+        return recusar("Informe o preço de venda.")
+    if qtd is None or qtd <= 0:
+        return recusar("Informe a quantidade.")
+    custo = custo or Decimal("0")
+    if custo < 0:
+        return recusar("Preço de compra inválido.")
+
+    centavo = Decimal("0.01")
+    valor = (preco * qtd).quantize(centavo, ROUND_HALF_UP)
+    margem = valor - (custo * qtd).quantize(centavo, ROUND_HALF_UP)
+    observacao = (f.get("observacao") or "").strip() or None
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT 1 FROM filiais
+            WHERE cod_empresa = %s AND cod_filial = %s AND ativo = TRUE
+        """, (cod_empresa, cod_filial))
+        if not cur.fetchone():
+            return recusar("Posto não encontrado.")
+
+        cur.execute("""
+            SELECT descricao FROM combustiveis
+            WHERE cod_empresa = %s AND cod_produto = %s
+        """, (cod_empresa, cod_produto))
+        prod = cur.fetchone()
+        if not prod:
+            return recusar("Escolha o produto.")
+
+        codigo_produto, descricao = _descricao_venda_extra(
+            cur, cod_empresa, cod_filial, cod_produto, prod["descricao"])
+
+        campos = (cod_filial, data_venda, DIAS_SEMANA_PT[data_venda.weekday()],
+                  codigo_produto, descricao, custo, preco, qtd, valor, margem,
+                  observacao)
+
+        if id_txt:
+            if not id_txt.isdigit():
+                return recusar("Venda extra não encontrada.")
+            # Só linha marcada como extra: o id de uma venda importada não
+            # pode ser editado por aqui.
+            cur.execute("""
+                UPDATE vendas_diarias
+                SET cod_filial = %s, data = %s, dia_semana = %s,
+                    codigo_produto = %s, descricao = %s, custo = %s,
+                    preco_venda = %s, quantidade = %s, valor = %s,
+                    margem_bruta = %s, observacao = %s, atualizado_em = NOW()
+                WHERE id = %s AND cod_empresa = %s AND venda_extra
+            """, campos + (int(id_txt), cod_empresa))
+            if cur.rowcount == 0:
+                conn.rollback()
+                return recusar("Venda extra não encontrada.")
+            msg = "Venda extra alterada."
+        else:
+            cur.execute("""
+                INSERT INTO vendas_diarias
+                    (cod_empresa, cod_filial, data, dia_semana, codigo_produto,
+                     descricao, custo, preco_venda, quantidade, valor,
+                     margem_bruta, observacao, venda_extra)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+            """, (cod_empresa,) + campos)
+            msg = "Venda extra gravada."
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+        conn.close()
+
+    flash(f"{msg} {formatar_numero_br(float(qtd))} L × R$ {formatar_numero_br(float(preco))}"
+          f" = R$ {formatar_numero_br(float(valor))}.", "success")
+    return redirect(url_for("vendas.vendas_extras", ano=data_venda.year,
+                            filial=f.get("filial_filtro") or None))
+
+
+@vendas_bp.route("/extras/<int:id_venda>/excluir", methods=["POST"])
+@permissao_obrigatoria("VENDAS", "INFORMAR_VENDAS_EXTRAS", redirecionar_para="sistema.menu_vendas")
+def vendas_extras_excluir(id_venda):
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            DELETE FROM vendas_diarias
+            WHERE id = %s AND cod_empresa = %s AND venda_extra
+        """, (id_venda, cod_empresa))
+        removidos = cur.rowcount
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+    flash("Venda extra excluída." if removidos else "Venda extra não encontrada.",
+          "success" if removidos else "error")
+    return redirect(url_for("vendas.vendas_extras",
+                            ano=request.form.get("ano_filtro") or None,
+                            filial=request.form.get("filial_filtro") or None))

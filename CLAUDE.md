@@ -290,6 +290,22 @@ valor da conta. A tela mostra as divergentes e as sem detalhe, e a **transferên
 o valor da célula é pior que detalhamento nenhum. As linhas do PDF que não casaram com nenhum
 padrão são listadas na auditoria, para a diferença não sumir calada.
 
+**Reclassificação de Lançamentos** (17/11/2026, `reclassificacoes_lancamentos`,
+`migrations/criar_reclassificacoes_lancamentos.sql`, serviço
+`services/reclassificacao_lancamentos_service.py`, tela em **Financeiro → Cadastros →
+Reclassificação de Lançamentos**): a classificação automática decide pela conta; a regra desce ao
+lançamento. Texto contido na descrição do detalhe (+ conta do WebPostos opcional) → na importação
+analítica, logo depois da classificação automática, cada lançamento que casa gera, em `importacoes`
+**e** no detalhamento: `<conta de origem> - ESTORNO P/ <DESTINO>` (sinal invertido, mesma
+classificação da origem — zera o lançamento na conta sem apagá-lo do detalhe) e
+`RECLASSIFICADO - <DESTINO>` (valor original), que a classificação automática (de-para) leva à conta
+gerencial. A tela grava o grupo/conta do destino direto nas Classificações Automáticas. Tudo o que é
+gerado tem `complemento = 'Reclassificação de lançamento'` e reaplicar apaga e refaz (não duplica);
+o botão **Reclassificar** da tela de Importações também reaplica. Não mexe no que já foi transferido
+— para um mês antigo, reimportar. Carga EMP012: `TECNOFORT` (o WebPostos grafa sem o E) na
+`2.03.03.003` → INVESTIMENTOS → 5/1, que foi renomeada de "Moveis e Utensílios" para
+"Investimentos". Em 10/2026 são 6 lançamentos, R$ 19.000.
+
 `propagar_classificacao_detalhamento` copia grupo/conta da conta sintética para os seus
 detalhes, ligando por `(filial, ano, mês, historico)`. Sem isso a célula do matricial, que é
 lida por `(grupo, conta)`, não acharia o detalhamento.
@@ -871,9 +887,19 @@ Sem filtro de Status — todas as linhas entram. A projeção do mês é a médi
 
 `POST /vendas/diarias/importar` (fluxo WebPostos) confere cada linha com `tipo_erro_custo_venda` e mostra, no fim da própria tela, o quadro vermelho das linhas com o custo errado, agrupadas por posto (`resumir_custos_suspeitos`, `templates/vendas_importar_diarias.html`). **A importação grava do mesmo jeito** (decisão do cliente, 13/10/2026): o arquivo é o que o WebPostos tem, e o quadro existe para não gravar isso calado. Tipos: `Custo fora de escala` (custo > `FATOR_CUSTO_FORA_DE_ESCALA` = 3 × preço de venda), `Custo maior que o preço de venda`, `Margem bruta negativa`. A lista não é persistida — só aparece na resposta da importação.
 
-**Posto renomeado no WebPostos** (`APELIDOS_FILIAL_IMPORTACAO`, no topo de `routes/vendas_routes.py`, **provisório**): durante a troca o relatório traz o mesmo posto com os dois nomes, e o nome que não casa com `nome_filial_importacao` era pulado — foi assim que Carnaubais (EMP012, filial 11) ficou sem o 12/11, quando "AUTO POSTO SAO JOAO CARNAUBAIS" virou "POSTO CARNAUBAIS" no meio do dia 11. O cadastro ficou com o nome **novo** e o antigo é apelido dele, só na importação de vendas diárias (WebPostos). Quando os arquivos pararem de trazer o nome antigo (dezembro/2026), apagar a entrada. As outras importações que leem `nome_filial_importacao` (PDF do fluxo de caixa, faltas de caixa, abastecimentos) não conhecem o apelido.
+**Posto renomeado no WebPostos** (`APELIDOS_FILIAL_IMPORTACAO`, em `services/apelidos_filiais.py`, **provisório**): durante a troca o relatório traz o mesmo posto com os dois nomes, e o nome que não casa com `nome_filial_importacao` era pulado — foi assim que Carnaubais (EMP012, filial 11) ficou sem o 12/11, quando "AUTO POSTO SAO JOAO CARNAUBAIS" virou "POSTO CARNAUBAIS" no meio do dia 11. O cadastro ficou com o nome **novo** e o antigo é apelido dele. Vale na importação de vendas diárias (WebPostos) e, desde 17/11/2026, nas importações de PDF do fluxo de caixa (`carregar_filiais_importacao`): as duas seções "Filial:" caem na filial 11, e no analítico `consolidar_contas_repetidas` soma numa linha só a conta que veio nas duas (senão a conferência do detalhamento, que é conta a conta, divergiria). Quando os arquivos pararem de trazer o nome antigo (dezembro/2026), apagar a entrada. Faltas de caixa e abastecimentos não conhecem o apelido.
 
 Origem: em 09–13/10/2026 o etanol de 5 postos da EMP010 veio a ~R$ 3.580 o litro (entrada digitada errada no WebPostos) e a margem do dia fechou em −3,6 milhões, com a tela dizendo "concluída com sucesso".
+
+## Informar Vendas Extras (17/11/2026)
+
+`GET /vendas/extras` (`VENDAS/INFORMAR_VENDAS_EXTRAS` 728, `migrations/criar_vendas_extras.sql`, não concedida), botão verde no menu de Vendas. Venda real que não veio no relatório do WebPostos: data, posto, produto (do cadastro `combustiveis`), preço de compra (opcional), preço de venda, quantidade e observação; filtro ano (setas ← →) + posto, inclusão/edição numa linha do próprio bloco, excluir pelo `id`. **Valor = preço × quantidade e margem = valor − compra × quantidade são calculados no servidor**, nunca digitados.
+
+- **Não tem tabela própria: é uma linha de `vendas_diarias` com `venda_extra = true`** (colunas novas `venda_extra`, `observacao`, `atualizado_em`). Por isso entra sozinha em Consultar Vendas, Consulta de Estoques (no relatório do **dia seguinte**, como toda venda), Perdas e Sobras, Resumo, Margem Unitária etc. A descrição e o `codigo_produto` são copiados da grafia mais usada pelo posto nos últimos 90 dias (`_descricao_venda_extra`) — senão a extra viraria uma linha à parte nas consultas e Perdas e Sobras, que casa por `codigo_produto`, não a veria.
+- **A reimportação não a apaga**: `limpar_importacao_diaria_periodo` tem `AND NOT venda_extra`. Qualquer DELETE novo em `vendas_diarias` precisa da mesma condição.
+- **Não conta para o gerente**: `_agregar_diarias_sintetico(..., sem_extras=True)` e `_detalhe_mes_filial(..., sem_extras=True)` em Performance de Gerentes (Vendas e Acompanhamento de Metas — % atingido, prêmio, pontos), e a query de combustíveis de `gerentes_vendas` filtra `NOT venda_extra`.
+- **Fora da projeção**: nas Vendas Sintéticas a extra é somada por fora do fator do mês (multiplicá-la inventaria outras iguais) e não conta como dia com venda (`dia_base`). Também fica fora da média de vendas/dia da Consulta de Estoques, que estima o giro.
+- Primeira: EMP010, posto 9 (SJ Piranhas), 17/11/2026, Diesel S10, 14.550 L × R$ 6,99 = R$ 101.704,50, compra R$ 6,18 (preço do pedido 3194, de 11/11, usado só como referência).
 
 ## Análise de Vendas (IA)
 

@@ -181,6 +181,33 @@
         </div>
       </div>
 
+      {% set rec = resultado_pdf.get("reclassificacao") %}
+      {% if rec and rec["lancamentos"] %}
+        <div class="titulo-auditoria">
+          Reclassificação de lançamentos ({{ rec["total_lancamentos"] }} lançamento(s), {{ brl(rec["total_valor"]) }})
+        </div>
+        <table class="table-auditoria">
+          <thead>
+            <tr>
+              <th>Filial</th><th>Data</th><th>Conta de origem</th><th>Lançamento</th>
+              <th>Destino</th><th class="td-num">Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for l in rec["lancamentos"] %}
+              <tr>
+                <td>{{ l["cod_filial"] }} - {{ l["nome_filial"] }}</td>
+                <td>{{ l["data"].strftime("%d/%m/%Y") if l["data"] else "" }}</td>
+                <td>{{ l["historico_conta"] }}</td>
+                <td>{{ l["descricao"] }}</td>
+                <td>RECLASSIFICADO - {{ l["destino"] }}</td>
+                <td class="td-num">{{ brl(l["valor"]) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+
       {% if det["divergencias"] %}
         <div class="titulo-auditoria">Contas cujo detalhamento não fecha</div>
         <table class="table-auditoria">

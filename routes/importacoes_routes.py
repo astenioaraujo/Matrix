@@ -474,11 +474,25 @@ def reclassificar_importacoes():
     if "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
 
+    from importa_web_postos import propagar_classificacao_detalhamento
+    from services.reclassificacao_lancamentos_service import aplicar_reclassificacoes
+
     conn = get_connection()
     try:
-        total_classificados = classificar_lancamentos_importados(session["cod_empresa"], conn)
+        cod_empresa = str(session["cod_empresa"]).strip()
+        total_classificados = classificar_lancamentos_importados(cod_empresa, conn)
+
+        # Regras de Reclassificação de Lançamentos cadastradas depois da
+        # importação passam a valer aqui. Refaz do zero (não duplica).
+        reclass = aplicar_reclassificacoes(conn, cod_empresa)
+        total_classificados += classificar_lancamentos_importados(cod_empresa, conn)
+        propagar_classificacao_detalhamento(conn, cod_empresa)
+        conn.commit()
+
         session["mensagem_importacoes"] = (
-            f"Reclassificação concluída. {total_classificados} lançamento(s) classificado(s)."
+            f"Reclassificação concluída. {total_classificados} lançamento(s) classificado(s)"
+            + (f"; {reclass['total_lancamentos']} lançamento(s) reclassificado(s) pelas "
+               "regras de Reclassificação de Lançamentos." if reclass["total_lancamentos"] else ".")
         )
     except Exception as e:
         session["erro_importacoes"] = str(e)

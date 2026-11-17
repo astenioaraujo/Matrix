@@ -49,6 +49,7 @@
   .btn-importar-painel { background: #6a1b9a; }
   .btn-diarias { background: #00897b; }
   .btn-importar-diarias { background: #00695c; }
+  .btn-extras { background: #2e7d32; }
   .btn-consultas { background: #5e35b1; }
   .btn-produto { background: #d97706; color: #fff; }
   .btn-resumo { background: #b45309; }
@@ -103,6 +104,12 @@
     {% if pode_vendas.IMPORTAR_VENDAS_DIARIAS %}
     <a class="btn-importar-diarias" href="{{ url_for('vendas.vendas_importar_diarias') }}">
       Importar Vendas Diárias
+    </a>
+    {% endif %}
+
+    {% if pode_vendas.INFORMAR_VENDAS_EXTRAS %}
+    <a class="btn-extras" href="{{ url_for('vendas.vendas_extras') }}">
+      Informar Vendas Extras
     </a>
     {% endif %}
 

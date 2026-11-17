@@ -125,6 +125,9 @@ def linhas_estoque(cur, cod_empresa, data_base, codigos_filiais=None):
                 WHERE cod_empresa = %s
                 AND data >= %s
                 AND data <= %s
+                -- Venda extra (Vendas → Informar Vendas Extras) é avulsa: entra
+                -- nas vendas do dia, mas não na média que estima o giro.
+                AND NOT venda_extra
             ) vd
 
             GROUP BY

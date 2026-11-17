@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block content %}
+{% macro brl(v) -%}
+{{ "{:,.2f}".format((v or 0)|float).replace(",", "X").replace(".", ",").replace("X", ".") }}
+{%- endmacro %}
+
+{% include "components/nav.html" %}
+
+<style>
+    .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 8px; color: #111; }
+    .pagina-subtitulo { font-size: 20px; margin-bottom: 16px; color: #222; }
+
+    .explicacao {
+        background: #f4f8fc; border: 1px solid #cfe0f1; border-radius: 10px;
+        padding: 14px 18px; margin-bottom: 18px; color: #222; line-height: 1.5;
+        max-width: 1100px;
+    }
+    .explicacao code { background: #e6eef7; padding: 1px 5px; border-radius: 4px; }
+
+    .topo { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+
+    .btn-salvar {
+        min-height: 44px; padding: 10px 18px; border-radius: 10px;
+        border: 1px solid #1a73e8; background: #1a73e8; color: #fff;
+        font-weight: 700; font-size: 15px; cursor: pointer;
+    }
+    .btn-salvar:hover { background: #155bc1; }
+
+    .btn-excluir {
+        width: 100%; min-height: 38px; border-radius: 8px;
+        border: 1px solid #d62828; background: #d62828; color: #fff;
+        font-weight: 700; cursor: pointer;
+    }
+    .btn-excluir:hover { background: #b91f1f; }
+
+    .total { font-size: 18px; font-weight: 700; }
+
+    .mensagem { color: #1d5c1d; background: #eaf7ea; border: 1px solid #a7d7a7;
+                padding: 12px 16px; border-radius: 8px; margin-bottom: 12px; }
+    .erro { color: #7a1f1f; background: #fdecec; border: 1px solid #efb2b2;
+            padding: 12px 16px; border-radius: 8px; margin-bottom: 12px; }
+
+    .table-wrapper { overflow-x: auto; border: 1px solid #d9d9d9; border-radius: 10px; background: #fff; }
+    table { border-collapse: collapse; width: 100%; min-width: 1300px; }
+    th, td { border: 1px solid #ddd; padding: 8px; vertical-align: middle; }
+    th { background: #dbe8f4; font-weight: 700; text-align: left; }
+    th small { font-weight: 400; color: #555; }
+
+    input, select {
+        width: 100%; box-sizing: border-box; padding: 8px 10px;
+        border-radius: 6px; border: 1px solid #bbb; background: #fff; font: inherit;
+    }
+
+    .linha-nova td { background: #fafafa; }
+    .sem-de-para { color: #b42318; font-weight: 700; font-size: 13px; }
+    .amostra { text-align: center; color: #333; }
+    .amostra.zero { color: #b42318; font-weight: 700; }
+</style>
+
+<div class="pagina-titulo">Reclassificação de Lançamentos</div>
+
+<div class="pagina-subtitulo">
+    <strong>Empresa:</strong> {{ empresa_ativa }} - {{ nome_empresa_ativa }}
+</div>
+
+<div class="explicacao">
+    A classificação automática decide pela <strong>conta</strong> do WebPostos. Aqui a regra desce
+    ao <strong>lançamento</strong>: depois de importar o PDF analítico, todo lançamento cuja
+    descrição contém o <strong>texto</strong> (e, se informada, só dentro daquela conta do WebPostos)
+    é tirado da conta por um <strong>estorno</strong> — valor com o sinal invertido — e vira um
+    lançamento novo, <code>RECLASSIFICADO - &lt;DESTINO&gt;</code>, que vai para o grupo/conta
+    escolhido em <strong>Vai para</strong> (gravado nas Classificações Automáticas).
+    <br>
+    Valem na próxima importação. Para aplicar ao que já está importado e ainda não transferido,
+    use <strong>Reclassificar</strong> na tela de Importações.
+</div>
+
+{% if mensagem %}<div class="mensagem">{{ mensagem }}</div>{% endif %}
+{% if erro %}<div class="erro">{{ erro }}</div>{% endif %}
+
+<form method="POST" id="form-regras">
+    <div class="topo">
+        <div class="total">Regras: {{ regras|length }}</div>
+        <button type="submit" name="acao" value="salvar" class="btn-salvar">Salvar Alterações</button>
+    </div>
+
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 20%">Texto na descrição <small>(ex.: TECNOFORT)</small></th>
+                    <th style="width: 12%">Conta WebPostos <small>(vazio = qualquer)</small></th>
+                    <th style="width: 15%">Destino <small>(nome do lançamento novo)</small></th>
+                    <th style="width: 17%">Vai para — grupo</th>
+                    <th style="width: 18%">Vai para — conta</th>
+                    <th style="width: 6%">Ativa</th>
+                    <th style="width: 10%">Já transferidos <small>(lançamentos que casam)</small></th>
+                    <th style="width: 6%">Ação</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="linha-nova">
+                    <td><input name="texto[]" value="" placeholder="nova regra"></td>
+                    <td><input name="codigo_conta[]" value="" placeholder="2.03.03.003"></td>
+                    <td><input name="destino[]" value="" placeholder="INVESTIMENTOS"></td>
+                    <td><select name="cod_grupo[]" class="sel-grupo" data-valor=""></select></td>
+                    <td><select name="cod_conta[]" class="sel-conta" data-valor=""></select></td>
+                    <td>
+                        <select name="ativo[]">
+                            <option value="1" selected>Sim</option>
+                            <option value="0">Não</option>
+                        </select>
+                    </td>
+                    <td></td>
+                    <td><input type="hidden" name="id_reclassificacao[]" value=""></td>
+                </tr>
+
+                {% for r in regras %}
+                <tr>
+                    <td><input name="texto[]" value="{{ r.texto }}"></td>
+                    <td><input name="codigo_conta[]" value="{{ r.codigo_conta }}"></td>
+                    <td><input name="destino[]" value="{{ r.destino }}"></td>
+                    <td>
+                        <select name="cod_grupo[]" class="sel-grupo"
+                                data-valor="{{ r.cod_grupo if r.cod_grupo is not none else '' }}"></select>
+                        {% if r.cod_grupo is none %}
+                        <div class="sem-de-para">Sem de-para: o lançamento novo ficará sem classificação.</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <select name="cod_conta[]" class="sel-conta"
+                                data-valor="{{ r.cod_conta if r.cod_conta is not none else '' }}"></select>
+                    </td>
+                    <td>
+                        <select name="ativo[]">
+                            <option value="1" {% if r.ativo %}selected{% endif %}>Sim</option>
+                            <option value="0" {% if not r.ativo %}selected{% endif %}>Não</option>
+                        </select>
+                    </td>
+                    <td class="amostra {% if not r.qtd_historico %}zero{% endif %}"
+                        title="{{ r.meses_historico }}">
+                        {{ r.qtd_historico }}{% if r.qtd_historico %}<br><small>R$ {{ brl(r.valor_historico) }}</small>{% endif %}
+                    </td>
+                    <td>
+                        <input type="hidden" name="id_reclassificacao[]" value="{{ r.id }}">
+                        <button type="submit" class="btn-excluir"
+                                formaction="{{ url_for('financeiro.reclassificacoes_lancamentos') }}"
+                                name="acao" value="excluir"
+                                data-confirmar="Excluir a regra {{ r.texto }}?">
+                            Excluir
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <input type="hidden" name="id_excluir" id="id_excluir" value="">
+</form>
+
+<script>
+const GRUPOS = {{ opcoes_grupos | tojson }};
+const CONTAS = {{ opcoes_contas | tojson }};
+
+function preencherGrupo(sel) {
+    const atual = sel.dataset.valor || "";
+    sel.innerHTML = '<option value=""></option>';
+    for (const [cod, desc] of GRUPOS) {
+        const o = document.createElement("option");
+        o.value = cod;
+        o.textContent = desc ? `${cod} - ${desc}` : `${cod}`;
+        if (String(cod) === String(atual)) o.selected = true;
+        sel.appendChild(o);
+    }
+}
+
+function preencherConta(sel, codGrupo) {
+    const atual = sel.dataset.valor || "";
+    sel.innerHTML = '<option value=""></option>';
+    let achou = false;
+    for (const [grupo, cod, desc] of CONTAS) {
+        if (String(grupo) !== String(codGrupo)) continue;
+        const o = document.createElement("option");
+        o.value = cod;
+        o.textContent = desc ? `${cod} - ${desc}` : `${cod}`;
+        if (String(cod) === String(atual)) { o.selected = true; achou = true; }
+        sel.appendChild(o);
+    }
+    if (atual && !achou) {
+        const o = document.createElement("option");
+        o.value = atual; o.textContent = `${atual}`; o.selected = true;
+        sel.appendChild(o);
+    }
+    sel.dataset.valor = sel.value;
+}
+
+document.querySelectorAll("tr").forEach(tr => {
+    const selGrupo = tr.querySelector(".sel-grupo");
+    const selConta = tr.querySelector(".sel-conta");
+    if (!selGrupo || !selConta) return;
+    preencherGrupo(selGrupo);
+    preencherConta(selConta, selGrupo.value);
+    selGrupo.addEventListener("change", () => {
+        selGrupo.dataset.valor = selGrupo.value;
+        selConta.dataset.valor = "";
+        preencherConta(selConta, selGrupo.value);
+    });
+});
+
+// Excluir passa pelo modal global (nada de confirm() do navegador).
+document.querySelectorAll(".btn-excluir").forEach(btn => {
+    btn.addEventListener("click", async (ev) => {
+        if (btn.dataset.confirmado === "1") { btn.dataset.confirmado = ""; return; }
+        ev.preventDefault();
+        if (!await confirmarGlobal(btn.dataset.confirmar)) return;
+        document.getElementById("id_excluir").value = btn.closest("tr")
+            .querySelector('input[name="id_reclassificacao[]"]').value;
+        btn.dataset.confirmado = "1";
+        btn.click();
+    });
+});
+</script>
+
+{% endblock %}

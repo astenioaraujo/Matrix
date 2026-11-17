@@ -1053,6 +1053,215 @@ def classificacoes_automaticas():
 
 
 # =========================
+# RECLASSIFICAÇÃO DE LANÇAMENTOS
+# =========================
+# Regras aplicadas depois da importação analítica do fluxo de caixa: um texto
+# na descrição do lançamento (ex.: TECNOFORT), opcionalmente só dentro de uma
+# conta do WebPostos, tira o lançamento da conta (estorno) e cria
+# "RECLASSIFICADO - <destino>". O grupo/conta do destino é gravado no de-para
+# (classificacoes_automaticas), que é quem classifica o lançamento novo.
+@financeiro_bp.route("/reclassificacoes_lancamentos", methods=["GET", "POST"])
+def reclassificacoes_lancamentos():
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    from services.reclassificacao_lancamentos_service import (
+        historico_destino, COMPLEMENTO_RECLASSIFICACAO)
+
+    mensagem = ""
+    erro = ""
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        if request.method == "POST":
+            acao = (request.form.get("acao") or "").strip().lower()
+
+            try:
+                if acao == "salvar":
+                    ids = request.form.getlist("id_reclassificacao[]")
+                    textos = request.form.getlist("texto[]")
+                    codigos = request.form.getlist("codigo_conta[]")
+                    destinos = request.form.getlist("destino[]")
+                    grupos = request.form.getlist("cod_grupo[]")
+                    contas = request.form.getlist("cod_conta[]")
+                    ativos = request.form.getlist("ativo[]")
+
+                    if not (len(ids) == len(textos) == len(codigos) == len(destinos)
+                            == len(grupos) == len(contas) == len(ativos)):
+                        raise ValueError("Os dados enviados estão inconsistentes.")
+
+                    de_para = {}
+
+                    for i in range(len(ids)):
+                        id_regra = (ids[i] or "").strip()
+                        texto = (textos[i] or "").strip()
+                        codigo = re.sub(r"\s+", "", codigos[i] or "")
+                        destino = re.sub(r"\s+", " ", destinos[i] or "").strip().upper()
+                        grupo_raw = (grupos[i] or "").strip()
+                        conta_raw = (contas[i] or "").strip()
+                        ativo = (ativos[i] or "") == "1"
+
+                        if not texto and not id_regra:
+                            continue
+                        if not texto:
+                            raise ValueError(f"Informe o texto na linha {i + 1} (ou exclua a regra).")
+                        if not destino:
+                            raise ValueError(f"Informe o destino na linha {i + 1}.")
+                        if codigo and not re.fullmatch(r"\d+(?:\.\d+)*", codigo):
+                            raise ValueError(
+                                f"Conta do WebPostos inválida na linha {i + 1}: use o código "
+                                "(ex.: 2.03.03.003) ou deixe em branco para qualquer conta."
+                            )
+
+                        if grupo_raw or conta_raw:
+                            if not (grupo_raw and conta_raw):
+                                raise ValueError(f"Informe grupo e conta do destino na linha {i + 1}.")
+                            par = (int(grupo_raw), int(conta_raw))
+                            if destino in de_para and de_para[destino] != par:
+                                raise ValueError(
+                                    f"O destino {destino} aparece com contas diferentes. "
+                                    "Um destino vai sempre para a mesma conta."
+                                )
+                            de_para[destino] = par
+
+                        if id_regra:
+                            cur.execute("""
+                                UPDATE reclassificacoes_lancamentos
+                                   SET texto = %s, codigo_conta = %s, destino = %s,
+                                       ativo = %s, atualizado_em = now()
+                                 WHERE id_reclassificacao = %s AND cod_empresa = %s
+                            """, (texto, codigo or None, destino, ativo,
+                                  int(id_regra), cod_empresa))
+                        else:
+                            cur.execute("""
+                                INSERT INTO reclassificacoes_lancamentos
+                                    (cod_empresa, texto, codigo_conta, destino, ativo)
+                                VALUES (%s, %s, %s, %s, %s)
+                            """, (cod_empresa, texto, codigo or None, destino, ativo))
+
+                    # De-para do lançamento novo. Não há upsert por chave única
+                    # em classificacoes_automaticas: atualiza, e insere se não havia.
+                    for destino, (cod_grupo, cod_conta) in de_para.items():
+                        hist = historico_destino(destino)
+                        cur.execute("""
+                            UPDATE classificacoes_automaticas
+                               SET cod_grupo = %s, cod_conta = %s
+                             WHERE cod_empresa = %s AND UPPER(TRIM(texto)) = %s
+                        """, (cod_grupo, cod_conta, cod_empresa, hist))
+                        if cur.rowcount == 0:
+                            cur.execute("""
+                                INSERT INTO classificacoes_automaticas
+                                    (cod_empresa, texto, cod_grupo, cod_conta)
+                                VALUES (%s, %s, %s, %s)
+                            """, (cod_empresa, hist, cod_grupo, cod_conta))
+
+                    conn.commit()
+                    mensagem = (
+                        "Regras salvas. Elas valem a partir da próxima importação; para "
+                        "aplicar ao que já está importado (e ainda não transferido), use "
+                        "Reclassificar na tela de Importações."
+                    )
+
+                elif acao == "excluir":
+                    id_excluir = (request.form.get("id_excluir") or "").strip()
+                    if not id_excluir:
+                        raise ValueError("Regra não informada para exclusão.")
+                    cur.execute("""
+                        DELETE FROM reclassificacoes_lancamentos
+                        WHERE id_reclassificacao = %s AND cod_empresa = %s
+                    """, (int(id_excluir), cod_empresa))
+                    if cur.rowcount == 0:
+                        raise ValueError("Regra não encontrada para exclusão.")
+                    conn.commit()
+                    mensagem = "Regra excluída."
+
+            except Exception as e:
+                conn.rollback()
+                erro = str(e)
+
+        cur.execute("""
+            SELECT id_reclassificacao, texto, COALESCE(codigo_conta, ''), destino, ativo
+            FROM reclassificacoes_lancamentos
+            WHERE cod_empresa = %s
+            ORDER BY LOWER(texto), id_reclassificacao
+        """, (cod_empresa,))
+        regras_bd = cur.fetchall() or []
+
+        cur.execute("""
+            SELECT UPPER(TRIM(ca.texto)), ca.cod_grupo, ca.cod_conta, cg.descricao
+            FROM classificacoes_automaticas ca
+            LEFT JOIN contas_gerenciais cg
+                   ON cg.cod_empresa = ca.cod_empresa
+                  AND cg.cod_grupo = ca.cod_grupo
+                  AND cg.cod_conta = ca.cod_conta
+            WHERE ca.cod_empresa = %s
+        """, (cod_empresa,))
+        de_para_bd = {t: (g, c, d) for t, g, c, d in cur.fetchall() or []}
+
+        regras = []
+        for id_regra, texto, codigo, destino, ativo in regras_bd:
+            g, c, d = de_para_bd.get(historico_destino(destino), (None, None, None))
+            regras.append({
+                "id": id_regra, "texto": texto, "codigo_conta": codigo,
+                "destino": destino, "ativo": ativo,
+                "cod_grupo": g, "cod_conta": c, "descricao_conta": d,
+            })
+
+        # Quantos lançamentos cada regra pegaria no que já está transferido
+        # (só para conferir o texto; nada é alterado lá).
+        for r in regras:
+            filtro_conta = "AND codigo_conta = %s" if r["codigo_conta"] else ""
+            params = [cod_empresa, f"%{r['texto']}%"] + (
+                [r["codigo_conta"]] if r["codigo_conta"] else [])
+            cur.execute(f"""
+                SELECT COUNT(*), COALESCE(SUM(valor), 0),
+                       STRING_AGG(DISTINCT LPAD(mes::text, 2, '0') || '/' || ano::text, ', ')
+                FROM lancamentos_detalhamento
+                WHERE cod_empresa = %s AND descricao ILIKE %s {filtro_conta}
+                  AND COALESCE(complemento, '') <> %s
+            """, params + [COMPLEMENTO_RECLASSIFICACAO])
+            qtd, soma, meses = cur.fetchone()
+            r["qtd_historico"] = int(qtd or 0)
+            r["valor_historico"] = soma
+            r["meses_historico"] = meses or ""
+
+        cur.execute("""
+            SELECT cod_grupo, COALESCE(descricao, abreviatura)
+            FROM grupos_gerenciais
+            ORDER BY cod_grupo
+        """)
+        opcoes_grupos = cur.fetchall()
+
+        cur.execute("""
+            SELECT cod_grupo, cod_conta, COALESCE(descricao, '')
+            FROM contas_gerenciais
+            WHERE cod_empresa = %s
+            ORDER BY cod_grupo, cod_conta
+        """, (cod_empresa,))
+        opcoes_contas = cur.fetchall()
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "reclassificacoes_lancamentos.html",
+        regras=regras,
+        opcoes_grupos=opcoes_grupos,
+        opcoes_contas=opcoes_contas,
+        mensagem=mensagem,
+        erro=erro,
+        empresa_ativa=session["cod_empresa"],
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_cadastros"),
+        texto_voltar="← Voltar"
+    )
+
+
+# =========================
 # LANÇAMENTOS
 # =========================
 MESES_LANCAMENTOS = [

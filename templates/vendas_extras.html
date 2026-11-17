@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 30px; font-weight: 700; margin-bottom: 8px; }
+  .pagina-subtitulo { font-size: 18px; margin-bottom: 6px; }
+  .pagina-obs { font-size: 13px; color: #555; margin-bottom: 20px; max-width: 900px; }
+
+  .painel-filtros {
+    background: #fff; border: 1px solid #d9d9d9; border-radius: 10px;
+    padding: 18px; margin-bottom: 20px;
+  }
+  .grid-filtros {
+    display: grid; grid-template-columns: 200px 300px auto;
+    gap: 12px; align-items: end; justify-content: start;
+  }
+  .campo label { display: block; font-weight: 700; margin-bottom: 6px; }
+  .campo select {
+    width: 100%; box-sizing: border-box; padding: 10px 12px;
+    border: 1px solid #c9c9c9; border-radius: 8px; font-size: 15px; background: #fff;
+  }
+  .mes-nav { display: flex; align-items: center; gap: 6px; }
+  .btn-mes-nav {
+    flex: 0 0 38px; width: 38px; height: 38px; border: 1px solid #c7c7c7;
+    border-radius: 9px; background: #c8e6c9; color: #111; font-size: 18px;
+    font-weight: 900; cursor: pointer;
+  }
+
+  .btn-acao {
+    display: inline-block; padding: 9px 14px; border-radius: 9px;
+    text-decoration: none; font-weight: 700; border: 1px solid #c7c7c7;
+    background: #f7f7f7; color: #1f3c88; cursor: pointer; font-size: 14px;
+  }
+  .btn-novo { background: #2e7d32; color: #fff; border-color: #2e7d32; margin-bottom: 12px; }
+  .btn-salvar { background: #2e9b57; color: #fff; border-color: #2e9b57; }
+  .btn-excluir { color: #b71c1c; }
+  .btn-mini { padding: 5px 10px; font-size: 13px; }
+
+  table.grade { border-collapse: collapse; width: 100%; background: #fff; font-size: 14px; }
+  .grade th {
+    background: #1f3c88; color: #fff; padding: 8px 10px; text-align: center;
+    border: 1px solid #c9c9c9; white-space: nowrap;
+  }
+  .grade td { padding: 7px 10px; border: 1px solid #ddd; white-space: nowrap; }
+  .grade tbody tr:nth-child(even) td { background: #f7f9fc; }
+  .grade td.num { text-align: right; }
+  .grade td.obs { white-space: normal; max-width: 260px; color: #444; }
+  .grade tfoot td { font-weight: 700; background: #fff3c4; }
+
+  .linha-form td { background: #fffde7 !important; vertical-align: top; }
+  .linha-form input, .linha-form select {
+    width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 14px;
+    border: 1px solid #bbb; border-radius: 6px;
+  }
+  .linha-form input.num { text-align: right; }
+  .valor-calc { font-weight: 700; text-align: right; padding-top: 6px; }
+  .dica { font-size: 11px; color: #777; margin-top: 3px; }
+  .vazio { padding: 20px; color: #666; text-align: center; }
+
+  .flash-msg { padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; font-weight: 600; }
+  .flash-success { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
+  .flash-error { background: #ffebee; color: #b71c1c; border: 1px solid #ef9a9a; }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">Informar Vendas Extras</div>
+  <div class="pagina-subtitulo">Empresa: <strong>{{ nome_empresa }}</strong></div>
+  <div class="pagina-obs">
+    Venda real que não veio no relatório do WebPostos. Ela entra como venda do posto
+    (Consultar Vendas, Consulta de Estoques, Perdas e Sobras) e a reimportação do dia não a apaga,
+    mas <strong>não conta para o gerente</strong> em Performance de Gerentes / Acompanhamento de Metas.
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <form method="get" class="painel-filtros">
+    <div class="grid-filtros">
+      <div class="campo">
+        <label for="ano">Ano</label>
+        <div class="mes-nav">
+          <button type="button" class="btn-mes-nav" onclick="mudarAno(-1)" title="Ano anterior">←</button>
+          <select id="ano" name="ano" onchange="this.form.submit()">
+            {% for a in range(ano - 3, ano + 2) %}
+            <option value="{{ a }}" {% if a == ano %}selected{% endif %}>{{ a }}</option>
+            {% endfor %}
+          </select>
+          <button type="button" class="btn-mes-nav" onclick="mudarAno(1)" title="Próximo ano">→</button>
+        </div>
+      </div>
+      <div class="campo">
+        <label for="filial">Posto</label>
+        <select id="filial" name="filial" onchange="this.form.submit()">
+          <option value="">(Todos os postos)</option>
+          {% for f in filiais %}
+          <option value="{{ f.cod_filial }}" {% if filial_sel == f.cod_filial|int %}selected{% endif %}>
+            {{ f.cod_filial }} - {{ f.nome_filial }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div><a class="btn-acao" href="{{ url_for('sistema.menu_vendas') }}">← Voltar</a></div>
+    </div>
+  </form>
+
+  <button type="button" class="btn-acao btn-novo" onclick="novaVenda()">+ Informar Venda Extra</button>
+
+  <table class="grade">
+    <thead>
+      <tr>
+        <th style="width:130px">Data</th>
+        <th style="width:200px">Posto</th>
+        <th style="width:170px">Produto</th>
+        <th style="width:110px">Preço compra</th>
+        <th style="width:110px">Preço venda</th>
+        <th style="width:120px">Quantidade (L)</th>
+        <th style="width:130px">Valor venda</th>
+        <th style="width:120px">Margem bruta</th>
+        <th>Observação</th>
+        <th style="width:150px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="linha-form" id="linha-form" style="display:none">
+        <td>
+          <input type="date" form="form-venda" name="data" id="f-data" max="{{ hoje }}" required>
+        </td>
+        <td>
+          <select form="form-venda" name="cod_filial" id="f-filial" required>
+            <option value="">—</option>
+            {% for f in filiais %}
+            <option value="{{ f.cod_filial }}">{{ f.cod_filial }} - {{ f.nome_filial }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td>
+          <select form="form-venda" name="cod_produto" id="f-produto" required>
+            <option value="">—</option>
+            {% for p in produtos %}
+            <option value="{{ p.cod_produto }}">{{ p.descricao }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td><input form="form-venda" class="num" name="custo" id="f-custo" inputmode="decimal" placeholder="0,0000" oninput="recalcular()"></td>
+        <td><input form="form-venda" class="num" name="preco_venda" id="f-preco" inputmode="decimal" required oninput="recalcular()"></td>
+        <td><input form="form-venda" class="num" name="quantidade" id="f-qtd" inputmode="decimal" required oninput="recalcular()"></td>
+        <td><div class="valor-calc" id="f-valor">—</div><div class="dica">preço × quantidade</div></td>
+        <td><div class="valor-calc" id="f-margem">—</div></td>
+        <td><input form="form-venda" name="observacao" id="f-obs" maxlength="200"></td>
+        <td>
+          <button type="submit" form="form-venda" class="btn-acao btn-salvar btn-mini">Salvar</button>
+          <button type="button" class="btn-acao btn-mini" onclick="cancelar()">Cancelar</button>
+        </td>
+      </tr>
+
+      {% for v in vendas %}
+      <tr data-id="{{ v.id }}" data-data="{{ v.data.isoformat() }}" data-filial="{{ v.cod_filial }}"
+          data-produto="{{ v.cod_produto }}"
+          data-custo="{{ formatar_numero_br(v.custo|float, 4) if v.custo else '' }}"
+          data-preco="{{ formatar_numero_br(v.preco_venda|float, 2) }}"
+          data-qtd="{{ formatar_numero_br(v.quantidade|float, 2) }}"
+          data-obs="{{ v.observacao or '' }}">
+        <td>{{ v.data.strftime('%d/%m/%Y') }} - {{ v.dia_semana[:3] }}</td>
+        <td>{{ v.cod_filial }} - {{ v.nome_filial }}</td>
+        <td>{{ v.descricao }}</td>
+        <td class="num">{{ formatar_numero_br(v.custo|float, 4) if v.custo else '—' }}</td>
+        <td class="num">{{ formatar_numero_br(v.preco_venda|float, 2) }}</td>
+        <td class="num">{{ formatar_numero_br(v.quantidade|float, 2) }}</td>
+        <td class="num">{{ formatar_numero_br(v.valor|float, 2) }}</td>
+        <td class="num">{{ formatar_numero_br(v.margem_bruta|float, 2) }}</td>
+        <td class="obs">{{ v.observacao or '' }}</td>
+        <td>
+          <button type="button" class="btn-acao btn-mini" onclick="editar(this)">Editar</button>
+          <form method="post" action="{{ url_for('vendas.vendas_extras_excluir', id_venda=v.id) }}"
+                style="display:inline" onsubmit="return confirmarEnvio(this, 'Excluir esta venda extra?')">
+            <input type="hidden" name="ano_filtro" value="{{ ano }}">
+            <input type="hidden" name="filial_filtro" value="{{ filial_sel or '' }}">
+            <button type="submit" class="btn-acao btn-mini btn-excluir">Excluir</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+
+      {% if not vendas %}
+      <tr><td colspan="10" class="vazio">Nenhuma venda extra em {{ ano }}.</td></tr>
+      {% endif %}
+    </tbody>
+    {% if vendas|length > 1 %}
+    <tfoot>
+      <tr>
+        <td colspan="5">TOTAL</td>
+        <td class="num">{{ formatar_numero_br(total.quantidade, 2) }}</td>
+        <td class="num">{{ formatar_numero_br(total.valor, 2) }}</td>
+        <td class="num">{{ formatar_numero_br(total.margem_bruta, 2) }}</td>
+        <td colspan="2"></td>
+      </tr>
+    </tfoot>
+    {% endif %}
+  </table>
+
+  <form method="post" id="form-venda" action="{{ url_for('vendas.vendas_extras_salvar') }}">
+    <input type="hidden" name="id" id="f-id">
+    <input type="hidden" name="ano_filtro" value="{{ ano }}">
+    <input type="hidden" name="filial_filtro" value="{{ filial_sel or '' }}">
+  </form>
+</div>
+
+<script>
+  function mudarAno(delta) {
+    const sel = document.getElementById("ano");
+    const ano = parseInt(sel.value, 10) + delta;
+    if (!Array.from(sel.options).some(o => o.value === String(ano))) {
+      sel.add(new Option(String(ano), String(ano)));
+    }
+    sel.value = String(ano);
+    sel.form.submit();
+  }
+
+  // 14.550 / 14550 / 6,99 — o mesmo critério do servidor (_numero_extra).
+  function paraNumero(txt) {
+    txt = String(txt || "").trim().replace(/R\$|\s/g, "");
+    if (!txt) return NaN;
+    if (txt.includes(",")) txt = txt.replace(/\./g, "").replace(",", ".");
+    else if ((txt.match(/\./g) || []).length > 1 || /^\d{1,3}(\.\d{3})+$/.test(txt)) txt = txt.replace(/\./g, "");
+    return Number(txt);
+  }
+
+  function fmt(n) {
+    return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function recalcular() {
+    const custo = paraNumero(document.getElementById("f-custo").value);
+    const preco = paraNumero(document.getElementById("f-preco").value);
+    const qtd = paraNumero(document.getElementById("f-qtd").value);
+    const valorEl = document.getElementById("f-valor");
+    const margemEl = document.getElementById("f-margem");
+    if (isNaN(preco) || isNaN(qtd)) { valorEl.textContent = "—"; margemEl.textContent = "—"; return; }
+    const valor = Math.round(preco * qtd * 100) / 100;
+    valorEl.textContent = "R$ " + fmt(valor);
+    const c = isNaN(custo) ? 0 : custo;
+    margemEl.textContent = "R$ " + fmt(valor - Math.round(c * qtd * 100) / 100);
+  }
+
+  function abrirForm(posicao) {
+    const linha = document.getElementById("linha-form");
+    posicao.parentNode.insertBefore(linha, posicao);
+    linha.style.display = "";
+    recalcular();
+    document.getElementById("f-data").focus();
+  }
+
+  function preencher(d) {
+    document.getElementById("f-id").value = d.id || "";
+    document.getElementById("f-data").value = d.data || "";
+    document.getElementById("f-filial").value = d.filial || "";
+    document.getElementById("f-produto").value = d.produto || "";
+    document.getElementById("f-custo").value = d.custo || "";
+    document.getElementById("f-preco").value = d.preco || "";
+    document.getElementById("f-qtd").value = d.qtd || "";
+    document.getElementById("f-obs").value = d.obs || "";
+  }
+
+  let linhaEditada = null;
+
+  function cancelar() {
+    document.getElementById("linha-form").style.display = "none";
+    if (linhaEditada) { linhaEditada.style.display = ""; linhaEditada = null; }
+  }
+
+  function novaVenda() {
+    cancelar();
+    preencher({ data: "{{ hoje }}", filial: "{{ filial_sel or '' }}" });
+    abrirForm(document.querySelector(".grade tbody").firstElementChild);
+  }
+
+  function editar(botao) {
+    cancelar();
+    const tr = botao.closest("tr");
+    preencher(tr.dataset);
+    linhaEditada = tr;
+    abrirForm(tr);
+    tr.style.display = "none";
+  }
+</script>
+
+{% endblock %}
