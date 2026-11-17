@@ -3696,7 +3696,8 @@ def _agregar_diarias_sintetico(cur, cod_empresa, ate=None):
     posicao = meses.index(ate)
 
     # Dias com venda no último mês — a contagem é da empresa, não da filial,
-    # porque é assim que a importação sintética conta o "dia base".
+    # porque é assim que a importação sintética conta o "dia base" (só para
+    # o cabeçalho da tela: "10 de 30 dias no mês corrente").
     cur.execute("""
         SELECT COUNT(DISTINCT data) AS dias
         FROM vendas_diarias
@@ -3713,14 +3714,43 @@ def _agregar_diarias_sintetico(cur, cod_empresa, ate=None):
         else 1.0
     )
 
+    # Mas projetar cada posto pelo fator da empresa inteira (acima) erra o
+    # posto que abriu no meio do mês: ele vendeu em menos dias que os outros,
+    # e o fator da empresa pressupõe que vendeu nos mesmos `dia_base` dias.
+    # Um posto novo com 5 dias de venda num mês de dia_base=15 teria seu
+    # acumulado (só 5 dias) multiplicado por 30/15, quando o certo é 30/5 —
+    # cada filial projeta pelos próprios dias com venda no mês.
+    fator_por_filial = {}
+    if ate == mes_mais_recente:
+        cur.execute("""
+            SELECT cod_filial, COUNT(DISTINCT data) AS dias
+            FROM vendas_diarias
+            WHERE cod_empresa = %s
+              AND EXTRACT(YEAR FROM data)::int = %s
+              AND EXTRACT(MONTH FROM data)::int = %s
+            GROUP BY cod_filial
+        """, (cod_empresa, ultimo_ano, ultimo_mes))
+        for r in cur.fetchall():
+            dias_filial = int(r["dias"] or 0)
+            fator_por_filial[int(r["cod_filial"])] = (
+                (dias_mes / dias_filial)
+                if dias_filial and dias_filial < dias_mes
+                else 1.0
+            )
+
     regs_qtd, regs_val, regs_mb = [], [], []
 
     for l in linhas:
         ano = int(l["ano"])
         mes = int(l["mes"])
-        f = fator if (ano, mes) == (ultimo_ano, ultimo_mes) else 1.0
+        cod_filial = int(l["cod_filial"])
+        f = (
+            fator_por_filial.get(cod_filial, 1.0)
+            if (ano, mes) == (ultimo_ano, ultimo_mes)
+            else 1.0
+        )
 
-        base = {"cod_empresa": cod_empresa, "cod_filial": int(l["cod_filial"]),
+        base = {"cod_empresa": cod_empresa, "cod_filial": cod_filial,
                 "ano": ano, "mes": mes}
 
         regs_qtd.append(dict(base, quantidade_vendida=float(l["quantidade"] or 0) * f))
