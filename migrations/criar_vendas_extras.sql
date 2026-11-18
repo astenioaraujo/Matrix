@@ -9,8 +9,9 @@
 -- O que ela NÃO pode fazer:
 --   * ser apagada pela reimportação das vendas diárias — o DELETE por período
 --     de limpar_importacao_diaria_periodo passou a pular venda_extra;
---   * contar para o gerente — Performance de Gerentes (Vendas, Acompanhamento
---     de Metas, prêmio e pontos) lê com sem_extras=True.
+--   * ser projetada — entra somada fora do fator do mês.
+-- (Contar para o gerente: a primeira versão tirava; o cliente decidiu, ainda
+-- em 17/11/2026, que conta — Performance de Gerentes lê com as extras.)
 --
 -- ADD COLUMN com default constante não reescreve a tabela (PG 11+).
 

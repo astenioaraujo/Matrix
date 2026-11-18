@@ -402,7 +402,7 @@ def gerentes_vendas():
             # sem ela o mês corrente não aparecia, e as colunas de combustível
             # mostravam só o acumulado — a meta seria comparada com meio mês.
             regs_qtd, _, _, projecao = _agregar_diarias_sintetico(
-                cur, cod_empresa, sem_extras=True)  # venda extra não é do gerente
+                cur, cod_empresa)
             registros_qtd = [r for r in regs_qtd if int(r["cod_filial"]) in cods]
 
             # Quantidades por combustível — vêm das vendas diárias importadas,
@@ -413,11 +413,11 @@ def gerentes_vendas():
                     EXTRACT(YEAR FROM data)::int  AS ano,
                     EXTRACT(MONTH FROM data)::int AS mes,
                     descricao,
-                    SUM(quantidade) AS quantidade
+                    SUM(quantidade) FILTER (WHERE NOT venda_extra) AS quantidade,
+                    SUM(quantidade) FILTER (WHERE venda_extra)     AS quantidade_extra
                 FROM vendas_diarias
                 WHERE cod_empresa = %s
                   AND cod_filial = ANY(%s)
-                  AND NOT venda_extra
                   AND COALESCE(TRIM(descricao), '') <> ''
                   {FILTRO_SQL_COMBUSTIVEL}
                 GROUP BY 1, 2, 3
@@ -425,11 +425,16 @@ def gerentes_vendas():
             registros_comb = cur.fetchall() or []
 
             # O mês corrente dos combustíveis é projetado pelo mesmo fator.
-            if projecao and projecao["projetado"]:
-                fator = projecao["dias_mes"] / projecao["dia_base"]
-                for r in registros_comb:
-                    if (int(r["ano"]), int(r["mes"])) == (projecao["ano"], projecao["mes"]):
-                        r["quantidade"] = float(r["quantidade"] or 0) * fator
+            # A venda extra entra somada, fora da projeção (como no TOTAL).
+            fator = (
+                projecao["dias_mes"] / projecao["dia_base"]
+                if projecao and projecao["projetado"] else 1.0
+            )
+            for r in registros_comb:
+                f = fator if projecao and (int(r["ano"]), int(r["mes"])) == (
+                    projecao["ano"], projecao["mes"]) else 1.0
+                r["quantidade"] = (float(r["quantidade"] or 0) * f
+                                   + float(r["quantidade_extra"] or 0))
 
             cur.execute("""
                 SELECT cod_filial, ano, mes, meta_quantidade
@@ -494,7 +499,6 @@ def gerentes_vendas_detalhe():
         return _detalhe_mes_filial(
             cur, cod_empresa, "qtd", ano, mes, cod_filial, permitidas,
             normalizar=normalizar_combustivel, produto=produto,
-            sem_extras=True,
         )
     finally:
         cur.close()
@@ -1389,7 +1393,7 @@ def acompanhamento_metas():
         cods = [int(f["cod_filial"]) for f in filiais]
 
         regs_qtd, _, _, projecao = _agregar_diarias_sintetico(
-                cur, cod_empresa, sem_extras=True)  # venda extra não é do gerente
+                cur, cod_empresa)
 
         cur.execute("""
             SELECT cod_filial, meta_quantidade
@@ -1426,16 +1430,21 @@ def acompanhamento_metas():
         cur.close()
         conn.close()
 
-    # A venda que vem da função já é projetada no último mês com venda; o
-    # realizado é a mesma conta desfeita pelo fator.
+    # A venda que vem da função já é projetada no último mês com venda.
     projetado = bool(
         projecao and projecao["projetado"]
         and (projecao["ano"], projecao["mes"]) == (ano, mes)
     )
-    fator = projecao["dias_mes"] / projecao["dia_base"] if projetado else 1.0
 
     mapa_venda = {
         int(r["cod_filial"]): float(r["quantidade_vendida"] or 0)
+        for r in regs_qtd
+        if (int(r["ano"]), int(r["mes"])) == (ano, mes)
+    }
+    # O vendido de fato: com a venda extra somada fora da projeção, ele não
+    # sai de venda ÷ fator.
+    mapa_realizado = {
+        int(r["cod_filial"]): float(r["quantidade_realizada"] or 0)
         for r in regs_qtd
         if (int(r["ano"]), int(r["mes"])) == (ano, mes)
     }
@@ -1461,7 +1470,7 @@ def acompanhamento_metas():
         linhas.append({
             "cod_filial": cod,
             "nome_filial": filial["nome_filial"],
-            "realizado": venda / fator if venda else None,
+            "realizado": mapa_realizado.get(cod) or None,
             "projecao": venda if projetado else None,
             "meta": meta,
             "pct": pct,

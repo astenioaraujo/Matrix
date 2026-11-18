@@ -3666,8 +3666,11 @@ def _agregar_diarias_sintetico(cur, cod_empresa, ate=None, sem_extras=False):
     Vendas extras (Vendas → Informar Vendas Extras, `venda_extra`) entram
     somadas, mas **fora da projeção**: são um fato avulso, e multiplicá-las
     pelo fator do mês inventaria outras iguais nos dias que faltam. Também não
-    contam como "dia com venda". `sem_extras=True` tira-as de vez — é como a
-    Performance de Gerentes lê, porque a venda extra não é mérito do gerente.
+    contam como "dia com venda". `sem_extras=True` tira-as de vez (hoje
+    ninguém usa: a Performance de Gerentes passou a contá-las em 17/11/2026).
+
+    `quantidade_realizada` em registros_qtd é o vendido de fato, sem projeção
+    — com a extra fora do fator, ele não sai de `quantidade_vendida ÷ fator`.
 
     `meta` traz dia_base (dias com venda no último mês) e dias_mes, os mesmos
     dois números que vendas_painel_importacoes guarda.
@@ -3773,6 +3776,9 @@ def _agregar_diarias_sintetico(cur, cod_empresa, ate=None, sem_extras=False):
                 "ano": ano, "mes": mes}
 
         regs_qtd.append(dict(base, quantidade_vendida=float(l["quantidade"] or 0) * f
+                             + float(l["quantidade_extra"] or 0),
+                             # o que foi vendido de fato, sem projeção
+                             quantidade_realizada=float(l["quantidade"] or 0)
                              + float(l["quantidade_extra"] or 0)))
         regs_val.append(dict(base, valor_vendido=float(l["valor"] or 0) * f
                              + float(l["valor_extra"] or 0)))
