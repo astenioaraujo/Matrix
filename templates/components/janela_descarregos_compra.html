@@ -62,7 +62,7 @@ function abrirDescarregos(idCompra){
         return `<tr>
           <td>${x.id_descarrego}</td>
           <td><a href="${url}" title="Abrir a consulta de descarregos deste dia">${x.data}</a><div class="sub">${escDesc(x.dia_semana)}</div></td>
-          <td>${escDesc(x.ponta)}</td>
+          <td style="${x.tipo === 'venda_extra' ? 'color:#2e7d32;font-weight:700;' : (x.tipo === 'coligada' ? 'color:#6a1b9a;font-weight:700;' : '')}">${escDesc(x.ponta)}</td>
           <td class="num">${fmtLitrosDesc(x.quantidade)}</td>
           <td>${escDesc(x.lancado_em || "")}</td>
         </tr>`;

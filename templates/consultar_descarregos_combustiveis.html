@@ -96,6 +96,7 @@
   }
 
   .coligada { color: #6a1b9a; font-weight: 700; }
+  .venda-extra { color: #2e7d32; font-weight: 700; }
 </style>
 
 <div class="pagina-titulo">Consultar Descarregos</div>
@@ -174,7 +175,12 @@
         </td>
 
         <td>
-          {% if d.id_coligada_descarga %}
+          {% if d.id_venda_extra %}
+            <span class="venda-extra">Venda extra</span><br>
+            {{ d.data_venda_extra.strftime("%d/%m/%Y") if d.data_venda_extra else "" }} ·
+            {{ d.cod_filial_venda_extra }} - {{ d.nome_filial_venda_extra or "" }}
+            {% if d.observacao_venda_extra %}<br><small>{{ d.observacao_venda_extra }}</small>{% endif %}
+          {% elif d.id_coligada_descarga %}
             <span class="coligada">Coligada: {{ d.nome_coligada_descarga }}</span>
           {% else %}
             {{ d.cod_filial_descarga }} - {{ d.nome_filial_descarga or "" }}

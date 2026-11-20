@@ -28,6 +28,11 @@ from services.coligadas_service import (
     parte_do_form,
     coligada_valida,
 )
+from services.vendas_extras_service import (
+    id_venda_extra_do_form,
+    vendas_extras_sem_descarrego,
+    venda_extra_travada,
+)
 from services.bloqueios_service import (
     DIAS_LIMITE_BLOQUEIO,
     HORAS_LIBERACAO_MEDICOES,
@@ -3532,16 +3537,18 @@ def informar_descarregos_combustiveis():
             id_compra_txt = (request.form.get("id_compra") or "").strip()
             quantidade_txt = (request.form.get("quantidade_descarregada") or "0").strip()
 
-            # a ponta da descarga é uma filial nossa OU uma coligada
+            # a ponta da descarga é uma filial nossa, uma coligada OU uma
+            # venda extra (combustível vendido direto da carga)
             cod_filial_descarga, id_coligada_descarga = parte_do_form(
                 request.form, "parte_descarga"
             )
+            id_venda_extra = id_venda_extra_do_form(request.form, "parte_descarga")
 
             if not id_compra_txt.isdigit():
                 flash("Selecione uma compra válida.", "error")
                 return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
 
-            if cod_filial_descarga is None and id_coligada_descarga is None:
+            if cod_filial_descarga is None and id_coligada_descarga is None and id_venda_extra is None:
                 flash("Selecione o destino da descarga.", "error")
                 return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
 
@@ -3552,7 +3559,9 @@ def informar_descarregos_combustiveis():
                 flash("Informe uma quantidade maior que zero.", "error")
                 return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
 
-            if id_coligada_descarga is not None:
+            if id_venda_extra is not None:
+                pass  # conferida abaixo, com a venda travada
+            elif id_coligada_descarga is not None:
                 if not coligada_valida(cur, cod_empresa, id_coligada_descarga):
                     flash("Coligada inválida.", "error")
                     return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
@@ -3605,6 +3614,44 @@ def informar_descarregos_combustiveis():
 
             cod_produto = str(compra["cod_produto"]).strip()
 
+            if id_venda_extra is not None:
+                # A venda fica travada até o commit: dois descarregos ao mesmo
+                # tempo para a mesma venda — o índice único também recusa.
+                venda = venda_extra_travada(cur, cod_empresa, id_venda_extra)
+                erro_venda = None
+                if not venda:
+                    erro_venda = "Venda extra não encontrada."
+                elif venda["id_descarrego"]:
+                    erro_venda = (
+                        f"Esta venda extra já está ligada ao descarrego "
+                        f"{venda['id_descarrego']}."
+                    )
+                elif int(venda["cod_filial"]) not in codigos_filiais:
+                    erro_venda = "A venda extra é de um posto que você não acessa."
+                elif venda["cod_produto"] != cod_produto:
+                    erro_venda = (
+                        f"O produto da venda extra ({venda['descricao']}) não é o "
+                        f"combustível da compra {id_compra}."
+                    )
+                elif round(float(venda["quantidade"] or 0), 2) != round(quantidade_descarregada, 2):
+                    erro_venda = (
+                        f"A quantidade do descarrego tem que ser a da venda extra "
+                        f"({formatar_numero_br(float(venda['quantidade']))} L)."
+                    )
+                elif venda["data"].isoformat() != data_sel:
+                    # mesma data, senão o estoque do posto fecharia com sobra
+                    # num dia e perda no outro (e o trânsito ficaria errado)
+                    erro_venda = (
+                        f"A venda extra é de {venda['data'].strftime('%d/%m/%Y')}: "
+                        "lance o descarrego nessa data."
+                    )
+                if erro_venda:
+                    conn.rollback()
+                    flash(erro_venda, "error")
+                    return redirect(url_for("operacoes.informar_descarregos_combustiveis", data=data_sel))
+                # parte_do_form não conhece 'V:' e devolve (None, None)
+                cod_filial_descarga = id_coligada_descarga = None
+
             if cod_filial_descarga is not None:
                 aviso_tanque = aviso_filial_sem_tanque(
                     cur, cod_empresa, cod_filial_descarga, cod_produto
@@ -3622,12 +3669,13 @@ def informar_descarregos_combustiveis():
                     id_compra,
                     cod_filial_descarga,
                     id_coligada,
+                    id_venda_extra,
                     cod_produto,
                     quantidade_descarregada,
                     criado_em,
                     atualizado_em
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
                 RETURNING id_descarrego
             """, (
                 cod_empresa,
@@ -3635,6 +3683,7 @@ def informar_descarregos_combustiveis():
                 id_compra,
                 cod_filial_descarga,
                 id_coligada_descarga,
+                id_venda_extra,
                 cod_produto,
                 quantidade_descarregada
             ))
@@ -3661,6 +3710,11 @@ def informar_descarregos_combustiveis():
                 fd.nome_filial AS nome_filial_descarga,
                 d.id_coligada AS id_coligada_descarga,
                 COALESCE(cgd.nome_fantasia, cgd.nome) AS nome_coligada_descarga,
+                d.id_venda_extra,
+                ve.data AS data_venda_extra,
+                ve.cod_filial AS cod_filial_venda_extra,
+                fv.nome_filial AS nome_filial_venda_extra,
+                ve.observacao AS observacao_venda_extra,
                 cc.id_coligada AS id_coligada_compra,
                 COALESCE(cgc.nome_fantasia, cgc.nome) AS nome_coligada_compra,
                 d.cod_produto,
@@ -3687,6 +3741,13 @@ def informar_descarregos_combustiveis():
             LEFT JOIN operacoes_coligadas cgd
               ON cgd.id_coligada = d.id_coligada
 
+            LEFT JOIN vendas_diarias ve
+              ON ve.id = d.id_venda_extra
+
+            LEFT JOIN filiais fv
+              ON fv.cod_empresa = ve.cod_empresa
+             AND fv.cod_filial = ve.cod_filial
+
             LEFT JOIN operacoes_coligadas cgc
               ON cgc.id_coligada = cc.id_coligada
 
@@ -3710,6 +3771,12 @@ def informar_descarregos_combustiveis():
 
         descarregos = cur.fetchall() or []
 
+        # A opção "Venda Extra" só aparece quando há venda extra esperando
+        # descarrego (dos postos do usuário).
+        vendas_extras = vendas_extras_sem_descarrego(cur, cod_empresa, codigos_filiais)
+        for v in vendas_extras:
+            v["data_iso"] = v["data"].isoformat()
+
     except Exception as e:
         conn.rollback()
         flash(f"Erro: {e}", "error")
@@ -3717,6 +3784,7 @@ def informar_descarregos_combustiveis():
         compras = []
         descarregos = []
         coligadas = []
+        vendas_extras = []
 
     finally:
         cur.close()
@@ -3733,6 +3801,7 @@ def informar_descarregos_combustiveis():
         coligadas=coligadas,
         compras=compras,
         descarregos=descarregos,
+        vendas_extras=vendas_extras,
         url_voltar=url_for("operacoes.menu_operacoes"),
         texto_voltar="← Voltar",
     )
@@ -3813,14 +3882,16 @@ def consultar_descarregos_combustiveis():
         params = [cod_empresa, data_sel]
 
         if filial_sel is not None:
-            filtros.append("d.cod_filial_descarga = %s")
-            params.append(filial_sel)
+            # a venda extra conta no posto dela
+            filtros.append("(d.cod_filial_descarga = %s OR ve.cod_filial = %s)")
+            params.extend([filial_sel, filial_sel])
         elif tipo_global != "superusuario":
             # descarrego na coligada não é de filial nenhuma, mas é do grupo
             filtros.append(
-                "(d.cod_filial_descarga = ANY(%s) OR d.id_coligada IS NOT NULL)"
+                "(d.cod_filial_descarga = ANY(%s) OR d.id_coligada IS NOT NULL"
+                " OR ve.cod_filial = ANY(%s))"
             )
-            params.append(codigos_filiais)
+            params.extend([codigos_filiais, codigos_filiais])
 
         where_sql = " AND ".join(filtros)
 
@@ -3833,6 +3904,11 @@ def consultar_descarregos_combustiveis():
                 fd.nome_filial AS nome_filial_descarga,
                 d.id_coligada AS id_coligada_descarga,
                 COALESCE(cgd.nome_fantasia, cgd.nome) AS nome_coligada_descarga,
+                d.id_venda_extra,
+                ve.data AS data_venda_extra,
+                ve.cod_filial AS cod_filial_venda_extra,
+                fv.nome_filial AS nome_filial_venda_extra,
+                ve.observacao AS observacao_venda_extra,
                 cc.id_coligada AS id_coligada_compra,
                 COALESCE(cgc.nome_fantasia, cgc.nome) AS nome_coligada_compra,
                 d.cod_produto,
@@ -3854,6 +3930,13 @@ def consultar_descarregos_combustiveis():
 
             LEFT JOIN operacoes_coligadas cgd
               ON cgd.id_coligada = d.id_coligada
+
+            LEFT JOIN vendas_diarias ve
+              ON ve.id = d.id_venda_extra
+
+            LEFT JOIN filiais fv
+              ON fv.cod_empresa = ve.cod_empresa
+             AND fv.cod_filial = ve.cod_filial
 
             LEFT JOIN operacoes_coligadas cgc
               ON cgc.id_coligada = cc.id_coligada
@@ -3877,7 +3960,7 @@ def consultar_descarregos_combustiveis():
             WHERE {where_sql}
 
             ORDER BY
-                d.cod_filial_descarga NULLS LAST,
+                COALESCE(d.cod_filial_descarga, ve.cod_filial) NULLS LAST,
                 d.id_descarrego
         """, params)
 
@@ -4178,6 +4261,10 @@ def api_descarregos_da_compra(id_compra):
                 f.nome_filial,
                 d.id_coligada,
                 COALESCE(cg.nome_fantasia, cg.nome) AS nome_coligada,
+                d.id_venda_extra,
+                ve.data AS data_venda_extra,
+                ve.cod_filial AS cod_filial_venda_extra,
+                fv.nome_filial AS nome_filial_venda_extra,
                 d.quantidade_descarregada,
                 d.criado_em
             FROM descarregos_combustiveis d
@@ -4186,6 +4273,11 @@ def api_descarregos_da_compra(id_compra):
              AND f.cod_filial = d.cod_filial_descarga
             LEFT JOIN operacoes_coligadas cg
               ON cg.id_coligada = d.id_coligada
+            LEFT JOIN vendas_diarias ve
+              ON ve.id = d.id_venda_extra
+            LEFT JOIN filiais fv
+              ON fv.cod_empresa = ve.cod_empresa
+             AND fv.cod_filial = ve.cod_filial
             WHERE d.id_compra = %s
               AND d.cod_empresa = %s
             ORDER BY d.data_descarrego, d.id_descarrego
@@ -4197,7 +4289,15 @@ def api_descarregos_da_compra(id_compra):
 
     descarregos = []
     for d in linhas:
-        if d["id_coligada"]:
+        tipo = "filial"
+        if d["id_venda_extra"]:
+            tipo = "venda_extra"
+            ponta = (
+                f"Venda extra: {d['data_venda_extra'].strftime('%d/%m/%Y')} · "
+                f"{d['cod_filial_venda_extra']} - {d['nome_filial_venda_extra'] or ''}"
+            ).strip()
+        elif d["id_coligada"]:
+            tipo = "coligada"
             ponta = f"Coligada: {d['nome_coligada']}"
         else:
             ponta = f"{d['cod_filial_descarga']} - {d['nome_filial'] or ''}".strip()
@@ -4217,6 +4317,7 @@ def api_descarregos_da_compra(id_compra):
             "data": d["data_descarrego"].strftime("%d/%m/%Y"),
             "dia_semana": DIAS_SEMANA_BR[d["data_descarrego"].weekday()],
             "ponta": ponta,
+            "tipo": tipo,
             "quantidade": float(d["quantidade_descarregada"] or 0),
             "lancado_em": lancado,
         })
@@ -4644,6 +4745,8 @@ def consultar_emprestimos():
             # caracteriza o empréstimo, e a ponta pode ser uma coligada
             "(cc.cod_filial IS DISTINCT FROM d.cod_filial_descarga"
             " OR cc.id_coligada IS DISTINCT FROM d.id_coligada)",
+            # descarrego para venda extra baixa a compra, mas não é empréstimo
+            "d.id_venda_extra IS NULL",
         ]
 
         params = [cod_empresa, data_ini, data_fim]
@@ -4820,6 +4923,8 @@ def consultar_saldo_emprestimos():
             # ser uma coligada, que não tem cod_filial
             "(cc.cod_filial IS DISTINCT FROM d.cod_filial_descarga"
             " OR cc.id_coligada IS DISTINCT FROM d.id_coligada)",
+            # descarrego para venda extra baixa a compra, mas não é empréstimo
+            "d.id_venda_extra IS NULL",
         ]
 
         params = [cod_empresa]
@@ -5166,17 +5271,20 @@ def consultar_perdas_sobras():
 
         DESCARREGOS_CTE = """
             descarregos AS (
+                -- descarrego para venda extra entra no posto DA VENDA: a
+                -- venda já sai do tanque dele (ver services/estoques_service.py)
                 SELECT
-                    cod_filial_descarga AS cod_filial,
-                    cod_produto,
-                    data_descarrego,
-                    SUM(COALESCE(quantidade_descarregada, 0)) AS descarregos
-                FROM descarregos_combustiveis
-                WHERE cod_empresa = %s
-                  AND cod_filial_descarga IS NOT NULL
-                  AND data_descarrego >= %s
-                  AND data_descarrego < %s
-                GROUP BY cod_filial_descarga, cod_produto, data_descarrego
+                    COALESCE(d.cod_filial_descarga, ve.cod_filial) AS cod_filial,
+                    d.cod_produto,
+                    d.data_descarrego,
+                    SUM(COALESCE(d.quantidade_descarregada, 0)) AS descarregos
+                FROM descarregos_combustiveis d
+                LEFT JOIN vendas_diarias ve ON ve.id = d.id_venda_extra
+                WHERE d.cod_empresa = %s
+                  AND (d.cod_filial_descarga IS NOT NULL OR d.id_venda_extra IS NOT NULL)
+                  AND d.data_descarrego >= %s
+                  AND d.data_descarrego < %s
+                GROUP BY 1, d.cod_produto, d.data_descarrego
             )"""
 
         if vis == "mes":

@@ -81,6 +81,10 @@ def sigla_empresa(nome):
 
 app.jinja_env.filters['sigla_empresa'] = sigla_empresa
 
+# atalhos de módulo da barra de navegação (components/nav.html)
+from services.modulos_service import atalhos_modulos
+app.jinja_env.globals['atalhos_modulos'] = atalhos_modulos
+
 # REGISTRO DOS BLUEPRINTS
 app.register_blueprint(auth_bp)
 app.register_blueprint(sistema_bp)

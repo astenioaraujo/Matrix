@@ -122,6 +122,7 @@
         <th style="width:130px">Valor venda</th>
         <th style="width:120px">Margem bruta</th>
         <th>Observação</th>
+        <th style="width:150px" title="Descarrego que baixou a compra de onde saiu o combustível (Operações → Informar Descarregos)">Descarrego</th>
         <th style="width:150px"></th>
       </tr>
     </thead>
@@ -152,6 +153,7 @@
         <td><div class="valor-calc" id="f-valor">—</div><div class="dica">preço × quantidade</div></td>
         <td><div class="valor-calc" id="f-margem">—</div></td>
         <td><input form="form-venda" name="observacao" id="f-obs" maxlength="200"></td>
+        <td><div class="dica" id="f-dica-desc"></div></td>
         <td>
           <button type="submit" form="form-venda" class="btn-acao btn-salvar btn-mini">Salvar</button>
           <button type="button" class="btn-acao btn-mini" onclick="cancelar()">Cancelar</button>
@@ -164,7 +166,8 @@
           data-custo="{{ formatar_numero_br(v.custo|float, 4) if v.custo else '' }}"
           data-preco="{{ formatar_numero_br(v.preco_venda|float, 2) }}"
           data-qtd="{{ formatar_numero_br(v.quantidade|float, 2) }}"
-          data-obs="{{ v.observacao or '' }}">
+          data-obs="{{ v.observacao or '' }}"
+          data-descarrego="{{ v.descarrego.id_descarrego if v.descarrego else '' }}">
         <td>{{ v.data.strftime('%d/%m/%Y') }} - {{ v.dia_semana[:3] }}</td>
         <td>{{ v.cod_filial }} - {{ v.nome_filial }}</td>
         <td>{{ v.descricao }}</td>
@@ -175,19 +178,29 @@
         <td class="num">{{ formatar_numero_br(v.margem_bruta|float, 2) }}</td>
         <td class="obs">{{ v.observacao or '' }}</td>
         <td>
+          {% if v.descarrego %}
+            <span style="color:#2e7d32;font-weight:700;">✔ Descarrego {{ v.descarrego.id_descarrego }}</span>
+            <div class="dica">compra {{ v.descarrego.id_compra }} · {{ v.descarrego.data_descarrego.strftime('%d/%m/%Y') }}</div>
+          {% else %}
+            <span style="color:#b71c1c;font-weight:700;">Sem descarrego</span>
+          {% endif %}
+        </td>
+        <td>
           <button type="button" class="btn-acao btn-mini" onclick="editar(this)">Editar</button>
+          {% if not v.descarrego %}
           <form method="post" action="{{ url_for('vendas.vendas_extras_excluir', id_venda=v.id) }}"
                 style="display:inline" onsubmit="return confirmarEnvio(this, 'Excluir esta venda extra?')">
             <input type="hidden" name="ano_filtro" value="{{ ano }}">
             <input type="hidden" name="filial_filtro" value="{{ filial_sel or '' }}">
             <button type="submit" class="btn-acao btn-mini btn-excluir">Excluir</button>
           </form>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
 
       {% if not vendas %}
-      <tr><td colspan="10" class="vazio">Nenhuma venda extra em {{ ano }}.</td></tr>
+      <tr><td colspan="11" class="vazio">Nenhuma venda extra em {{ ano }}.</td></tr>
       {% endif %}
     </tbody>
     {% if vendas|length > 1 %}
@@ -197,7 +210,7 @@
         <td class="num">{{ formatar_numero_br(total.quantidade, 2) }}</td>
         <td class="num">{{ formatar_numero_br(total.valor, 2) }}</td>
         <td class="num">{{ formatar_numero_br(total.margem_bruta, 2) }}</td>
-        <td colspan="2"></td>
+        <td colspan="3"></td>
       </tr>
     </tfoot>
     {% endif %}
@@ -264,6 +277,19 @@
     document.getElementById("f-preco").value = d.preco || "";
     document.getElementById("f-qtd").value = d.qtd || "";
     document.getElementById("f-obs").value = d.obs || "";
+    // Ligada a um descarrego: data, posto, produto e quantidade são os do
+    // descarrego que baixou a compra — o servidor recusa mudar (selects não
+    // podem ser `disabled`, senão não seriam enviados).
+    const travada = !!d.descarrego;
+    ["f-data", "f-filial", "f-produto", "f-qtd"].forEach(id => {
+      const el = document.getElementById(id);
+      el.style.pointerEvents = travada ? "none" : "";
+      el.style.background = travada ? "#eee" : "";
+      el.tabIndex = travada ? -1 : 0;
+      if (el.tagName === "INPUT") el.readOnly = travada;
+    });
+    document.getElementById("f-dica-desc").textContent = travada
+      ? `Ligada ao descarrego ${d.descarrego}: só preço e observação mudam.` : "";
   }
 
   let linhaEditada = null;

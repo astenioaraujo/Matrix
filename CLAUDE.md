@@ -8,6 +8,7 @@ Matrix é um sistema de análise de dados para uma rede de postos de combustíve
 
 - Empresas: `EMP010` (Lucena), `EMP011` (Vilela), `EMP011ADM`, `EMP011CONV` (Vilela Conveniência), `EMP012` (30 Set CZ)
 - **Empresas arquivadas** (`empresas.arquivada` / `arquivada_em`, `migrations/arquivar_empresas.sql`, 11/11/2026): saem do seletor de empresas e dos atalhos do topo e **não abrem nem para o superusuário**, mas nenhum dado é apagado. Arquivar/desarquivar é **só pelo banco** (pedido ao Claude: `UPDATE empresas SET arquivada = true, arquivada_em = now() ...`), não há tela. O superusuário vê a lista em **Escolher empresa → 🗄 Empresas arquivadas** (`/empresas_arquivadas`). O login filtra as arquivadas (`auth_routes.py`); sessão aberta antes do arquivamento é podada no `before_request` `_barrar_empresa_arquivada` (`app.py`), que devolve ao seletor quem estava dentro — a lista vem de `codigos_arquivados()` (`services/empresas_service.py`), em cache de 60 s por processo, então desarquivar leva até 1 minuto para valer. Código de arquivada não se reaproveita: a linha fica em `empresas` e `uq_empresas_cod_empresa` + `uq_empresas_cod_empresa_normalizado` (`upper(btrim(...))`) recusam o repetido. Arquivadas hoje: EMP011, EMP011ADM, EMP011CONV, EMP013 (O Closet), EMP014 (30 Setembro AL).
+- **Dados da Vilela apagados (19/11/2026)**: tudo das EMP011, EMP011ADM e EMP011CONV saiu do banco (96.344 linhas em 65 tabelas, mais os usuários Erica, Rayonara e Lidiane, que só tinham a Vilela). Só ficaram as 3 linhas arquivadas em `empresas`, para os códigos não serem reaproveitados. Antes foi feito backup do schema `public` em `~/Backups/matrx/matrx_public_20261119_0829.dump` (pg_dump -Fc; restaurar com `pg_restore` do `libpq` do Homebrew). A movimentação 261 da EMP012 apontava para o cargo Frentista da EMP011 e foi trocada pelo Frentista da EMP012 (id 15).
 - Banco: PostgreSQL via Supabase
 - Autenticação: **custom**, não é Supabase Auth — tabela própria `usuarios` com `senha_hash`. Não existe `auth.uid()`.
 - Controle de acesso: `usuarios_empresas` (empresa) + `usuarios_filiais` (filial) + `usuarios_permissoes` (ação/tela, ligada a `permissoes_catalogo`) — checado na API, não em RLS por linha. Superusuário faz bypass em tudo.
@@ -31,6 +32,7 @@ Matrix é um sistema de análise de dados para uma rede de postos de combustíve
 - **Conexão por requisição** (`db.py`): abrir conexão com o banco remoto custa ~600 ms, muito mais que as consultas. `get_connection()` devolve a **mesma** conexão para todos os chamadores dentro de uma requisição Flask e ignora `close()` (as ~210 chamadas espalhadas fazem `finally: conn.close()`). Quem fecha de verdade é o teardown em `app.py`. Fora de requisição (scripts, cron) abre uma nova.
 - **Gravação em lote grande = `copiar_linhas` (COPY), não `execute_values`** (`db.py`, 08/10/2026). O `INSERT ... VALUES` de milhares de linhas fica no `pg_stat_statements` como texto com um `$n` por campo (lote de 5.000 linhas = 414 KB, e cada tamanho de lote vira entrada nova). A importação de vendas acumulou 19 MB ali, e o `postgres_exporter` do Supabase, que lê essa tabela a cada ~10 s, derramava ~24 MB em arquivo temporário por leitura — ~100 GB/dia, o alerta de **Disk IO Budget**. Corrigido em `vendas_diarias` (as duas importações) e `mercado_anp_postos`, com `pg_stat_statements_reset()`. Para conferir: `select temp_files, pg_size_pretty(temp_bytes) from pg_stat_database where datname = current_database()` em dois momentos — com o sistema parado não deve crescer. `execute_values` pequeno (dezenas de linhas) não é problema.
 - **Ícones de atalho no topo** (`app.py`, context processor `_injetar_atalhos_topo`): roda em TODA página que estende `base.html`. As permissões saem de **uma consulta só** e ficam em cache na sessão, amarradas a `(id_usuario, cod_empresa)`. Ao acrescentar um ícone novo, incluir a opção na mesma consulta — não criar outra.
+- **Atalhos de módulo na barra de navegação** (20/11/2026, `templates/components/nav.html`): depois da casinha e do Voltar, a **sigla de 3 letras** (`sigla`: OPE, FIN, VEN, LOG…) de cada módulo que o usuário pode abrir (permissão `<SISTEMA>/MENU`; PDV também exige `empresa_opera_pdv`), em cinza discreto como os chips de empresa do topo — a primeira versão, com emoji e filete colorido, ficou espalhafatosa; o módulo atual fica cinza-escuro (decidido por `request.blueprint`). A lista é única, `MODULOS_SISTEMA` em `services/modulos_service.py` — **módulo novo no menu principal entra aí também**. Uma consulta só, guardada na sessão (`_modulos_topo`, amarrada a usuário + empresa) e renovada a cada abertura de Escolha o sistema. Não aparece no primeiro nível (a tela de escolha não inclui `nav.html`), nem quando o usuário tem um módulo só.
 
 ## Convenções de tela
 
@@ -518,6 +520,7 @@ como texto `F:<cod_filial>` / `C:<id_coligada>`, lido por `parte_do_form()`.
 | empréstimo interno (já existia) | filial A | filial B |
 | compro pela coligada, descarrego aqui | coligada | filial |
 | compro por mim, descarrego na coligada | filial | coligada |
+| vendo direto da carga (venda extra) | filial | **venda extra** (ver abaixo) |
 
 **O pedido de compra continua obrigatório**, inclusive o da coligada: é ele que
 carrega quantidade, preço e fornecedor, e é dele que sai o saldo a descarregar.
@@ -546,6 +549,51 @@ entre filial×filial *e* filial×coligada. O comparativo de pontas diferentes é
 `IS DISTINCT FROM` nos dois campos, não `<>` em `cod_filial` (que some com NULL).
 Devolução é a operação inversa, sem nada novo: compra na filial, descarrego na
 coligada.
+
+### Descarrego para Venda Extra (20/11/2026)
+
+Terceira ponta do descarrego, ao lado da filial e da coligada: o combustível de
+uma **venda extra** (Vendas → Informar Vendas Extras) sai de uma compra sem
+passar pelo tanque. Antes a única baixa possível era um descarrego para
+coligada, que virava empréstimo. `migrations/descarrego_para_venda_extra.sql`:
+coluna `id_venda_extra` em `descarregos_combustiveis` (FK para
+`vendas_diarias.id`, sem CASCADE), `ck_descarregos_parte` passou a
+`num_nonnulls(cod_filial_descarga, id_coligada, id_venda_extra) = 1` e
+`uq_descarregos_venda_extra` (único parcial) — uma venda extra, um descarrego.
+O vínculo mora **no descarrego**, como `id_coligada`: `vendas_diarias` é a
+tabela grande das importações, e a FK impede apagar a venda que baixou uma
+compra. Serviço: `services/vendas_extras_service.py`.
+
+- A opção **"Venda Extra…"** só aparece no destino quando há venda extra sem
+  descarrego nos postos do usuário. Ela abre uma janela com as vendas (data,
+  posto, produto, quantidade, observação); só se escolhe a do **mesmo produto
+  da compra** e da **mesma data da tela** (as outras mostram o link para a data
+  delas). A tela manda `V:<id>` em `parte_descarga` e trava a quantidade.
+- **Trava no servidor** (`informar_descarregos_combustiveis`, com `FOR UPDATE`
+  na compra e na venda): venda inexistente ou não-extra, já ligada, de posto que
+  o usuário não acessa, produto ≠ combustível da compra (pela mesma regra de
+  palavra-chave, `cod_produto_das_vendas`, que saiu de `vendas_routes.py` para
+  `services/vendas_produtos.py`), quantidade ≠ a da venda ou **data ≠ a da
+  venda** — tudo recusado. Saldo da compra e `recalcular_status_compra` como
+  em qualquer descarrego.
+- **Não é empréstimo**: `consultar_emprestimos` e `consultar_saldo_emprestimos`
+  têm `d.id_venda_extra IS NULL` (sem isso a compra na filial × descarrego sem
+  filial nem coligada entraria pelo `IS DISTINCT FROM`). O Resumo de
+  Descarregos (descarga física no tanque) continua só com filial.
+- **Estoque**: sai do trânsito (o trânsito subtrai todo descarrego da compra) e
+  **conta como entrada no posto da venda** no CTE `descarregos` de
+  `linhas_estoque` e de Perdas e Sobras (`COALESCE(cod_filial_descarga,
+  ve.cod_filial)`). Motivo: a venda extra já sai do tanque desse posto como
+  qualquer venda; sem a entrada, o dia fecharia com sobra do tamanho da carga
+  (posto 9, relatório de 18/11/2026: sobra de 14.933 L de S10 → 384 L depois do
+  vínculo). Entra e sai no mesmo dia — por isso a data tem que ser a mesma, senão
+  seria sobra num dia e perda no outro. Coligada continua fora.
+- Aparece em verde ("Venda extra: data · posto") em Informar e Consultar
+  Descarregos e na janela de descarregos da compra (`tipo` no JSON). Consultar
+  com filtro de posto mostra o descarrego no posto da venda.
+- Caso real: o descarrego 3687 (14.550 L da compra 3194 para a coligada
+  "Posto de Terceiros", só para dar baixa) foi trocado em 20/11/2026 pelo
+  3688, ligado à venda extra 1052659 (SJ Piranhas, 17/11). Compra 3194 fechada.
 
 ## Consulta de Estoques
 
@@ -893,12 +941,14 @@ Origem: em 09–13/10/2026 o etanol de 5 postos da EMP010 veio a ~R$ 3.580 o lit
 
 ## Informar Vendas Extras (17/11/2026)
 
-`GET /vendas/extras` (`VENDAS/INFORMAR_VENDAS_EXTRAS` 728, `migrations/criar_vendas_extras.sql`, não concedida), botão verde no menu de Vendas. Venda real que não veio no relatório do WebPostos: data, posto, produto (do cadastro `combustiveis`), preço de compra (opcional), preço de venda, quantidade e observação; filtro ano (setas ← →) + posto, inclusão/edição numa linha do próprio bloco, excluir pelo `id`. **Valor = preço × quantidade e margem = valor − compra × quantidade são calculados no servidor**, nunca digitados.
+`GET /vendas/extras` (`VENDAS/INFORMAR_VENDAS_EXTRAS` 728, `migrations/criar_vendas_extras.sql`; concedida só à Heloísa na EMP010, `migrations/conceder_vendas_extras_heloisa.sql`, 20/11/2026), botão verde no menu de Vendas. Venda real que não veio no relatório do WebPostos: data, posto, produto (do cadastro `combustiveis`), preço de compra (opcional), preço de venda, quantidade e observação; filtro ano (setas ← →) + posto, inclusão/edição numa linha do próprio bloco, excluir pelo `id`. **Valor = preço × quantidade e margem = valor − compra × quantidade são calculados no servidor**, nunca digitados.
 
 - **Não tem tabela própria: é uma linha de `vendas_diarias` com `venda_extra = true`** (colunas novas `venda_extra`, `observacao`, `atualizado_em`). Por isso entra sozinha em Consultar Vendas, Consulta de Estoques (no relatório do **dia seguinte**, como toda venda), Perdas e Sobras, Resumo, Margem Unitária etc. A descrição e o `codigo_produto` são copiados da grafia mais usada pelo posto nos últimos 90 dias (`_descricao_venda_extra`) — senão a extra viraria uma linha à parte nas consultas e Perdas e Sobras, que casa por `codigo_produto`, não a veria.
 - **A reimportação não a apaga**: `limpar_importacao_diaria_periodo` tem `AND NOT venda_extra`. Qualquer DELETE novo em `vendas_diarias` precisa da mesma condição.
 - **Conta para o gerente** (decisão do cliente, 17/11/2026 — a primeira versão a tirava): entra em Performance de Gerentes (Vendas e Acompanhamento de Metas — % atingido, prêmio, pontos), sempre fora do fator de projeção. Por isso as colunas de combustível de `gerentes_vendas` separam `quantidade_extra` antes de projetar, e o REALIZADO do Acompanhamento vem de `quantidade_realizada` (novo em `_agregar_diarias_sintetico`), não de `venda ÷ fator`. SJ Piranhas 11/2026: 76.653 realizado, 130.992 projetado, 100,8% da meta de 130.000. `sem_extras=True` ficou na função, sem uso.
 - **Fora da projeção**: nas Vendas Sintéticas a extra é somada por fora do fator do mês (multiplicá-la inventaria outras iguais) e não conta como dia com venda (`dia_base`). Também fica fora da média de vendas/dia da Consulta de Estoques, que estima o giro.
+- **Ligada a um descarrego** (Operações → Informar Descarregos, destino "Venda Extra", ver Coligadas → Descarrego para Venda Extra): coluna **Descarrego** mostra o descarrego e a compra, ou "Sem descarrego" em vermelho. Ligada, a venda **não se exclui** e data/posto/produto/quantidade **não mudam** (recusado no servidor; preço e observação mudam) — exclua o descarrego antes.
+- **`vendas_routes.py` abre a sua própria conexão** (`get_connection` local, não o de `db.py`): fora da conexão por requisição. Para testar numa transação única é preciso trocar as duas.
 - Primeira: EMP010, posto 9 (SJ Piranhas), 17/11/2026, Diesel S10, 14.550 L × R$ 6,99 = R$ 101.704,50, compra R$ 6,18 (preço do pedido 3194, de 11/11, usado só como referência).
 
 ## Análise de Vendas (IA)

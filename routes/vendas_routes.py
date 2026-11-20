@@ -20,8 +20,12 @@ from zoneinfo import ZoneInfo
 from services.vendas_produtos import (
     PRODUTOS_NAO_COMBUSTIVEL,
     FILTRO_SQL_COMBUSTIVEL,
+    PALAVRAS_PRODUTO_MARGEM,
+    PRODUTOS_IGNORADOS_MARGEM,
+    cod_produto_das_vendas,
 )
 from services import analise_vendas_service
+from services.vendas_extras_service import descarregos_das_vendas_extras
 
 vendas_bp = Blueprint("vendas", __name__, url_prefix="/vendas")
 
@@ -3181,39 +3185,10 @@ PRODUTOS_ADICIONAIS_MARGEM = [
 # estoques_service, mais o gás natural (antes de GASOL, que "GAS NATURAL" não
 # alcança, mas a intenção fica explícita) e o diesel sem sufixo, que no sistema
 # de origem vem como "DIESEL COMUM" e é o S500.
-# Vendido no posto, mas não é combustível: fica fora do grid e não vale nem
-# aviso — a ausência dele não é uma diferença a explicar.
-PRODUTOS_IGNORADOS_MARGEM = PRODUTOS_NAO_COMBUSTIVEL
-
-PALAVRAS_PRODUTO_MARGEM = [
-    ("NATURAL", "GN"),
-    ("GNV", "GN"),
-    ("S10", "C5"),
-    ("S500", "C4"),
-    ("ADIT", "C2"),
-    ("ETAN", "C3"),
-    ("PODIUM", "C6"),
-    ("GASOL", "C1"),
-    ("DIESEL", "C4"),
-]
-
-
-def _cod_produto_das_vendas(descricao_venda):
-    """Código do produto para uma descrição vinda de vendas_diarias, pela mesma
-    regra de palavra-chave da Consulta de Estoques. Devolve None para o que não
-    é combustível (ARLA, por exemplo)."""
-    txt = re.sub(r"[^A-Z0-9]", "", str(descricao_venda or "").upper())
-    if not txt:
-        return None
-
-    if any(palavra in txt for palavra in PRODUTOS_IGNORADOS_MARGEM):
-        return None
-
-    for palavra, cod_produto in PALAVRAS_PRODUTO_MARGEM:
-        if palavra in txt:
-            return cod_produto
-
-    return None
+# A regra (PALAVRAS_PRODUTO_MARGEM e a função) mora em services/vendas_produtos.py:
+# Operações → Informar Descarregos também precisa saber o produto de uma venda
+# extra, e as duas não podem divergir.
+_cod_produto_das_vendas = cod_produto_das_vendas
 
 
 @vendas_bp.route("/margem_unitaria")
@@ -4825,9 +4800,13 @@ def vendas_extras():
             ORDER BY data DESC, cod_filial, id DESC
         """, (cod_empresa, ano, filial_sel) if filial_sel else (cod_empresa, ano))
         vendas = cur.fetchall()
+        ligados = descarregos_das_vendas_extras(cur, [v["id"] for v in vendas])
     finally:
         cur.close()
         conn.close()
+
+    for v in vendas:
+        v["descarrego"] = ligados.get(v["id"])
 
     total = {
         "quantidade": sum(float(v["quantidade"] or 0) for v in vendas),
@@ -4929,6 +4908,30 @@ def vendas_extras_salvar():
         if id_txt:
             if not id_txt.isdigit():
                 return recusar("Venda extra não encontrada.")
+            # Ligada a um descarrego (Operações → Informar Descarregos), a
+            # venda tem a data, o posto, o produto e a quantidade dele: mudar
+            # qualquer um desfaria a conferência feita ao ligar.
+            cur.execute("""
+                SELECT v.data, v.cod_filial, v.descricao, v.quantidade,
+                       d.id_descarrego
+                FROM vendas_diarias v
+                JOIN descarregos_combustiveis d ON d.id_venda_extra = v.id
+                WHERE v.id = %s AND v.cod_empresa = %s AND v.venda_extra
+                FOR UPDATE OF v
+            """, (int(id_txt), cod_empresa))
+            ligada = cur.fetchone()
+            if ligada and (
+                ligada["data"] != data_venda
+                or int(ligada["cod_filial"]) != cod_filial
+                or _cod_produto_das_vendas(ligada["descricao"]) != cod_produto
+                or round(float(ligada["quantidade"]), 2) != round(float(qtd), 2)
+            ):
+                conn.rollback()
+                return recusar(
+                    f"Esta venda extra está ligada ao descarrego {ligada['id_descarrego']}: "
+                    "data, posto, produto e quantidade não podem mudar. "
+                    "Exclua o descarrego em Operações → Informar Descarregos antes."
+                )
             # Só linha marcada como extra: o id de uma venda importada não
             # pode ser editado por aqui.
             cur.execute("""
@@ -4976,6 +4979,22 @@ def vendas_extras_excluir(id_venda):
     conn = get_connection()
     cur = conn.cursor()
     try:
+        # Ligada a um descarrego, a venda não sai: a FK recusaria, e a compra
+        # ficaria baixada por uma venda que não existe.
+        cur.execute("""
+            SELECT d.id_descarrego
+            FROM descarregos_combustiveis d
+            JOIN vendas_diarias v ON v.id = d.id_venda_extra
+            WHERE v.id = %s AND v.cod_empresa = %s
+        """, (id_venda, cod_empresa))
+        ligado = cur.fetchone()
+        if ligado:
+            conn.rollback()
+            flash(f"Esta venda extra está ligada ao descarrego {ligado[0]}. "
+                  "Exclua o descarrego em Operações → Informar Descarregos antes.", "error")
+            return redirect(url_for("vendas.vendas_extras",
+                                    ano=request.form.get("ano_filtro") or None,
+                                    filial=request.form.get("filial_filtro") or None))
         cur.execute("""
             DELETE FROM vendas_diarias
             WHERE id = %s AND cod_empresa = %s AND venda_extra

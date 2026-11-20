@@ -20,6 +20,18 @@
     </a>
   {% endif %}
 
+  <!-- ATALHOS DE MÓDULO — pula direto para outro sistema; só os que o
+       usuário pode abrir (services/modulos_service.py) -->
+  {% set _atalhos_mod = atalhos_modulos() %}
+  {% if _atalhos_mod|length > 1 %}
+    <div class="atalhos-modulos">
+      {% for m in _atalhos_mod %}
+        <a class="btn-atalho-modulo{% if m.atual %} atual{% endif %}"
+           href="{{ m.url }}" data-dica="{{ m.nome }}" aria-label="{{ m.nome }}">{{ m.sigla }}</a>
+      {% endfor %}
+    </div>
+  {% endif %}
+
 </div>
 
 <style>
@@ -80,6 +92,85 @@
 
   .btn-nav-home:hover {
     background: #ffec80;
+  }
+
+  /* ATALHOS DE MÓDULO — sigla de 3 letras, no espírito dos chips de
+     empresa do topo: cinza discreto, mesma altura da casinha */
+  .atalhos-modulos {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding-left: 14px;
+    border-left: 1px solid #ddd;
+  }
+
+  .btn-atalho-modulo {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 50px;
+    height: 44px;
+    padding: 0 8px;
+    border-radius: 10px;
+    box-sizing: border-box;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    line-height: 1;
+    color: #6b7280;
+    background: #ececec;
+    border: 1px solid #d6d6d6;
+    transition: 0.15s ease;
+  }
+
+  .btn-atalho-modulo:hover {
+    transform: translateY(-1px);
+    color: #374151;
+    background: #e0e0e0;
+  }
+
+  .btn-atalho-modulo.atual {
+    color: #fff;
+    background: #6b7280;
+    border-color: #6b7280;
+    cursor: default;
+  }
+
+  .btn-atalho-modulo.atual:hover {
+    transform: none;
+  }
+
+  /* Dica com o nome completo, logo abaixo do botão. Não usa `title`: a
+     dica nativa demora quase um segundo e às vezes nem aparece. */
+  .btn-atalho-modulo {
+    position: relative;
+  }
+
+  .btn-atalho-modulo::after {
+    content: attr(data-dica);
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 5px 9px;
+    border-radius: 6px;
+    background: #374151;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0;
+    white-space: nowrap;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+    z-index: 50;
+  }
+
+  .btn-atalho-modulo:hover::after {
+    opacity: 1;
   }
 
   /* PADRÃO MARROM (se usar depois) */

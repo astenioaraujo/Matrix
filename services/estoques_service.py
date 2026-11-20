@@ -183,16 +183,23 @@ def linhas_estoque(cur, cod_empresa, data_base, codigos_filiais=None):
             GROUP BY cc.cod_filial, cc.cod_produto
         ),
 
+        -- Descarrego para venda extra (combustível vendido direto da carga)
+        -- conta como entrada no posto DA VENDA, na data dela (obrigatoriamente
+        -- a do descarrego): a venda extra já sai do tanque desse posto como
+        -- qualquer venda, e sem esta entrada o dia fecharia com uma sobra do
+        -- tamanho da carga. Entra e sai no mesmo dia: efeito zero no estoque.
+        -- Coligada continua fora (o combustível não é nosso).
         descarregos AS (
             SELECT
-                cod_filial_descarga AS cod_filial,
-                cod_produto,
-                SUM(COALESCE(quantidade_descarregada, 0)) AS descarregos
-            FROM descarregos_combustiveis
-            WHERE cod_empresa = %s
-              AND data_descarrego = %s
-              AND cod_filial_descarga IS NOT NULL
-            GROUP BY cod_filial_descarga, cod_produto
+                COALESCE(d.cod_filial_descarga, ve.cod_filial) AS cod_filial,
+                d.cod_produto,
+                SUM(COALESCE(d.quantidade_descarregada, 0)) AS descarregos
+            FROM descarregos_combustiveis d
+            LEFT JOIN vendas_diarias ve ON ve.id = d.id_venda_extra
+            WHERE d.cod_empresa = %s
+              AND d.data_descarrego = %s
+              AND (d.cod_filial_descarga IS NOT NULL OR d.id_venda_extra IS NOT NULL)
+            GROUP BY 1, d.cod_produto
         ),
 
         medicao_atual AS (

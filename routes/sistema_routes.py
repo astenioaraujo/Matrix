@@ -55,6 +55,13 @@ def selecionar_sistema():
         pode_pdv = (empresa_opera_pdv(cod_empresa)
                     and usuario_tem_permissao(id_usuario, cod_empresa, "PDV", "MENU"))
 
+    # renova a lista dos atalhos de módulo da barra de navegação
+    try:
+        from services.modulos_service import atualizar_cache_modulos
+        atualizar_cache_modulos()
+    except Exception:
+        pass
+
     return render_template(
         "selecionar_sistema.html",
         nome_empresa=session.get("nome_empresa"),

@@ -83,6 +83,15 @@
   .btn-data-nav:hover { background: #a5d6a7; }
 
   .coligada { color: #6a1b9a; font-weight: 700; }
+  .venda-extra { color: #2e7d32; font-weight: 700; }
+
+  #janela-ve { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 1000; align-items: center; justify-content: center; }
+  #janela-ve.aberta { display: flex; }
+  .janela-ve-caixa { background: #fff; border-radius: 12px; padding: 18px 20px; max-width: 900px; width: 95vw; max-height: 85vh; overflow: auto; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+  .janela-ve-caixa h3 { margin: 0 0 6px; }
+  .janela-ve-caixa .dica { color: #555; font-size: 13px; margin-bottom: 12px; }
+  .janela-ve-caixa tr.indisponivel td { color: #999; }
+  .janela-ve-caixa .motivo { font-size: 12px; color: #9f2f2f; }
 
   .flash-msg { max-width: 900px; padding: 10px 14px; border-radius: 8px; margin-bottom: 15px; font-weight: 600; }
   .flash-success { background: #e6f4ea; color: #1e6b34; border: 1px solid #b7dfc2; }
@@ -152,6 +161,7 @@
               {% for c in compras %}
                 <option value="{{ c.id_compra }}"
                     data-produto="{{ c.cod_produto }} - {{ c.produto }}"
+                    data-cod-produto="{{ c.cod_produto }}"
                     data-saldo="{{ c.saldo }}"
                     data-parte="{% if c.id_coligada %}C:{{ c.id_coligada }}{% else %}F:{{ c.cod_filial }}{% endif %}"
                     data-fornecedor="{{ c.nome_fornecedor or '' }}{% if c.cidade_base %} - {{ c.cidade_base }}{% endif %}">
@@ -180,6 +190,9 @@
                   Coligada: {{ cg.nome_fantasia or cg.nome }}
                 </option>
               {% endfor %}
+              {% if vendas_extras %}
+                <option value="ESCOLHER_VE">Venda Extra…</option>
+              {% endif %}
             </select>
           </td>
 
@@ -215,7 +228,12 @@
         </td>
 
         <td>
-          {% if d.id_coligada_descarga %}
+          {% if d.id_venda_extra %}
+            <span class="venda-extra">Venda extra</span><br>
+            {{ d.data_venda_extra.strftime("%d/%m/%Y") if d.data_venda_extra else "" }} ·
+            {{ d.cod_filial_venda_extra }} - {{ d.nome_filial_venda_extra or "" }}
+            {% if d.observacao_venda_extra %}<br><small>{{ d.observacao_venda_extra }}</small>{% endif %}
+          {% elif d.id_coligada_descarga %}
             <span class="coligada">Coligada: {{ d.nome_coligada_descarga }}</span>
           {% else %}
             {{ d.cod_filial_descarga }} - {{ d.nome_filial_descarga or "" }}
@@ -252,6 +270,87 @@
 
 </div>
 
+<div id="janela-ve" onclick="if (event.target === this) fecharJanelaVE()">
+  <div class="janela-ve-caixa">
+    <h3>Descarregar para uma venda extra</h3>
+    <div class="dica">Combustível vendido direto da carga (Vendas → Informar Vendas Extras). A quantidade do descarrego é a da venda, e a data tem que ser a mesma.</div>
+    <table>
+      <thead>
+        <tr><th>Data</th><th>Posto</th><th>Produto</th><th class="col-qtd">Quantidade</th><th>Observação</th><th class="col-acoes"></th></tr>
+      </thead>
+      <tbody id="janela-ve-linhas"></tbody>
+    </table>
+    <div style="text-align:right;margin-top:12px;"><button type="button" class="btn btn-excluir" onclick="fecharJanelaVE()">Cancelar</button></div>
+  </div>
+</div>
+
+<script>
+const VENDAS_EXTRAS = {{ vendas_extras | tojson }};
+const DATA_TELA = {{ data_sel | tojson }};
+const URL_TELA = {{ url_for('operacoes.informar_descarregos_combustiveis') | tojson }};
+
+function fmtQtd(n) {
+    return Number(n).toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+function fmtData(iso) { const p = iso.split("-"); return `${p[2]}/${p[1]}/${p[0]}`; }
+function escVE(t) { const d = document.createElement("div"); d.textContent = t == null ? "" : String(t); return d.innerHTML; }
+
+function abrirJanelaVE() {
+    const opt = document.getElementById("id_compra").selectedOptions[0];
+    const produtoCompra = opt ? (opt.getAttribute("data-cod-produto") || "") : "";
+    const corpo = document.getElementById("janela-ve-linhas");
+    corpo.innerHTML = "";
+    VENDAS_EXTRAS.forEach(v => {
+        let motivo = "";
+        if (!produtoCompra) motivo = "escolha a compra primeiro";
+        else if (v.cod_produto !== produtoCompra) motivo = "produto diferente do da compra";
+        else if (v.data_iso !== DATA_TELA) motivo = `<a href="${URL_TELA}?data=${v.data_iso}">lançar em ${fmtData(v.data_iso)}</a>`;
+        const tr = document.createElement("tr");
+        if (motivo) tr.className = "indisponivel";
+        tr.innerHTML = `<td>${fmtData(v.data_iso)}</td>`
+            + `<td>${escVE(v.cod_filial)} - ${escVE(v.nome_filial)}</td>`
+            + `<td>${escVE(v.descricao)}</td>`
+            + `<td class="col-qtd">${fmtQtd(v.quantidade)}</td>`
+            + `<td>${escVE(v.observacao)}</td>`
+            + `<td class="col-acoes">${motivo ? `<span class="motivo">${motivo}</span>` : `<button type="button" class="btn">Escolher</button>`}</td>`;
+        if (!motivo) tr.querySelector("button").onclick = () => escolherVE(v);
+        corpo.appendChild(tr);
+    });
+    document.getElementById("janela-ve").classList.add("aberta");
+}
+
+function fecharJanelaVE() {
+    document.getElementById("janela-ve").classList.remove("aberta");
+    const sel = document.getElementById("parte_descarga");
+    if (sel.value === "ESCOLHER_VE") sel.value = "";
+}
+
+function escolherVE(v) {
+    const sel = document.getElementById("parte_descarga");
+    sel.querySelectorAll("option[data-ve]").forEach(o => o.remove());
+    const o = document.createElement("option");
+    o.value = "V:" + v.id;
+    o.setAttribute("data-ve", "1");
+    o.textContent = `Venda extra: ${fmtData(v.data_iso)} · ${v.cod_filial} - ${v.nome_filial || ""} · ${fmtQtd(v.quantidade)} L`;
+    sel.appendChild(o);
+    sel.value = o.value;
+    const qtd = document.getElementById("quantidade_descarregada");
+    qtd.value = fmtQtd(v.quantidade).replace(/\./g, "");
+    qtd.readOnly = true;
+    document.getElementById("janela-ve").classList.remove("aberta");
+}
+
+document.getElementById("parte_descarga").addEventListener("change", function () {
+    const qtd = document.getElementById("quantidade_descarregada");
+    if (this.value === "ESCOLHER_VE") { abrirJanelaVE(); return; }
+    if (!this.value.startsWith("V:")) {
+        this.querySelectorAll("option[data-ve]").forEach(o => o.remove());
+        qtd.readOnly = false;
+    }
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape") fecharJanelaVE(); });
+</script>
+
 <script>
 function mudarData(dias) {
     const inputData = document.getElementById("data");
@@ -284,7 +383,10 @@ document.getElementById("id_compra").addEventListener("change", function() {
     // sugere descarregar na mesma ponta que comprou; trocar aqui é o
     // que caracteriza o empréstimo (nosso posto ↔ coligada)
     if (parte) {
-        document.getElementById("parte_descarga").value = parte;
+        const sel = document.getElementById("parte_descarga");
+        sel.querySelectorAll("option[data-ve]").forEach(o => o.remove());
+        document.getElementById("quantidade_descarregada").readOnly = false;
+        sel.value = parte;
     }
 });
 </script>
