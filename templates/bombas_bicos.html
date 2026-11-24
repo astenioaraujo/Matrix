@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .bloco-filial {
+    margin-bottom: 30px;
+    background: #fff;
+    border-radius: 14px;
+    border: 1px solid #ddd;
+    padding: 20px;
+    max-width: 900px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+
+  .titulo-filial {
+    font-size: 20px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    font-size: 15px;
+  }
+
+  th, td {
+    padding: 8px 10px;
+    border: 1px solid #ddd;
+  }
+
+  th {
+    background: #f1f1f1;
+    text-align: left;
+  }
+
+  select, input[type="number"] {
+    padding: 6px;
+    border: 1px solid #cfcfcf;
+    border-radius: 6px;
+  }
+
+  input[type="number"] {
+    width: 70px;
+  }
+
+  .col-acoes {
+    width: 170px;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .btn-salvar {
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid #1565c0;
+    background: #1565c0;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .btn-excluir {
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid #b00020;
+    background: #fff;
+    color: #b00020;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .linha-novo td {
+    background: #fffbe6;
+  }
+
+  .sem-bicos {
+    color: #777;
+    font-style: italic;
+    margin-bottom: 14px;
+  }
+</style>
+
+<div class="pagina-titulo">Bombas e Bicos</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+{% for cod_filial, f in filiais.items() %}
+  <div class="bloco-filial">
+
+    <div class="titulo-filial">
+      Filial {{ cod_filial }} - {{ f.nome_filial }}
+    </div>
+
+    {% if f.itens %}
+      <table>
+        <thead>
+          <tr>
+            <th>Bomba</th>
+            <th>Bico</th>
+            <th>Combustível</th>
+            <th class="col-acoes">Ações</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {% for item in f.itens %}
+            <tr>
+              <form method="post">
+                <input type="hidden" name="id_bomba_bico" value="{{ item.id_bomba_bico }}">
+                <input type="hidden" name="cod_filial" value="{{ cod_filial }}">
+
+                <td>
+                  <input type="number" name="numero_bomba" value="{{ item.numero_bomba }}" min="1" required>
+                </td>
+
+                <td>
+                  <input type="number" name="numero_bico" value="{{ item.numero_bico }}" min="1" required>
+                </td>
+
+                <td>
+                  <select name="cod_produto" required>
+                    {% for c in combustiveis %}
+                      <option value="{{ c.cod_produto }}" {% if c.cod_produto == item.cod_produto %}selected{% endif %}>
+                        {{ c.descricao }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </td>
+
+                <td class="col-acoes">
+                  <button type="submit" class="btn-salvar">Salvar</button>
+              </form>
+
+                  <form method="post"
+                        action="{{ url_for('operacoes.excluir_bomba_bico', id_bomba_bico=item.id_bomba_bico) }}"
+                        style="display:inline;"
+                        onsubmit="return confirmarEnvio(this, 'Excluir este bico?');">
+                    <button type="submit" class="btn-excluir">Excluir</button>
+                  </form>
+                </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="sem-bicos">Nenhum bico cadastrado nesta filial.</div>
+    {% endif %}
+
+    <table style="margin-top: 14px;">
+      <tbody>
+        <tr class="linha-novo">
+          <form method="post">
+            <input type="hidden" name="cod_filial" value="{{ cod_filial }}">
+
+            <td style="width: 90px;">
+              <input type="number" name="numero_bomba" placeholder="Bomba" min="1" required>
+            </td>
+
+            <td style="width: 90px;">
+              <input type="number" name="numero_bico" placeholder="Bico" min="1" required>
+            </td>
+
+            <td>
+              <select name="cod_produto" required>
+                <option value="" disabled selected>Combustível</option>
+                {% for c in combustiveis %}
+                  <option value="{{ c.cod_produto }}">{{ c.descricao }}</option>
+                {% endfor %}
+              </select>
+            </td>
+
+            <td class="col-acoes">
+              <button type="submit" class="btn-salvar">Adicionar</button>
+            </td>
+          </form>
+        </tr>
+      </tbody>
+    </table>
+
+  </div>
+{% endfor %}
+
+{% endblock %}

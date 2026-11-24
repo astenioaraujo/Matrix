@@ -1811,9 +1811,13 @@ def menu_configuracoes():
 
     if tipo_global == "superusuario":
         pode_capacidade_tanques = True
+        pode_bombas_bicos = True
     else:
         pode_capacidade_tanques = usuario_tem_permissao(
             id_usuario, cod_empresa, "OPERACOES", "CAPACIDADE_TANQUES"
+        )
+        pode_bombas_bicos = usuario_tem_permissao(
+            id_usuario, cod_empresa, "OPERACOES", "BOMBAS_BICOS"
         )
 
     return render_template(
@@ -1823,6 +1827,7 @@ def menu_configuracoes():
         url_voltar=url_for("operacoes.menu_operacoes"),
         texto_voltar="← Voltar",
         pode_capacidade_tanques=pode_capacidade_tanques,
+        pode_bombas_bicos=pode_bombas_bicos,
         pode_feriados=True,
     )
 
@@ -2481,6 +2486,180 @@ def excluir_coligada_operacoes(id_coligada):
         conn.close()
 
     return redirect(url_for("operacoes.coligadas_operacoes"))
+
+
+# ---------------------------------------
+# BOMBAS E BICOS
+# ---------------------------------------
+
+@operacoes_bp.route("/configuracoes/bombas-bicos", methods=["GET", "POST"])
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONFIGURACOES",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def bombas_bicos():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        if request.method == "POST":
+            id_bomba_bico = (request.form.get("id_bomba_bico") or "").strip()
+            cod_filial_txt = (request.form.get("cod_filial") or "").strip()
+            numero_bomba_txt = (request.form.get("numero_bomba") or "").strip()
+            numero_bico_txt = (request.form.get("numero_bico") or "").strip()
+            cod_produto = (request.form.get("cod_produto") or "").strip()
+
+            if not (cod_filial_txt.isdigit() and numero_bomba_txt.isdigit()
+                    and numero_bico_txt.isdigit() and cod_produto):
+                flash("Preencha filial, bomba, bico e combustível.", "error")
+                return redirect(url_for("operacoes.bombas_bicos"))
+
+            cod_filial = int(cod_filial_txt)
+            numero_bomba = int(numero_bomba_txt)
+            numero_bico = int(numero_bico_txt)
+
+            if id_bomba_bico:
+                cur.execute("""
+                    UPDATE bombas_bicos
+                    SET cod_filial = %s,
+                        numero_bomba = %s,
+                        numero_bico = %s,
+                        cod_produto = %s,
+                        atualizado_em = NOW()
+                    WHERE id_bomba_bico = %s
+                      AND cod_empresa = %s
+                """, (
+                    cod_filial, numero_bomba, numero_bico, cod_produto,
+                    int(id_bomba_bico), cod_empresa
+                ))
+            else:
+                cur.execute("""
+                    INSERT INTO bombas_bicos (
+                        cod_empresa, cod_filial, numero_bomba, numero_bico,
+                        cod_produto, criado_em, atualizado_em
+                    )
+                    VALUES (%s, %s, %s, %s, %s, NOW(), NOW())
+                    ON CONFLICT (cod_empresa, cod_filial, numero_bomba, numero_bico)
+                    DO UPDATE SET
+                        cod_produto = EXCLUDED.cod_produto,
+                        atualizado_em = NOW()
+                """, (cod_empresa, cod_filial, numero_bomba, numero_bico, cod_produto))
+
+            conn.commit()
+            flash("Bico salvo com sucesso.", "success")
+            return redirect(url_for("operacoes.bombas_bicos"))
+
+        cur.execute("""
+            SELECT
+                f.cod_filial,
+                f.nome_filial,
+                bb.id_bomba_bico,
+                bb.numero_bomba,
+                bb.numero_bico,
+                bb.cod_produto,
+                c.descricao
+            FROM filiais f
+            LEFT JOIN bombas_bicos bb
+              ON bb.cod_empresa = f.cod_empresa
+             AND bb.cod_filial = f.cod_filial
+            LEFT JOIN combustiveis c
+              ON c.cod_empresa = f.cod_empresa
+             AND c.cod_produto = bb.cod_produto
+            WHERE f.cod_empresa = %s
+              AND f.ativo = TRUE
+            ORDER BY f.cod_filial, bb.numero_bomba, bb.numero_bico
+        """, (cod_empresa,))
+
+        linhas = cur.fetchall() or []
+
+        cur.execute("""
+            SELECT cod_produto, descricao
+            FROM combustiveis
+            WHERE cod_empresa = %s
+            ORDER BY cod_produto
+        """, (cod_empresa,))
+
+        combustiveis = cur.fetchall() or []
+
+        # AGRUPAR POR FILIAL
+        filiais = {}
+        for l in linhas:
+            chave = l["cod_filial"]
+
+            if chave not in filiais:
+                filiais[chave] = {
+                    "nome_filial": l["nome_filial"],
+                    "itens": []
+                }
+
+            if l["id_bomba_bico"] is not None:
+                filiais[chave]["itens"].append(l)
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao processar bombas e bicos: {e}", "error")
+        filiais = {}
+        combustiveis = []
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "bombas_bicos.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        filiais=filiais,
+        combustiveis=combustiveis,
+        url_voltar=url_for("operacoes.menu_configuracoes"),
+        texto_voltar="← Voltar",
+    )
+
+
+@operacoes_bp.route("/configuracoes/bombas-bicos/excluir/<int:id_bomba_bico>", methods=["POST"])
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONFIGURACOES",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def excluir_bomba_bico(id_bomba_bico):
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            DELETE FROM bombas_bicos
+            WHERE id_bomba_bico = %s
+              AND cod_empresa = %s
+        """, (id_bomba_bico, cod_empresa))
+
+        conn.commit()
+        flash("Bico excluído com sucesso.", "success")
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Não foi possível excluir. Erro: {e}", "error")
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return redirect(url_for("operacoes.bombas_bicos"))
 
 
 # ---------------------------------------
