@@ -143,8 +143,8 @@
         <option value="">Todas</option>
 
         {% for filial in filiais %}
-          <option value="{{ filial.cod_filial }}"
-            {% if filial_sel == filial.cod_filial|string %}selected{% endif %}>
+          <option value="{{ filial.nome_filial }}"
+            {% if filial_sel == filial.nome_filial %}selected{% endif %}>
             {{ filial.cod_filial }} - {{ filial.nome_filial }}
           </option>
         {% endfor %}

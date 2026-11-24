@@ -40,7 +40,8 @@
     font-size: 14px;
   }
 
-  .campo-treinamento select { min-width: 420px; }
+  .campo-treinamento select,
+  .campo-lista select { min-width: 320px; }
 
   .btn {
     border: none;
@@ -55,6 +56,7 @@
   .btn-filtrar { background: #6f4522; color: white; }
   .btn-selecionar { background: #7b4a18; color: white; }
   .btn-salvar { background: #2563eb; color: white; }
+  .btn-gerenciar { background: #8e6b2b; color: white; }
 
   table {
     width: 100%;
@@ -79,9 +81,16 @@
   .col-cargo { width: 180px; }
   .col-filial { width: 220px; }
 
+  .aviso-lista {
+    font-size: 14px;
+    color: #6b4a18;
+    margin-bottom: 10px;
+  }
+
   @media (max-width: 700px) {
     .filtros { flex-direction: column; align-items: stretch; }
-    .campo-treinamento select { min-width: 100%; }
+    .campo-treinamento select,
+    .campo-lista select { min-width: 100%; }
   }
 </style>
 
@@ -137,39 +146,45 @@
   </div>
 
   <div class="painel">
-    <div class="subtitulo">3. Participantes</div>
+    <div class="subtitulo">3. Escolha a lista de participantes</div>
+
+    <form method="GET" class="filtros" id="formLista">
+      <input type="hidden" name="ano" value="{{ ano_sel }}">
+      <input type="hidden" name="id_treinamento" value="{{ treinamento.id_treinamento }}">
+
+      <div class="campo campo-lista">
+        <label>Lista</label>
+        <select name="id_lista" onchange="document.getElementById('formLista').submit()">
+          <option value="">Selecione uma lista...</option>
+          {% for lista in listas %}
+            <option value="{{ lista.id }}" {% if id_lista_sel|string == lista.id|string %}selected{% endif %}>
+              {{ lista.nome_lista }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    </form>
+
+    <a href="{{ url_for('treinamentos.listas_participantes') }}" class="btn btn-gerenciar">
+      Gerenciar Listas de Participantes
+    </a>
+  </div>
+
+  <div class="painel">
+    <div class="subtitulo">4. Participantes</div>
 
     <div class="filtros">
       <div class="campo">
-        <label>Filial</label>
-        <select id="filtroFilial">
-          <option value="">Todas</option>
-          {% for filial in filiais %}
-            <option value="{{ filial.cod_filial }}">
-              {{ filial.cod_filial }} - {{ filial.nome_filial }}
-            </option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="campo">
-        <label>Cargo</label>
-        <select id="filtroCargo">
-          <option value="">Todos</option>
-          {% for cargo in cargos %}
-            <option value="{{ cargo.id }}">
-              {{ cargo.codigo }} - {{ cargo.descricao }}
-            </option>
-          {% endfor %}
-        </select>
+        <label>Buscar por nome</label>
+        <input type="text" id="filtroNome" placeholder="Digite parte do nome">
       </div>
 
       <button type="button" class="btn btn-filtrar" onclick="filtrarParticipantes()">
-        Filtrar Participantes
+        Filtrar
       </button>
 
       <button type="button" class="btn btn-selecionar" onclick="limparFiltroParticipantes()">
-        Limpar Filtros
+        Limpar Filtro
       </button>
     </div>
 
@@ -179,6 +194,7 @@
     >
       <input type="hidden" name="ano" value="{{ ano_sel }}">
       <input type="hidden" name="id_treinamento" value="{{ treinamento.id_treinamento }}">
+      <input type="hidden" name="id_lista" value="{{ id_lista_sel }}">
 
       <div style="margin-bottom: 18px;">
         <button type="submit" class="btn btn-salvar">
@@ -187,79 +203,83 @@
       </div>
 
       <div class="subtitulo" style="font-size:18px; margin-top:8px;">
-        3.1 Participantes selecionados
+        4.1 Participantes já vinculados a este treinamento
       </div>
 
       <table>
         <thead>
           <tr>
             <th class="col-check">Sel.</th>
-            <th>Funcionário</th>
+            <th>Participante</th>
             <th class="col-cargo">Cargo</th>
-            <th class="col-filial">Filial</th>
+            <th class="col-filial">Filial / Local</th>
           </tr>
         </thead>
 
         <tbody>
-          {% for funcionario in funcionarios %}
-            {% if funcionario.id in participantes_vinculados %}
-              <tr class="linha-funcionario"
-                  data-filial="{{ funcionario.cod_filial }}"
-                  data-cargo="{{ funcionario.id_cargo }}">
-                <td class="col-check">
-                  <input
-                    type="checkbox"
-                    name="funcionarios_mantidos"
-                    value="{{ funcionario.id }}"
-                    checked
-                  >
-                </td>
-                <td>{{ funcionario.nome }}</td>
-                <td>{{ funcionario.cargo or '' }}</td>
-                <td>{{ funcionario.nome_filial or '' }}</td>
-              </tr>
-            {% endif %}
+          {% for membro in participantes_vinculados_linhas %}
+            <tr class="linha-participante" data-nome="{{ membro.nome|lower }}">
+              <td class="col-check">
+                <input
+                  type="checkbox"
+                  name="participantes_mantidos"
+                  value="{{ membro.id }}"
+                  checked
+                >
+              </td>
+              <td>{{ membro.nome }}</td>
+              <td>{{ membro.cargo or '' }}</td>
+              <td>{{ membro.filial or '' }}</td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="4" style="text-align:center;">
+                Nenhum participante vinculado ainda.
+              </td>
+            </tr>
           {% endfor %}
         </tbody>
       </table>
 
       <div class="subtitulo" style="font-size:18px; margin-top:26px;">
-        3.2 Funcionários disponíveis
+        4.2 Participantes da lista selecionada
       </div>
+
+      {% if not id_lista_sel %}
+        <div class="aviso-lista">Escolha uma lista acima para ver os participantes disponíveis.</div>
+      {% endif %}
 
       <table>
         <thead>
           <tr>
             <th class="col-check">Sel.</th>
-            <th>Funcionário</th>
+            <th>Participante</th>
             <th class="col-cargo">Cargo</th>
-            <th class="col-filial">Filial</th>
+            <th class="col-filial">Filial / Local</th>
           </tr>
         </thead>
 
         <tbody>
-          {% for funcionario in funcionarios %}
-            {% if funcionario.id not in participantes_vinculados %}
-              <tr class="linha-funcionario"
-                  data-filial="{{ funcionario.cod_filial }}"
-                  data-cargo="{{ funcionario.id_cargo }}">
+          {% for membro in membros_lista %}
+            {% if membro.id not in participantes_vinculados %}
+              <tr class="linha-participante" data-nome="{{ membro.nome|lower }}">
                 <td class="col-check">
                   <input
                     type="checkbox"
                     class="check-disponivel"
-                    name="funcionarios_novos"
-                    value="{{ funcionario.id }}"
+                    name="participantes_novos"
+                    value="{{ membro.id }}"
                   >
                 </td>
-                <td>{{ funcionario.nome }}</td>
-                <td>{{ funcionario.cargo or '' }}</td>
-                <td>{{ funcionario.nome_filial or '' }}</td>
+                <td>{{ membro.nome }}</td>
+                <td>{{ membro.cargo or '' }}</td>
+                <td>{{ membro.filial or '' }}</td>
               </tr>
             {% endif %}
           {% else %}
             <tr>
               <td colspan="4" style="text-align:center;">
-                Nenhum funcionário encontrado.
+                Nenhum participante disponível nesta lista.
               </td>
             </tr>
           {% endfor %}
@@ -283,27 +303,19 @@
   }
 
   function filtrarParticipantes() {
-    const filial = document.getElementById("filtroFilial").value;
-    const cargo = document.getElementById("filtroCargo").value;
-
-    const linhas = document.querySelectorAll(".linha-funcionario");
+    const nome = document.getElementById("filtroNome").value.toLowerCase();
+    const linhas = document.querySelectorAll(".linha-participante");
 
     linhas.forEach(function(linha) {
-      const filialLinha = linha.dataset.filial || "";
-      const cargoLinha = linha.dataset.cargo || "";
-
-      const passaFilial = !filial || filialLinha === filial;
-      const passaCargo = !cargo || cargoLinha === cargo;
-
-      linha.style.display = (passaFilial && passaCargo) ? "" : "none";
+      const nomeLinha = linha.dataset.nome || "";
+      linha.style.display = nomeLinha.includes(nome) ? "" : "none";
     });
   }
 
   function limparFiltroParticipantes() {
-    document.getElementById("filtroFilial").value = "";
-    document.getElementById("filtroCargo").value = "";
+    document.getElementById("filtroNome").value = "";
 
-    const linhas = document.querySelectorAll(".linha-funcionario");
+    const linhas = document.querySelectorAll(".linha-participante");
 
     linhas.forEach(function(linha) {
       linha.style.display = "";

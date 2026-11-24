@@ -33,6 +33,7 @@ def menu_treinamentos():
     if tipo_global == "superusuario":
         pode_cadastrar_treinamentos = True
         pode_vincular_participantes = True
+        pode_listas_participantes = True
         pode_consultar_treinamentos = True
         pode_emitir_certificados = True
         pode_configuracoes_treinamentos = True
@@ -43,6 +44,7 @@ def menu_treinamentos():
 
         pode_cadastrar_treinamentos = usuario_tem_permissao(id_usuario, cod_empresa, "TREINAMENTOS", "CADASTRAR_TREINAMENTOS")
         pode_vincular_participantes = usuario_tem_permissao(id_usuario, cod_empresa, "TREINAMENTOS", "VINCULAR_PARTICIPANTES")
+        pode_listas_participantes = usuario_tem_permissao(id_usuario, cod_empresa, "TREINAMENTOS", "LISTAS_PARTICIPANTES")
         pode_consultar_treinamentos = usuario_tem_permissao(id_usuario, cod_empresa, "TREINAMENTOS", "CONSULTAR_TREINAMENTOS")
         pode_emitir_certificados = usuario_tem_permissao(id_usuario, cod_empresa, "TREINAMENTOS", "EMITIR_CERTIFICADOS")
         pode_configuracoes_treinamentos = usuario_tem_permissao(id_usuario, cod_empresa, "TREINAMENTOS", "CONFIGURACOES_TREINAMENTOS")
@@ -56,6 +58,7 @@ def menu_treinamentos():
         url_voltar=url_for("sistema.selecionar_sistema"),
         pode_cadastrar_treinamentos=pode_cadastrar_treinamentos,
         pode_vincular_participantes=pode_vincular_participantes,
+        pode_listas_participantes=pode_listas_participantes,
         pode_consultar_treinamentos=pode_consultar_treinamentos,
         pode_emitir_certificados=pode_emitir_certificados,
         pode_configuracoes_treinamentos=pode_configuracoes_treinamentos,
@@ -161,7 +164,7 @@ def cadastrar_treinamentos():
                 t.cod_treinamento,
                 t.descricao,
                 t.data_treinamento,
-                COUNT(tp.id_funcionario) AS qtd_participantes,
+                COUNT(tp.id_participante) AS qtd_participantes,
                 t.texto,
                 t.texto_certificado,
                 t.instituicao_certificado,
@@ -504,6 +507,338 @@ def descritivo_treinamento(id_treinamento):
     )
 
 # -----------------------------------------------------------
+# LISTAS DE PARTICIPANTES
+# -----------------------------------------------------------
+@treinamentos_bp.route("/listas-participantes", methods=["GET", "POST"])
+@permissao_obrigatoria(
+    "TREINAMENTOS",
+    "LISTAS_PARTICIPANTES",
+    redirecionar_para="treinamentos.menu_treinamentos",
+)
+def listas_participantes():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa")
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        if request.method == "POST":
+            nome_lista = (request.form.get("nome_lista") or "").strip()
+
+            if not nome_lista:
+                flash("Informe o nome da lista.", "error")
+                return redirect(url_for("treinamentos.listas_participantes"))
+
+            cur.execute("""
+                INSERT INTO listas_participantes (
+                    cod_empresa,
+                    nome_lista,
+                    ativo,
+                    criado_em,
+                    atualizado_em
+                )
+                VALUES (%s, %s, TRUE, NOW(), NOW())
+            """, (cod_empresa, nome_lista))
+
+            conn.commit()
+            flash("Lista de participantes criada com sucesso.", "success")
+
+            return redirect(url_for("treinamentos.listas_participantes"))
+
+        cur.execute("""
+            SELECT
+                l.id,
+                l.nome_lista,
+                l.ativo,
+                COUNT(m.id) FILTER (WHERE COALESCE(m.ativo, true)) AS qtd_membros
+            FROM listas_participantes l
+            LEFT JOIN listas_participantes_membros m
+                   ON m.cod_empresa = l.cod_empresa
+                  AND m.id_lista = l.id
+            WHERE l.cod_empresa = %s
+            GROUP BY l.id, l.nome_lista, l.ativo
+            ORDER BY l.ativo DESC, l.nome_lista
+        """, (cod_empresa,))
+
+        listas = cur.fetchall() or []
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao acessar listas de participantes: {e}", "error")
+        listas = []
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "listas_participantes.html",
+        nome_empresa=nome_empresa,
+        listas=listas,
+        url_voltar=url_for("treinamentos.menu_treinamentos"),
+        texto_voltar="← Voltar",
+    )
+
+# -----------------------------------------------------------
+# ATIVAR / DESATIVAR LISTA DE PARTICIPANTES
+# -----------------------------------------------------------
+@treinamentos_bp.route("/listas-participantes/<int:id_lista>/ativar")
+@permissao_obrigatoria(
+    "TREINAMENTOS",
+    "LISTAS_PARTICIPANTES",
+    redirecionar_para="treinamentos.menu_treinamentos",
+)
+def ativar_lista_participantes(id_lista):
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            UPDATE listas_participantes
+               SET ativo = TRUE,
+                   atualizado_em = NOW()
+             WHERE id = %s
+               AND cod_empresa = %s
+        """, (id_lista, cod_empresa))
+
+        conn.commit()
+        flash("Lista reativada com sucesso.", "success")
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao reativar lista: {e}", "error")
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return redirect(url_for("treinamentos.listas_participantes"))
+
+
+@treinamentos_bp.route("/listas-participantes/<int:id_lista>/desativar")
+@permissao_obrigatoria(
+    "TREINAMENTOS",
+    "LISTAS_PARTICIPANTES",
+    redirecionar_para="treinamentos.menu_treinamentos",
+)
+def desativar_lista_participantes(id_lista):
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            UPDATE listas_participantes
+               SET ativo = FALSE,
+                   atualizado_em = NOW()
+             WHERE id = %s
+               AND cod_empresa = %s
+        """, (id_lista, cod_empresa))
+
+        conn.commit()
+        flash("Lista enviada para o arquivo morto.", "success")
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao desativar lista: {e}", "error")
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return redirect(url_for("treinamentos.listas_participantes"))
+
+# -----------------------------------------------------------
+# MEMBROS DA LISTA DE PARTICIPANTES
+# -----------------------------------------------------------
+@treinamentos_bp.route("/listas-participantes/<int:id_lista>/membros", methods=["GET", "POST"])
+@permissao_obrigatoria(
+    "TREINAMENTOS",
+    "LISTAS_PARTICIPANTES",
+    redirecionar_para="treinamentos.menu_treinamentos",
+)
+def membros_lista_participantes(id_lista):
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa")
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        cur.execute("""
+            SELECT id, nome_lista, ativo
+            FROM listas_participantes
+            WHERE id = %s
+              AND cod_empresa = %s
+        """, (id_lista, cod_empresa))
+
+        lista = cur.fetchone()
+
+        if not lista:
+            flash("Lista não encontrada.", "error")
+            return redirect(url_for("treinamentos.listas_participantes"))
+
+        if request.method == "POST":
+            nome = (request.form.get("nome") or "").strip()
+            cargo = (request.form.get("cargo") or "").strip()
+            filial = (request.form.get("filial") or "").strip()
+
+            if not nome:
+                flash("Informe o nome do participante.", "error")
+                return redirect(url_for(
+                    "treinamentos.membros_lista_participantes",
+                    id_lista=id_lista
+                ))
+
+            cur.execute("""
+                INSERT INTO listas_participantes_membros (
+                    cod_empresa,
+                    id_lista,
+                    nome,
+                    cargo,
+                    filial,
+                    ativo,
+                    criado_em,
+                    atualizado_em
+                )
+                VALUES (%s, %s, %s, %s, %s, TRUE, NOW(), NOW())
+            """, (
+                cod_empresa,
+                id_lista,
+                nome,
+                cargo or None,
+                filial or None,
+            ))
+
+            conn.commit()
+            flash("Participante adicionado à lista.", "success")
+
+            return redirect(url_for(
+                "treinamentos.membros_lista_participantes",
+                id_lista=id_lista
+            ))
+
+        cur.execute("""
+            SELECT id, nome, cargo, filial
+            FROM listas_participantes_membros
+            WHERE id_lista = %s
+              AND cod_empresa = %s
+              AND COALESCE(ativo, true) = true
+            ORDER BY nome
+        """, (id_lista, cod_empresa))
+
+        membros = cur.fetchall() or []
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao acessar membros da lista: {e}", "error")
+        return redirect(url_for("treinamentos.listas_participantes"))
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "lista_participantes_membros.html",
+        nome_empresa=nome_empresa,
+        lista=lista,
+        membros=membros,
+        url_voltar=url_for("treinamentos.listas_participantes"),
+        texto_voltar="← Voltar",
+    )
+
+# -----------------------------------------------------------
+# REMOVER MEMBRO DA LISTA DE PARTICIPANTES
+# -----------------------------------------------------------
+@treinamentos_bp.route(
+    "/listas-participantes/<int:id_lista>/membros/<int:id_membro>/remover",
+    methods=["POST"]
+)
+@permissao_obrigatoria(
+    "TREINAMENTOS",
+    "LISTAS_PARTICIPANTES",
+    redirecionar_para="treinamentos.menu_treinamentos",
+)
+def remover_membro_lista_participantes(id_lista, id_membro):
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    try:
+        cur.execute("""
+            SELECT COUNT(*) AS qtd
+            FROM treinamentos_participantes
+            WHERE cod_empresa = %s
+              AND id_participante = %s
+        """, (cod_empresa, id_membro))
+
+        em_uso = cur.fetchone()[0] > 0
+
+        if em_uso:
+            cur.execute("""
+                UPDATE listas_participantes_membros
+                   SET ativo = FALSE,
+                       atualizado_em = NOW()
+                 WHERE id = %s
+                   AND id_lista = %s
+                   AND cod_empresa = %s
+            """, (id_membro, id_lista, cod_empresa))
+            flash(
+                "Participante já tem certificados emitidos: removido da "
+                "lista, mas o histórico foi mantido.",
+                "success"
+            )
+        else:
+            cur.execute("""
+                DELETE FROM listas_participantes_membros
+                WHERE id = %s
+                  AND id_lista = %s
+                  AND cod_empresa = %s
+            """, (id_membro, id_lista, cod_empresa))
+            flash("Participante removido da lista.", "success")
+
+        conn.commit()
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao remover participante da lista: {e}", "error")
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return redirect(url_for(
+        "treinamentos.membros_lista_participantes",
+        id_lista=id_lista
+    ))
+
+# -----------------------------------------------------------
 # VINCULAR PARTICIPANTES
 # -----------------------------------------------------------
 @treinamentos_bp.route("/vincular-participantes", methods=["GET", "POST"])
@@ -525,14 +860,13 @@ def vincular_participantes():
     hoje = date.today()
     ano_sel = (request.values.get("ano") or str(hoje.year)).strip()
     id_treinamento = request.values.get("id_treinamento")
-    filial_sel = request.values.get("filial", "")
-    cargo_sel = request.values.get("cargo", "")
+    id_lista_sel = (request.values.get("id_lista") or "").strip()
 
     treinamento = None
-    funcionarios = []
+    membros_lista = []
     participantes_vinculados = []
-    filiais = []
-    cargos = []
+    participantes_vinculados_linhas = []
+    listas = []
     anos = [hoje.year]
 
     data_ini = f"{ano_sel}-01-01"
@@ -545,16 +879,12 @@ def vincular_participantes():
         if request.method == "POST":
             id_treinamento = request.form.get("id_treinamento")
             ano_sel = request.form.get("ano") or ano_sel
-            funcionarios_mantidos = request.form.getlist("funcionarios_mantidos")
-            funcionarios_novos = request.form.getlist("funcionarios_novos")
+            id_lista_sel = request.form.get("id_lista") or id_lista_sel
+            participantes_mantidos = request.form.getlist("participantes_mantidos")
+            participantes_novos = request.form.getlist("participantes_novos")
 
-            funcionarios_ids = list(set(funcionarios_mantidos + funcionarios_novos))
-            print("POST VINCULAR")
-            print("ID TREINAMENTO:", id_treinamento)
-            print("ANO:", ano_sel)
-            print("MANTIDOS:", funcionarios_mantidos)
-            print("NOVOS:", funcionarios_novos)
-            print("FINAL:", funcionarios_ids)
+            participantes_ids = list(set(participantes_mantidos + participantes_novos))
+
             if not id_treinamento:
                 flash("Selecione um treinamento.", "error")
                 return redirect(url_for(
@@ -568,31 +898,30 @@ def vincular_participantes():
                   AND cod_empresa = %s
             """, (id_treinamento, cod_empresa))
 
-            for id_funcionario in funcionarios_ids:
+            for id_participante in participantes_ids:
                 cur.execute("""
                     INSERT INTO treinamentos_participantes (
                         cod_empresa,
                         id_treinamento,
-                        id_funcionario,
+                        id_participante,
                         criado_em,
                         atualizado_em
                     )
                     VALUES (%s, %s, %s, NOW(), NOW())
-                    ON CONFLICT (cod_empresa, id_treinamento, id_funcionario)
+                    ON CONFLICT (cod_empresa, id_treinamento, id_participante)
                     DO NOTHING
                 """, (
                     cod_empresa,
                     id_treinamento,
-                    id_funcionario,
+                    id_participante,
                 ))
 
-            conn.commit()
             conn.commit()
             flash("Participantes vinculados com sucesso.", "success")
 
             return redirect(
                 url_for("treinamentos.vincular_participantes")
-                + f"?ano={ano_sel}&id_treinamento={id_treinamento}"
+                + f"?ano={ano_sel}&id_treinamento={id_treinamento}&id_lista={id_lista_sel}"
             )
 
         cur.execute("""
@@ -612,26 +941,16 @@ def vincular_participantes():
         """, (cod_empresa, data_ini, data_fim))
 
         treinamentos = cur.fetchall() or []
-        
-        cur.execute("""
-            SELECT cod_filial, nome_filial
-            FROM filiais
-            WHERE cod_empresa = %s
-            AND COALESCE(ativo, true) = true
-            ORDER BY cod_filial
-        """, (cod_empresa,))
-
-        filiais = cur.fetchall() or []
 
         cur.execute("""
-            SELECT id, codigo, descricao
-            FROM cargos
+            SELECT id, nome_lista
+            FROM listas_participantes
             WHERE cod_empresa = %s
             AND COALESCE(ativo, true) = true
-            ORDER BY id, descricao
+            ORDER BY nome_lista
         """, (cod_empresa,))
 
-        cargos = cur.fetchall() or []
+        listas = cur.fetchall() or []
 
         cur.execute("""
             SELECT DISTINCT EXTRACT(YEAR FROM data_treinamento)::int AS ano
@@ -659,43 +978,48 @@ def vincular_participantes():
             treinamento = cur.fetchone()
 
             if treinamento:
-                
+
+                if id_lista_sel:
+                    cur.execute("""
+                        SELECT
+                            id,
+                            nome,
+                            cargo,
+                            filial
+                        FROM listas_participantes_membros
+                        WHERE cod_empresa = %s
+                          AND id_lista = %s
+                          AND COALESCE(ativo, true) = true
+                        ORDER BY nome
+                    """, (cod_empresa, id_lista_sel))
+
+                    membros_lista = cur.fetchall() or []
+
                 cur.execute("""
                     SELECT
-                        f.id,
-                        f.nome,
-                        f.cod_filial,
-                        f.id_cargo,
-                        c.descricao AS cargo,
-                        fi.nome_filial
-                    FROM funcionarios f
-                    LEFT JOIN cargos c
-                    ON c.cod_empresa = f.cod_empresa
-                    AND c.id = f.id_cargo
-                    LEFT JOIN filiais fi
-                    ON fi.cod_empresa = f.cod_empresa
-                    AND fi.cod_filial = f.cod_filial
-                    WHERE f.cod_empresa = %s
-                    AND COALESCE(f.ativo, true) = true
-                    ORDER BY fi.cod_filial, c.id, f.nome
-                """, (cod_empresa,))
-
-                funcionarios = cur.fetchall() or []
-                cur.execute("""
-                    SELECT id_funcionario
-                    FROM treinamentos_participantes
-                    WHERE cod_empresa = %s
-                    AND id_treinamento = %s
+                        m.id,
+                        m.nome,
+                        m.cargo,
+                        m.filial
+                    FROM treinamentos_participantes tp
+                    JOIN listas_participantes_membros m
+                      ON m.cod_empresa = tp.cod_empresa
+                     AND m.id = tp.id_participante
+                    WHERE tp.cod_empresa = %s
+                      AND tp.id_treinamento = %s
+                    ORDER BY m.nome
                 """, (cod_empresa, id_treinamento))
 
+                participantes_vinculados_linhas = cur.fetchall() or []
                 participantes_vinculados = [
-                    linha["id_funcionario"] for linha in cur.fetchall()
+                    linha["id"] for linha in participantes_vinculados_linhas
                 ]
 
     except Exception as e:
         conn.rollback()
         flash(f"Erro ao vincular participantes: {e}", "error")
         treinamentos = []
+        participantes_vinculados_linhas = []
 
     finally:
         cur.close()
@@ -708,12 +1032,11 @@ def vincular_participantes():
         anos=anos,
         treinamentos=treinamentos,
         treinamento=treinamento,
-        funcionarios=funcionarios,
+        listas=listas,
+        id_lista_sel=id_lista_sel,
+        membros_lista=membros_lista,
         participantes_vinculados=participantes_vinculados,
-        filiais=filiais,
-        cargos=cargos,
-        filial_sel=filial_sel,
-        cargo_sel=cargo_sel,
+        participantes_vinculados_linhas=participantes_vinculados_linhas,
         url_voltar=url_for("treinamentos.menu_treinamentos"),
         texto_voltar="← Voltar",
     )
@@ -775,21 +1098,21 @@ def consultar_treinamentos():
                 t.carga_horaria,
                 t.instrutor,
                 t.validade_meses,
-                COUNT(tp.id_funcionario) AS qtd_participantes
+                COUNT(tp.id_participante) AS qtd_participantes
             FROM treinamentos t
             LEFT JOIN treinamentos_participantes tp
                    ON tp.cod_empresa = t.cod_empresa
                   AND tp.id_treinamento = t.id_treinamento
         """
 
-        params = [cod_empresa, data_ini, data_fim]
+        params = []
 
         if filial_sel:
             sql += """
-                INNER JOIN funcionarios f
-                        ON f.cod_empresa = tp.cod_empresa
-                       AND f.id = tp.id_funcionario
-                       AND f.cod_filial = %s
+                INNER JOIN listas_participantes_membros m
+                        ON m.cod_empresa = tp.cod_empresa
+                       AND m.id = tp.id_participante
+                       AND m.filial = %s
             """
             params.append(filial_sel)
 
@@ -809,6 +1132,8 @@ def consultar_treinamentos():
                 t.data_treinamento DESC,
                 t.id_treinamento DESC
         """
+
+        params += [cod_empresa, data_ini, data_fim]
 
         cur.execute(sql, params)
 
@@ -877,23 +1202,17 @@ def visualizar_treinamento(id_treinamento):
 
         cur.execute("""
             SELECT
-                f.id,
-                f.nome,
-                c.descricao AS cargo,
-                fi.nome_filial
+                m.id,
+                m.nome,
+                m.cargo,
+                m.filial AS nome_filial
             FROM treinamentos_participantes tp
-            JOIN funcionarios f
-              ON f.cod_empresa = tp.cod_empresa
-             AND f.id = tp.id_funcionario
-            LEFT JOIN cargos c
-              ON c.cod_empresa = f.cod_empresa
-             AND c.id = f.id_cargo
-            LEFT JOIN filiais fi
-              ON fi.cod_empresa = f.cod_empresa
-             AND fi.cod_filial = f.cod_filial
+            JOIN listas_participantes_membros m
+              ON m.cod_empresa = tp.cod_empresa
+             AND m.id = tp.id_participante
             WHERE tp.cod_empresa = %s
               AND tp.id_treinamento = %s
-            ORDER BY fi.cod_filial, c.id, f.nome
+            ORDER BY m.nome
         """, (cod_empresa, id_treinamento))
 
         participantes = cur.fetchall() or []
@@ -1354,21 +1673,21 @@ def emitir_certificados():
                 t.carga_horaria,
                 t.instrutor,
                 t.validade_meses,
-                COUNT(tp.id_funcionario) AS qtd_participantes
+                COUNT(tp.id_participante) AS qtd_participantes
             FROM treinamentos t
             LEFT JOIN treinamentos_participantes tp
                    ON tp.cod_empresa = t.cod_empresa
                   AND tp.id_treinamento = t.id_treinamento
         """
 
-        params = [cod_empresa, data_ini, data_fim]
+        params = []
 
         if filial_sel:
             sql += """
-                INNER JOIN funcionarios f
-                        ON f.cod_empresa = tp.cod_empresa
-                       AND f.id = tp.id_funcionario
-                       AND f.cod_filial = %s
+                INNER JOIN listas_participantes_membros m
+                        ON m.cod_empresa = tp.cod_empresa
+                       AND m.id = tp.id_participante
+                       AND m.filial = %s
             """
             params.append(filial_sel)
 
@@ -1388,6 +1707,8 @@ def emitir_certificados():
                 t.data_treinamento DESC,
                 t.id_treinamento DESC
         """
+
+        params += [cod_empresa, data_ini, data_fim]
 
         cur.execute(sql, params)
         treinamentos = cur.fetchall() or []
@@ -1462,24 +1783,17 @@ def selecionar_participantes_certificado(id_treinamento):
 
         cur.execute("""
             SELECT
-                f.id AS id_funcionario,
-                f.nome,
-                f.cod_filial,
-                c.descricao AS cargo,
-                fi.nome_filial
+                m.id AS id_participante,
+                m.nome,
+                m.cargo,
+                m.filial AS nome_filial
             FROM treinamentos_participantes tp
-            JOIN funcionarios f
-              ON f.cod_empresa = tp.cod_empresa
-             AND f.id = tp.id_funcionario
-            LEFT JOIN cargos c
-              ON c.cod_empresa = f.cod_empresa
-             AND c.id = f.id_cargo
-            LEFT JOIN filiais fi
-              ON fi.cod_empresa = f.cod_empresa
-             AND fi.cod_filial = f.cod_filial
+            JOIN listas_participantes_membros m
+              ON m.cod_empresa = tp.cod_empresa
+             AND m.id = tp.id_participante
             WHERE tp.cod_empresa = %s
               AND tp.id_treinamento = %s
-            ORDER BY fi.cod_filial, c.id, f.nome
+            ORDER BY m.nome
         """, (cod_empresa, id_treinamento))
 
         participantes = cur.fetchall() or []
@@ -1585,21 +1899,14 @@ def gerar_certificados_pdf(id_treinamento):
 
         sql = f"""
             SELECT
-                f.id AS id_funcionario,
-                f.nome,
-                f.cod_filial,
-                c.descricao AS cargo,
-                fi.nome_filial
-            FROM funcionarios f
-            LEFT JOIN cargos c
-              ON c.cod_empresa = f.cod_empresa
-             AND c.id = f.id_cargo
-            LEFT JOIN filiais fi
-              ON fi.cod_empresa = f.cod_empresa
-             AND fi.cod_filial = f.cod_filial
-            WHERE f.cod_empresa = %s
-              AND f.id IN ({ids_placeholders})
-            ORDER BY f.nome
+                m.id AS id_participante,
+                m.nome,
+                m.cargo,
+                m.filial AS nome_filial
+            FROM listas_participantes_membros m
+            WHERE m.cod_empresa = %s
+              AND m.id IN ({ids_placeholders})
+            ORDER BY m.nome
         """
 
         cur.execute(sql, [cod_empresa] + participantes_ids)

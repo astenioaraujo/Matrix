@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 36px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 30px;
+  }
+
+  .painel {
+    background: #fff;
+    border-radius: 14px;
+    padding: 24px;
+    margin-bottom: 30px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    max-width: 900px;
+  }
+
+  .linha-form {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 14px;
+    margin-bottom: 16px;
+    align-items: center;
+  }
+
+  .linha-form label {
+    font-weight: 700;
+  }
+
+  .linha-form input[type="text"] {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    font-size: 15px;
+    background: #fff;
+  }
+
+  .btn-salvar {
+    border: 0;
+    background: #2563eb;
+    color: white;
+    font-weight: 800;
+    padding: 12px 22px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 15px;
+  }
+
+  .btn-salvar:hover {
+    background: #1d4ed8;
+  }
+
+  .tabela {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  }
+
+  .tabela th {
+    background: #e5e7eb;
+    padding: 12px;
+    text-align: left;
+    font-size: 14px;
+  }
+
+  .tabela td {
+    padding: 12px;
+    border-top: 1px solid #e5e7eb;
+    font-size: 14px;
+  }
+
+  .status-ativo { color: #15803d; font-weight: 800; }
+  .status-inativo { color: #b91c1c; font-weight: 800; }
+
+  .acoes { display: flex; gap: 8px; }
+
+  .btn-acao {
+    padding: 8px 12px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 700;
+    color: white;
+    border: 0;
+    cursor: pointer;
+  }
+
+  .btn-editar { background: #2563eb; }
+  .btn-ativar { background: #15803d; }
+  .btn-desativar { background: #b91c1c; }
+
+  .subtitulo-tabela {
+    font-size: 20px;
+    font-weight: 800;
+    margin: 30px 0 14px;
+  }
+
+  @media (max-width: 700px) {
+    .pagina-titulo { font-size: 30px; }
+    .empresa { font-size: 18px; }
+    .linha-form { grid-template-columns: 1fr; }
+    .painel { padding: 18px; }
+    .tabela { font-size: 13px; }
+  }
+</style>
+
+<div class="pagina-titulo">Listas de Participantes</div>
+<div class="empresa">{{ nome_empresa }}</div>
+
+<div class="painel">
+  <form method="POST">
+    <div class="linha-form">
+      <label>Nome da Lista</label>
+      <input type="text" name="nome_lista" placeholder="Ex.: Frentistas do Vilela" required>
+    </div>
+
+    <button type="submit" class="btn-salvar">
+      Criar Lista
+    </button>
+  </form>
+</div>
+
+<div class="subtitulo-tabela">Listas ativas</div>
+
+<table class="tabela">
+  <thead>
+    <tr>
+      <th>Lista</th>
+      <th>Participantes</th>
+      <th>Status</th>
+      <th style="width:220px;">Ações</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for lista in listas if lista.ativo %}
+      <tr>
+        <td>{{ lista.nome_lista }}</td>
+        <td>{{ lista.qtd_membros }}</td>
+        <td><span class="status-ativo">Ativa</span></td>
+        <td>
+          <div class="acoes">
+            <a href="{{ url_for('treinamentos.membros_lista_participantes', id_lista=lista.id) }}"
+               class="btn-acao btn-editar">
+              Participantes
+            </a>
+            <a href="{{ url_for('treinamentos.desativar_lista_participantes', id_lista=lista.id) }}"
+               class="btn-acao btn-desativar">
+              Desativar
+            </a>
+          </div>
+        </td>
+      </tr>
+    {% else %}
+      <tr>
+        <td colspan="4" style="text-align:center;">Nenhuma lista ativa.</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="subtitulo-tabela">Arquivo morto</div>
+
+<table class="tabela">
+  <thead>
+    <tr>
+      <th>Lista</th>
+      <th>Participantes</th>
+      <th>Status</th>
+      <th style="width:220px;">Ações</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for lista in listas if not lista.ativo %}
+      <tr>
+        <td>{{ lista.nome_lista }}</td>
+        <td>{{ lista.qtd_membros }}</td>
+        <td><span class="status-inativo">Arquivada</span></td>
+        <td>
+          <div class="acoes">
+            <a href="{{ url_for('treinamentos.membros_lista_participantes', id_lista=lista.id) }}"
+               class="btn-acao btn-editar">
+              Participantes
+            </a>
+            <a href="{{ url_for('treinamentos.ativar_lista_participantes', id_lista=lista.id) }}"
+               class="btn-acao btn-ativar">
+              Reativar
+            </a>
+          </div>
+        </td>
+      </tr>
+    {% else %}
+      <tr>
+        <td colspan="4" style="text-align:center;">Nenhuma lista no arquivo morto.</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% endblock %}
