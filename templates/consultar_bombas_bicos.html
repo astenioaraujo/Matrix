@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .bloco-filial {
+    margin-bottom: 30px;
+    background: #fff;
+    border-radius: 14px;
+    border: 1px solid #ddd;
+    padding: 20px;
+    max-width: 700px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+
+  .titulo-filial {
+    font-size: 20px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    font-size: 15px;
+  }
+
+  th, td {
+    padding: 8px 10px;
+    border: 1px solid #ddd;
+  }
+
+  th {
+    background: #f1f1f1;
+    text-align: left;
+  }
+
+  .sem-bicos {
+    color: #777;
+    font-style: italic;
+  }
+</style>
+
+<div class="pagina-titulo">Consultar Bombas e Bicos</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+{% for cod_filial, f in filiais.items() %}
+  <div class="bloco-filial">
+
+    <div class="titulo-filial">
+      Filial {{ cod_filial }} - {{ f.nome_filial }}
+    </div>
+
+    {% if f.itens %}
+      <table>
+        <thead>
+          <tr>
+            <th>Bomba</th>
+            <th>Bico</th>
+            <th>Combustível</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {% for item in f.itens %}
+            <tr>
+              <td>{{ item.numero_bomba }}</td>
+              <td>{{ item.numero_bico }}</td>
+              <td>{{ item.descricao }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="sem-bicos">Nenhum bico cadastrado nesta filial.</div>
+    {% endif %}
+
+  </div>
+{% endfor %}
+
+{% endblock %}

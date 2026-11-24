@@ -1816,8 +1816,9 @@ def menu_configuracoes():
         pode_capacidade_tanques = usuario_tem_permissao(
             id_usuario, cod_empresa, "OPERACOES", "CAPACIDADE_TANQUES"
         )
-        pode_bombas_bicos = usuario_tem_permissao(
-            id_usuario, cod_empresa, "OPERACOES", "BOMBAS_BICOS"
+        pode_bombas_bicos = any(
+            usuario_tem_permissao(id_usuario, cod_empresa, "OPERACOES", acao)
+            for acao in ("MENU_BOMBAS_BICOS", "CADASTRAR_BOMBAS_BICOS", "CONSULTAR_BOMBAS_BICOS")
         )
 
     return render_template(
@@ -2492,13 +2493,88 @@ def excluir_coligada_operacoes(id_coligada):
 # BOMBAS E BICOS
 # ---------------------------------------
 
-@operacoes_bp.route("/configuracoes/bombas-bicos", methods=["GET", "POST"])
+def _pode_bombas_bicos(acao):
+    if str(session.get("tipo_global") or "").strip().lower() == "superusuario":
+        return True
+    return usuario_tem_permissao(
+        session.get("id_usuario"),
+        str(session.get("cod_empresa") or "").strip(),
+        "OPERACOES",
+        acao,
+    )
+
+
+@operacoes_bp.route("/configuracoes/bombas-bicos/menu")
+def menu_bombas_bicos():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    pode_cadastrar = _pode_bombas_bicos("CADASTRAR_BOMBAS_BICOS")
+    pode_consultar = _pode_bombas_bicos("CONSULTAR_BOMBAS_BICOS")
+
+    # O menu abre com a opção de menu ou com qualquer uma das de dentro.
+    if not (_pode_bombas_bicos("MENU_BOMBAS_BICOS") or pode_cadastrar or pode_consultar):
+        flash("Você não tem acesso a Bombas e Bicos.", "error")
+        return redirect(url_for("operacoes.menu_configuracoes"))
+
+    return render_template(
+        "menu_bombas_bicos.html",
+        cod_empresa=session.get("cod_empresa", ""),
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("operacoes.menu_configuracoes"),
+        texto_voltar="← Voltar",
+        pode_cadastrar=pode_cadastrar,
+        pode_consultar=pode_consultar,
+    )
+
+
+def _bombas_bicos_por_filial(cur, cod_empresa):
+    cur.execute("""
+        SELECT
+            f.cod_filial,
+            f.nome_filial,
+            bb.id_bomba_bico,
+            bb.numero_bomba,
+            bb.numero_bico,
+            bb.cod_produto,
+            c.descricao
+        FROM filiais f
+        LEFT JOIN bombas_bicos bb
+          ON bb.cod_empresa = f.cod_empresa
+         AND bb.cod_filial = f.cod_filial
+        LEFT JOIN combustiveis c
+          ON c.cod_empresa = f.cod_empresa
+         AND c.cod_produto = bb.cod_produto
+        WHERE f.cod_empresa = %s
+          AND f.ativo = TRUE
+        ORDER BY f.cod_filial, bb.numero_bomba, bb.numero_bico
+    """, (cod_empresa,))
+
+    linhas = cur.fetchall() or []
+
+    filiais = {}
+    for l in linhas:
+        chave = l["cod_filial"]
+
+        if chave not in filiais:
+            filiais[chave] = {
+                "nome_filial": l["nome_filial"],
+                "itens": []
+            }
+
+        if l["id_bomba_bico"] is not None:
+            filiais[chave]["itens"].append(l)
+
+    return filiais
+
+
+@operacoes_bp.route("/configuracoes/bombas-bicos/cadastrar", methods=["GET", "POST"])
 @permissao_obrigatoria(
     "OPERACOES",
-    "CONFIGURACOES",
-    redirecionar_para="operacoes.menu_operacoes",
+    "CADASTRAR_BOMBAS_BICOS",
+    redirecionar_para="operacoes.menu_bombas_bicos",
 )
-def bombas_bicos():
+def cadastrar_bombas_bicos():
     if "id_usuario" not in session:
         return redirect(url_for("auth.index"))
 
@@ -2522,7 +2598,7 @@ def bombas_bicos():
             if not (cod_filial_txt.isdigit() and numero_bomba_txt.isdigit()
                     and numero_bico_txt.isdigit() and cod_produto):
                 flash("Preencha filial, bomba, bico e combustível.", "error")
-                return redirect(url_for("operacoes.bombas_bicos"))
+                return redirect(url_for("operacoes.cadastrar_bombas_bicos"))
 
             cod_filial = int(cod_filial_txt)
             numero_bomba = int(numero_bomba_txt)
@@ -2557,30 +2633,9 @@ def bombas_bicos():
 
             conn.commit()
             flash("Bico salvo com sucesso.", "success")
-            return redirect(url_for("operacoes.bombas_bicos"))
+            return redirect(url_for("operacoes.cadastrar_bombas_bicos"))
 
-        cur.execute("""
-            SELECT
-                f.cod_filial,
-                f.nome_filial,
-                bb.id_bomba_bico,
-                bb.numero_bomba,
-                bb.numero_bico,
-                bb.cod_produto,
-                c.descricao
-            FROM filiais f
-            LEFT JOIN bombas_bicos bb
-              ON bb.cod_empresa = f.cod_empresa
-             AND bb.cod_filial = f.cod_filial
-            LEFT JOIN combustiveis c
-              ON c.cod_empresa = f.cod_empresa
-             AND c.cod_produto = bb.cod_produto
-            WHERE f.cod_empresa = %s
-              AND f.ativo = TRUE
-            ORDER BY f.cod_filial, bb.numero_bomba, bb.numero_bico
-        """, (cod_empresa,))
-
-        linhas = cur.fetchall() or []
+        filiais = _bombas_bicos_por_filial(cur, cod_empresa)
 
         cur.execute("""
             SELECT cod_produto, descricao
@@ -2590,20 +2645,6 @@ def bombas_bicos():
         """, (cod_empresa,))
 
         combustiveis = cur.fetchall() or []
-
-        # AGRUPAR POR FILIAL
-        filiais = {}
-        for l in linhas:
-            chave = l["cod_filial"]
-
-            if chave not in filiais:
-                filiais[chave] = {
-                    "nome_filial": l["nome_filial"],
-                    "itens": []
-                }
-
-            if l["id_bomba_bico"] is not None:
-                filiais[chave]["itens"].append(l)
 
     except Exception as e:
         conn.rollback()
@@ -2621,7 +2662,7 @@ def bombas_bicos():
         nome_empresa=nome_empresa,
         filiais=filiais,
         combustiveis=combustiveis,
-        url_voltar=url_for("operacoes.menu_configuracoes"),
+        url_voltar=url_for("operacoes.menu_bombas_bicos"),
         texto_voltar="← Voltar",
     )
 
@@ -2629,8 +2670,8 @@ def bombas_bicos():
 @operacoes_bp.route("/configuracoes/bombas-bicos/excluir/<int:id_bomba_bico>", methods=["POST"])
 @permissao_obrigatoria(
     "OPERACOES",
-    "CONFIGURACOES",
-    redirecionar_para="operacoes.menu_operacoes",
+    "CADASTRAR_BOMBAS_BICOS",
+    redirecionar_para="operacoes.menu_bombas_bicos",
 )
 def excluir_bomba_bico(id_bomba_bico):
     if "cod_empresa" not in session:
@@ -2659,7 +2700,42 @@ def excluir_bomba_bico(id_bomba_bico):
         cur.close()
         conn.close()
 
-    return redirect(url_for("operacoes.bombas_bicos"))
+    return redirect(url_for("operacoes.cadastrar_bombas_bicos"))
+
+
+@operacoes_bp.route("/configuracoes/bombas-bicos/consultar")
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONSULTAR_BOMBAS_BICOS",
+    redirecionar_para="operacoes.menu_bombas_bicos",
+)
+def consultar_bombas_bicos():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    try:
+        filiais = _bombas_bicos_por_filial(cur, cod_empresa)
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "consultar_bombas_bicos.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        filiais=filiais,
+        url_voltar=url_for("operacoes.menu_bombas_bicos"),
+        texto_voltar="← Voltar",
+    )
 
 
 # ---------------------------------------
