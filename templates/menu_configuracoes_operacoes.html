@@ -55,11 +55,13 @@
 </div>
 
 <div class="menu-botoes">
-  {% if pode_capacidade_tanques %}
-    <a href="{{ url_for('operacoes.capacidade_tanques') }}">
+  {% if pode_tanques %}
+    <a href="{{ url_for('operacoes.menu_capacidade_tanques') }}">
       Capacidade de Tanques
     </a>
+  {% endif %}
 
+  {% if pode_capacidade_tanques %}
     <a href="{{ url_for('operacoes.fornecedores_combustiveis') }}">
       Fornecedores de Combustíveis
     </a>

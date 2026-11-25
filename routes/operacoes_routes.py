@@ -1811,10 +1811,17 @@ def menu_configuracoes():
 
     if tipo_global == "superusuario":
         pode_capacidade_tanques = True
+        pode_tanques = True
         pode_bombas_bicos = True
     else:
+        # CAPACIDADE_TANQUES (antiga) segue abrindo Fornecedores e Coligadas;
+        # o botão de Capacidade de Tanques tem as permissões próprias.
         pode_capacidade_tanques = usuario_tem_permissao(
             id_usuario, cod_empresa, "OPERACOES", "CAPACIDADE_TANQUES"
+        )
+        pode_tanques = any(
+            usuario_tem_permissao(id_usuario, cod_empresa, "OPERACOES", acao)
+            for acao in PERMISSOES_TANQUES
         )
         pode_bombas_bicos = any(
             usuario_tem_permissao(id_usuario, cod_empresa, "OPERACOES", acao)
@@ -1828,6 +1835,7 @@ def menu_configuracoes():
         url_voltar=url_for("operacoes.menu_operacoes"),
         texto_voltar="← Voltar",
         pode_capacidade_tanques=pode_capacidade_tanques,
+        pode_tanques=pode_tanques,
         pode_bombas_bicos=pode_bombas_bicos,
         pode_feriados=True,
     )
@@ -1835,12 +1843,85 @@ def menu_configuracoes():
 # ---------------------------------------
 # CAPACIDADE DE TANQUES
 # ---------------------------------------
+# Submenu (25/11/2026): Cadastrar (a tela de edição) e Consultar (a mesma,
+# só leitura). MENU_ abre o submenu sozinho; o menu de configurações mostra
+# o botão com qualquer uma das três.
+
+PERMISSOES_TANQUES = (
+    "MENU_CAPACIDADE_TANQUES",
+    "CADASTRAR_CAPACIDADE_TANQUES",
+    "CONSULTAR_CAPACIDADE_TANQUES",
+)
+
+
+def _pode_tanques(acao):
+    if str(session.get("tipo_global") or "").strip().lower() == "superusuario":
+        return True
+    return usuario_tem_permissao(
+        session.get("id_usuario"),
+        str(session.get("cod_empresa") or "").strip(),
+        "OPERACOES",
+        acao,
+    )
+
+
+@operacoes_bp.route("/configuracoes/capacidade-tanques/menu")
+def menu_capacidade_tanques():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    pode_cadastrar = _pode_tanques("CADASTRAR_CAPACIDADE_TANQUES")
+    pode_consultar = _pode_tanques("CONSULTAR_CAPACIDADE_TANQUES")
+
+    if not (_pode_tanques("MENU_CAPACIDADE_TANQUES") or pode_cadastrar or pode_consultar):
+        flash("Você não tem acesso a Capacidade de Tanques.", "error")
+        return redirect(url_for("operacoes.menu_configuracoes"))
+
+    return render_template(
+        "menu_capacidade_tanques.html",
+        cod_empresa=session.get("cod_empresa", ""),
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("operacoes.menu_configuracoes"),
+        texto_voltar="← Voltar",
+        pode_cadastrar=pode_cadastrar,
+        pode_consultar=pode_consultar,
+    )
+
+
+@operacoes_bp.route("/configuracoes/capacidade-tanques/consultar")
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONSULTAR_CAPACIDADE_TANQUES",
+    redirecionar_para="operacoes.menu_capacidade_tanques",
+)
+def consultar_capacidade_tanques():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        filiais = _capacidade_tanques_por_filial(cur, cod_empresa)
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "consultar_capacidade_tanques.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=session.get("nome_empresa", ""),
+        filiais=filiais,
+        url_voltar=url_for("operacoes.menu_capacidade_tanques"),
+        texto_voltar="← Voltar",
+    )
+
 
 @operacoes_bp.route("/configuracoes/capacidade-tanques")
 @permissao_obrigatoria(
     "OPERACOES",
-    "CONFIGURACOES",
-    redirecionar_para="operacoes.menu_operacoes",
+    "CADASTRAR_CAPACIDADE_TANQUES",
+    redirecionar_para="operacoes.menu_capacidade_tanques",
 )
 def capacidade_tanques():
     if "id_usuario" not in session:
@@ -1856,62 +1937,7 @@ def capacidade_tanques():
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
-        cur.execute("""
-            SELECT
-                f.cod_filial,
-                f.nome_filial,
-                c.cod_produto,
-                c.descricao,
-                COALESCE(ct.capacidade_tanque, 0) AS capacidade_tanque
-            FROM filiais f
-            CROSS JOIN combustiveis c
-            LEFT JOIN capacidade_tanques ct
-              ON ct.cod_empresa = f.cod_empresa
-             AND ct.cod_filial = f.cod_filial
-             AND ct.cod_produto = c.cod_produto
-            WHERE f.cod_empresa = %s
-              AND c.cod_empresa = %s
-              AND f.ativo = TRUE
-            ORDER BY f.cod_filial, c.cod_produto
-        """, (cod_empresa, cod_empresa))
-
-        linhas = cur.fetchall() or []
-
-        # Composição dos tanques múltiplos (capacidade_tanques_multiplos):
-        # ter linhas lá é ter vários tanques — não há flag à parte.
-        cur.execute("""
-            SELECT cod_filial, cod_produto, identificacao, capacidade
-            FROM capacidade_tanques_multiplos
-            WHERE cod_empresa = %s
-            ORDER BY cod_filial, cod_produto, ordem, id_tanque_multiplo
-        """, (cod_empresa,))
-        multiplos = {}
-        for m in cur.fetchall() or []:
-            multiplos.setdefault((m["cod_filial"], m["cod_produto"]), []).append({
-                "identificacao": m["identificacao"] or "",
-                "capacidade": float(m["capacidade"] or 0),
-            })
-
-        for l in linhas:
-            tanques = multiplos.get((l["cod_filial"], l["cod_produto"]), [])
-            l["tanques"] = tanques
-            soma = round(sum(t["capacidade"] for t in tanques), 2)
-            l["soma_tanques"] = soma
-            l["diverge"] = bool(tanques) and soma != round(float(l["capacidade_tanque"] or 0), 2)
-
-        # AGRUPAR POR FILIAL
-        filiais = {}
-        for l in linhas:
-            chave = l["cod_filial"]
-
-            if chave not in filiais:
-                filiais[chave] = {
-                    "nome_filial": l["nome_filial"],
-                    "itens": []
-                }
-
-            filiais[chave]["itens"].append(l)
-
+        filiais = _capacidade_tanques_por_filial(cur, cod_empresa)
     finally:
         cur.close()
         conn.close()
@@ -1921,9 +1947,71 @@ def capacidade_tanques():
         cod_empresa=cod_empresa,
         nome_empresa=nome_empresa,
         filiais=filiais,
-        url_voltar=url_for("operacoes.menu_operacoes"),
+        url_voltar=url_for("operacoes.menu_capacidade_tanques"),
         texto_voltar="← Voltar",
     )
+
+
+def _capacidade_tanques_por_filial(cur, cod_empresa):
+    """Filiais × combustíveis com a capacidade e a composição de tanques.
+    Lida pelas telas de Cadastrar e Consultar — as duas mostram o mesmo."""
+    cur.execute("""
+        SELECT
+            f.cod_filial,
+            f.nome_filial,
+            c.cod_produto,
+            c.descricao,
+            COALESCE(ct.capacidade_tanque, 0) AS capacidade_tanque
+        FROM filiais f
+        CROSS JOIN combustiveis c
+        LEFT JOIN capacidade_tanques ct
+          ON ct.cod_empresa = f.cod_empresa
+         AND ct.cod_filial = f.cod_filial
+         AND ct.cod_produto = c.cod_produto
+        WHERE f.cod_empresa = %s
+          AND c.cod_empresa = %s
+          AND f.ativo = TRUE
+        ORDER BY f.cod_filial, c.cod_produto
+    """, (cod_empresa, cod_empresa))
+
+    linhas = cur.fetchall() or []
+
+    # Composição dos tanques múltiplos (capacidade_tanques_multiplos):
+    # ter linhas lá é ter vários tanques — não há flag à parte.
+    cur.execute("""
+        SELECT cod_filial, cod_produto, identificacao, capacidade
+        FROM capacidade_tanques_multiplos
+        WHERE cod_empresa = %s
+        ORDER BY cod_filial, cod_produto, ordem, id_tanque_multiplo
+    """, (cod_empresa,))
+    multiplos = {}
+    for m in cur.fetchall() or []:
+        multiplos.setdefault((m["cod_filial"], m["cod_produto"]), []).append({
+            "identificacao": m["identificacao"] or "",
+            "capacidade": float(m["capacidade"] or 0),
+        })
+
+    for l in linhas:
+        tanques = multiplos.get((l["cod_filial"], l["cod_produto"]), [])
+        l["tanques"] = tanques
+        soma = round(sum(t["capacidade"] for t in tanques), 2)
+        l["soma_tanques"] = soma
+        l["diverge"] = bool(tanques) and soma != round(float(l["capacidade_tanque"] or 0), 2)
+
+    # AGRUPAR POR FILIAL
+    filiais = {}
+    for l in linhas:
+        chave = l["cod_filial"]
+
+        if chave not in filiais:
+            filiais[chave] = {
+                "nome_filial": l["nome_filial"],
+                "itens": []
+            }
+
+        filiais[chave]["itens"].append(l)
+
+    return filiais
 
 # ---------------------------------------
 # CONSULTAR MEDICOES
@@ -6174,8 +6262,8 @@ def ajax_buscar_preco_compra():
 @operacoes_bp.route("/configuracoes/capacidade-tanques/ajax-salvar", methods=["POST"])
 @permissao_obrigatoria(
     "OPERACOES",
-    "CONFIGURACOES",
-    redirecionar_para="operacoes.menu_operacoes",
+    "CADASTRAR_CAPACIDADE_TANQUES",
+    redirecionar_para="operacoes.menu_capacidade_tanques",
 )
 def ajax_salvar_capacidade():
     cod_empresa = str(session["cod_empresa"]).strip()
@@ -6224,8 +6312,8 @@ def ajax_salvar_capacidade():
 @operacoes_bp.route("/configuracoes/capacidade-tanques/multiplos", methods=["POST"])
 @permissao_obrigatoria(
     "OPERACOES",
-    "CONFIGURACOES",
-    redirecionar_para="operacoes.menu_operacoes",
+    "CADASTRAR_CAPACIDADE_TANQUES",
+    redirecionar_para="operacoes.menu_capacidade_tanques",
 )
 def ajax_salvar_tanques_multiplos():
     """Grava a composição de tanques de uma filial × produto.

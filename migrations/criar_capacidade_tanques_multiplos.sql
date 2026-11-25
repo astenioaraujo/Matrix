@@ -42,8 +42,8 @@ SELECT v.*
       ('EMP010', 14, 'C5', 'TQ 2', 10000::numeric, 20),
       ('EMP010', 22, 'C1', 'TQ 1',  7500::numeric, 10),
       ('EMP010', 22, 'C1', 'TQ 2',  7500::numeric, 20),
-      ('EMP010', 22, 'C5', 'TQ 1', 15000::numeric, 10),
-      ('EMP010', 22, 'C5', 'TQ 2', 15000::numeric, 20)
+      ('EMP010', 22, 'C5', 'TQ 3', 15000::numeric, 10),
+      ('EMP010', 22, 'C5', 'TQ 4', 15000::numeric, 20)
   ) AS v(cod_empresa, cod_filial, cod_produto, identificacao, capacidade, ordem)
  WHERE NOT EXISTS (
      SELECT 1 FROM public.capacidade_tanques_multiplos m

@@ -459,7 +459,15 @@ Botão vermelho no menu de Operações (`OPERACOES/BLOQUEAR_MOVIMENTACOES` 490).
 
 ## Capacidade de Tanques — vários tanques do mesmo produto (25/11/2026)
 
-Em **Operações → Configurações → Capacidade de Tanques** cada linha (filial × produto) tem o
+**Submenu Cadastrar / Consultar** (`menu_capacidade_tanques`, `migrations/criar_submenu_capacidade_tanques.sql`):
+`OPERACOES/MENU_CAPACIDADE_TANQUES` 341, `CADASTRAR_CAPACIDADE_TANQUES` 342 (a tela de edição e os
+dois endpoints de gravação), `CONSULTAR_CAPACIDADE_TANQUES` 343 (a mesma grade, só leitura,
+`consultar_capacidade_tanques.html`); as duas leem `_capacidade_tanques_por_filial`. A permissão
+antiga `CAPACIDADE_TANQUES` **não mostra mais esse botão** — ficou só abrindo Fornecedores de
+Combustíveis e Coligadas no menu de configurações. EMP010: Heloísa cadastra e consulta; os dois
+Jeffersons (57, 79) só consultam.
+
+Em **Cadastrar Capacidade de Tanques** cada linha (filial × produto) tem o
 checkbox **Vários tanques**, que abre ao lado a composição: identificação ("TQ 1") + capacidade
 de cada tanque físico. Tabela `capacidade_tanques_multiplos`
 (`migrations/criar_capacidade_tanques_multiplos.sql`), uma linha por tanque.
@@ -473,7 +481,7 @@ de cada tanque físico. Tabela `capacidade_tanques_multiplos`
 - **Ainda não é lida por nada** além da própria tela: fica para uma implementação futura. A
   capacidade total continua vindo de `capacidade_tanques`.
 - Carga EMP010: Afogados I (14) Gasolina C1 e S10 C5 = 15.000 + 10.000; Ipaumirim (22) Gasolina
-  = 2 × 7.500, S10 = 2 × 15.000.
+  = 2 × 7.500, S10 = 2 × 15.000 (TQ 3 e TQ 4).
 
 ## Liberar Data de Medição
 

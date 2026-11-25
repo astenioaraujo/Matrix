@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  .empresa {
+    font-size: 22px;
+    margin-bottom: 24px;
+  }
+
+  .bloco-filial {
+    margin-bottom: 30px;
+    background: #fff;
+    border-radius: 14px;
+    border: 1px solid #ddd;
+    padding: 20px;
+    max-width: 1200px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+  }
+
+  .titulo-filial {
+    font-size: 20px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+  }
+
+  th, td {
+    padding: 8px 10px;
+    border: 1px solid #ddd;
+    white-space: nowrap;
+  }
+
+  th {
+    background: #f1f1f1;
+    text-align: left;
+  }
+
+  td.valor {
+    text-align: right;
+  }
+
+  input.campo {
+    width: 160px;
+  }
+
+  .status {
+    font-size: 12px;
+    margin-left: 6px;
+    color: green;
+    font-weight: 700;
+  }
+
+  .status.erro {
+    color: #9f2f2f;
+  }
+
+  td.multi { white-space: normal; min-width: 420px; }
+  .multi-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 14px; }
+  .multi-editor { display: none; margin-top: 8px; padding: 10px; background: #f7f9fc;
+                  border: 1px solid #d6deea; border-radius: 8px; }
+  .multi-editor.aberto { display: block; }
+  .multi-linha { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .multi-linha input.ident { width: 80px; text-transform: uppercase; }
+  .multi-linha input.cap { width: 120px; text-align: right; }
+  .multi-linha button { border: none; background: none; color: #9f2f2f; font-size: 16px; cursor: pointer; }
+  .multi-rodape { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 6px; font-size: 13px; }
+  .multi-rodape .soma.ok { color: #1b7a2e; font-weight: 700; }
+  .multi-rodape .soma.ruim { color: #c62828; font-weight: 700; }
+  .btn-peq { padding: 4px 10px; border-radius: 6px; border: 1px solid #bbb; background: #fff; cursor: pointer; font-size: 13px; }
+  .btn-peq.salvar { background: #1f5fa8; color: #fff; border-color: #1f5fa8; }
+  .multi-resumo { font-size: 12px; color: #555; margin-left: 8px; cursor: pointer; }
+  .multi-alerta { font-size: 12px; color: #c62828; font-weight: 700; margin-left: 8px; }
+  .multi-msg { font-size: 12px; font-weight: 700; }
+  .multi-msg.erro { color: #c62828; }
+  .multi-msg.ok { color: #1b7a2e; }
+  td.valor { text-align: right; }
+  td.zero { color: #aaa; }
+  .tanques-lista { font-size: 13px; color: #333; white-space: normal; }
+  .tanques-lista .tq { display: inline-block; margin-right: 12px; }
+  .unico { color: #aaa; font-size: 13px; }
+
+  /* Mesma largura de coluna em todos os postos, tenha ou não vários tanques. */
+  table.grade-tanques { table-layout: fixed; width: 100%; }
+  table.grade-tanques td { overflow: hidden; text-overflow: ellipsis; }
+  tr.varios td.tanques-lista { color: #a33a3a; font-weight: 600; background: #fbf1f1; }
+  tr.varios td.tanques-lista strong { color: #8e2b2b; }
+</style>
+
+<div class="pagina-titulo">Consultar Capacidade de Tanques</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+{% for cod_filial, f in filiais.items() %}
+  <div class="bloco-filial">
+    <div class="titulo-filial">Filial {{ cod_filial }} - {{ f.nome_filial }}</div>
+    <table class="grade-tanques">
+      <colgroup>
+        <col style="width: 90px">
+        <col style="width: 260px">
+        <col style="width: 140px">
+        <col>
+      </colgroup>
+      <thead>
+        <tr>
+          <th>Produto</th>
+          <th>Descrição</th>
+          <th style="text-align:right">Capacidade</th>
+          <th>Tanques</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in f.itens %}
+        <tr{% if item.tanques %} class="varios"{% endif %}>
+          <td>{{ item.cod_produto }}</td>
+          <td>{{ item.descricao }}</td>
+          <td class="valor{% if not item.capacidade_tanque %} zero{% endif %}">{{ item.capacidade_tanque | br }}</td>
+          <td class="tanques-lista">
+            {% if item.tanques %}
+              {% for t in item.tanques %}
+                <span class="tq"><strong>{{ t.identificacao }}</strong>: {{ t.capacidade | br }}</span>
+              {% endfor %}
+              {% if item.diverge %}
+                <span class="multi-alerta">⚠ soma {{ item.soma_tanques | br }} ≠ capacidade</span>
+              {% endif %}
+            {% elif item.capacidade_tanque %}
+              <span class="unico">Tanque único</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endfor %}
+
+{% endblock %}
