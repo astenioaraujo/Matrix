@@ -2537,6 +2537,7 @@ def _bombas_bicos_por_filial(cur, cod_empresa):
             bb.numero_bomba,
             bb.numero_bico,
             bb.cod_produto,
+            bb.observacao,
             c.descricao
         FROM filiais f
         LEFT JOIN bombas_bicos bb
@@ -2594,6 +2595,7 @@ def cadastrar_bombas_bicos():
             numero_bomba_txt = (request.form.get("numero_bomba") or "").strip()
             numero_bico_txt = (request.form.get("numero_bico") or "").strip()
             cod_produto = (request.form.get("cod_produto") or "").strip()
+            observacao = (request.form.get("observacao") or "").strip() or None
 
             if not (cod_filial_txt.isdigit() and numero_bomba_txt.isdigit()
                     and numero_bico_txt.isdigit() and cod_produto):
@@ -2611,25 +2613,27 @@ def cadastrar_bombas_bicos():
                         numero_bomba = %s,
                         numero_bico = %s,
                         cod_produto = %s,
+                        observacao = %s,
                         atualizado_em = NOW()
                     WHERE id_bomba_bico = %s
                       AND cod_empresa = %s
                 """, (
-                    cod_filial, numero_bomba, numero_bico, cod_produto,
+                    cod_filial, numero_bomba, numero_bico, cod_produto, observacao,
                     int(id_bomba_bico), cod_empresa
                 ))
             else:
                 cur.execute("""
                     INSERT INTO bombas_bicos (
                         cod_empresa, cod_filial, numero_bomba, numero_bico,
-                        cod_produto, criado_em, atualizado_em
+                        cod_produto, observacao, criado_em, atualizado_em
                     )
-                    VALUES (%s, %s, %s, %s, %s, NOW(), NOW())
+                    VALUES (%s, %s, %s, %s, %s, %s, NOW(), NOW())
                     ON CONFLICT (cod_empresa, cod_filial, numero_bomba, numero_bico)
                     DO UPDATE SET
                         cod_produto = EXCLUDED.cod_produto,
+                        observacao = EXCLUDED.observacao,
                         atualizado_em = NOW()
-                """, (cod_empresa, cod_filial, numero_bomba, numero_bico, cod_produto))
+                """, (cod_empresa, cod_filial, numero_bomba, numero_bico, cod_produto, observacao))
 
             conn.commit()
             flash("Bico salvo com sucesso.", "success")

@@ -74,6 +74,7 @@
             <th>Bomba</th>
             <th>Bico</th>
             <th>Combustível</th>
+            <th>Observação</th>
           </tr>
         </thead>
 
@@ -83,6 +84,7 @@
               <td>{{ item.numero_bomba }}</td>
               <td>{{ item.numero_bico }}</td>
               <td>{{ item.descricao }}</td>
+              <td>{{ item.observacao or '' }}</td>
             </tr>
           {% endfor %}
         </tbody>

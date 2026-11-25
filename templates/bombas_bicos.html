@@ -48,7 +48,7 @@
     text-align: left;
   }
 
-  select, input[type="number"] {
+  select, input[type="number"], input[type="text"] {
     padding: 6px;
     border: 1px solid #cfcfcf;
     border-radius: 6px;
@@ -56,6 +56,10 @@
 
   input[type="number"] {
     width: 70px;
+  }
+
+  input.observacao {
+    width: 100px;
   }
 
   .col-acoes {
@@ -115,6 +119,7 @@
             <th>Bomba</th>
             <th>Bico</th>
             <th>Combustível</th>
+            <th>Observação</th>
             <th class="col-acoes">Ações</th>
           </tr>
         </thead>
@@ -142,6 +147,10 @@
                       </option>
                     {% endfor %}
                   </select>
+                </td>
+
+                <td>
+                  <input type="text" class="observacao" name="observacao" value="{{ item.observacao or '' }}" placeholder="Pix, convênio...">
                 </td>
 
                 <td class="col-acoes">
@@ -184,6 +193,10 @@
                   <option value="{{ c.cod_produto }}">{{ c.descricao }}</option>
                 {% endfor %}
               </select>
+            </td>
+
+            <td>
+              <input type="text" class="observacao" name="observacao" placeholder="Pix, convênio...">
             </td>
 
             <td class="col-acoes">
