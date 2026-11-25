@@ -1877,6 +1877,28 @@ def capacidade_tanques():
 
         linhas = cur.fetchall() or []
 
+        # Composição dos tanques múltiplos (capacidade_tanques_multiplos):
+        # ter linhas lá é ter vários tanques — não há flag à parte.
+        cur.execute("""
+            SELECT cod_filial, cod_produto, identificacao, capacidade
+            FROM capacidade_tanques_multiplos
+            WHERE cod_empresa = %s
+            ORDER BY cod_filial, cod_produto, ordem, id_tanque_multiplo
+        """, (cod_empresa,))
+        multiplos = {}
+        for m in cur.fetchall() or []:
+            multiplos.setdefault((m["cod_filial"], m["cod_produto"]), []).append({
+                "identificacao": m["identificacao"] or "",
+                "capacidade": float(m["capacidade"] or 0),
+            })
+
+        for l in linhas:
+            tanques = multiplos.get((l["cod_filial"], l["cod_produto"]), [])
+            l["tanques"] = tanques
+            soma = round(sum(t["capacidade"] for t in tanques), 2)
+            l["soma_tanques"] = soma
+            l["diverge"] = bool(tanques) and soma != round(float(l["capacidade_tanque"] or 0), 2)
+
         # AGRUPAR POR FILIAL
         filiais = {}
         for l in linhas:
@@ -6199,6 +6221,84 @@ def ajax_salvar_capacidade():
     finally:
         cur.close()
         conn.close()
+@operacoes_bp.route("/configuracoes/capacidade-tanques/multiplos", methods=["POST"])
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONFIGURACOES",
+    redirecionar_para="operacoes.menu_operacoes",
+)
+def ajax_salvar_tanques_multiplos():
+    """Grava a composição de tanques de uma filial × produto.
+
+    Recebe a lista inteira e a reescreve na mesma transação. Lista vazia =
+    volta a ser tanque único (apaga a composição). Com tanques, exige pelo
+    menos dois e que a soma feche com a capacidade cadastrada.
+    """
+    cod_empresa = str(session["cod_empresa"]).strip()
+    dados = request.get_json(silent=True) or {}
+
+    try:
+        cod_filial = int(dados.get("cod_filial"))
+        cod_produto = str(dados.get("cod_produto") or "").strip()
+    except (TypeError, ValueError):
+        return {"ok": False, "erro": "Dados inválidos"}, 400
+    if not cod_produto or not isinstance(dados.get("tanques"), list):
+        return {"ok": False, "erro": "Dados inválidos"}, 400
+
+    tanques = []
+    for i, t in enumerate(dados["tanques"], start=1):
+        ident = str((t or {}).get("identificacao") or "").strip().upper()
+        txt = str((t or {}).get("capacidade") or "").strip()
+        try:
+            cap = float(txt.replace(".", "").replace(",", ".")) if txt else 0.0
+        except ValueError:
+            return {"ok": False, "erro": f"Capacidade inválida no tanque {i}."}, 400
+        if cap <= 0:
+            return {"ok": False, "erro": f"Informe a capacidade do tanque {i}."}, 400
+        tanques.append((ident or f"TQ {i}", round(cap, 2)))
+
+    if len(tanques) == 1:
+        return {"ok": False, "erro": "Vários tanques precisa de pelo menos dois. "
+                                     "Com um só, desmarque a opção."}, 400
+
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT capacidade_tanque FROM capacidade_tanques
+            WHERE cod_empresa = %s AND cod_filial = %s AND cod_produto = %s
+            FOR UPDATE
+        """, (cod_empresa, cod_filial, cod_produto))
+        row = cur.fetchone()
+        capacidade = round(float(row[0] or 0), 2) if row else 0.0
+
+        if tanques:
+            soma = round(sum(c for _, c in tanques), 2)
+            if round(soma * 100) != round(capacidade * 100):
+                fmt = lambda v: f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                return {"ok": False, "erro": (
+                    f"A soma dos tanques ({fmt(soma)}) não fecha com a capacidade "
+                    f"cadastrada ({fmt(capacidade)}).")}, 400
+
+        cur.execute("""
+            DELETE FROM capacidade_tanques_multiplos
+            WHERE cod_empresa = %s AND cod_filial = %s AND cod_produto = %s
+        """, (cod_empresa, cod_filial, cod_produto))
+        for ordem, (ident, cap) in enumerate(tanques, start=1):
+            cur.execute("""
+                INSERT INTO capacidade_tanques_multiplos
+                    (cod_empresa, cod_filial, cod_produto, identificacao, capacidade, ordem)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (cod_empresa, cod_filial, cod_produto, ident, cap, ordem * 10))
+        conn.commit()
+        return {"ok": True, "tanques": [{"identificacao": i, "capacidade": c} for i, c in tanques]}
+    except Exception as e:
+        conn.rollback()
+        return {"ok": False, "erro": str(e)}, 500
+    finally:
+        cur.close()
+        conn.close()
+
 # ---------------------------------------------------------------------
 # CALENDÁRIO DE FERIADOS
 # ---------------------------------------------------------------------

@@ -457,6 +457,24 @@ Botão vermelho no menu de Operações (`OPERACOES/BLOQUEAR_MOVIMENTACOES` 490).
 - Data bloqueada não grava mais nada em Informar Medições, Informar Preço de Compra, Informar Compras e Informar Descarregos — as telas continuam abrindo, com aviso e campos desabilitados. A trava real está nos **7 pontos de gravação** (POST das 4 telas, os 2 ajax-salvar e as 2 exclusões), via `data_bloqueada()` / `msg_data_bloqueada()`. Nas exclusões vale a data do **próprio lançamento**, não a data em tela.
 - É o que libera a importação dos valores de estoque em Financeiro → Saldos.
 
+## Capacidade de Tanques — vários tanques do mesmo produto (25/11/2026)
+
+Em **Operações → Configurações → Capacidade de Tanques** cada linha (filial × produto) tem o
+checkbox **Vários tanques**, que abre ao lado a composição: identificação ("TQ 1") + capacidade
+de cada tanque físico. Tabela `capacidade_tanques_multiplos`
+(`migrations/criar_capacidade_tanques_multiplos.sql`), uma linha por tanque.
+
+- **Não há flag**: ter linhas é ter vários tanques; o checkbox só reflete isso. Desmarcar
+  pergunta e apaga a composição (volta a tanque único).
+- `POST /operacoes/configuracoes/capacidade-tanques/multiplos` reescreve a lista inteira numa
+  transação; exige **pelo menos dois** tanques e a **soma igual** à capacidade de
+  `capacidade_tanques` (recusa no servidor). Mudar a capacidade depois não é barrado — a linha
+  mostra "⚠ soma ≠ capacidade".
+- **Ainda não é lida por nada** além da própria tela: fica para uma implementação futura. A
+  capacidade total continua vindo de `capacidade_tanques`.
+- Carga EMP010: Afogados I (14) Gasolina C1 e S10 C5 = 15.000 + 10.000; Ipaumirim (22) Gasolina
+  = 2 × 7.500, S10 = 2 × 15.000.
+
 ## Liberar Data de Medição
 
 O seletor de data de **Informar Medições** não é um calendário: é um `<select>` montado por

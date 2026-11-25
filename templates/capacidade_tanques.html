@@ -66,6 +66,26 @@
   .status.erro {
     color: #9f2f2f;
   }
+
+  td.multi { white-space: normal; min-width: 420px; }
+  .multi-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 14px; }
+  .multi-editor { display: none; margin-top: 8px; padding: 10px; background: #f7f9fc;
+                  border: 1px solid #d6deea; border-radius: 8px; }
+  .multi-editor.aberto { display: block; }
+  .multi-linha { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .multi-linha input.ident { width: 80px; text-transform: uppercase; }
+  .multi-linha input.cap { width: 120px; text-align: right; }
+  .multi-linha button { border: none; background: none; color: #9f2f2f; font-size: 16px; cursor: pointer; }
+  .multi-rodape { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 6px; font-size: 13px; }
+  .multi-rodape .soma.ok { color: #1b7a2e; font-weight: 700; }
+  .multi-rodape .soma.ruim { color: #c62828; font-weight: 700; }
+  .btn-peq { padding: 4px 10px; border-radius: 6px; border: 1px solid #bbb; background: #fff; cursor: pointer; font-size: 13px; }
+  .btn-peq.salvar { background: #1f5fa8; color: #fff; border-color: #1f5fa8; }
+  .multi-resumo { font-size: 12px; color: #555; margin-left: 8px; cursor: pointer; }
+  .multi-alerta { font-size: 12px; color: #c62828; font-weight: 700; margin-left: 8px; }
+  .multi-msg { font-size: 12px; font-weight: 700; }
+  .multi-msg.erro { color: #c62828; }
+  .multi-msg.ok { color: #1b7a2e; }
 </style>
 
 <div class="pagina-titulo">Capacidade de Tanques</div>
@@ -87,6 +107,7 @@
           <th>Produto</th>
           <th>Descrição</th>
           <th>Capacidade</th>
+          <th>Vários tanques</th>
         </tr>
       </thead>
 
@@ -104,6 +125,27 @@
               value="{{ item.capacidade_tanque | br }}"
             >
             <span id="s_{{ item.cod_filial }}_{{ item.cod_produto }}" class="status"></span>
+          </td>
+          <td class="multi"
+              data-filial="{{ item.cod_filial }}"
+              data-produto="{{ item.cod_produto }}"
+              data-tanques='{{ item.tanques | tojson }}'>
+            <label class="multi-check">
+              <input type="checkbox" class="chk-multi" {% if item.tanques %}checked{% endif %}>
+              Vários tanques
+            </label>
+            <span class="multi-resumo"></span>
+            <span class="multi-alerta"></span>
+            <div class="multi-editor">
+              <div class="multi-linhas"></div>
+              <div class="multi-rodape">
+                <button type="button" class="btn-peq add">+ Tanque</button>
+                <span class="soma"></span>
+                <button type="button" class="btn-peq salvar">Salvar tanques</button>
+                <button type="button" class="btn-peq cancelar">Cancelar</button>
+                <span class="multi-msg"></span>
+              </div>
+            </div>
           </td>
         </tr>
         {% endfor %}
@@ -169,6 +211,8 @@ function salvar(input) {
   .then(r => r.json())
   .then(data => {
     if (data.ok) {
+      const celula = input.closest("tr").querySelector("td.multi");
+      if (celula) atualizarResumo(celula);
       status.textContent = "✔";
       status.classList.remove("erro");
       setTimeout(() => {
@@ -187,6 +231,153 @@ function salvar(input) {
     input.dataset.salvando = "0";
   });
 }
+
+// ---------------- Vários tanques ----------------
+// A composição vale para uso futuro; aqui só se cadastra. A soma tem que fechar
+// com a capacidade da linha (conferido também no servidor).
+
+function numBR(v) {
+  return Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function lerBR(txt) {
+  txt = (txt || "").toString().trim();
+  if (!txt) return 0;
+  const n = Number(txt.replace(/\./g, "").replace(",", "."));
+  return isNaN(n) ? 0 : n;
+}
+
+function capacidadeDaLinha(celula) {
+  return lerBR(celula.closest("tr").querySelector("input.campo").value);
+}
+
+function tanquesSalvos(celula) {
+  try { return JSON.parse(celula.dataset.tanques || "[]"); } catch (e) { return []; }
+}
+
+function atualizarResumo(celula) {
+  const tanques = tanquesSalvos(celula);
+  const resumo = celula.querySelector(".multi-resumo");
+  const alerta = celula.querySelector(".multi-alerta");
+  resumo.textContent = tanques.length
+    ? tanques.map(t => (t.identificacao || "") + ": " + numBR(t.capacidade)).join(" · ")
+    : "";
+  const soma = tanques.reduce((a, t) => a + Number(t.capacidade || 0), 0);
+  alerta.textContent = (tanques.length && Math.round(soma * 100) !== Math.round(capacidadeDaLinha(celula) * 100))
+    ? "⚠ soma " + numBR(soma) + " ≠ capacidade"
+    : "";
+  if (celula.querySelector(".multi-editor").classList.contains("aberto")) atualizarSoma(celula);
+}
+
+function linhaTanque(celula, ident, cap) {
+  const div = document.createElement("div");
+  div.className = "multi-linha";
+  div.innerHTML = '<input type="text" class="ident" placeholder="TQ 1">' +
+                  '<input type="text" class="cap" placeholder="0,00">' +
+                  '<button type="button" title="Remover">×</button>';
+  div.querySelector(".ident").value = ident || "";
+  const inp = div.querySelector(".cap");
+  inp.value = cap ? numBR(cap) : "";
+  inp.addEventListener("input", function() { this.value = formatarNumeroBR(this.value); atualizarSoma(celula); });
+  inp.addEventListener("focus", function() { this.select(); });
+  div.querySelector("button").addEventListener("click", () => { div.remove(); atualizarSoma(celula); });
+  celula.querySelector(".multi-linhas").appendChild(div);
+}
+
+function atualizarSoma(celula) {
+  const caps = [...celula.querySelectorAll(".multi-linha .cap")].map(i => lerBR(i.value));
+  const soma = caps.reduce((a, b) => a + b, 0);
+  const cap = capacidadeDaLinha(celula);
+  const el = celula.querySelector(".soma");
+  const fecha = Math.round(soma * 100) === Math.round(cap * 100);
+  el.textContent = "Soma " + numBR(soma) + " de " + numBR(cap) + (fecha ? " ✔" : "");
+  el.className = "soma " + (fecha ? "ok" : "ruim");
+}
+
+function abrirEditor(celula) {
+  const linhas = celula.querySelector(".multi-linhas");
+  linhas.innerHTML = "";
+  const tanques = tanquesSalvos(celula);
+  if (tanques.length) {
+    tanques.forEach(t => linhaTanque(celula, t.identificacao, t.capacidade));
+  } else {
+    linhaTanque(celula, "TQ 1", 0);
+    linhaTanque(celula, "TQ 2", 0);
+  }
+  celula.querySelector(".multi-msg").textContent = "";
+  celula.querySelector(".multi-editor").classList.add("aberto");
+  atualizarSoma(celula);
+}
+
+function fecharEditor(celula) {
+  celula.querySelector(".multi-editor").classList.remove("aberto");
+  celula.querySelector(".chk-multi").checked = tanquesSalvos(celula).length > 0;
+}
+
+async function gravarTanques(celula, tanques) {
+  const msg = celula.querySelector(".multi-msg");
+  msg.className = "multi-msg";
+  msg.textContent = "Salvando...";
+  try {
+    const r = await fetch('{{ url_for("operacoes.ajax_salvar_tanques_multiplos") }}', {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
+      body: JSON.stringify({ cod_filial: celula.dataset.filial, cod_produto: celula.dataset.produto, tanques })
+    });
+    const data = await r.json();
+    if (!data.ok) {
+      msg.className = "multi-msg erro";
+      msg.textContent = data.erro || "Erro ao salvar";
+      return false;
+    }
+    celula.dataset.tanques = JSON.stringify(data.tanques || []);
+    msg.textContent = "";
+    atualizarResumo(celula);
+    return true;
+  } catch (e) {
+    msg.className = "multi-msg erro";
+    msg.textContent = "Erro ao salvar";
+    return false;
+  }
+}
+
+document.querySelectorAll("td.multi").forEach(celula => {
+  atualizarResumo(celula);
+  const chk = celula.querySelector(".chk-multi");
+
+  chk.addEventListener("change", async function() {
+    if (this.checked) { abrirEditor(celula); return; }
+    if (!tanquesSalvos(celula).length) { fecharEditor(celula); return; }
+    this.checked = true;
+    if (!await confirmarGlobal("Voltar a tanque único? A composição cadastrada será apagada.")) return;
+    if (await gravarTanques(celula, [])) {
+      celula.querySelector(".multi-editor").classList.remove("aberto");
+      chk.checked = false;
+    }
+  });
+
+  celula.querySelector(".multi-resumo").addEventListener("click", () => abrirEditor(celula));
+  celula.querySelector(".add").addEventListener("click", () => {
+    const n = celula.querySelectorAll(".multi-linha").length + 1;
+    linhaTanque(celula, "TQ " + n, 0);
+    atualizarSoma(celula);
+  });
+  celula.querySelector(".cancelar").addEventListener("click", () => fecharEditor(celula));
+  celula.querySelector(".salvar").addEventListener("click", async () => {
+    const tanques = [...celula.querySelectorAll(".multi-linha")].map(l => ({
+      identificacao: l.querySelector(".ident").value,
+      capacidade: l.querySelector(".cap").value
+    }));
+    if (!tanques.length) {
+      celula.querySelector(".multi-msg").className = "multi-msg erro";
+      celula.querySelector(".multi-msg").textContent = "Inclua os tanques ou desmarque a opção.";
+      return;
+    }
+    if (await gravarTanques(celula, tanques)) {
+      celula.querySelector(".multi-editor").classList.remove("aberto");
+    }
+  });
+});
 
 document.querySelectorAll(".campo").forEach(input => {
   input.value = normalizarValorExistente(input.value);
