@@ -2650,11 +2650,25 @@ def cadastrar_bombas_bicos():
 
         combustiveis = cur.fetchall() or []
 
+        # Sugestões de observação: o que já foi digitado antes, nunca texto
+        # pré-pronto — com a base zerada, a lista vem vazia mesmo.
+        cur.execute("""
+            SELECT DISTINCT observacao
+            FROM bombas_bicos
+            WHERE cod_empresa = %s
+              AND observacao IS NOT NULL
+              AND observacao <> ''
+            ORDER BY observacao
+        """, (cod_empresa,))
+
+        observacoes_sugeridas = [r["observacao"] for r in (cur.fetchall() or [])]
+
     except Exception as e:
         conn.rollback()
         flash(f"Erro ao processar bombas e bicos: {e}", "error")
         filiais = {}
         combustiveis = []
+        observacoes_sugeridas = []
 
     finally:
         cur.close()
@@ -2666,6 +2680,7 @@ def cadastrar_bombas_bicos():
         nome_empresa=nome_empresa,
         filiais=filiais,
         combustiveis=combustiveis,
+        observacoes_sugeridas=observacoes_sugeridas,
         url_voltar=url_for("operacoes.menu_bombas_bicos"),
         texto_voltar="← Voltar",
     )

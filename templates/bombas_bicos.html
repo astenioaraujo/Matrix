@@ -105,6 +105,12 @@
   <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
 </div>
 
+<datalist id="lista-observacoes">
+  {% for obs in observacoes_sugeridas %}
+    <option value="{{ obs }}">
+  {% endfor %}
+</datalist>
+
 {% for cod_filial, f in filiais.items() %}
   <div class="bloco-filial">
 
@@ -150,7 +156,7 @@
                 </td>
 
                 <td>
-                  <input type="text" class="observacao" name="observacao" value="{{ item.observacao or '' }}" placeholder="Pix, convênio...">
+                  <input type="text" class="observacao" name="observacao" value="{{ item.observacao or '' }}" list="lista-observacoes">
                 </td>
 
                 <td class="col-acoes">
@@ -196,7 +202,7 @@
             </td>
 
             <td>
-              <input type="text" class="observacao" name="observacao" placeholder="Pix, convênio...">
+              <input type="text" class="observacao" name="observacao" list="lista-observacoes">
             </td>
 
             <td class="col-acoes">
