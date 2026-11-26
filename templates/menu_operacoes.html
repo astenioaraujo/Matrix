@@ -144,33 +144,9 @@
     </a>
   {% endif %}
 
-  {% if pode_informar_preco_compra %}
-    <a href="{{ url_for('operacoes.informar_preco_compra') }}" class="btn-informar">
-      Informar Preço de Compra
-    </a>
-  {% endif %}
-
-
-
-  {% if pode_informar_compras %}
-  <a href="{{ url_for('operacoes.informar_compras_combustiveis') }}" class="btn-informar">
-    Informar Compras
-  </a>
-  {% endif %}
-
-  {% if pode_consultar_compras %}
-  <a href="{{ url_for('operacoes.consultar_compras_combustiveis') }}" class="btn-consultar">
-    Consultar Compras
-  </a>
-  {% endif %}
-  {% if pode_consultar_resumo_compras %}
-  <a href="{{ url_for('operacoes.consultar_resumo_compras_combustiveis') }}" class="btn-consultar">
-    Consultar Resumo de Compras
-  </a>
-  {% endif %}
-  {% if pode_consultar_compras_transito %}
-  <a href="{{ url_for('operacoes.consultar_compras_transito') }}" class="btn-consultar">
-    Compras em Trânsito
+  {% if pode_menu_compras %}
+  <a href="{{ url_for('operacoes.menu_compras') }}" class="btn-informar">
+    Compras
   </a>
   {% endif %}
 

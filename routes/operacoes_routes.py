@@ -218,12 +218,8 @@ def menu_operacoes():
             "pode_informar_afericoes": True,
             "pode_consultar_afericoes": True,
             "pode_menu_afericoes": True,
-            "pode_informar_preco_compra": True,
             "pode_consultar_preco_compra": True,
-            "pode_informar_compras": True,
-            "pode_consultar_compras": True,
-            "pode_consultar_resumo_compras": True,
-            "pode_consultar_compras_transito": True,
+            "pode_menu_compras": True,
             "pode_menu_descarregos": True,
             "pode_consultar_estoques": True,
             "pode_consultar_perdas_sobras": True,
@@ -250,27 +246,13 @@ def menu_operacoes():
             "pode_menu_afericoes": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "MENU_AFERICOES"
             ),
-            "pode_informar_preco_compra": usuario_tem_permissao(
-                id_usuario, cod_empresa, "OPERACOES", "INFORMAR_PRECO_COMPRA"
-            ),
             "pode_consultar_preco_compra": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_PRECO_COMPRA"
             ),
-            "pode_informar_compras": usuario_tem_permissao(
-                id_usuario, cod_empresa, "OPERACOES", "INFORMAR_COMPRAS"
+            "pode_menu_compras": any(
+                usuario_tem_permissao(id_usuario, cod_empresa, "OPERACOES", opcao)
+                for opcao in ("MENU_COMPRAS", "INFORMAR_PRECO_COMPRA", "INFORMAR_COMPRAS", "CONSULTAR_COMPRAS", "CONSULTAR_RESUMO_COMPRAS", "CONSULTAR_COMPRAS_TRANSITO")
             ),
-
-            "pode_consultar_compras": usuario_tem_permissao(
-                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_COMPRAS"
-            ),
-
-            "pode_consultar_resumo_compras": usuario_tem_permissao(
-                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_RESUMO_COMPRAS"
-            ),
-            "pode_consultar_compras_transito": usuario_tem_permissao(
-                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_COMPRAS_TRANSITO"
-            ),
-
 
             "pode_menu_descarregos": any(
                 usuario_tem_permissao(id_usuario, cod_empresa, "OPERACOES", opcao)
@@ -1376,6 +1358,45 @@ def menu_emprestimos():
     )
 
 
+#------------------------------------------
+# MENU COMPRAS
+#------------------------------------------
+@operacoes_bp.route("/compras-combustiveis/menu")
+def menu_compras():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    pode_informar_preco = _pode_afericoes("INFORMAR_PRECO_COMPRA")
+    pode_informar = _pode_afericoes("INFORMAR_COMPRAS")
+    pode_consultar = _pode_afericoes("CONSULTAR_COMPRAS")
+    pode_consultar_resumo = _pode_afericoes("CONSULTAR_RESUMO_COMPRAS")
+    pode_consultar_transito = _pode_afericoes("CONSULTAR_COMPRAS_TRANSITO")
+
+    if not (
+        _pode_afericoes("MENU_COMPRAS")
+        or pode_informar_preco
+        or pode_informar
+        or pode_consultar
+        or pode_consultar_resumo
+        or pode_consultar_transito
+    ):
+        flash("Você não tem acesso ao módulo de Compras.", "error")
+        return redirect(url_for("operacoes.menu_operacoes"))
+
+    return render_template(
+        "menu_compras.html",
+        cod_empresa=session.get("cod_empresa", ""),
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("operacoes.menu_operacoes"),
+        texto_voltar="← Voltar",
+        pode_informar_preco=pode_informar_preco,
+        pode_informar=pode_informar,
+        pode_consultar=pode_consultar,
+        pode_consultar_resumo=pode_consultar_resumo,
+        pode_consultar_transito=pode_consultar_transito,
+    )
+
+
 @operacoes_bp.route("/drenagens/parametros", methods=["GET", "POST"])
 @permissao_obrigatoria(
     "OPERACOES",
@@ -2237,7 +2258,7 @@ def consultar_medicoes():
 @permissao_obrigatoria(
     "OPERACOES",
     "INFORMAR_PRECO_COMPRA",
-    redirecionar_para="operacoes.menu_operacoes",
+    redirecionar_para="operacoes.menu_compras",
 )
 def informar_preco_compra():
     if "id_usuario" not in session:
@@ -2296,7 +2317,7 @@ def informar_preco_compra():
         bloqueada=bloqueada,
         msg_bloqueio=msg_data_bloqueada(data_sel) if bloqueada else "",
         url_tela=url_for("operacoes.informar_preco_compra", origem=origem),
-        url_voltar=url_for("logistica.menu_logistica") if origem else url_for("operacoes.menu_operacoes"),
+        url_voltar=url_for("logistica.menu_logistica") if origem else url_for("operacoes.menu_compras"),
         texto_voltar="← Voltar",
     )
 
@@ -2919,7 +2940,7 @@ def consultar_bombas_bicos():
 @permissao_obrigatoria(
     "OPERACOES",
     "INFORMAR_MEDICOES",
-    redirecionar_para="operacoes.menu_operacoes",
+    redirecionar_para="operacoes.menu_compras",
 )
 def informar_compras_combustiveis():
 
@@ -3241,7 +3262,7 @@ def informar_compras_combustiveis():
         total_geral_qtd=total_geral_qtd,
         total_geral_valor=total_geral_valor,
         preco_medio_geral=preco_medio_geral,
-        url_voltar=url_for("operacoes.menu_operacoes"),
+        url_voltar=url_for("operacoes.menu_compras"),
         texto_voltar="← Voltar",
     )
 
@@ -3253,7 +3274,7 @@ def informar_compras_combustiveis():
 @permissao_obrigatoria(
     "OPERACOES",
     "CONSULTAR_COMPRAS",
-    redirecionar_para="operacoes.menu_operacoes",
+    redirecionar_para="operacoes.menu_compras",
 )
 def consultar_compras_combustiveis():
 
@@ -3453,7 +3474,7 @@ def consultar_compras_combustiveis():
         total_geral_qtd=total_geral_qtd,
         total_geral_valor=total_geral_valor,
         preco_medio_geral=preco_medio_geral,
-        url_voltar=url_for("operacoes.menu_operacoes"),
+        url_voltar=url_for("operacoes.menu_compras"),
         texto_voltar="← Voltar",
     )
 
@@ -3466,7 +3487,7 @@ def consultar_compras_combustiveis():
 @permissao_obrigatoria(
     "OPERACOES",
     "CONSULTAR_COMPRAS_TRANSITO",
-    redirecionar_para="operacoes.menu_operacoes",
+    redirecionar_para="operacoes.menu_compras",
 )
 def consultar_compras_transito():
     """Toda compra com saldo a descarregar, sem filtro de data: comprada e
@@ -3626,7 +3647,7 @@ def consultar_compras_transito():
         resumo=resumo,
         total_saldo=total_saldo,
         total_valor_saldo=total_valor_saldo,
-        url_voltar=url_for("operacoes.menu_operacoes"),
+        url_voltar=url_for("operacoes.menu_compras"),
         texto_voltar="← Voltar",
     )
 
@@ -3639,7 +3660,7 @@ def consultar_compras_transito():
 @permissao_obrigatoria(
     "OPERACOES",
     "CONSULTAR_RESUMO_COMPRAS",
-    redirecionar_para="operacoes.menu_operacoes",
+    redirecionar_para="operacoes.menu_compras",
 )
 def consultar_resumo_compras_combustiveis():
 
@@ -3791,7 +3812,7 @@ def consultar_resumo_compras_combustiveis():
         linhas=linhas,
         total_colunas=total_colunas,
         total_geral=total_geral,
-        url_voltar=url_for("operacoes.menu_operacoes"),
+        url_voltar=url_for("operacoes.menu_compras"),
         texto_voltar="← Voltar",
     )
 
