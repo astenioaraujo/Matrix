@@ -224,14 +224,11 @@ def menu_operacoes():
             "pode_consultar_compras": True,
             "pode_consultar_resumo_compras": True,
             "pode_consultar_compras_transito": True,
-            "pode_informar_descarregos": True,
-            "pode_consultar_descarregos": True,
-            "pode_consultar_resumo_descarregos": True,
+            "pode_menu_descarregos": True,
             "pode_consultar_estoques": True,
             "pode_consultar_perdas_sobras": True,
             "pode_consultar_vendas": True,
-            "pode_consultar_emprestimos": True,
-            "pode_consultar_saldo_emprestimos": True,
+            "pode_menu_emprestimos": True,
             "pode_configuracoes": True,
             "pode_bloquear_movimentacoes": True,
             "pode_menu_drenagens": True,
@@ -275,14 +272,9 @@ def menu_operacoes():
             ),
 
 
-            "pode_informar_descarregos": usuario_tem_permissao(
-                id_usuario, cod_empresa, "OPERACOES", "INFORMAR_DESCARREGOS"
-            ),
-            "pode_consultar_descarregos": usuario_tem_permissao(
-                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_DESCARREGOS"
-            ),
-            "pode_consultar_resumo_descarregos": usuario_tem_permissao(
-                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_RESUMO_DESCARREGOS"
+            "pode_menu_descarregos": any(
+                usuario_tem_permissao(id_usuario, cod_empresa, "OPERACOES", opcao)
+                for opcao in ("MENU_DESCARREGOS", "INFORMAR_DESCARREGOS", "CONSULTAR_DESCARREGOS", "CONSULTAR_RESUMO_DESCARREGOS")
             ),
             "pode_consultar_estoques": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_ESTOQUES"
@@ -293,11 +285,9 @@ def menu_operacoes():
             "pode_consultar_vendas": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_VENDAS"
             ),
-            "pode_consultar_emprestimos": usuario_tem_permissao(
-                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_EMPRESTIMOS"
-            ),
-            "pode_consultar_saldo_emprestimos": usuario_tem_permissao(
-                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_SALDO_EMPRESTIMOS"
+            "pode_menu_emprestimos": any(
+                usuario_tem_permissao(id_usuario, cod_empresa, "OPERACOES", opcao)
+                for opcao in ("MENU_EMPRESTIMOS", "CONSULTAR_EMPRESTIMOS", "CONSULTAR_SALDO_EMPRESTIMOS")
             ),
             "pode_configuracoes": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "CONFIGURACOES"
@@ -1329,6 +1319,60 @@ def menu_drenagens():
         texto_voltar="← Voltar",
         pode_informar=pode_informar,
         pode_consultar=pode_consultar,        pode_parametros=_pode_afericoes("CONFIGURACOES"),
+    )
+
+
+#------------------------------------------
+# MENU DESCARREGOS
+#------------------------------------------
+@operacoes_bp.route("/descarregos-combustiveis/menu")
+def menu_descarregos():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    pode_informar = _pode_afericoes("INFORMAR_DESCARREGOS")
+    pode_consultar = _pode_afericoes("CONSULTAR_DESCARREGOS")
+    pode_consultar_resumo = _pode_afericoes("CONSULTAR_RESUMO_DESCARREGOS")
+
+    if not (_pode_afericoes("MENU_DESCARREGOS") or pode_informar or pode_consultar or pode_consultar_resumo):
+        flash("Você não tem acesso ao módulo de Descarregos.", "error")
+        return redirect(url_for("operacoes.menu_operacoes"))
+
+    return render_template(
+        "menu_descarregos.html",
+        cod_empresa=session.get("cod_empresa", ""),
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("operacoes.menu_operacoes"),
+        texto_voltar="← Voltar",
+        pode_informar=pode_informar,
+        pode_consultar=pode_consultar,
+        pode_consultar_resumo=pode_consultar_resumo,
+    )
+
+
+#------------------------------------------
+# MENU EMPRESTIMOS
+#------------------------------------------
+@operacoes_bp.route("/emprestimos/menu")
+def menu_emprestimos():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    pode_consultar = _pode_afericoes("CONSULTAR_EMPRESTIMOS")
+    pode_consultar_saldo = _pode_afericoes("CONSULTAR_SALDO_EMPRESTIMOS")
+
+    if not (_pode_afericoes("MENU_EMPRESTIMOS") or pode_consultar or pode_consultar_saldo):
+        flash("Você não tem acesso ao módulo de Empréstimos.", "error")
+        return redirect(url_for("operacoes.menu_operacoes"))
+
+    return render_template(
+        "menu_emprestimos.html",
+        cod_empresa=session.get("cod_empresa", ""),
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("operacoes.menu_operacoes"),
+        texto_voltar="← Voltar",
+        pode_consultar=pode_consultar,
+        pode_consultar_saldo=pode_consultar_saldo,
     )
 
 
@@ -3813,7 +3857,7 @@ def excluir_compra_combustivel(id_compra):
 @permissao_obrigatoria(
     "OPERACOES",
     "INFORMAR_MEDICOES",
-    redirecionar_para="operacoes.menu_operacoes",
+    redirecionar_para="operacoes.menu_descarregos",
 )
 def informar_descarregos_combustiveis():
 
@@ -4186,7 +4230,7 @@ def informar_descarregos_combustiveis():
         compras=compras,
         descarregos=descarregos,
         vendas_extras=vendas_extras,
-        url_voltar=url_for("operacoes.menu_operacoes"),
+        url_voltar=url_for("operacoes.menu_descarregos"),
         texto_voltar="← Voltar",
     )
 
@@ -4199,7 +4243,7 @@ def informar_descarregos_combustiveis():
 @permissao_obrigatoria(
     "OPERACOES",
     "CONSULTAR_DESCARREGOS",
-    redirecionar_para="operacoes.menu_operacoes",
+    redirecionar_para="operacoes.menu_descarregos",
 )
 def consultar_descarregos_combustiveis():
 
@@ -4368,7 +4412,7 @@ def consultar_descarregos_combustiveis():
         filial_sel=filial_sel,
         filiais=filiais,
         descarregos=descarregos,
-        url_voltar=url_for("operacoes.menu_operacoes"),
+        url_voltar=url_for("operacoes.menu_descarregos"),
         texto_voltar="← Voltar",
     )
 
@@ -4381,7 +4425,7 @@ def consultar_descarregos_combustiveis():
 @permissao_obrigatoria(
     "OPERACOES",
     "CONSULTAR_RESUMO_DESCARREGOS",
-    redirecionar_para="operacoes.menu_operacoes",
+    redirecionar_para="operacoes.menu_descarregos",
 )
 def consultar_resumo_descarregos_combustiveis():
 
@@ -4533,7 +4577,7 @@ def consultar_resumo_descarregos_combustiveis():
         linhas=linhas,
         total_colunas=total_colunas,
         total_geral=total_geral,
-        url_voltar=url_for("operacoes.menu_operacoes"),
+        url_voltar=url_for("operacoes.menu_descarregos"),
         texto_voltar="← Voltar",
     )
 # ---------------------------------------
@@ -5045,7 +5089,7 @@ def consultar_vendas():
 @permissao_obrigatoria(
     "OPERACOES",
     "CONSULTAR_EMPRESTIMOS",
-    redirecionar_para="operacoes.menu_operacoes",
+    redirecionar_para="operacoes.menu_emprestimos",
 )
 def consultar_emprestimos():
     if "id_usuario" not in session:
@@ -5231,7 +5275,7 @@ def consultar_emprestimos():
         filial_sel=filial_sel,
         filiais=filiais,
         linhas=linhas,
-        url_voltar=url_for("operacoes.menu_operacoes"),
+        url_voltar=url_for("operacoes.menu_emprestimos"),
         texto_voltar="← Voltar",
     )
 
@@ -5243,7 +5287,7 @@ def consultar_emprestimos():
 @permissao_obrigatoria(
     "OPERACOES",
     "CONSULTAR_SALDO_EMPRESTIMOS",
-    redirecionar_para="operacoes.menu_operacoes",
+    redirecionar_para="operacoes.menu_emprestimos",
 )
 def consultar_saldo_emprestimos():
     if "id_usuario" not in session:
@@ -5468,7 +5512,7 @@ def consultar_saldo_emprestimos():
         filial_sel=filial_sel,
         filiais=filiais,
         linhas=linhas,
-        url_voltar=url_for("operacoes.menu_operacoes"),
+        url_voltar=url_for("operacoes.menu_emprestimos"),
         texto_voltar="← Voltar",
     )
 

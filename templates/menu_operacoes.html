@@ -174,21 +174,10 @@
   </a>
   {% endif %}
 
-  {% if pode_informar_descarregos %}
-  <a href="{{ url_for('operacoes.informar_descarregos_combustiveis') }}" class="btn-informar">
-    Informar Descarregos
+  {% if pode_menu_descarregos %}
+  <a href="{{ url_for('operacoes.menu_descarregos') }}" class="btn-informar">
+    Descarregos
   </a>
-  {% endif %}
-
-  {% if pode_consultar_descarregos %}
-  <a href="{{ url_for('operacoes.consultar_descarregos_combustiveis') }}" class="btn-consultar">
-    Consultar Descarregos
-  </a>
-  {% endif %}
-  {% if pode_consultar_resumo_descarregos %}
-    <a href="{{ url_for('operacoes.consultar_resumo_descarregos_combustiveis') }}" class="btn-consultar">
-      Consultar Resumo de Descarregos
-    </a>
   {% endif %}
 
   {% if pode_consultar_estoques %}
@@ -209,16 +198,9 @@
   </a>
   {% endif %}
 
-  {% if pode_consultar_emprestimos %}
-  <a href="{{ url_for('operacoes.consultar_emprestimos') }}" class="btn-consultar">
-    Consultar Empréstimos
-  </a>
-  {% endif %}
-
-  
-  {% if pode_consultar_saldo_emprestimos %}
-  <a href="{{ url_for('operacoes.consultar_saldo_emprestimos') }}" class="btn-consultar">
-    Consultar Saldo de Empréstimos
+  {% if pode_menu_emprestimos %}
+  <a href="{{ url_for('operacoes.menu_emprestimos') }}" class="btn-consultar">
+    Empréstimos
   </a>
   {% endif %}
 
