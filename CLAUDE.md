@@ -411,12 +411,18 @@ Duas armadilhas dessa tela:
 
 ## Faltas de Caixa — importação da planilha do WebPostos (23/10/2026)
 
-Botão **Faltas de Caixa** no menu de Caixas (`FINANCEIRO/FALTAS_CAIXAS` 504,
-`migrations/criar_tabela_caixas_faltas_sobras.sql`, não concedida). Sem relação com a
-coluna **FALTAS** de Conferir Caixas (digitada pelo próprio caixa) — aqui o dado vem
-pronto do relatório "Sobras e Faltas de Caixa" do WebPostos: uma aba, um bloco por
-filial (`Filial: NOME`), dentro dele um bloco por funcionário (`Funcionário: MATRICULA -
-NOME`) com as linhas Data/Turno/PDV/Sobra/Falta e um "Subtotal:" no fim.
+Sem relação com a coluna **FALTAS** de Conferir Caixas (digitada pelo próprio caixa) —
+aqui o dado vem pronto do relatório "Sobras e Faltas de Caixa" do WebPostos: uma aba, um
+bloco por filial (`Filial: NOME`), dentro dele um bloco por funcionário (`Funcionário:
+MATRICULA - NOME`) com as linhas Data/Turno/PDV/Sobra/Falta e um "Subtotal:" no fim.
+
+**Submenu Importar / Consultar** (26/11/2026, `menu_faltas_caixas`,
+`migrations/criar_submenu_faltas_caixas.sql`): a tela única original (upload + grade)
+separou, pedido do cliente, como Capacidade de Tanques — Importar é só o formulário de
+upload; Consultar é a grade mensal, só leitura. Permissões (`FINANCEIRO`):
+`MENU_FALTAS_CAIXAS` 515, `IMPORTAR_FALTAS_CAIXAS` 516, `CONSULTAR_FALTAS_CAIXAS` 517. A
+antiga `FALTAS_CAIXAS` (504) **não mostra mais tela nenhuma** — Clécia (74, EMP012), única
+concessão existente, ganhou as duas novas no lugar.
 
 `services/caixas_faltas_sobras_service.py` lê a planilha (`ler_planilha_faltas_sobras`) e
 grava em `caixas_faltas_sobras` (`sobra` sempre ≥ 0, `falta` sempre ≤ 0 — a diferença do
@@ -428,16 +434,53 @@ listada na mensagem de importação, não interrompe o resto. Reimportar substit
 **período da planilha** por filial (`DELETE ... WHERE data BETWEEN data_min AND data_max`
 daquela filial, depois insere) — não duplica.
 
-Tela (`GET/POST /caixas/faltas`, `templates/caixas_faltas_sobras.html`): formulário de
-upload (.xlsx) em cima, filtro Filial/Mês/Ano embaixo, grade **dias nas linhas** (do
-jeito da planilha de referência do cliente) × **funcionários nas colunas**, cabeçalho
-amarelo, negativo em parênteses (`R$ (x,xx)`), dia sem nenhum lançamento em **R$ -**,
-TOTAL DO DIA na última coluna e TOTAL no rodapé. O rótulo da coluna é o **primeiro nome**
-do funcionário (desempatado com a palavra seguinte só em colisão, `nomes_exibicao`) — não
-reproduz apelidos manuais que porventura existam numa planilha de referência (ex.: alguém
-com nome "ANTONIO XAVIER..." vira coluna "ANTONIO", não "XAVIER"). Ordem das colunas:
-alfabética pelo rótulo — a planilha de referência do cliente tinha uma ordem manual própria,
-sem regra derivável do arquivo.
+**Importar** (`GET/POST /caixas/faltas/importar`, `templates/importar_faltas_caixas.html`):
+só o formulário de upload (.xlsx) e a mensagem do resultado, com link para a consulta.
+
+**Consultar** (`GET /caixas/faltas/consultar`, `templates/consultar_faltas_caixas.html`):
+filtro Filial/Mês/Ano, grade **dias nas linhas** (do jeito da planilha de referência do
+cliente) × **funcionários nas colunas**, cabeçalho amarelo, negativo em parênteses
+(`R$ (x,xx)`), dia sem nenhum lançamento em **R$ -**, TOTAL DO DIA na última coluna e TOTAL
+no rodapé. O rótulo da coluna é o **primeiro nome** do funcionário (desempatado com a
+palavra seguinte só em colisão, `nomes_exibicao`) — não reproduz apelidos manuais que
+porventura existam numa planilha de referência (ex.: alguém com nome "ANTONIO XAVIER..."
+vira coluna "ANTONIO", não "XAVIER"). Ordem das colunas: alfabética pelo rótulo — a
+planilha de referência do cliente tinha uma ordem manual própria, sem regra derivável do
+arquivo.
+
+**Mês de caixa**: do dia **26** do mês anterior ao dia **25** do mês selecionado
+(fechamento do WebPostos), não o mês de calendário. Até 26/11/2026 a quebra estava um dia
+adiantada (25 do anterior a 24 do selecionado) — dia 24 ficava no mês e dia 25 já caía no
+mês seguinte; o cliente confirmou que o fechamento do WebPostos vai até o dia 25.
+
+**Funcionários e transferência de filial** (26/11/2026,
+`migrations/criar_funcionarios_faltas_caixas.sql`, botão **Funcionários / Transferências**
+no submenu, `GET/POST /caixas/faltas/funcionarios`, `IMPORTAR_FALTAS_CAIXAS`): cada
+importação cadastra sozinha (`_sincronizar_funcionarios`, em
+`services/caixas_faltas_sobras_service.py`) quem apareceu na planilha e ainda não tinha
+cadastro em `caixas_faltas_sobras_funcionarios` — a identidade é pelo **nome**, não pela
+matrícula da planilha: testado com os dados reais da EMP012, a mesma matrícula (ex.:
+"00008") é gente diferente em postos diferentes — cada posto numera os próprios
+funcionários do zero no WebPostos, então a matrícula não identifica ninguém na empresa
+toda (o cliente confirmou: "o código não serve para nada para nós"). O nome funciona
+bem nos dados reais (só 2 de 73 colidiram, ambos incompletos — "CARLOS", "PAULO" — a
+corrigir na origem); depende de vir **igual** em toda planilha, senão a mesma pessoa com
+grafias diferentes não casa.
+
+Não é o `funcionarios`/`funcionarios_movimentacoes` do RH (ali a identidade é a
+matrícula, única por empresa, `funcionarios_empresa_matricula_unica`) — tabela própria,
+`caixas_faltas_sobras_funcionarios` (nome, filial atual) e
+`caixas_faltas_sobras_funcionarios_movimentacoes` (histórico: data, filial de origem e de
+destino). **Transferir** grava o movimento, atualiza a filial atual e, na mesma
+transação, **recalcula automaticamente** (`recalcular_filial_faltas_funcionario`) o
+`cod_filial` de todo o histórico já importado daquele nome em `caixas_faltas_sobras`: por
+segmento de tempo entre transferências, antes da data informada fica na filial de
+origem, a partir dela na de destino, até a próxima transferência que existir (ou para
+sempre, se for a última). A planilha continua gravando a filial de cada lançamento tal
+como vem do WebPostos — é a transferência que sobrepõe isso quando o posto de origem não
+atualiza a tempo. Backfill de quem já tinha Faltas de Caixa importada antes dessa
+funcionalidade: 73 funcionários da EMP012, filial atual = a do lançamento mais recente
+de cada nome.
 
 ## Exclusões de lançamentos
 

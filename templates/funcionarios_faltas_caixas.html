@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
+  .pagina-sub    { font-size:15px; color:#666; margin-bottom:20px; }
+
+  .dica { font-size:13px; color:#64748b; margin-bottom:16px; max-width:760px; }
+
+  .tbl-wrap { border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; max-width:900px; }
+  table.func { width:100%; border-collapse:collapse; font-size:14px; }
+  table.func th, table.func td { padding:10px 14px; border-bottom:1px solid #e5e7eb; text-align:left; }
+  table.func thead th { background:#ffe600; color:#14114f; font-weight:800; }
+  table.func tbody tr:hover { background:#f8fafc; }
+  table.func td.matricula { color:#64748b; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  table.func td.filial { font-weight:600; color:#14114f; white-space:nowrap; }
+
+  .form-transferir { display:flex; align-items:center; gap:8px; }
+  .form-transferir select, .form-transferir input[type=date] {
+    height:32px; border-radius:6px; border:1px solid #cbd5e1; padding:0 8px; font-size:13px;
+  }
+  .btn-transferir {
+    background:#7c5e10; color:#fff; border:none; border-radius:6px;
+    padding:0 14px; height:32px; font-size:13px; font-weight:700; cursor:pointer; white-space:nowrap;
+  }
+  .btn-transferir:hover { background:#64490c; }
+
+  .sem-dados { color:#94a3b8; font-size:15px; margin-top:20px; }
+</style>
+
+<div class="card">
+  <div class="pagina-titulo">Funcionários / Transferências — Faltas de Caixa</div>
+  <div class="pagina-sub">Empresa: <strong>{{ empresa_ativa }} - {{ nome_empresa_ativa }}</strong></div>
+
+  {% with mensagens = get_flashed_messages(with_categories=true) %}
+    {% for categoria, msg in mensagens %}
+      <div class="mensagem {{ 'erro' if categoria == 'error' else 'ok' }}"
+           style="padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:14px; max-width:900px;
+                  {% if categoria == 'error' %}background:#fef2f2; color:#991b1b; border:1px solid #fecaca;
+                  {% else %}background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0;{% endif %}">
+        {{ msg }}
+      </div>
+    {% endfor %}
+  {% endwith %}
+
+  <div class="dica">
+    Funcionários cadastrados automaticamente, pelo nome, quando aparecem numa planilha
+    importada em Faltas de Caixa. Transferir muda a filial atual dele e recalcula, na hora,
+    o período já importado: antes da data informada fica na filial de origem, a partir dela
+    na de destino — até a próxima transferência. O nome precisa vir igual em toda planilha;
+    se a mesma pessoa aparecer com nomes diferentes, corrija o cadastro no WebPostos.
+  </div>
+
+  {% if not funcionarios %}
+    <p class="sem-dados">Nenhum funcionário com Faltas de Caixa importada ainda.</p>
+  {% else %}
+  <div class="tbl-wrap">
+    <table class="func">
+      <thead>
+        <tr>
+          <th>Funcionário</th>
+          <th>Filial atual</th>
+          <th>Transferir para</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in funcionarios %}
+        <tr>
+          <td>{{ f.nome_funcionario }}</td>
+          <td class="filial">{{ f.nome_filial or '—' }}</td>
+          <td>
+            <form class="form-transferir" method="POST">
+              <input type="hidden" name="id_funcionario" value="{{ f.id }}">
+              <select name="cod_filial_destino" required>
+                <option value="">Filial...</option>
+                {% for fl in filiais %}
+                  {% if fl.cod_filial != f.cod_filial %}
+                    <option value="{{ fl.cod_filial }}">{{ fl.nome_filial }}</option>
+                  {% endif %}
+                {% endfor %}
+              </select>
+              <input type="date" name="data_movimento" required>
+              <button type="submit" class="btn-transferir">Transferir</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

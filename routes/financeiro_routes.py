@@ -20,7 +20,9 @@ from services.estoques_service import (
 )
 from services.bloqueios_service import datas_bloqueio_pendentes
 from services.emprestimos_service import gerar_parcelas
-from services.caixas_faltas_sobras_service import importar_faltas_sobras, nomes_exibicao
+from services.caixas_faltas_sobras_service import (
+    importar_faltas_sobras, nomes_exibicao, recalcular_filial_faltas_funcionario,
+)
 from utils.formatters import formatar_numero_br, formatar_int
 
 financeiro_bp = Blueprint("financeiro", __name__)
@@ -3696,8 +3698,10 @@ def menu_caixas():
         pode_acessos_caixas = usuario_tem_permissao(
             id_usuario, cod_empresa, "FINANCEIRO", "ACESSOS_CAIXAS"
         )
-        pode_faltas_caixas = usuario_tem_permissao(
-            id_usuario, cod_empresa, "FINANCEIRO", "FALTAS_CAIXAS"
+        pode_faltas_caixas = (
+            usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "MENU_FALTAS_CAIXAS")
+            or usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "IMPORTAR_FALTAS_CAIXAS")
+            or usuario_tem_permissao(id_usuario, cod_empresa, "FINANCEIRO", "CONSULTAR_FALTAS_CAIXAS")
         )
 
     return render_template(
@@ -3712,59 +3716,126 @@ def menu_caixas():
     )
 
 
-@financeiro_bp.route("/caixas/faltas", methods=["GET", "POST"])
-@permissao_obrigatoria("FINANCEIRO", "FALTAS_CAIXAS",
-                       redirecionar_para="financeiro.menu_caixas")
-def faltas_sobras_caixas():
-    """Importa a planilha "Sobras e Faltas de Caixa" (WebPostos) e mostra a
-    grade mensal: uma linha por dia, uma coluna por funcionário, com a
-    diferença (sobra + falta, falta já vem negativa) e os totais do dia e
-    do mês. Mesma ideia visual de Vendas por Dia por Bandeira, só que com
-    dia na linha em vez de na coluna.
+@financeiro_bp.route("/caixas/faltas/menu")
+def menu_faltas_caixas():
+    """Submenu de Faltas de Caixa: Importar (upload da planilha) e Consultar
+    (a grade mensal, só leitura) — mesmo princípio de Capacidade de Tanques.
+    """
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    pode_importar = _pode_faltas_caixas("IMPORTAR_FALTAS_CAIXAS")
+    pode_consultar = _pode_faltas_caixas("CONSULTAR_FALTAS_CAIXAS")
+
+    if not (_pode_faltas_caixas("MENU_FALTAS_CAIXAS") or pode_importar or pode_consultar):
+        flash("Você não tem acesso a Faltas de Caixa.", "error")
+        return redirect(url_for("financeiro.menu_caixas"))
+
+    return render_template(
+        "menu_faltas_caixas.html",
+        empresa_ativa=str(session["cod_empresa"]).strip(),
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_caixas"),
+        pode_importar=pode_importar,
+        pode_consultar=pode_consultar,
+    )
+
+
+def _pode_faltas_caixas(acao):
+    if str(session.get("tipo_global") or "").strip().lower() == "superusuario":
+        return True
+    return usuario_tem_permissao(
+        session.get("id_usuario"),
+        str(session.get("cod_empresa") or "").strip(),
+        "FINANCEIRO",
+        acao,
+    )
+
+
+@financeiro_bp.route("/caixas/faltas/importar", methods=["GET", "POST"])
+@permissao_obrigatoria("FINANCEIRO", "IMPORTAR_FALTAS_CAIXAS",
+                       redirecionar_para="financeiro.menu_faltas_caixas")
+def importar_faltas_caixas():
+    """Importa a planilha "Sobras e Faltas de Caixa" (WebPostos) para
+    `caixas_faltas_sobras`. A grade mensal é a tela separada
+    `consultar_faltas_caixas`.
     """
     if "id_usuario" not in session or "cod_empresa" not in session:
         return redirect(url_for("auth.index"))
 
     cod_empresa = str(session["cod_empresa"]).strip()
     id_usuario = session["id_usuario"]
-    hoje = date.today()
 
     mensagem = ""
     erro = ""
+    avisos = []
+
+    if request.method == "POST":
+        conn = get_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        try:
+            arquivo = request.files.get("arquivo")
+            if not arquivo or not (arquivo.filename or "").strip():
+                raise ValueError("Selecione o arquivo da planilha (.xlsx).")
+
+            resultado = importar_faltas_sobras(cur, cod_empresa, id_usuario, arquivo)
+            conn.commit()
+
+            qtd_filiais = len(resultado["filiais"])
+            mensagem = (
+                f"Importação concluída: {resultado['total_importado']} lançamento(s) "
+                f"em {qtd_filiais} filial(is)."
+            )
+            if resultado["filiais_ignoradas"]:
+                mensagem += (
+                    " Filiais da planilha sem cadastro de importação nesta empresa "
+                    "(ignoradas): " + ", ".join(resultado["filiais_ignoradas"]) + "."
+                )
+
+            avisos = resultado["avisos_homonimos"]
+
+            if resultado["filiais"]:
+                primeira = resultado["filiais"][0]
+                session["faltas_caixas_filial"] = str(primeira["cod_filial"])
+                session["faltas_caixas_ano"] = primeira["data_max"].year
+                session["faltas_caixas_mes"] = primeira["data_max"].month
+
+        except Exception as e:
+            conn.rollback()
+            erro = str(e)
+        finally:
+            cur.close()
+            conn.close()
+
+    return render_template(
+        "importar_faltas_caixas.html",
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_faltas_caixas"),
+        mensagem=mensagem,
+        erro=erro,
+        avisos=avisos,
+    )
+
+
+@financeiro_bp.route("/caixas/faltas/consultar")
+@permissao_obrigatoria("FINANCEIRO", "CONSULTAR_FALTAS_CAIXAS",
+                       redirecionar_para="financeiro.menu_faltas_caixas")
+def consultar_faltas_caixas():
+    """Grade mensal de Faltas e Sobras de Caixa: uma linha por dia, uma
+    coluna por funcionário, com a diferença (sobra + falta, falta já vem
+    negativa) e os totais do dia e do mês. Mesma ideia visual de Vendas por
+    Dia por Bandeira, só que com dia na linha em vez de na coluna.
+    """
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+    hoje = date.today()
 
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        if request.method == "POST":
-            try:
-                arquivo = request.files.get("arquivo")
-                if not arquivo or not (arquivo.filename or "").strip():
-                    raise ValueError("Selecione o arquivo da planilha (.xlsx).")
-
-                resultado = importar_faltas_sobras(cur, cod_empresa, id_usuario, arquivo)
-                conn.commit()
-
-                qtd_filiais = len(resultado["filiais"])
-                mensagem = (
-                    f"Importação concluída: {resultado['total_importado']} lançamento(s) "
-                    f"em {qtd_filiais} filial(is)."
-                )
-                if resultado["filiais_ignoradas"]:
-                    mensagem += (
-                        " Filiais da planilha sem cadastro de importação nesta empresa "
-                        "(ignoradas): " + ", ".join(resultado["filiais_ignoradas"]) + "."
-                    )
-
-                if resultado["filiais"]:
-                    primeira = resultado["filiais"][0]
-                    session["faltas_caixas_filial"] = str(primeira["cod_filial"])
-                    session["faltas_caixas_ano"] = primeira["data_max"].year
-                    session["faltas_caixas_mes"] = primeira["data_max"].month
-
-            except Exception as e:
-                conn.rollback()
-                erro = str(e)
-
         cur.execute("""
             SELECT cod_filial, nome_filial, nome_filial_importacao
               FROM filiais
@@ -3804,15 +3875,15 @@ def faltas_sobras_caixas():
                 if filial_obj:
                     nome_filial_sel = filial_obj["nome_filial_importacao"] or filial_obj["nome_filial"]
 
-            # Mês de caixa: do dia 25 do mês anterior ao dia 24 do mês
+            # Mês de caixa: do dia 26 do mês anterior ao dia 25 do mês
             # selecionado (fechamento do WebPostos) — não o mês de calendário.
             if mes_sel == 1:
                 mes_anterior, ano_anterior = 12, ano_sel - 1
             else:
                 mes_anterior, ano_anterior = mes_sel - 1, ano_sel
 
-            primeiro_dia = date(ano_anterior, mes_anterior, 25)
-            ultimo_dia = date(ano_sel, mes_sel, 24)
+            primeiro_dia = date(ano_anterior, mes_anterior, 26)
+            ultimo_dia = date(ano_sel, mes_sel, 25)
             qtd_dias = (ultimo_dia - primeiro_dia).days + 1
 
             if eh_todos:
@@ -3906,10 +3977,10 @@ def faltas_sobras_caixas():
                    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
 
     return render_template(
-        "caixas_faltas_sobras.html",
+        "consultar_faltas_caixas.html",
         empresa_ativa=cod_empresa,
         nome_empresa_ativa=session["nome_empresa"],
-        url_voltar=url_for("financeiro.menu_caixas"),
+        url_voltar=url_for("financeiro.menu_faltas_caixas"),
         filiais=filiais,
         cod_filial_sel=cod_filial_sel,
         nome_filial_sel=nome_filial_sel,
@@ -3918,8 +3989,117 @@ def faltas_sobras_caixas():
         anos_disponiveis=anos_disponiveis,
         nomes_meses=nomes_meses,
         grade=grade,
-        mensagem=mensagem,
-        erro=erro,
+    )
+
+
+@financeiro_bp.route("/caixas/faltas/funcionarios", methods=["GET", "POST"])
+@permissao_obrigatoria("FINANCEIRO", "IMPORTAR_FALTAS_CAIXAS",
+                       redirecionar_para="financeiro.menu_faltas_caixas")
+def funcionarios_faltas_caixas():
+    """Funcionários de Faltas de Caixa (cadastrados automaticamente na
+    importação, pelo nome — a matrícula da planilha não identifica ninguém
+    na empresa toda, é numerada à parte em cada posto) e a transferência de
+    filial deles.
+
+    Transferir grava em `caixas_faltas_sobras_funcionarios_movimentacoes`,
+    atualiza a filial atual em `caixas_faltas_sobras_funcionarios` e, na
+    mesma transação, recalcula o `cod_filial` de todo o histórico já
+    importado daquele nome (`recalcular_filial_faltas_funcionario`): antes
+    da data informada fica na filial de origem, a partir dela na de
+    destino, até a próxima transferência que existir. Depende do nome
+    vindo igual em toda planilha — nome divergente não casa e precisa ser
+    corrigido na origem (WebPostos).
+    """
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    cod_empresa = str(session["cod_empresa"]).strip()
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if request.method == "POST":
+            try:
+                id_funcionario = int(request.form.get("id_funcionario") or 0)
+                cod_filial_destino = int(request.form.get("cod_filial_destino") or 0)
+                data_movimento = request.form.get("data_movimento") or ""
+
+                if not id_funcionario or not cod_filial_destino or not data_movimento:
+                    raise ValueError("Informe o funcionário, a filial de destino e a data.")
+
+                cur.execute("""
+                    SELECT id, nome_funcionario, cod_filial
+                      FROM caixas_faltas_sobras_funcionarios
+                     WHERE id = %s AND cod_empresa = %s
+                """, (id_funcionario, cod_empresa))
+                funcionario = cur.fetchone()
+                if not funcionario:
+                    raise ValueError("Funcionário não encontrado.")
+
+                cod_filial_origem = funcionario["cod_filial"]
+                if cod_filial_origem == cod_filial_destino:
+                    raise ValueError("O funcionário já está nessa filial.")
+
+                cur.execute("""
+                    INSERT INTO caixas_faltas_sobras_funcionarios_movimentacoes (
+                        cod_empresa, id_funcionario, data_movimento,
+                        cod_filial_origem, cod_filial_destino, observacao
+                    ) VALUES (%s, %s, %s, %s, %s, %s)
+                """, (
+                    cod_empresa, id_funcionario, data_movimento,
+                    cod_filial_origem, cod_filial_destino,
+                    "Transferência registrada em Faltas de Caixa",
+                ))
+
+                cur.execute("""
+                    UPDATE caixas_faltas_sobras_funcionarios
+                       SET cod_filial = %s, atualizado_em = NOW()
+                     WHERE id = %s AND cod_empresa = %s
+                """, (cod_filial_destino, id_funcionario, cod_empresa))
+
+                qtd_recalculada = recalcular_filial_faltas_funcionario(cur, cod_empresa, id_funcionario)
+                conn.commit()
+
+                flash(
+                    f"{funcionario['nome_funcionario']} transferido(a) a partir de "
+                    f"{datetime.strptime(data_movimento, '%Y-%m-%d').strftime('%d/%m/%Y')}. "
+                    f"{qtd_recalculada} lançamento(s) de Faltas de Caixa recalculado(s).",
+                    "success",
+                )
+            except Exception as e:
+                conn.rollback()
+                flash(str(e), "error")
+
+            return redirect(url_for("financeiro.funcionarios_faltas_caixas"))
+
+        cur.execute("""
+            SELECT cod_filial, nome_filial, nome_filial_importacao
+              FROM filiais
+             WHERE cod_empresa = %s AND ativo = TRUE
+             ORDER BY cod_filial
+        """, (cod_empresa,))
+        filiais = cur.fetchall()
+
+        cur.execute("""
+            SELECT f.id, f.nome_funcionario, f.cod_filial, fi.nome_filial
+              FROM caixas_faltas_sobras_funcionarios f
+              LEFT JOIN filiais fi
+                ON fi.cod_empresa = f.cod_empresa AND fi.cod_filial = f.cod_filial
+             WHERE f.cod_empresa = %s
+             ORDER BY f.nome_funcionario
+        """, (cod_empresa,))
+        funcionarios = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "funcionarios_faltas_caixas.html",
+        empresa_ativa=cod_empresa,
+        nome_empresa_ativa=session["nome_empresa"],
+        url_voltar=url_for("financeiro.menu_faltas_caixas"),
+        filiais=filiais,
+        funcionarios=funcionarios,
     )
 
 

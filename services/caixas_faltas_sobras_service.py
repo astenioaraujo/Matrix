@@ -122,6 +122,160 @@ def ler_planilha_faltas_sobras(arquivo):
     return registros
 
 
+def _sincronizar_funcionarios(cur, cod_empresa, por_filial):
+    """Cadastra em `caixas_faltas_sobras_funcionarios` quem apareceu na
+    planilha e ainda não tinha cadastro (`UNIQUE (cod_empresa,
+    nome_funcionario)`) — é assim que a transferência de filial passa a
+    valer para ele. A identidade é pelo **nome**, não pela matrícula: nos
+    dados reais (EMP012) a matrícula se repete entre postos — cada posto
+    numera os próprios funcionários do zero, então não identifica ninguém
+    na empresa toda. Funcionário já cadastrado não é alterado aqui: a
+    filial dele passa a ser governada pela transferência, não pela
+    planilha.
+
+    Devolve avisos de possível homônimo: nome que aparece numa filial
+    diferente da do cadastro (ou em mais de uma filial na própria
+    planilha) sem nenhuma transferência registrada que explique a
+    mudança — pode ser a mesma pessoa que mudou de posto sem passar pela
+    tela de Transferências, ou duas pessoas diferentes com o mesmo nome.
+    Não resolve sozinho (ficaria arriscado demais adivinhar): só avisa,
+    pra alguém decidir — transferir de verdade, ou cadastrar o segundo
+    nome diferenciado (ex. "CARLOS (FILIAL X)") na tela de Funcionários."""
+    cur.execute("SELECT cod_filial, nome_filial FROM filiais WHERE cod_empresa = %s", (cod_empresa,))
+    nome_filial_por_cod = {
+        (f["cod_filial"] if isinstance(f, dict) else f[0]): (f["nome_filial"] if isinstance(f, dict) else f[1])
+        for f in (cur.fetchall() or [])
+    }
+
+    filiais_por_nome = {}
+    for cod_filial, dados in por_filial.items():
+        for r in dados["registros"]:
+            nome = (r["nome_funcionario"] or "").strip()
+            if not nome:
+                continue
+            filiais_por_nome.setdefault(nome, set()).add(cod_filial)
+
+    avisos = []
+    for nome, filiais_planilha in filiais_por_nome.items():
+        cur.execute("""
+            SELECT id, cod_filial FROM caixas_faltas_sobras_funcionarios
+             WHERE cod_empresa = %s AND nome_funcionario = %s
+        """, (cod_empresa, nome))
+        existente = cur.fetchone()
+
+        if not existente:
+            cod_filial_cadastro = sorted(filiais_planilha)[0]
+            cur.execute("""
+                INSERT INTO caixas_faltas_sobras_funcionarios (cod_empresa, nome_funcionario, cod_filial)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (cod_empresa, nome_funcionario) DO NOTHING
+            """, (cod_empresa, nome, cod_filial_cadastro))
+            filiais_sem_explicacao = filiais_planilha - {cod_filial_cadastro}
+        else:
+            id_funcionario = existente["id"] if isinstance(existente, dict) else existente[0]
+            cod_filial_cadastro = existente["cod_filial"] if isinstance(existente, dict) else existente[1]
+
+            filiais_inesperadas = filiais_planilha - {cod_filial_cadastro}
+            filiais_sem_explicacao = set()
+            if filiais_inesperadas:
+                cur.execute("""
+                    SELECT DISTINCT cod_filial_destino
+                      FROM caixas_faltas_sobras_funcionarios_movimentacoes
+                     WHERE id_funcionario = %s
+                """, (id_funcionario,))
+                filiais_com_transferencia = {
+                    (row["cod_filial_destino"] if isinstance(row, dict) else row[0])
+                    for row in (cur.fetchall() or [])
+                }
+                filiais_sem_explicacao = filiais_inesperadas - filiais_com_transferencia
+
+        if filiais_sem_explicacao:
+            nomes_filiais = ", ".join(
+                nome_filial_por_cod.get(cf, str(cf)) for cf in sorted(filiais_sem_explicacao)
+            )
+            avisos.append(
+                f'"{nome}" apareceu também em {nomes_filiais}, filial diferente do cadastro '
+                f"({nome_filial_por_cod.get(cod_filial_cadastro, cod_filial_cadastro)}), sem "
+                "transferência registrada — confira se não são duas pessoas com o mesmo nome "
+                "(tela Funcionários / Transferências)."
+            )
+
+    return avisos
+
+
+def recalcular_filial_faltas_funcionario(cur, cod_empresa, id_funcionario):
+    """Refaz o `cod_filial` de todo o histórico de `caixas_faltas_sobras`
+    daquele funcionário (pelo nome), a partir da linha do tempo de
+    `caixas_faltas_sobras_funcionarios_movimentacoes` — chamada depois de
+    toda transferência, nunca na importação: a planilha continua marcando
+    a filial de cada lançamento; é a transferência que manda a partir da
+    data informada, para trás e para a frente, até a próxima transferência.
+    Depende do mesmo nome vindo igual em todas as planilhas — nome
+    divergente (duas pessoas com "CARLOS", por exemplo) não casa e precisa
+    ser corrigido na origem (WebPostos)."""
+    cur.execute("""
+        SELECT nome_funcionario, cod_filial FROM caixas_faltas_sobras_funcionarios
+         WHERE id = %s AND cod_empresa = %s
+    """, (id_funcionario, cod_empresa))
+    funcionario = cur.fetchone()
+    if not funcionario:
+        return 0
+
+    if isinstance(funcionario, dict):
+        nome = funcionario["nome_funcionario"]
+        cod_filial_atual = funcionario["cod_filial"]
+    else:
+        nome, cod_filial_atual = funcionario
+
+    nome = (nome or "").strip()
+    if not nome:
+        return 0
+
+    cur.execute("""
+        SELECT data_movimento, cod_filial_origem, cod_filial_destino
+          FROM caixas_faltas_sobras_funcionarios_movimentacoes
+         WHERE id_funcionario = %s
+         ORDER BY data_movimento ASC, id ASC
+    """, (id_funcionario,))
+    movimentos = cur.fetchall() or []
+
+    def _campo(linha, chave, indice):
+        return linha[chave] if isinstance(linha, dict) else linha[indice]
+
+    segmentos = []  # (data_inicio ou None, data_fim ou None, cod_filial)
+    if not movimentos:
+        segmentos.append((None, None, cod_filial_atual))
+    else:
+        primeiro_origem = _campo(movimentos[0], "cod_filial_origem", 1)
+        if primeiro_origem is not None:
+            segmentos.append((None, _campo(movimentos[0], "data_movimento", 0), primeiro_origem))
+        for i, mov in enumerate(movimentos):
+            inicio = _campo(mov, "data_movimento", 0)
+            destino = _campo(mov, "cod_filial_destino", 2)
+            fim = _campo(movimentos[i + 1], "data_movimento", 0) if i + 1 < len(movimentos) else None
+            segmentos.append((inicio, fim, destino))
+
+    total_alterado = 0
+    for inicio, fim, cod_filial in segmentos:
+        condicoes = ["cod_empresa = %s", "nome_funcionario = %s", "cod_filial <> %s"]
+        parametros = [cod_empresa, nome, cod_filial]
+        if inicio is not None:
+            condicoes.append("data >= %s")
+            parametros.append(inicio)
+        if fim is not None:
+            condicoes.append("data < %s")
+            parametros.append(fim)
+
+        cur.execute(f"""
+            UPDATE caixas_faltas_sobras
+               SET cod_filial = %s
+             WHERE {' AND '.join(condicoes)}
+        """, (cod_filial, *parametros))
+        total_alterado += cur.rowcount
+
+    return total_alterado
+
+
 def importar_faltas_sobras(cur, cod_empresa, id_usuario, arquivo):
     """Importa a planilha para `caixas_faltas_sobras`, só das filiais da
     empresa logada (`filiais.nome_filial_importacao`). Filiais da planilha
@@ -163,6 +317,8 @@ def importar_faltas_sobras(cur, cod_empresa, id_usuario, arquivo):
             "(campo 'nome_filial_importacao' em Filiais). "
             f"Filiais encontradas na planilha: {', '.join(sorted(filiais_ignoradas))}."
         )
+
+    avisos_homonimos = _sincronizar_funcionarios(cur, cod_empresa, por_filial)
 
     resumo_filiais = []
     total_importado = 0
@@ -210,6 +366,7 @@ def importar_faltas_sobras(cur, cod_empresa, id_usuario, arquivo):
         "total_importado": total_importado,
         "filiais": resumo_filiais,
         "filiais_ignoradas": sorted(filiais_ignoradas),
+        "avisos_homonimos": avisos_homonimos,
     }
 
 

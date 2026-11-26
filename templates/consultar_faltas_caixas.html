@@ -6,24 +6,6 @@
   .pagina-titulo { font-size:34px; font-weight:800; margin-bottom:4px; }
   .pagina-sub    { font-size:15px; color:#666; margin-bottom:20px; }
 
-  .bloco-importar {
-    background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px;
-    padding:16px 20px; margin-bottom:16px;
-  }
-  .bloco-importar h3 { font-size:14px; font-weight:800; color:#14114f; margin:0 0 10px; }
-  .form-importar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-  .form-importar input[type=file] { font-size:13px; }
-  .btn-importar {
-    background:#14114f; color:#fff; border:none; border-radius:8px;
-    padding:0 18px; height:36px; font-size:13px; font-weight:700; cursor:pointer;
-  }
-  .btn-importar:hover { background:#221c78; }
-  .dica-importar { font-size:12px; color:#64748b; margin-top:8px; }
-
-  .mensagem { padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:14px; }
-  .mensagem.ok   { background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; }
-  .mensagem.erro { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
-
   .filtro-bar { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap;
     background:#fff; border:1px solid #e2e8f0; border-radius:12px;
     padding:16px 20px; margin-bottom:16px; }
@@ -91,24 +73,8 @@
 </style>
 
 <div class="card">
-  <div class="pagina-titulo">Faltas de Caixa</div>
+  <div class="pagina-titulo">Consultar Faltas de Caixa</div>
   <div class="pagina-sub">Empresa: <strong>{{ empresa_ativa }} - {{ nome_empresa_ativa }}</strong></div>
-
-  {% if mensagem %}<div class="mensagem ok">{{ mensagem }}</div>{% endif %}
-  {% if erro %}<div class="mensagem erro">{{ erro }}</div>{% endif %}
-
-  <div class="bloco-importar">
-    <h3>Importar planilha "Sobras e Faltas de Caixa"</h3>
-    <form class="form-importar" method="POST" enctype="multipart/form-data">
-      <input type="file" name="arquivo" accept=".xlsx" required>
-      <button type="submit" class="btn-importar">Importar</button>
-    </form>
-    <div class="dica-importar">
-      Arquivo do WebPostos (um bloco por filial, com Sobra/Falta por funcionário e por dia).
-      A importação substitui, filial por filial, o período que vier na planilha — reimportar não duplica.
-      Filiais da planilha sem cadastro em "nome_filial_importacao" (Filiais) são ignoradas.
-    </div>
-  </div>
 
   {% macro qs(filial) %}cod_filial={{ filial }}&mes={{ mes_sel }}&ano={{ ano_sel }}{% endmacro %}
 
