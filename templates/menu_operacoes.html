@@ -120,15 +120,9 @@
 
 <div class="menu-botoes">
 
-  {% if pode_informar_medicoes %}
-    <a href="{{ url_for('operacoes.informar_medicoes') }}" class="btn-informar">
-      Informar Medições
-    </a>
-  {% endif %}
-
-  {% if pode_consultar_medicoes %}
-    <a href="{{ url_for('operacoes.consultar_medicoes') }}" class="btn-consultar">
-      Consultar Medições
+  {% if pode_menu_medicoes %}
+    <a href="{{ url_for('operacoes.menu_medicoes') }}" class="btn-informar">
+      Medições
     </a>
   {% endif %}
 

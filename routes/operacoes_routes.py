@@ -213,8 +213,7 @@ def menu_operacoes():
 
     if tipo_global == "superusuario":
         permissoes = {
-            "pode_informar_medicoes": True,
-            "pode_consultar_medicoes": True,
+            "pode_menu_medicoes": True,
             "pode_informar_afericoes": True,
             "pode_consultar_afericoes": True,
             "pode_menu_afericoes": True,
@@ -231,11 +230,9 @@ def menu_operacoes():
         }
     else:
         permissoes = {
-            "pode_informar_medicoes": usuario_tem_permissao(
-                id_usuario, cod_empresa, "OPERACOES", "INFORMAR_MEDICOES"
-            ),
-            "pode_consultar_medicoes": usuario_tem_permissao(
-                id_usuario, cod_empresa, "OPERACOES", "CONSULTAR_MEDICOES"
+            "pode_menu_medicoes": any(
+                usuario_tem_permissao(id_usuario, cod_empresa, "OPERACOES", opcao)
+                for opcao in ("MENU_MEDICOES", "INFORMAR_MEDICOES", "CONSULTAR_MEDICOES")
             ),
             "pode_informar_afericoes": usuario_tem_permissao(
                 id_usuario, cod_empresa, "OPERACOES", "INFORMAR_AFERICOES"
@@ -299,7 +296,7 @@ def menu_operacoes():
 @permissao_obrigatoria(
     "OPERACOES",
     "INFORMAR_MEDICOES",
-    redirecionar_para="operacoes.menu_operacoes",
+    redirecionar_para="operacoes.menu_medicoes",
 )
 def informar_medicoes():
     if "id_usuario" not in session:
@@ -356,7 +353,7 @@ def informar_medicoes():
 
             if not filiais_permitidas:
                 flash("Você não possui filiais habilitadas.", "error")
-                return redirect(url_for("operacoes.menu_operacoes"))
+                return redirect(url_for("operacoes.menu_medicoes"))
 
             cur.execute(
                 """
@@ -530,7 +527,7 @@ def informar_medicoes():
         filial_sel=filial_sel,
         produtos=produtos,
         medicoes_existentes=medicoes_existentes,
-        url_voltar=url_for("operacoes.menu_operacoes"),
+        url_voltar=url_for("operacoes.menu_medicoes"),
         texto_voltar="← Voltar",
     )
 
@@ -1397,6 +1394,32 @@ def menu_compras():
     )
 
 
+#------------------------------------------
+# MENU MEDICOES
+#------------------------------------------
+@operacoes_bp.route("/medicoes/menu")
+def menu_medicoes():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    pode_informar = _pode_afericoes("INFORMAR_MEDICOES")
+    pode_consultar = _pode_afericoes("CONSULTAR_MEDICOES")
+
+    if not (_pode_afericoes("MENU_MEDICOES") or pode_informar or pode_consultar):
+        flash("Você não tem acesso ao módulo de Medições.", "error")
+        return redirect(url_for("operacoes.menu_operacoes"))
+
+    return render_template(
+        "menu_medicoes.html",
+        cod_empresa=session.get("cod_empresa", ""),
+        nome_empresa=session.get("nome_empresa", ""),
+        url_voltar=url_for("operacoes.menu_operacoes"),
+        texto_voltar="← Voltar",
+        pode_informar=pode_informar,
+        pode_consultar=pode_consultar,
+    )
+
+
 @operacoes_bp.route("/drenagens/parametros", methods=["GET", "POST"])
 @permissao_obrigatoria(
     "OPERACOES",
@@ -2086,7 +2109,7 @@ def _capacidade_tanques_por_filial(cur, cod_empresa):
 @permissao_obrigatoria(
     "OPERACOES",
     "CONSULTAR_MEDICOES",
-    redirecionar_para="operacoes.menu_operacoes",
+    redirecionar_para="operacoes.menu_medicoes",
 )
 def consultar_medicoes():
     if "id_usuario" not in session:
@@ -2127,7 +2150,7 @@ def consultar_medicoes():
 
             if not filiais_permitidas:
                 flash("Você não possui filiais habilitadas.", "error")
-                return redirect(url_for("operacoes.menu_operacoes"))
+                return redirect(url_for("operacoes.menu_medicoes"))
 
             cur.execute("""
                 SELECT cod_filial, nome_filial
@@ -2247,7 +2270,7 @@ def consultar_medicoes():
         data_sel=data_sel,
         linhas=linhas,
         filiais_sem_medicao=filiais_sem_medicao,
-        url_voltar=url_for("operacoes.menu_operacoes"),
+        url_voltar=url_for("operacoes.menu_medicoes"),
         texto_voltar="← Voltar",
     )
 
