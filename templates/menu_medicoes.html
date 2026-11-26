@@ -71,6 +71,12 @@
     </a>
   {% endif %}
 
+  {% if pode_perdas_sobras_motorista %}
+    <a href="{{ url_for('operacoes.consultar_perdas_sobras_motorista') }}" class="btn-consultar">
+      Perdas e Sobras por Motorista
+    </a>
+  {% endif %}
+
 </div>
 
 {% endblock %}

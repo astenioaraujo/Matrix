@@ -158,6 +158,21 @@
   color: #666;
   margin-top: 12px;
 }
+
+.detalhe-descarregos {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: normal;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.detalhe-descarregos .linha-desc {
+  white-space: nowrap;
+}
+
+.detalhe-descarregos .dif-pos { color: #1e6b34; font-weight: 700; }
+.detalhe-descarregos .dif-neg { color: #9f2f2f; font-weight: 700; }
 </style>
 
 <div class="pagina-titulo">Consultar Medições</div>
@@ -285,13 +300,27 @@
   {% set ns.total_descarregada = ns.total_descarregada + (l.quantidade_descarregada or 0) %}
   {% set ns.total_vendida = ns.total_vendida + (l.quantidade_vendida or 0) %}
 
+  {% set chave_desc = (l.cod_filial|string) ~ '|' ~ (l.cod_produto|string).strip() %}
+  {% set eventos_desc = descarregos_detalhe.get(chave_desc, []) %}
   <tr>
     <td>{{ l.data_medicao.strftime("%d/%m/%Y") if l.data_medicao else "" }}</td>
     <td>{{ l.cod_produto }}</td>
     <td>{{ l.descricao or "" }}</td>
     <td class="valor col-num">{{ l.capacidade_tanque | br }}</td>
     <td class="valor col-num">{{ l.quantidade_medida | br }}</td>
-    <td class="valor col-num">{{ l.quantidade_descarregada | br }}</td>
+    <td class="valor col-num">
+      {{ l.quantidade_descarregada | br }}
+      {% if eventos_desc %}
+        <div class="detalhe-descarregos">
+          {% for ev in eventos_desc %}
+            <div class="linha-desc">
+              {{ ev.quantidade | br }} — {{ ev.motorista }}
+              (<span class="{% if ev.diferenca < 0 %}dif-neg{% elif ev.diferenca > 0 %}dif-pos{% endif %}">{{ "+" if ev.diferenca > 0 }}{{ ev.diferenca | br }}</span>)
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </td>
     <td class="valor col-num">{{ l.quantidade_vendida | br }}</td>
   </tr>
 

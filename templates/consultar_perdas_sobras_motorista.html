@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% include "components/nav.html" %}
+
+<style>
+  .pagina-titulo { font-size: 34px; font-weight: 800; margin-bottom: 10px; }
+  .empresa { font-size: 22px; margin-bottom: 24px; }
+  .subtitulo { color: #555; margin: -14px 0 22px; }
+
+  .painel {
+    max-width: 1200px;
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 16px;
+    padding: 20px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+  }
+
+  .linha-filtro { display: flex; gap: 14px; align-items: end; margin-bottom: 20px; flex-wrap: wrap; }
+  label { font-weight: 700; margin-bottom: 6px; display: block; }
+
+  select, input[type="date"] {
+    padding: 8px;
+    border: 1px solid #cfcfcf;
+    border-radius: 6px;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { border: 1px solid #dcdcdc; padding: 8px 10px; }
+  th { background: #f1f1f1; text-align: left; }
+
+  .num { text-align: right; white-space: nowrap; }
+
+  .btn {
+    padding: 8px 12px;
+    background: #1565c0;
+    color: #fff;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-weight: 700;
+  }
+
+  .btn-limpar {
+    background: #f7f7f7;
+    color: #1f3c88;
+    border: 1px solid #c7c7c7;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .diferenca-pos { color: #1e6b34; font-weight: 700; }
+  .diferenca-neg { color: #9f2f2f; font-weight: 700; }
+
+  .linha-aproximada td { background: #fff8ec; }
+  .linha-aproximada .motorista-nome { font-style: italic; color: #8a4b00; }
+
+  .total-linha td { background: #f3f3f3; font-weight: 800; }
+
+  .sem-dados { font-weight: 700; color: #666; margin-top: 12px; }
+
+  .nota-aproximado {
+    margin-top: 14px;
+    font-size: 13px;
+    color: #8a4b00;
+    background: #fff4e5;
+    border: 1px solid #f0c27b;
+    border-radius: 10px;
+    padding: 10px 14px;
+  }
+
+  .flash-msg { max-width: 1200px; padding: 10px 14px; border-radius: 8px; margin-bottom: 15px; font-weight: 600; }
+  .flash-success { background: #e6f4ea; color: #1e6b34; border: 1px solid #b7dfc2; }
+  .flash-error { background: #fdeaea; color: #9f2f2f; border: 1px solid #efc2c2; }
+</style>
+
+<div class="pagina-titulo">Perdas e Sobras por Motorista</div>
+
+<div class="empresa">
+  <strong>Empresa:</strong> {{ cod_empresa }} - {{ nome_empresa }}
+</div>
+
+<div class="subtitulo">
+  Diferença entre o que foi comprado e o que o motorista informou ter descarregado de fato, por período.
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+    <div class="flash-msg {% if category == 'success' %}flash-success{% else %}flash-error{% endif %}">{{ message }}</div>
+  {% endfor %}
+{% endwith %}
+
+<div class="painel">
+
+  <form method="get">
+    <div class="linha-filtro">
+      <div>
+        <label>De</label>
+        <input type="date" name="data_ini" value="{{ data_ini }}">
+      </div>
+
+      <div>
+        <label>Até</label>
+        <input type="date" name="data_fim" value="{{ data_fim }}">
+      </div>
+
+      <div>
+        <label>Filial</label>
+        <select name="cod_filial">
+          <option value="">Todas</option>
+          {% for f in filiais %}
+            <option value="{{ f.cod_filial }}" {% if filial_sel|string == f.cod_filial|string %}selected{% endif %}>
+              {{ f.cod_filial }} - {{ f.nome_filial }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label>Motorista</label>
+        <select name="id_motorista">
+          <option value="">Todos</option>
+          {% for m in motoristas %}
+            <option value="{{ m.id_motorista }}" {% if motorista_sel == m.id_motorista %}selected{% endif %}>
+              {{ m.nome }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <button type="submit" class="btn">Filtrar</button>
+      <a href="{{ url_for('operacoes.consultar_perdas_sobras_motorista') }}" class="btn btn-limpar">Limpar</a>
+    </div>
+  </form>
+
+  {% if linhas_motorista %}
+
+  {% set total_descarregado = linhas_motorista | sum(attribute="total_descarregado") %}
+  {% set total_diferenca = linhas_motorista | sum(attribute="total_diferenca") %}
+
+  <table>
+    <thead>
+      <tr>
+        <th>Motorista</th>
+        <th class="num">Descarregos</th>
+        <th class="num">Total descarregado (L)</th>
+        <th class="num">Diferença (L)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in linhas_motorista %}
+      <tr {% if l.aproximado %}class="linha-aproximada"{% endif %}>
+        <td class="motorista-nome">
+          {{ l.motorista }}
+          {% if l.aproximado %}<span title="Diferença estimada: arredondando a quantidade descarregada para o múltiplo de 1.000 L mais próximo, na falta de compra vinculada.">ⓘ</span>{% endif %}
+        </td>
+        <td class="num">{{ l.qtd_descarregos }}</td>
+        <td class="num">{{ l.total_descarregado | br }}</td>
+        <td class="num {% if l.total_diferenca < 0 %}diferenca-neg{% elif l.total_diferenca > 0 %}diferenca-pos{% endif %}">
+          {{ "+" if l.total_diferenca > 0 }}{{ l.total_diferenca | br }}
+        </td>
+      </tr>
+      {% endfor %}
+      <tr class="total-linha">
+        <td>Total</td>
+        <td class="num">{{ linhas_motorista | sum(attribute="qtd_descarregos") }}</td>
+        <td class="num">{{ total_descarregado | br }}</td>
+        <td class="num {% if total_diferenca < 0 %}diferenca-neg{% elif total_diferenca > 0 %}diferenca-pos{% endif %}">
+          {{ "+" if total_diferenca > 0 }}{{ total_diferenca | br }}
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="nota-aproximado">
+    "Histórico (sem compra vinculada — diferença aproximada)" junta os descarregos digitados direto no campo de Informar Medições,
+    de antes desta tela existir — sem motorista nem compra ligados, e que não serão retroagidos. A diferença deles é uma estimativa
+    (quantidade descarregada menos o múltiplo de 1.000 L mais próximo), não um valor exato como nas demais linhas.
+  </div>
+
+  {% else %}
+    <div class="sem-dados">Nenhum descarrego no período selecionado.</div>
+  {% endif %}
+
+</div>
+
+{% endblock %}

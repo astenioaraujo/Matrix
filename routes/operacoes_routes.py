@@ -382,6 +382,19 @@ def informar_medicoes():
 
         produtos = []
         medicoes_existentes = {}
+        diferencas_existentes = {}
+
+        cur.execute(
+            """
+            SELECT id_motorista, nome
+            FROM logistica_motoristas
+            WHERE cod_empresa = %s
+              AND ativo = TRUE
+            ORDER BY nome
+            """,
+            (cod_empresa,),
+        )
+        motoristas = cur.fetchall() or []
 
         if filial_sel is not None:
             cur.execute(
@@ -425,6 +438,25 @@ def informar_medicoes():
                     "quantidade_descarregada": r["quantidade_descarregada"],
                     "quantidade_vendida": r["quantidade_vendida"],
                 }
+
+            cur.execute(
+                """
+                SELECT
+                    d.cod_produto,
+                    SUM(d.quantidade_descarregada - cc.quantidade_comprada) AS diferenca
+                FROM descarregos_combustiveis d
+                JOIN compras_combustiveis cc
+                  ON cc.cod_empresa = d.cod_empresa
+                 AND cc.id_compra = d.id_compra
+                WHERE d.cod_empresa = %s
+                  AND d.cod_filial_descarga = %s
+                  AND d.data_descarrego = %s
+                GROUP BY d.cod_produto
+                """,
+                (cod_empresa, filial_sel, data_medicao),
+            )
+            for r in cur.fetchall() or []:
+                diferencas_existentes[str(r["cod_produto"]).strip()] = float(r["diferenca"] or 0)
 
         bloqueada = data_bloqueada(cur, cod_empresa, data_medicao)
 
@@ -527,6 +559,8 @@ def informar_medicoes():
         filial_sel=filial_sel,
         produtos=produtos,
         medicoes_existentes=medicoes_existentes,
+        diferencas_existentes=diferencas_existentes,
+        motoristas=motoristas,
         url_voltar=url_for("operacoes.menu_medicoes"),
         texto_voltar="← Voltar",
     )
@@ -1404,8 +1438,9 @@ def menu_medicoes():
 
     pode_informar = _pode_afericoes("INFORMAR_MEDICOES")
     pode_consultar = _pode_afericoes("CONSULTAR_MEDICOES")
+    pode_perdas_sobras_motorista = _pode_afericoes("CONSULTAR_PERDAS_SOBRAS_MOTORISTA")
 
-    if not (_pode_afericoes("MENU_MEDICOES") or pode_informar or pode_consultar):
+    if not (_pode_afericoes("MENU_MEDICOES") or pode_informar or pode_consultar or pode_perdas_sobras_motorista):
         flash("Você não tem acesso ao módulo de Medições.", "error")
         return redirect(url_for("operacoes.menu_operacoes"))
 
@@ -1417,6 +1452,7 @@ def menu_medicoes():
         texto_voltar="← Voltar",
         pode_informar=pode_informar,
         pode_consultar=pode_consultar,
+        pode_perdas_sobras_motorista=pode_perdas_sobras_motorista,
     )
 
 
@@ -2213,6 +2249,50 @@ def consultar_medicoes():
 
         linhas = cur.fetchall() or []
 
+        # Descarregos reais do dia (compra + motorista + diferença), para
+        # detalhar a célula de Quantidade Descarregada — mesma ideia de
+        # Informar Medições, só que aqui pode ter mais de uma filial na tela.
+        descarregos_detalhe = {}
+
+        filtros_desc = ["d.cod_empresa = %s", "d.data_descarrego = %s"]
+        params_desc = [cod_empresa, data_sel]
+
+        if filial_sel is not None:
+            filtros_desc.append("d.cod_filial_descarga = %s")
+            params_desc.append(filial_sel)
+        elif tipo_global != "superusuario":
+            filtros_desc.append("d.cod_filial_descarga = ANY(%s)")
+            params_desc.append(codigos_filiais_permitidas)
+        else:
+            filtros_desc.append("d.cod_filial_descarga IS NOT NULL")
+
+        where_desc = " AND ".join(filtros_desc)
+
+        cur.execute(f"""
+            SELECT
+                d.cod_filial_descarga AS cod_filial,
+                d.cod_produto,
+                d.quantidade_descarregada,
+                d.quantidade_descarregada - cc.quantidade_comprada AS diferenca,
+                m.nome AS nome_motorista
+            FROM descarregos_combustiveis d
+            JOIN compras_combustiveis cc
+              ON cc.cod_empresa = d.cod_empresa
+             AND cc.id_compra = d.id_compra
+            LEFT JOIN logistica_motoristas m
+              ON m.id_motorista = d.id_motorista
+            WHERE {where_desc}
+            ORDER BY d.cod_filial_descarga, d.cod_produto, d.id_descarrego
+        """, params_desc)
+
+        for r in cur.fetchall() or []:
+            chave = f"{r['cod_filial']}|{str(r['cod_produto']).strip()}"
+            descarregos_detalhe.setdefault(chave, []).append({
+                "quantidade": float(r["quantidade_descarregada"] or 0),
+                "diferenca": float(r["diferenca"] or 0),
+                "motorista": r["nome_motorista"] or "Sem motorista registrado",
+            })
+
         # FILIAIS SEM MEDIÇÃO NA DATA
         # Filial sem nenhum tanque com capacidade (ex.: posto só de GNV) nunca
         # tem medição a lançar — não pode entrar no alerta.
@@ -2269,6 +2349,7 @@ def consultar_medicoes():
         filial_sel=filial_sel,
         data_sel=data_sel,
         linhas=linhas,
+        descarregos_detalhe=descarregos_detalhe,
         filiais_sem_medicao=filiais_sem_medicao,
         url_voltar=url_for("operacoes.menu_medicoes"),
         texto_voltar="← Voltar",
@@ -6297,6 +6378,676 @@ def ajax_salvar_medicao():
         conn.close()
 
 
+# --------------------------------
+# DESCARREGO A PARTIR DE INFORMAR MEDIÇÕES
+# --------------------------------
+# O lápis ao lado de "Quantidade Descarregada" abre uma janela: escolhe a
+# compra pendente (trânsito) daquele produto/filial, informa a quantidade
+# real, o motorista e a hora. Grava em descarregos_combustiveis (mesma
+# tabela de sempre) e soma o total do dia em medicoes.quantidade_descarregada
+# — o campo que a tela já mostra não muda de lugar, só passa a ser calculado.
+#
+# Dados antigos (digitados direto no campo, sem essa janela) não têm linha
+# em descarregos_combustiveis: ficam como estão, ninguém volta para
+# preenchê-los.
+
+def _filial_permitida_medicao(id_usuario, cod_empresa, tipo_global, cod_filial):
+    if tipo_global == "superusuario":
+        return True
+    return cod_filial in [int(x) for x in usuario_filiais_ativas(id_usuario, cod_empresa)]
+
+
+def _recalcular_descarregado_medicao(cur, cod_empresa, cod_filial, cod_produto, data_medicao):
+    """Soma os descarregos do dia/filial/produto e grava em medicoes.
+
+    Preserva quantidade_medida e quantidade_vendida — só a quantidade
+    descarregada é recalculada aqui."""
+    cur.execute("""
+        SELECT COALESCE(SUM(quantidade_descarregada), 0) AS soma
+        FROM descarregos_combustiveis
+        WHERE cod_empresa = %s
+          AND cod_filial_descarga = %s
+          AND cod_produto = %s
+          AND data_descarrego = %s
+    """, (cod_empresa, cod_filial, cod_produto, data_medicao))
+    soma = float(cur.fetchone()["soma"] or 0)
+
+    cur.execute("""
+        INSERT INTO medicoes (
+            cod_empresa, cod_filial, data_medicao, cod_produto,
+            quantidade_medida, quantidade_descarregada, quantidade_vendida,
+            criado_em, atualizado_em
+        )
+        VALUES (%s, %s, %s, %s, 0, %s, 0, NOW(), NOW())
+        ON CONFLICT (cod_empresa, cod_filial, data_medicao, cod_produto)
+        DO UPDATE SET
+            quantidade_descarregada = EXCLUDED.quantidade_descarregada,
+            atualizado_em = NOW()
+    """, (cod_empresa, cod_filial, data_medicao, cod_produto, soma))
+
+    return soma
+
+
+def _diferenca_total_medicao(cur, cod_empresa, cod_filial, cod_produto, data_medicao):
+    """Soma das diferenças (descarregado − comprado) dos descarregos reais
+    do dia/filial/produto — a mesma conta de Perdas e Sobras por Motorista,
+    só que para um produto/dia só. None quando não há nenhum descarrego
+    vinculado (nada a mostrar na tela principal)."""
+    cur.execute("""
+        SELECT SUM(d.quantidade_descarregada - cc.quantidade_comprada) AS diferenca
+        FROM descarregos_combustiveis d
+        JOIN compras_combustiveis cc
+          ON cc.cod_empresa = d.cod_empresa
+         AND cc.id_compra = d.id_compra
+        WHERE d.cod_empresa = %s
+          AND d.cod_filial_descarga = %s
+          AND d.cod_produto = %s
+          AND d.data_descarrego = %s
+    """, (cod_empresa, cod_filial, cod_produto, data_medicao))
+    r = cur.fetchone()
+    return float(r["diferenca"]) if r and r["diferenca"] is not None else None
+
+
+@operacoes_bp.route("/medicoes/descarregos/pendentes", methods=["GET"])
+def api_medicoes_descarregos_pendentes():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return {"ok": False, "erro": "Sessão expirada."}, 401
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global != "superusuario" and not usuario_tem_permissao(
+        id_usuario, cod_empresa, "OPERACOES", "INFORMAR_MEDICOES"
+    ):
+        return {"ok": False, "erro": "Sem permissão."}, 403
+
+    cod_filial_txt = (request.args.get("cod_filial") or "").strip()
+    cod_produto = (request.args.get("cod_produto") or "").strip()
+
+    if not cod_filial_txt.isdigit() or not cod_produto:
+        return {"ok": False, "erro": "Dados incompletos."}, 400
+
+    cod_filial = int(cod_filial_txt)
+
+    if not _filial_permitida_medicao(id_usuario, cod_empresa, tipo_global, cod_filial):
+        return {"ok": False, "erro": "Filial não permitida."}, 403
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT
+                cc.id_compra,
+                cc.data_compra,
+                fc.nome_fornecedor,
+                cc.quantidade_comprada,
+                cc.quantidade_comprada - COALESCE(d.total_descarregado, 0) AS saldo
+            FROM compras_combustiveis cc
+            LEFT JOIN (
+                SELECT id_compra, SUM(quantidade_descarregada) AS total_descarregado
+                FROM descarregos_combustiveis
+                WHERE cod_empresa = %s
+                GROUP BY id_compra
+            ) d ON d.id_compra = cc.id_compra
+            LEFT JOIN fornecedores_combustiveis fc
+              ON fc.id_fornecedor = cc.id_fornecedor
+            WHERE cc.cod_empresa = %s
+              AND cc.cod_filial = %s
+              AND cc.cod_produto = %s
+              AND cc.status = 'ABERTA'
+              AND cc.quantidade_comprada - COALESCE(d.total_descarregado, 0) > 0
+            ORDER BY cc.data_compra, cc.id_compra
+        """, (cod_empresa, cod_empresa, cod_filial, cod_produto))
+        linhas = cur.fetchall() or []
+    finally:
+        cur.close()
+        conn.close()
+
+    pendentes = [{
+        "id_compra": l["id_compra"],
+        "data_compra": l["data_compra"].strftime("%d/%m/%Y"),
+        "fornecedor": l["nome_fornecedor"] or "",
+        "quantidade_comprada": float(l["quantidade_comprada"] or 0),
+        "saldo": float(l["saldo"] or 0),
+    } for l in linhas]
+
+    return {"ok": True, "pendentes": pendentes}
+
+
+@operacoes_bp.route("/medicoes/descarregos/listar", methods=["GET"])
+def api_medicoes_descarregos_listar():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return {"ok": False, "erro": "Sessão expirada."}, 401
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global != "superusuario" and not usuario_tem_permissao(
+        id_usuario, cod_empresa, "OPERACOES", "INFORMAR_MEDICOES"
+    ):
+        return {"ok": False, "erro": "Sem permissão."}, 403
+
+    cod_filial_txt = (request.args.get("cod_filial") or "").strip()
+    cod_produto = (request.args.get("cod_produto") or "").strip()
+    data_medicao_txt = (request.args.get("data_medicao") or "").strip()
+
+    if not cod_filial_txt.isdigit() or not cod_produto or not data_medicao_txt:
+        return {"ok": False, "erro": "Dados incompletos."}, 400
+
+    cod_filial = int(cod_filial_txt)
+
+    try:
+        data_medicao = date.fromisoformat(data_medicao_txt)
+    except ValueError:
+        return {"ok": False, "erro": "Data inválida."}, 400
+
+    if not _filial_permitida_medicao(id_usuario, cod_empresa, tipo_global, cod_filial):
+        return {"ok": False, "erro": "Filial não permitida."}, 403
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT
+                d.id_descarrego,
+                d.id_compra,
+                cc.data_compra,
+                fc.nome_fornecedor,
+                cc.quantidade_comprada,
+                d.quantidade_descarregada,
+                d.id_motorista,
+                m.nome AS nome_motorista,
+                d.hora_descarrego
+            FROM descarregos_combustiveis d
+            LEFT JOIN compras_combustiveis cc
+              ON cc.cod_empresa = d.cod_empresa
+             AND cc.id_compra = d.id_compra
+            LEFT JOIN fornecedores_combustiveis fc
+              ON fc.id_fornecedor = cc.id_fornecedor
+            LEFT JOIN logistica_motoristas m
+              ON m.id_motorista = d.id_motorista
+            WHERE d.cod_empresa = %s
+              AND d.cod_filial_descarga = %s
+              AND d.cod_produto = %s
+              AND d.data_descarrego = %s
+            ORDER BY d.id_descarrego
+        """, (cod_empresa, cod_filial, cod_produto, data_medicao))
+        linhas = cur.fetchall() or []
+    finally:
+        cur.close()
+        conn.close()
+
+    descarregos = []
+    for l in linhas:
+        quantidade_comprada = float(l["quantidade_comprada"] or 0)
+        quantidade_descarregada = float(l["quantidade_descarregada"] or 0)
+        descarregos.append({
+            "id_descarrego": l["id_descarrego"],
+            "id_compra": l["id_compra"],
+            "data_compra": l["data_compra"].strftime("%d/%m/%Y") if l["data_compra"] else "",
+            "fornecedor": l["nome_fornecedor"] or "",
+            "quantidade_comprada": quantidade_comprada,
+            "quantidade_descarregada": quantidade_descarregada,
+            "diferenca": quantidade_descarregada - quantidade_comprada,
+            "id_motorista": l["id_motorista"],
+            "nome_motorista": l["nome_motorista"] or "",
+            "hora_descarrego": l["hora_descarrego"].strftime("%H:%M") if l["hora_descarrego"] else "",
+        })
+
+    return {"ok": True, "descarregos": descarregos}
+
+
+@operacoes_bp.route("/medicoes/descarregos/salvar", methods=["POST"])
+def api_medicoes_descarregos_salvar():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return {"ok": False, "erro": "Sessão expirada."}, 401
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global != "superusuario" and not usuario_tem_permissao(
+        id_usuario, cod_empresa, "OPERACOES", "INFORMAR_MEDICOES"
+    ):
+        return {"ok": False, "erro": "Sem permissão."}, 403
+
+    cod_filial_txt = (request.form.get("cod_filial") or "").strip()
+    cod_produto = (request.form.get("cod_produto") or "").strip()
+    data_medicao_txt = (request.form.get("data_medicao") or "").strip()
+    id_compra_txt = (request.form.get("id_compra") or "").strip()
+    quantidade_txt = (request.form.get("quantidade_descarregada") or "").strip()
+    id_motorista_txt = (request.form.get("id_motorista") or "").strip()
+    hora_txt = (request.form.get("hora_descarrego") or "").strip()
+    id_descarrego_txt = (request.form.get("id_descarrego") or "").strip()
+
+    if not cod_filial_txt.isdigit() or not cod_produto or not data_medicao_txt or not id_compra_txt.isdigit():
+        return {"ok": False, "erro": "Dados incompletos."}, 400
+
+    cod_filial = int(cod_filial_txt)
+    id_compra = int(id_compra_txt)
+
+    try:
+        data_medicao = date.fromisoformat(data_medicao_txt)
+    except ValueError:
+        return {"ok": False, "erro": "Data inválida."}, 400
+
+    if not _filial_permitida_medicao(id_usuario, cod_empresa, tipo_global, cod_filial):
+        return {"ok": False, "erro": "Filial não permitida."}, 403
+
+    quantidade_descarregada = parse_valor_br(quantidade_txt)
+    if quantidade_descarregada <= 0:
+        return {"ok": False, "erro": "Informe uma quantidade maior que zero."}, 400
+
+    if not id_motorista_txt.isdigit():
+        return {"ok": False, "erro": "Selecione o motorista."}, 400
+
+    id_motorista = int(id_motorista_txt)
+
+    hora_descarrego = None
+    if hora_txt:
+        try:
+            hora_descarrego = time.fromisoformat(hora_txt)
+        except ValueError:
+            return {"ok": False, "erro": "Hora inválida."}, 400
+
+    id_descarrego = int(id_descarrego_txt) if id_descarrego_txt.isdigit() else None
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if data_bloqueada(cur, cod_empresa, data_medicao):
+            return {"ok": False, "erro": msg_data_bloqueada(data_medicao)}, 403
+
+        cur.execute("""
+            SELECT 1 FROM logistica_motoristas
+            WHERE id_motorista = %s AND cod_empresa = %s AND ativo = TRUE
+        """, (id_motorista, cod_empresa))
+        if not cur.fetchone():
+            conn.rollback()
+            return {"ok": False, "erro": "Motorista inválido."}, 400
+
+        cur.execute("""
+            SELECT id_compra, cod_produto, cod_filial
+            FROM compras_combustiveis
+            WHERE id_compra = %s AND cod_empresa = %s
+            FOR UPDATE
+        """, (id_compra, cod_empresa))
+        compra = cur.fetchone()
+
+        if not compra:
+            conn.rollback()
+            return {"ok": False, "erro": "Compra não encontrada."}, 404
+
+        if str(compra["cod_produto"]).strip() != cod_produto:
+            conn.rollback()
+            return {"ok": False, "erro": "A compra não é desse produto."}, 400
+
+        if compra["cod_filial"] is None or int(compra["cod_filial"]) != cod_filial:
+            conn.rollback()
+            return {"ok": False, "erro": "A compra não é dessa filial."}, 400
+
+        id_compra_antiga = None
+
+        if id_descarrego is not None:
+            cur.execute("""
+                SELECT id_descarrego, id_compra, cod_filial_descarga, cod_produto, data_descarrego
+                FROM descarregos_combustiveis
+                WHERE id_descarrego = %s AND cod_empresa = %s
+                FOR UPDATE
+            """, (id_descarrego, cod_empresa))
+            existente = cur.fetchone()
+
+            if not existente:
+                conn.rollback()
+                return {"ok": False, "erro": "Descarrego não encontrado."}, 404
+
+            if (existente["cod_filial_descarga"] != cod_filial
+                    or str(existente["cod_produto"]).strip() != cod_produto
+                    or existente["data_descarrego"] != data_medicao):
+                conn.rollback()
+                return {"ok": False, "erro": "Descarrego não pertence a esta medição."}, 400
+
+            if existente["id_compra"] != id_compra:
+                id_compra_antiga = existente["id_compra"]
+
+            cur.execute("""
+                UPDATE descarregos_combustiveis
+                SET id_compra = %s,
+                    quantidade_descarregada = %s,
+                    id_motorista = %s,
+                    hora_descarrego = %s,
+                    atualizado_em = NOW()
+                WHERE id_descarrego = %s
+                  AND cod_empresa = %s
+            """, (id_compra, quantidade_descarregada, id_motorista, hora_descarrego,
+                  id_descarrego, cod_empresa))
+        else:
+            cur.execute("""
+                INSERT INTO descarregos_combustiveis (
+                    cod_empresa, data_descarrego, id_compra, cod_filial_descarga,
+                    cod_produto, quantidade_descarregada, id_motorista, hora_descarrego,
+                    criado_em, atualizado_em
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+            """, (cod_empresa, data_medicao, id_compra, cod_filial,
+                  cod_produto, quantidade_descarregada, id_motorista, hora_descarrego))
+
+        recalcular_status_compra(cur, cod_empresa, id_compra)
+        if id_compra_antiga is not None:
+            recalcular_status_compra(cur, cod_empresa, id_compra_antiga)
+
+        soma = _recalcular_descarregado_medicao(
+            cur, cod_empresa, cod_filial, cod_produto, data_medicao
+        )
+        diferenca = _diferenca_total_medicao(
+            cur, cod_empresa, cod_filial, cod_produto, data_medicao
+        )
+
+        conn.commit()
+
+        return {"ok": True, "soma": soma, "diferenca": diferenca}
+    except Exception as e:
+        conn.rollback()
+        return {"ok": False, "erro": str(e)}, 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+@operacoes_bp.route("/medicoes/descarregos/excluir", methods=["POST"])
+def api_medicoes_descarregos_excluir():
+    if "id_usuario" not in session or "cod_empresa" not in session:
+        return {"ok": False, "erro": "Sessão expirada."}, 401
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    if tipo_global != "superusuario" and not usuario_tem_permissao(
+        id_usuario, cod_empresa, "OPERACOES", "INFORMAR_MEDICOES"
+    ):
+        return {"ok": False, "erro": "Sem permissão."}, 403
+
+    id_descarrego_txt = (request.form.get("id_descarrego") or "").strip()
+    cod_filial_txt = (request.form.get("cod_filial") or "").strip()
+    cod_produto = (request.form.get("cod_produto") or "").strip()
+    data_medicao_txt = (request.form.get("data_medicao") or "").strip()
+
+    if not id_descarrego_txt.isdigit() or not cod_filial_txt.isdigit() or not cod_produto or not data_medicao_txt:
+        return {"ok": False, "erro": "Dados incompletos."}, 400
+
+    id_descarrego = int(id_descarrego_txt)
+    cod_filial = int(cod_filial_txt)
+
+    try:
+        data_medicao = date.fromisoformat(data_medicao_txt)
+    except ValueError:
+        return {"ok": False, "erro": "Data inválida."}, 400
+
+    if not _filial_permitida_medicao(id_usuario, cod_empresa, tipo_global, cod_filial):
+        return {"ok": False, "erro": "Filial não permitida."}, 403
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT id_descarrego, id_compra, cod_filial_descarga, cod_produto, data_descarrego
+            FROM descarregos_combustiveis
+            WHERE id_descarrego = %s AND cod_empresa = %s
+            FOR UPDATE
+        """, (id_descarrego, cod_empresa))
+        existente = cur.fetchone()
+
+        if not existente:
+            conn.rollback()
+            return {"ok": False, "erro": "Descarrego não encontrado."}, 404
+
+        if (existente["cod_filial_descarga"] != cod_filial
+                or str(existente["cod_produto"]).strip() != cod_produto
+                or existente["data_descarrego"] != data_medicao):
+            conn.rollback()
+            return {"ok": False, "erro": "Descarrego não pertence a esta medição."}, 400
+
+        if data_bloqueada(cur, cod_empresa, existente["data_descarrego"]):
+            conn.rollback()
+            return {"ok": False, "erro": msg_data_bloqueada(existente["data_descarrego"])}, 403
+
+        id_compra = existente["id_compra"]
+
+        cur.execute("""
+            DELETE FROM descarregos_combustiveis
+            WHERE id_descarrego = %s AND cod_empresa = %s
+        """, (id_descarrego, cod_empresa))
+
+        recalcular_status_compra(cur, cod_empresa, id_compra)
+
+        soma = _recalcular_descarregado_medicao(
+            cur, cod_empresa, cod_filial, cod_produto, data_medicao
+        )
+        diferenca = _diferenca_total_medicao(
+            cur, cod_empresa, cod_filial, cod_produto, data_medicao
+        )
+
+        conn.commit()
+        return {"ok": True, "soma": soma, "diferenca": diferenca}
+    except Exception as e:
+        conn.rollback()
+        return {"ok": False, "erro": str(e)}, 500
+    finally:
+        cur.close()
+        conn.close()
+
+
+# --------------------------------
+# PERDAS E SOBRAS POR MOTORISTA
+# --------------------------------
+def _arredondar_mil(valor):
+    """Estimativa do 'pedido original' dos descarregos antigos (sem compra
+    vinculada): múltiplo de 1.000 L mais próximo do que foi digitado."""
+    return round(float(valor or 0) / 1000.0) * 1000.0
+
+
+@operacoes_bp.route("/medicoes/perdas-sobras-motorista")
+@permissao_obrigatoria(
+    "OPERACOES",
+    "CONSULTAR_PERDAS_SOBRAS_MOTORISTA",
+    redirecionar_para="operacoes.menu_medicoes",
+)
+def consultar_perdas_sobras_motorista():
+    if "id_usuario" not in session:
+        return redirect(url_for("auth.index"))
+
+    if "cod_empresa" not in session:
+        return redirect(url_for("auth.index"))
+
+    id_usuario = session["id_usuario"]
+    cod_empresa = str(session["cod_empresa"]).strip()
+    nome_empresa = session.get("nome_empresa", "")
+    tipo_global = str(session.get("tipo_global") or "").strip().lower()
+
+    hoje = hoje_br()
+
+    data_fim_txt = (request.args.get("data_fim") or "").strip()
+    data_ini_txt = (request.args.get("data_ini") or "").strip()
+
+    try:
+        data_fim = date.fromisoformat(data_fim_txt) if data_fim_txt else hoje
+    except ValueError:
+        data_fim = hoje
+
+    try:
+        data_ini = date.fromisoformat(data_ini_txt) if data_ini_txt else (data_fim - timedelta(days=30))
+    except ValueError:
+        data_ini = data_fim - timedelta(days=30)
+
+    if data_ini > data_fim:
+        data_ini, data_fim = data_fim, data_ini
+
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    filiais = []
+    motoristas = []
+    linhas_motorista = []
+
+    try:
+        if tipo_global == "superusuario":
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s AND ativo = TRUE
+                ORDER BY cod_filial
+            """, (cod_empresa,))
+            filiais = cur.fetchall() or []
+        else:
+            filiais_permitidas_lista = [
+                int(x) for x in usuario_filiais_ativas(id_usuario, cod_empresa)
+            ]
+
+            if not filiais_permitidas_lista:
+                flash("Você não possui filiais habilitadas.", "error")
+                return redirect(url_for("operacoes.menu_medicoes"))
+
+            cur.execute("""
+                SELECT cod_filial, nome_filial
+                FROM filiais
+                WHERE cod_empresa = %s
+                  AND ativo = TRUE
+                  AND cod_filial = ANY(%s)
+                ORDER BY cod_filial
+            """, (cod_empresa, filiais_permitidas_lista))
+            filiais = cur.fetchall() or []
+
+        codigos_filiais = [int(f["cod_filial"]) for f in filiais]
+
+        filial_sel_txt = (request.args.get("cod_filial") or "").strip()
+        filial_sel = int(filial_sel_txt) if filial_sel_txt.isdigit() else None
+
+        if filial_sel is not None and filial_sel not in codigos_filiais:
+            flash("Filial não permitida para este usuário.", "error")
+            return redirect(url_for("operacoes.consultar_perdas_sobras_motorista"))
+
+        filiais_consulta = [filial_sel] if filial_sel is not None else codigos_filiais
+
+        cur.execute("""
+            SELECT id_motorista, nome
+            FROM logistica_motoristas
+            WHERE cod_empresa = %s
+              AND ativo = TRUE
+            ORDER BY nome
+        """, (cod_empresa,))
+        motoristas = cur.fetchall() or []
+
+        motorista_sel_txt = (request.args.get("id_motorista") or "").strip()
+        motorista_sel = int(motorista_sel_txt) if motorista_sel_txt.isdigit() else None
+
+        if not filiais_consulta:
+            filiais_consulta = [-1]
+
+        # Descarregos com compra vinculada (feitos pela janela nova, ou pela
+        # tela de Informar Descarregos de sempre — essa não pede motorista,
+        # por isso cai em "Sem motorista registrado" com diferença exata).
+        params_reais = [cod_empresa, cod_empresa, filiais_consulta, data_ini, data_fim]
+        filtro_motorista_sql = ""
+        if motorista_sel is not None:
+            filtro_motorista_sql = "AND d.id_motorista = %s"
+            params_reais.append(motorista_sel)
+
+        cur.execute(f"""
+            SELECT
+                d.id_motorista,
+                COALESCE(m.nome, 'Sem motorista registrado') AS motorista,
+                COUNT(*) AS qtd_descarregos,
+                SUM(d.quantidade_descarregada) AS total_descarregado,
+                SUM(d.quantidade_descarregada - cc.quantidade_comprada) AS total_diferenca
+            FROM descarregos_combustiveis d
+            JOIN compras_combustiveis cc
+              ON cc.cod_empresa = d.cod_empresa
+             AND cc.id_compra = d.id_compra
+            LEFT JOIN logistica_motoristas m
+              ON m.id_motorista = d.id_motorista
+            WHERE d.cod_empresa = %s
+              AND cc.cod_empresa = %s
+              AND d.cod_filial_descarga = ANY(%s)
+              AND d.data_descarrego BETWEEN %s AND %s
+              {filtro_motorista_sql}
+            GROUP BY d.id_motorista, motorista
+            ORDER BY motorista
+        """, params_reais)
+        reais = cur.fetchall() or []
+
+        for r in reais:
+            linhas_motorista.append({
+                "motorista": r["motorista"],
+                "aproximado": False,
+                "qtd_descarregos": int(r["qtd_descarregos"] or 0),
+                "total_descarregado": float(r["total_descarregado"] or 0),
+                "total_diferenca": float(r["total_diferenca"] or 0),
+            })
+
+        # Histórico: dia/filial/produto com quantidade descarregada digitada
+        # direto no campo (sem passar pela janela nem pela tela de
+        # Descarregos) — não tem compra vinculada, então a diferença é uma
+        # aproximação (arredondando para o múltiplo de 1.000 L mais próximo).
+        if motorista_sel is None:
+            cur.execute("""
+                SELECT me.quantidade_descarregada
+                FROM medicoes me
+                WHERE me.cod_empresa = %s
+                  AND me.cod_filial = ANY(%s)
+                  AND me.data_medicao BETWEEN %s AND %s
+                  AND me.quantidade_descarregada > 0
+                  AND NOT EXISTS (
+                      SELECT 1 FROM descarregos_combustiveis d2
+                      WHERE d2.cod_empresa = me.cod_empresa
+                        AND d2.cod_filial_descarga = me.cod_filial
+                        AND d2.cod_produto = me.cod_produto
+                        AND d2.data_descarrego = me.data_medicao
+                  )
+            """, (cod_empresa, filiais_consulta, data_ini, data_fim))
+            historico = cur.fetchall() or []
+
+            if historico:
+                total_hist = sum(float(h["quantidade_descarregada"] or 0) for h in historico)
+                total_diferenca_hist = sum(
+                    float(h["quantidade_descarregada"] or 0) - _arredondar_mil(h["quantidade_descarregada"])
+                    for h in historico
+                )
+                linhas_motorista.append({
+                    "motorista": "Histórico (sem compra vinculada — diferença aproximada)",
+                    "aproximado": True,
+                    "qtd_descarregos": len(historico),
+                    "total_descarregado": total_hist,
+                    "total_diferenca": total_diferenca_hist,
+                })
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Erro ao consultar perdas e sobras por motorista: {e}", "error")
+        filiais = []
+        motoristas = []
+        linhas_motorista = []
+
+    finally:
+        cur.close()
+        conn.close()
+
+    return render_template(
+        "consultar_perdas_sobras_motorista.html",
+        cod_empresa=cod_empresa,
+        nome_empresa=nome_empresa,
+        data_ini=data_ini.isoformat(),
+        data_fim=data_fim.isoformat(),
+        filiais=filiais,
+        filial_sel=filial_sel,
+        motoristas=motoristas,
+        motorista_sel=motorista_sel,
+        linhas_motorista=linhas_motorista,
+        url_voltar=url_for("operacoes.menu_medicoes"),
+        texto_voltar="← Voltar",
+    )
 
 
 # --------------------------------
