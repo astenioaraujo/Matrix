@@ -8155,6 +8155,16 @@ def api_consultar_saldos():
             if not datas_bloqueio_pendentes(cur, cod_empresa, d)
         }
 
+        # Estoque e Perdas/Sobras (ORIGENS_COM_MEDICAO) também exigem a medição
+        # de D+1 — ver _exigir_medicao_dia_seguinte, aplicada só ao clicar em
+        # Importar. Sem isso aqui, o botão aparecia ativo e a importação era
+        # recusada só depois do clique, sem aviso visível na linha.
+        medicao_estoque_tooltip_por_dia = {}
+        for d in datas_consultadas:
+            faltas = tanques_sem_medicao(cur, cod_empresa, d + timedelta(days=1), codigos_filiais)
+            if faltas:
+                medicao_estoque_tooltip_por_dia[d] = msg_tanques_sem_medicao(faltas, d + timedelta(days=1))
+
         cur.execute("""
             SELECT data, id_indicador_recebivel
             FROM saldos_importacoes_estoque
@@ -8206,6 +8216,7 @@ def api_consultar_saldos():
         # Importação dos valores de estoque (Operações): só quando a data está
         # bloqueada lá; importado = linha travada e botão "Desfazer importação".
         bloco["bloqueio_operacoes"] = data_atual in datas_bloqueadas_operacoes
+        bloco["medicao_estoque_tooltip"] = medicao_estoque_tooltip_por_dia.get(data_atual)
         for linha in bloco["recebiveis"]:
             linha["importado"] = (data_atual, linha["id_indicador_recebivel"]) in importados
         # Perdas e Sobras sai da mesma Consulta de Estoques, mas mora no bloco

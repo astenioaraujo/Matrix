@@ -663,13 +663,14 @@
      Operações (mesmos números da Consulta de Estoques, em R$). Só aparece
      no modo Bancos, num dia ainda editável e com as movimentações daquele
      dia BLOQUEADAS em Operações — antes disso os números ainda mudam lá. */
-  function celulaImportar(linha, dataStr, bloqueioOperacoes, importacaoCr) {
-    return `<td class="acao-importar">${botaoImportar(linha, dataStr, bloqueioOperacoes, importacaoCr)}</td>`;
+  function celulaImportar(linha, dataStr, bloqueioOperacoes, importacaoCr, medicaoTooltip) {
+    return `<td class="acao-importar">${botaoImportar(linha, dataStr, bloqueioOperacoes, importacaoCr, medicaoTooltip)}</td>`;
   }
 
-  function botaoImportar(linha, dataStr, bloqueioOperacoes, importacaoCr) {
+  function botaoImportar(linha, dataStr, bloqueioOperacoes, importacaoCr, medicaoTooltip) {
     // Duas origens de importação, cada uma com a sua condição de liberação:
-    //  - estoque (Operações): tudo bloqueado lá até a data;
+    //  - estoque (Operações): tudo bloqueado lá até a data, e a linha
+    //    "Estoque" (não Compra/Trânsito) também precisa da medição de D+1;
     //  - CR (Fiado e Cartões): existe a importação do dia seguinte ao saldo.
     const origemCr = linha.origem_cr;
     if (!linha.origem_estoque && !origemCr) return "";
@@ -679,6 +680,10 @@
 
     if (linha.importado) {
       return `<button type="button" class="btn-importar desfazer" data-fonte="${fonte}" data-origem="${origem}" data-data="${dataStr}" data-acao="desfazer">↩ Desfazer importação</button>`;
+    }
+
+    if (!origemCr && linha.origem_estoque === "ESTOQUE" && medicaoTooltip) {
+      return `<button type="button" class="btn-importar" disabled title="${escapeHtml(medicaoTooltip)}">Importar</button>`;
     }
 
     const liberado = origemCr ? ((importacaoCr || {})[origemCr] === true) : bloqueioOperacoes;
@@ -772,7 +777,7 @@
     return linha;
   }
 
-  function montarTabelaBloco(titulo, linhas, subtotal, tipo, dataStr, filiais, modo, editavel, mostrarCabecalho, totalGeral, mostrarBotaoDuplicar, bloqueioOperacoes, importacaoCr) {
+  function montarTabelaBloco(titulo, linhas, subtotal, tipo, dataStr, filiais, modo, editavel, mostrarCabecalho, totalGeral, mostrarBotaoDuplicar, bloqueioOperacoes, importacaoCr, medicaoTooltip) {
     const { cols, subhead } = theadColunas(filiais, modo);
 
     // Coluna de importação só existe quando há botão para mostrar: linha ligada
@@ -784,7 +789,7 @@
       corpo += `<tr><td class="rotulo">${escapeHtml(linha.label)}</td>`;
       filiais.forEach(f => { corpo += celulaLinha(linha, f, tipo, dataStr, modo, editavel); });
       corpo += celulaTotalLinha(linha, modo);
-      if (colunaImportar) corpo += celulaImportar(linha, dataStr, bloqueioOperacoes, importacaoCr);
+      if (colunaImportar) corpo += celulaImportar(linha, dataStr, bloqueioOperacoes, importacaoCr, medicaoTooltip);
       corpo += "</tr>";
     });
 
@@ -855,6 +860,9 @@
 
     if ((dia.informados_importados || []).includes(campo)) {
       return `<button type="button" class="btn-importar desfazer" data-campo="${campo}" data-data="${dia.data}" data-acao="desfazer">↩ Desfazer importação</button>`;
+    }
+    if (dia.medicao_estoque_tooltip) {
+      return `<button type="button" class="btn-importar" disabled title="${escapeHtml(dia.medicao_estoque_tooltip)}">Importar</button>`;
     }
     if (!dia.bloqueio_operacoes) {
       return `<button type="button" class="btn-importar" disabled title="Só depois de bloquear em Operações tudo até esta data">Importar</button>`;
@@ -947,7 +955,7 @@
     // Sem Estoques e Recebíveis não há TOTAL: ele soma os dois blocos, e sozinho
     // em cima das Contas Bancárias repetiria o SUBTOTAL delas.
     const blocoRecebiveis = MOSTRAR_RECEBIVEIS
-      ? montarTabelaBloco("Estoques e Recebíveis", dia.recebiveis, dia.subtotal_recebiveis, "recebivel", dia.data, filiais, modo, editavel, false, dia.total, podeDuplicarRecebiveis, dia.bloqueio_operacoes, dia.importacao_cr)
+      ? montarTabelaBloco("Estoques e Recebíveis", dia.recebiveis, dia.subtotal_recebiveis, "recebivel", dia.data, filiais, modo, editavel, false, dia.total, podeDuplicarRecebiveis, dia.bloqueio_operacoes, dia.importacao_cr, dia.medicao_estoque_tooltip)
       : "";
 
     return `
