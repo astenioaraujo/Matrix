@@ -61,6 +61,19 @@ def _carregar_filiais_importacao(cur, cod_empresa):
         nome_norm = _normalizar(nome_importacao)
         if nome_norm:
             filiais[nome_norm] = {"cod_filial": int(cod_filial), "nome_filial": nome_filial}
+
+    # Mesmo mecanismo de apelidos da importação de vendas/fluxo de caixa
+    # (services/apelidos_filiais.py): aqui cobre o caso de "Sobras e Faltas
+    # de Caixa" trazer o nome do posto mais completo do que o cadastrado em
+    # nome_filial_importacao (ex. EMP012 LO/LO GNV, que a importação
+    # principal registrou truncado em "COM"/"GN").
+    from services.apelidos_filiais import apelidos_da_empresa
+
+    for antigo, novo in apelidos_da_empresa(cod_empresa).items():
+        filial = filiais.get(_normalizar(novo))
+        if filial:
+            filiais.setdefault(_normalizar(antigo), filial)
+
     return filiais
 
 
