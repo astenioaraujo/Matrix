@@ -2249,40 +2249,43 @@ def consultar_medicoes():
 
         linhas = cur.fetchall() or []
 
-        # Descarregos reais do dia (compra + motorista + diferença), para
-        # detalhar a célula de Quantidade Descarregada — mesma ideia de
-        # Informar Medições, só que aqui pode ter mais de uma filial na tela.
+        # Lançamentos do gerente em medicoes_descarregos (compra + motorista
+        # + diferença), para detalhar a célula de Quantidade Descarregada —
+        # mesma ideia de Informar Medições, só que aqui pode ter mais de uma
+        # filial na tela. É o controle do gerente, não o descarrego real de
+        # Operações (descarregos_combustiveis) — por isso tabela e filtro
+        # por data_medicao direto, sem indireção de véspera.
         descarregos_detalhe = {}
 
-        filtros_desc = ["d.cod_empresa = %s", "d.data_descarrego = %s"]
+        filtros_desc = ["d.cod_empresa = %s", "d.data_medicao = %s"]
         params_desc = [cod_empresa, data_sel]
 
         if filial_sel is not None:
-            filtros_desc.append("d.cod_filial_descarga = %s")
+            filtros_desc.append("d.cod_filial = %s")
             params_desc.append(filial_sel)
         elif tipo_global != "superusuario":
-            filtros_desc.append("d.cod_filial_descarga = ANY(%s)")
+            filtros_desc.append("d.cod_filial = ANY(%s)")
             params_desc.append(codigos_filiais_permitidas)
         else:
-            filtros_desc.append("d.cod_filial_descarga IS NOT NULL")
+            filtros_desc.append("d.cod_filial IS NOT NULL")
 
         where_desc = " AND ".join(filtros_desc)
 
         cur.execute(f"""
             SELECT
-                d.cod_filial_descarga AS cod_filial,
+                d.cod_filial,
                 d.cod_produto,
                 d.quantidade_descarregada,
                 d.quantidade_descarregada - cc.quantidade_comprada AS diferenca,
                 m.nome AS nome_motorista
-            FROM descarregos_combustiveis d
+            FROM medicoes_descarregos d
             JOIN compras_combustiveis cc
               ON cc.cod_empresa = d.cod_empresa
              AND cc.id_compra = d.id_compra
             LEFT JOIN logistica_motoristas m
               ON m.id_motorista = d.id_motorista
             WHERE {where_desc}
-            ORDER BY d.cod_filial_descarga, d.cod_produto, d.id_descarrego
+            ORDER BY d.cod_filial, d.cod_produto, d.id_medicao_descarrego
         """, params_desc)
 
         for r in cur.fetchall() or []:
@@ -6383,13 +6386,22 @@ def ajax_salvar_medicao():
 # --------------------------------
 # O lápis ao lado de "Quantidade Descarregada" abre uma janela: escolhe a
 # compra pendente (trânsito) daquele produto/filial, informa a quantidade
-# real, o motorista e a hora. Grava em descarregos_combustiveis (mesma
-# tabela de sempre) e soma o total do dia em medicoes.quantidade_descarregada
-# — o campo que a tela já mostra não muda de lugar, só passa a ser calculado.
+# que o gerente apurou, o motorista e a hora. Grava em medicoes_descarregos
+# (migrations/criar_medicoes_descarregos.sql) — tabela própria, separada de
+# descarregos_combustiveis — e soma o total do dia em
+# medicoes.quantidade_descarregada, o campo que a tela já mostra.
+#
+# São DUAS quantidades distintas: esta aqui é o controle do gerente (gera a
+# diferença mostrada na tela e em Perdas e Sobras por Motorista); a de
+# descarregos_combustiveis é a que o departamento de Operações digita em
+# Informar Descarregos e manda em estoque/compras — não pode ser tocada
+# por este lançamento, por isso a tabela separada.
+#
+# A data gravada (data_descarrego) é sempre a véspera de data_medicao —
+# ver _data_descarrego_da_medicao.
 #
 # Dados antigos (digitados direto no campo, sem essa janela) não têm linha
-# em descarregos_combustiveis: ficam como estão, ninguém volta para
-# preenchê-los.
+# em medicoes_descarregos: ficam como estão, ninguém volta para preenchê-los.
 
 def _filial_permitida_medicao(id_usuario, cod_empresa, tipo_global, cod_filial):
     if tipo_global == "superusuario":
@@ -6397,19 +6409,32 @@ def _filial_permitida_medicao(id_usuario, cod_empresa, tipo_global, cod_filial):
     return cod_filial in [int(x) for x in usuario_filiais_ativas(id_usuario, cod_empresa)]
 
 
-def _recalcular_descarregado_medicao(cur, cod_empresa, cod_filial, cod_produto, data_medicao):
-    """Soma os descarregos do dia/filial/produto e grava em medicoes.
+def _data_descarrego_da_medicao(data_medicao):
+    """O descarrego lançado numa medição é sempre do dia anterior ao da
+    medição — esse lançamento é feito na tela de Informar Medições, não na
+    data real do descarrego."""
+    return data_medicao - timedelta(days=1)
 
-    Preserva quantidade_medida e quantidade_vendida — só a quantidade
-    descarregada é recalculada aqui."""
+
+def _recalcular_descarregado_medicao(cur, cod_empresa, cod_filial, cod_produto, data_medicao, data_descarrego):
+    """Soma os lançamentos de medicoes_descarregos do dia/filial/produto e
+    grava em medicoes. Esse é o controle do gerente (diferença mostrada na
+    tela) — nunca descarregos_combustiveis, que é a quantidade do
+    departamento de Operações e manda em estoque/compras; esta aqui não
+    pode tocar naquela.
+
+    data_medicao é a medição que mostra o total (coluna em medicoes);
+    data_descarrego é a véspera de data_medicao, dia gravado em
+    medicoes_descarregos. Preserva quantidade_medida e quantidade_vendida —
+    só a quantidade descarregada é recalculada aqui."""
     cur.execute("""
         SELECT COALESCE(SUM(quantidade_descarregada), 0) AS soma
-        FROM descarregos_combustiveis
+        FROM medicoes_descarregos
         WHERE cod_empresa = %s
-          AND cod_filial_descarga = %s
+          AND cod_filial = %s
           AND cod_produto = %s
           AND data_descarrego = %s
-    """, (cod_empresa, cod_filial, cod_produto, data_medicao))
+    """, (cod_empresa, cod_filial, cod_produto, data_descarrego))
     soma = float(cur.fetchone()["soma"] or 0)
 
     cur.execute("""
@@ -6428,22 +6453,24 @@ def _recalcular_descarregado_medicao(cur, cod_empresa, cod_filial, cod_produto, 
     return soma
 
 
-def _diferenca_total_medicao(cur, cod_empresa, cod_filial, cod_produto, data_medicao):
-    """Soma das diferenças (descarregado − comprado) dos descarregos reais
-    do dia/filial/produto — a mesma conta de Perdas e Sobras por Motorista,
-    só que para um produto/dia só. None quando não há nenhum descarrego
-    vinculado (nada a mostrar na tela principal)."""
+def _diferenca_total_medicao(cur, cod_empresa, cod_filial, cod_produto, data_descarrego):
+    """Soma das diferenças (descarregado − comprado) dos lançamentos do
+    gerente em medicoes_descarregos do dia/filial/produto — a mesma conta
+    de Perdas e Sobras por Motorista, só que para um produto/dia só.
+    data_descarrego é o dia gravado em medicoes_descarregos (véspera da
+    data_medicao). None quando não há nenhum lançamento vinculado a compra
+    (nada a mostrar na tela principal)."""
     cur.execute("""
         SELECT SUM(d.quantidade_descarregada - cc.quantidade_comprada) AS diferenca
-        FROM descarregos_combustiveis d
+        FROM medicoes_descarregos d
         JOIN compras_combustiveis cc
           ON cc.cod_empresa = d.cod_empresa
          AND cc.id_compra = d.id_compra
         WHERE d.cod_empresa = %s
-          AND d.cod_filial_descarga = %s
+          AND d.cod_filial = %s
           AND d.cod_produto = %s
           AND d.data_descarrego = %s
-    """, (cod_empresa, cod_filial, cod_produto, data_medicao))
+    """, (cod_empresa, cod_filial, cod_produto, data_descarrego))
     r = cur.fetchone()
     return float(r["diferenca"]) if r and r["diferenca"] is not None else None
 
@@ -6543,6 +6570,8 @@ def api_medicoes_descarregos_listar():
     except ValueError:
         return {"ok": False, "erro": "Data inválida."}, 400
 
+    data_descarrego = _data_descarrego_da_medicao(data_medicao)
+
     if not _filial_permitida_medicao(id_usuario, cod_empresa, tipo_global, cod_filial):
         return {"ok": False, "erro": "Filial não permitida."}, 403
 
@@ -6551,7 +6580,7 @@ def api_medicoes_descarregos_listar():
     try:
         cur.execute("""
             SELECT
-                d.id_descarrego,
+                d.id_medicao_descarrego AS id_descarrego,
                 d.id_compra,
                 cc.data_compra,
                 fc.nome_fornecedor,
@@ -6560,7 +6589,7 @@ def api_medicoes_descarregos_listar():
                 d.id_motorista,
                 m.nome AS nome_motorista,
                 d.hora_descarrego
-            FROM descarregos_combustiveis d
+            FROM medicoes_descarregos d
             LEFT JOIN compras_combustiveis cc
               ON cc.cod_empresa = d.cod_empresa
              AND cc.id_compra = d.id_compra
@@ -6569,11 +6598,11 @@ def api_medicoes_descarregos_listar():
             LEFT JOIN logistica_motoristas m
               ON m.id_motorista = d.id_motorista
             WHERE d.cod_empresa = %s
-              AND d.cod_filial_descarga = %s
+              AND d.cod_filial = %s
               AND d.cod_produto = %s
               AND d.data_descarrego = %s
-            ORDER BY d.id_descarrego
-        """, (cod_empresa, cod_filial, cod_produto, data_medicao))
+            ORDER BY d.id_medicao_descarrego
+        """, (cod_empresa, cod_filial, cod_produto, data_descarrego))
         linhas = cur.fetchall() or []
     finally:
         cur.close()
@@ -6633,6 +6662,8 @@ def api_medicoes_descarregos_salvar():
     except ValueError:
         return {"ok": False, "erro": "Data inválida."}, 400
 
+    data_descarrego = _data_descarrego_da_medicao(data_medicao)
+
     if not _filial_permitida_medicao(id_usuario, cod_empresa, tipo_global, cod_filial):
         return {"ok": False, "erro": "Filial não permitida."}, 403
 
@@ -6657,8 +6688,8 @@ def api_medicoes_descarregos_salvar():
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        if data_bloqueada(cur, cod_empresa, data_medicao):
-            return {"ok": False, "erro": msg_data_bloqueada(data_medicao)}, 403
+        if data_bloqueada(cur, cod_empresa, data_descarrego):
+            return {"ok": False, "erro": msg_data_bloqueada(data_descarrego)}, 403
 
         cur.execute("""
             SELECT 1 FROM logistica_motoristas
@@ -6672,7 +6703,6 @@ def api_medicoes_descarregos_salvar():
             SELECT id_compra, cod_produto, cod_filial
             FROM compras_combustiveis
             WHERE id_compra = %s AND cod_empresa = %s
-            FOR UPDATE
         """, (id_compra, cod_empresa))
         compra = cur.fetchone()
 
@@ -6688,13 +6718,11 @@ def api_medicoes_descarregos_salvar():
             conn.rollback()
             return {"ok": False, "erro": "A compra não é dessa filial."}, 400
 
-        id_compra_antiga = None
-
         if id_descarrego is not None:
             cur.execute("""
-                SELECT id_descarrego, id_compra, cod_filial_descarga, cod_produto, data_descarrego
-                FROM descarregos_combustiveis
-                WHERE id_descarrego = %s AND cod_empresa = %s
+                SELECT id_medicao_descarrego, id_compra, cod_filial, cod_produto, data_descarrego
+                FROM medicoes_descarregos
+                WHERE id_medicao_descarrego = %s AND cod_empresa = %s
                 FOR UPDATE
             """, (id_descarrego, cod_empresa))
             existente = cur.fetchone()
@@ -6703,46 +6731,39 @@ def api_medicoes_descarregos_salvar():
                 conn.rollback()
                 return {"ok": False, "erro": "Descarrego não encontrado."}, 404
 
-            if (existente["cod_filial_descarga"] != cod_filial
+            if (existente["cod_filial"] != cod_filial
                     or str(existente["cod_produto"]).strip() != cod_produto
-                    or existente["data_descarrego"] != data_medicao):
+                    or existente["data_descarrego"] != data_descarrego):
                 conn.rollback()
                 return {"ok": False, "erro": "Descarrego não pertence a esta medição."}, 400
 
-            if existente["id_compra"] != id_compra:
-                id_compra_antiga = existente["id_compra"]
-
             cur.execute("""
-                UPDATE descarregos_combustiveis
+                UPDATE medicoes_descarregos
                 SET id_compra = %s,
                     quantidade_descarregada = %s,
                     id_motorista = %s,
                     hora_descarrego = %s,
                     atualizado_em = NOW()
-                WHERE id_descarrego = %s
+                WHERE id_medicao_descarrego = %s
                   AND cod_empresa = %s
             """, (id_compra, quantidade_descarregada, id_motorista, hora_descarrego,
                   id_descarrego, cod_empresa))
         else:
             cur.execute("""
-                INSERT INTO descarregos_combustiveis (
-                    cod_empresa, data_descarrego, id_compra, cod_filial_descarga,
+                INSERT INTO medicoes_descarregos (
+                    cod_empresa, data_medicao, data_descarrego, id_compra, cod_filial,
                     cod_produto, quantidade_descarregada, id_motorista, hora_descarrego,
                     criado_em, atualizado_em
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
-            """, (cod_empresa, data_medicao, id_compra, cod_filial,
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+            """, (cod_empresa, data_medicao, data_descarrego, id_compra, cod_filial,
                   cod_produto, quantidade_descarregada, id_motorista, hora_descarrego))
 
-        recalcular_status_compra(cur, cod_empresa, id_compra)
-        if id_compra_antiga is not None:
-            recalcular_status_compra(cur, cod_empresa, id_compra_antiga)
-
         soma = _recalcular_descarregado_medicao(
-            cur, cod_empresa, cod_filial, cod_produto, data_medicao
+            cur, cod_empresa, cod_filial, cod_produto, data_medicao, data_descarrego
         )
         diferenca = _diferenca_total_medicao(
-            cur, cod_empresa, cod_filial, cod_produto, data_medicao
+            cur, cod_empresa, cod_filial, cod_produto, data_descarrego
         )
 
         conn.commit()
@@ -6786,6 +6807,8 @@ def api_medicoes_descarregos_excluir():
     except ValueError:
         return {"ok": False, "erro": "Data inválida."}, 400
 
+    data_descarrego = _data_descarrego_da_medicao(data_medicao)
+
     if not _filial_permitida_medicao(id_usuario, cod_empresa, tipo_global, cod_filial):
         return {"ok": False, "erro": "Filial não permitida."}, 403
 
@@ -6793,9 +6816,9 @@ def api_medicoes_descarregos_excluir():
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
         cur.execute("""
-            SELECT id_descarrego, id_compra, cod_filial_descarga, cod_produto, data_descarrego
-            FROM descarregos_combustiveis
-            WHERE id_descarrego = %s AND cod_empresa = %s
+            SELECT id_medicao_descarrego, id_compra, cod_filial, cod_produto, data_descarrego
+            FROM medicoes_descarregos
+            WHERE id_medicao_descarrego = %s AND cod_empresa = %s
             FOR UPDATE
         """, (id_descarrego, cod_empresa))
         existente = cur.fetchone()
@@ -6804,9 +6827,9 @@ def api_medicoes_descarregos_excluir():
             conn.rollback()
             return {"ok": False, "erro": "Descarrego não encontrado."}, 404
 
-        if (existente["cod_filial_descarga"] != cod_filial
+        if (existente["cod_filial"] != cod_filial
                 or str(existente["cod_produto"]).strip() != cod_produto
-                or existente["data_descarrego"] != data_medicao):
+                or existente["data_descarrego"] != data_descarrego):
             conn.rollback()
             return {"ok": False, "erro": "Descarrego não pertence a esta medição."}, 400
 
@@ -6814,20 +6837,16 @@ def api_medicoes_descarregos_excluir():
             conn.rollback()
             return {"ok": False, "erro": msg_data_bloqueada(existente["data_descarrego"])}, 403
 
-        id_compra = existente["id_compra"]
-
         cur.execute("""
-            DELETE FROM descarregos_combustiveis
-            WHERE id_descarrego = %s AND cod_empresa = %s
+            DELETE FROM medicoes_descarregos
+            WHERE id_medicao_descarrego = %s AND cod_empresa = %s
         """, (id_descarrego, cod_empresa))
 
-        recalcular_status_compra(cur, cod_empresa, id_compra)
-
         soma = _recalcular_descarregado_medicao(
-            cur, cod_empresa, cod_filial, cod_produto, data_medicao
+            cur, cod_empresa, cod_filial, cod_produto, data_medicao, data_descarrego
         )
         diferenca = _diferenca_total_medicao(
-            cur, cod_empresa, cod_filial, cod_produto, data_medicao
+            cur, cod_empresa, cod_filial, cod_produto, data_descarrego
         )
 
         conn.commit()
@@ -6946,9 +6965,9 @@ def consultar_perdas_sobras_motorista():
         if not filiais_consulta:
             filiais_consulta = [-1]
 
-        # Descarregos com compra vinculada (feitos pela janela nova, ou pela
-        # tela de Informar Descarregos de sempre — essa não pede motorista,
-        # por isso cai em "Sem motorista registrado" com diferença exata).
+        # Lançamentos do gerente em medicoes_descarregos — controle próprio,
+        # separado do descarrego real de Operações (descarregos_combustiveis,
+        # que não entra aqui e não é tocado por este relatório).
         params_reais = [cod_empresa, cod_empresa, filiais_consulta, data_ini, data_fim]
         filtro_motorista_sql = ""
         if motorista_sel is not None:
@@ -6962,7 +6981,7 @@ def consultar_perdas_sobras_motorista():
                 COUNT(*) AS qtd_descarregos,
                 SUM(d.quantidade_descarregada) AS total_descarregado,
                 SUM(d.quantidade_descarregada - cc.quantidade_comprada) AS total_diferenca
-            FROM descarregos_combustiveis d
+            FROM medicoes_descarregos d
             JOIN compras_combustiveis cc
               ON cc.cod_empresa = d.cod_empresa
              AND cc.id_compra = d.id_compra
@@ -6970,7 +6989,7 @@ def consultar_perdas_sobras_motorista():
               ON m.id_motorista = d.id_motorista
             WHERE d.cod_empresa = %s
               AND cc.cod_empresa = %s
-              AND d.cod_filial_descarga = ANY(%s)
+              AND d.cod_filial = ANY(%s)
               AND d.data_descarrego BETWEEN %s AND %s
               {filtro_motorista_sql}
             GROUP BY d.id_motorista, motorista
@@ -6988,9 +7007,9 @@ def consultar_perdas_sobras_motorista():
             })
 
         # Histórico: dia/filial/produto com quantidade descarregada digitada
-        # direto no campo (sem passar pela janela nem pela tela de
-        # Descarregos) — não tem compra vinculada, então a diferença é uma
-        # aproximação (arredondando para o múltiplo de 1.000 L mais próximo).
+        # direto no campo (sem passar pela janela) — não tem compra
+        # vinculada, então a diferença é uma aproximação (arredondando para
+        # o múltiplo de 1.000 L mais próximo).
         if motorista_sel is None:
             cur.execute("""
                 SELECT me.quantidade_descarregada
@@ -7000,11 +7019,11 @@ def consultar_perdas_sobras_motorista():
                   AND me.data_medicao BETWEEN %s AND %s
                   AND me.quantidade_descarregada > 0
                   AND NOT EXISTS (
-                      SELECT 1 FROM descarregos_combustiveis d2
+                      SELECT 1 FROM medicoes_descarregos d2
                       WHERE d2.cod_empresa = me.cod_empresa
-                        AND d2.cod_filial_descarga = me.cod_filial
+                        AND d2.cod_filial = me.cod_filial
                         AND d2.cod_produto = me.cod_produto
-                        AND d2.data_descarrego = me.data_medicao
+                        AND d2.data_medicao = me.data_medicao
                   )
             """, (cod_empresa, filiais_consulta, data_ini, data_fim))
             historico = cur.fetchall() or []
