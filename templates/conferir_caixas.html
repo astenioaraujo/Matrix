@@ -560,12 +560,34 @@
   .mdc-caixa { background:#fff; border-radius:14px; width:min(560px,94vw);
     max-height:86vh; display:flex; flex-direction:column; box-shadow:0 12px 40px rgba(0,0,0,.25); }
   .mdc-topo { padding:14px 18px; border-bottom:1px solid #e5e7eb;
-    display:flex; justify-content:space-between; align-items:flex-start; }
+    display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
   .mdc-titulo { font-size:17px; font-weight:800; }
   .mdc-sub { font-size:12px; color:#6b7280; margin-top:3px; }
   .mdc-fechar { border:none; background:transparent; font-size:22px;
     line-height:1; cursor:pointer; color:#6b7280; }
   .mdc-fechar:hover { color:#111; }
+  {# Linha de postos abaixo do título — janela de 5 posições (2 antes, o
+     atual, 2 depois) sempre centralizada: o lado que não tem posto vizinho
+     vira um espaço vazio em vez de encolher a janela, pra o chip ativo
+     (teal, igual ao .nav-tab.filial-ativa do topo da página) nunca sair do
+     meio. As mesmas setas de antes continuam do lado de fora, pra quem
+     prefere ir um de cada vez. #}
+  .mdc-filial-nav { display:flex; align-items:center; gap:8px;
+    padding:8px 18px; border-bottom:1px solid #e5e7eb; background:#f8fafc; }
+  .mdc-seta { width:26px; height:26px; border-radius:50%; border:1px solid #ccc;
+    background:#fff; color:#14114f; font-size:13px; font-weight:900;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; flex-shrink:0; transition:all 0.15s; }
+  .mdc-seta:hover { background:#14114f; color:#fff; border-color:#14114f; }
+  .mdc-seta:disabled { opacity:0.25; cursor:default; pointer-events:none; }
+  .mdc-filial-tiras { flex:1; display:flex; justify-content:center; align-items:center; gap:6px; }
+  .mdc-filial-chip { flex-shrink:0; padding:5px 13px; border-radius:20px;
+    font-size:12px; font-weight:600; border:1px solid #ccc; background:#fff;
+    color:#555; cursor:pointer; white-space:nowrap; transition:all 0.15s; }
+  .mdc-filial-chip:hover:not(.ativa) { background:#f1f5f9; }
+  .mdc-filial-chip.ativa { background:#0f766e; color:#fff; border-color:#0f766e;
+    font-weight:800; cursor:default; }
+  .mdc-filial-vazio { visibility:hidden; pointer-events:none; }
   .mdc-corpo { overflow:auto; padding:0 18px 12px; }
   .mdc-tabela { width:100%; border-collapse:collapse; font-size:13px; }
   .mdc-tabela th { position:sticky; top:0; background:#f9fafb; text-align:right;
@@ -1239,6 +1261,16 @@
   <div id="aviso-texto"></div>
 </div>
 
+{# Filiais da área aberta, na mesma ordem das abas de cima — usada pelas
+   setas de navegação da janela de Conferência com portal, para trocar de
+   posto sem fechar a janela nem perder de vista qual forma estava aberta. #}
+{% set area_filiais_ns = namespace(v=[]) %}
+{% for a in areas %}
+  {% if area_sel != 'TODOS' and a.id_area|string == area_sel %}
+    {% set area_filiais_ns.v = a.filiais %}
+  {% endif %}
+{% endfor %}
+
 <script>
   const URL_SALVAR = "{{ url_for('financeiro.conferir_caixas') }}";
   {% if visualizar %}
@@ -1246,6 +1278,8 @@
   const FILIAL_ATUAL = {{ cod_filial_atual or 0 }};
   const MES_ATUAL = {{ mes_sel }};
   const ANO_ATUAL = {{ ano_sel }};
+  const AREA_SEL = "{{ area_sel }}";
+  const AREA_FILIAIS = {{ area_filiais_ns.v | tojson }};
   const FORMAS_JS    = {{ formas | tojson }};
   const CONTROLES_JS = {{ controles | tojson }};
   {# Coluna fechada na grade não tem por que abrir seção no painel do ✎:
@@ -2274,6 +2308,7 @@
     document.getElementById('mdc-sub').textContent = '';
     corpo.innerHTML = '<div class="mdi-vazio">Carregando...</div>';
     modal.classList.add('aberto');
+    atualizarNavFilialConferencia();
 
     const params = new URLSearchParams({
       cod_filial: FILIAL_ATUAL, id_forma: idForma, ano: ANO_ATUAL, mes: MES_ATUAL
@@ -2380,6 +2415,69 @@
   function fecharConferenciaPortal() {
     document.getElementById('modal-conferencia').classList.remove('aberto');
     confPortalAtual = null;
+    /* Tira o conf_portal da URL: se não tirasse, um F5 depois de fechar
+       reabriria a janela de novo sozinha. */
+    if (window.location.search.includes('conf_portal=')) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('conf_portal');
+      window.history.replaceState(null, '', url.toString());
+    }
+  }
+
+  /* Desenha a janela de postos ao redor do que está aberto — 2 antes, o
+     atual, 2 depois — e liga/desliga as setas conforme a posição dele na
+     área. O atual fica sempre na posição central da janela: quando falta
+     vizinho de um lado (início/fim da lista), aquele lugar vira um espaço
+     vazio em vez de puxar o ativo pro canto. Chamada ao abrir a janela e
+     de novo a cada troca de posto. */
+  function atualizarNavFilialConferencia() {
+    const idx = AREA_FILIAIS.findIndex((f) => String(f.cod_filial) === String(FILIAL_ATUAL));
+
+    document.getElementById('mdc-seta-prev').disabled = idx <= 0;
+    document.getElementById('mdc-seta-next').disabled = (idx < 0) || (idx >= AREA_FILIAIS.length - 1);
+
+    const RAIO = 2; // janela de 2*RAIO+1 = 5 posições
+    let html = '';
+    for (let off = -RAIO; off <= RAIO; off++) {
+      const i = idx + off;
+      const f = (idx >= 0 && i >= 0 && i < AREA_FILIAIS.length) ? AREA_FILIAIS[i] : null;
+      if (!f) {
+        html += '<span class="mdc-filial-chip mdc-filial-vazio"></span>';
+      } else if (off === 0) {
+        html += '<button type="button" class="mdc-filial-chip ativa" disabled>' + f.nome_filial + '</button>';
+      } else {
+        html += '<button type="button" class="mdc-filial-chip" onclick="selecionarFilialConferencia(' + f.cod_filial + ')">'
+          + f.nome_filial + '</button>';
+      }
+    }
+    document.getElementById('mdc-filial-tiras').innerHTML = html;
+  }
+
+  /* Troca de posto sem fechar a janela — tanto pelas setas quanto por um
+     clique direto num chip da tira. Como a grade por trás é renderizada
+     no servidor por filial, a troca recarrega a página (igual às abas de
+     cima) — só que levando junto qual forma estava aberta, no parâmetro
+     conf_portal, para a janela reabrir sozinha já no posto novo. Assim a
+     tela de fundo também muda de posto. */
+  function irParaFilialConferencia(novoCod) {
+    if (!confPortalAtual) return;
+    const params = new URLSearchParams({
+      mes: MES_ATUAL, ano: ANO_ATUAL, area: AREA_SEL,
+      filial: novoCod, conf_portal: confPortalAtual.idForma
+    });
+    window.location.href = '?' + params.toString();
+  }
+
+  function navegarFilialConferencia(direcao) {
+    const idx = AREA_FILIAIS.findIndex((f) => String(f.cod_filial) === String(FILIAL_ATUAL));
+    const novoIdx = idx + direcao;
+    if (idx < 0 || novoIdx < 0 || novoIdx >= AREA_FILIAIS.length) return;
+    irParaFilialConferencia(AREA_FILIAIS[novoIdx].cod_filial);
+  }
+
+  function selecionarFilialConferencia(cod) {
+    if (String(cod) === String(FILIAL_ATUAL)) return;
+    irParaFilialConferencia(cod);
   }
 </script>
 
@@ -2392,6 +2490,13 @@
         <div class="mdc-sub" id="mdc-sub"></div>
       </div>
       <button type="button" class="mdc-fechar" onclick="fecharConferenciaPortal()">&times;</button>
+    </div>
+    <div class="mdc-filial-nav" id="mdc-filial-nav">
+      <button type="button" class="mdc-seta" id="mdc-seta-prev"
+              onclick="navegarFilialConferencia(-1)" title="Posto anterior">&#8592;</button>
+      <div class="mdc-filial-tiras" id="mdc-filial-tiras"></div>
+      <button type="button" class="mdc-seta" id="mdc-seta-next"
+              onclick="navegarFilialConferencia(1)" title="Próximo posto">&#8594;</button>
     </div>
     <div class="mdc-corpo" id="mdc-corpo"></div>
     <div class="mdc-rodape">
@@ -2434,6 +2539,15 @@ function imprimirCaixa() {
     chk.checked = true;
     document.body.classList.add('modo-impressao');
   }
+})();
+
+/* Reabre a janela de Conferência com portal depois da troca de posto pelas
+   setas do próprio cabeçalho (navegarFilialConferencia recarrega a página
+   num posto novo levando o id da forma no parâmetro conf_portal). */
+(function () {
+  if (typeof abrirConferenciaPortal !== 'function' || typeof FILIAL_ATUAL === 'undefined') return;
+  const idForma = new URLSearchParams(window.location.search).get('conf_portal');
+  if (idForma) abrirConferenciaPortal(parseInt(idForma, 10));
 })();
 </script>
 
