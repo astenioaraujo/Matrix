@@ -272,6 +272,14 @@
   .diferenca-pos { color: #1e6b34; }
   .diferenca-neg { color: #9f2f2f; }
 
+  .modal-erro {
+    display: none;
+    margin-top: 10px;
+    color: #b91c1c;
+    font-weight: 700;
+    font-size: 13px;
+  }
+
   .modal-desc table {
     width: 100%;
     border-collapse: collapse;
@@ -517,6 +525,7 @@
       </div>
     </div>
     <div class="diferenca-box" id="modalDescDiferenca"></div>
+    <div class="modal-erro" id="modalDescErro"></div>
     <button type="button" class="btn-salvar-desc" id="modalDescBtnSalvar" onclick="salvarDescargaMedicao()">Salvar descarrego</button>
 
     <h4>Descarregos já lançados nesta data</h4>
@@ -679,6 +688,12 @@
     return isNaN(n) ? 0 : n;
   }
 
+  function mostrarErroModalDesc(texto) {
+    const div = document.getElementById("modalDescErro");
+    div.textContent = texto || "";
+    div.style.display = texto ? "block" : "none";
+  }
+
   function abrirModalDescarrego(codProduto, descricaoProduto) {
     modalDescCodProduto = codProduto;
     modalDescSelecionada = null;
@@ -706,6 +721,7 @@
     document.getElementById("modalDescHora").value = "";
     document.getElementById("modalDescDiferenca").textContent = "";
     document.getElementById("modalDescBtnSalvar").textContent = "Salvar descarrego";
+    mostrarErroModalDesc("");
   }
 
   async function carregarPendentesModalDesc() {
@@ -850,7 +866,7 @@
     });
     const d = await resp.json();
 
-    if (!d.ok) { alert(d.erro || "Erro ao excluir."); return; }
+    if (!d.ok) { mostrarErroModalDesc(d.erro || "Erro ao excluir."); return; }
 
     atualizarCampoDescarregadoModalDesc(d.soma, d.diferenca);
     limparFormularioModalDesc();
@@ -875,11 +891,13 @@
   }
 
   async function salvarDescargaMedicao() {
+    mostrarErroModalDesc("");
+
     const idCompra = document.getElementById("modalDescIdCompra").value;
-    if (!idCompra) { alert("Selecione uma compra pendente."); return; }
+    if (!idCompra) { mostrarErroModalDesc("Selecione uma compra pendente."); return; }
 
     const quantidade = document.getElementById("modalDescQuantidade").value;
-    if (!parseValorBrModalDesc(quantidade)) { alert("Informe a quantidade realmente descarregada."); return; }
+    if (!parseValorBrModalDesc(quantidade)) { mostrarErroModalDesc("Informe a quantidade realmente descarregada."); return; }
 
     const btn = document.getElementById("modalDescBtnSalvar");
     btn.disabled = true;
@@ -902,7 +920,7 @@
       });
       const d = await resp.json();
 
-      if (!d.ok) { alert(d.erro || "Erro ao salvar."); return; }
+      if (!d.ok) { mostrarErroModalDesc(d.erro || "Erro ao salvar."); return; }
 
       atualizarCampoDescarregadoModalDesc(d.soma, d.diferenca);
       limparFormularioModalDesc();

@@ -6688,9 +6688,10 @@ def api_medicoes_descarregos_salvar():
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
-        if data_bloqueada(cur, cod_empresa, data_descarrego):
-            return {"ok": False, "erro": msg_data_bloqueada(data_descarrego)}, 403
-
+        # Descarrego de Informar Medições é lançamento do gerente em
+        # medicoes_descarregos, entidade separada do descarrego de
+        # Operações (descarregos_combustiveis) — o bloqueio de data de
+        # Operações não se aplica aqui.
         cur.execute("""
             SELECT 1 FROM logistica_motoristas
             WHERE id_motorista = %s AND cod_empresa = %s AND ativo = TRUE
@@ -6833,10 +6834,8 @@ def api_medicoes_descarregos_excluir():
             conn.rollback()
             return {"ok": False, "erro": "Descarrego não pertence a esta medição."}, 400
 
-        if data_bloqueada(cur, cod_empresa, existente["data_descarrego"]):
-            conn.rollback()
-            return {"ok": False, "erro": msg_data_bloqueada(existente["data_descarrego"])}, 403
-
+        # Mesmo motivo do salvar: bloqueio de data de Operações não vale
+        # para medicoes_descarregos.
         cur.execute("""
             DELETE FROM medicoes_descarregos
             WHERE id_medicao_descarrego = %s AND cod_empresa = %s
